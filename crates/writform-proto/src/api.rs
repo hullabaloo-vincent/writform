@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::{UnixMillis, UserId};
+use crate::{AttachmentId, UnixMillis, UserId};
 
 /// `GET /api/v1/healthz`
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -58,6 +58,10 @@ pub struct User {
     pub display_name: Option<String>,
     #[serde(default)]
     pub is_server_admin: bool,
+    #[serde(default)]
+    pub avatar_attachment_id: Option<AttachmentId>,
+    #[serde(default)]
+    pub accent_color: Option<String>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
 }
@@ -67,6 +71,12 @@ pub struct User {
 pub struct UpdateProfileRequest {
     /// None clears the display name.
     pub display_name: Option<String>,
+    /// None clears the avatar; the attachment must be the caller's upload.
+    #[serde(default)]
+    pub avatar_attachment_id: Option<AttachmentId>,
+    /// `#rrggbb`, or None for the default look.
+    #[serde(default)]
+    pub accent_color: Option<String>,
 }
 
 /// A device row from `auth_sessions` (token never leaves the server).
@@ -82,6 +92,17 @@ pub struct DeviceSession {
     pub last_seen_at: UnixMillis,
     /// True for the session making this request.
     pub current: bool,
+}
+
+/// `GET /api/v1/link-preview?url=` — server-fetched page metadata for canvas
+/// link cards. Fields are None when the page is unreachable or opaque.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct LinkPreview {
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub image_url: Option<String>,
 }
 
 /// `GET /api/v1/admin/stats`

@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use writform_proto::chat::{
     CreateGroupRequest, CreateInviteRequest, Group, GroupRole, Invite, Member, PresenceSnapshot,
-    RedeemInviteRequest, SetRoleRequest, UserRef,
+    RedeemInviteRequest, SetRoleRequest,
 };
 use writform_proto::{GroupId, UserId};
 
@@ -12,6 +12,102 @@ use crate::db::now_millis;
 use crate::error::AppError;
 use crate::perms;
 use crate::routes::AppState;
+
+/// `PATCH /api/v1/groups/{id}` — admin-only visual/name customization.
+/// Icon and color are full replacement; name changes only when Some.
+pub async fn update_group(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(group_id): Path<i64>,
+    Json(req): Json<writform_proto::chat::UpdateGroupRequest>,
+) -> Result<Json<Group>, AppError> {
+    let group = GroupId(group_id);
+    perms::require_admin(&state.pool, group, auth.user_id).await?;
+
+    let name = req.name.map(|n| n.trim().to_string());
+    if let Some(n) = &name {
+        if n.is_empty() || n.len() > 80 {
+            return Err(AppError::bad_request(
+                "invalid_name",
+                "group name must be 1-80 characters",
+            ));
+        }
+    }
+    let accent = req
+        .accent_color
+        .map(|c| c.trim().to_lowercase())
+        .filter(|c| !c.is_empty());
+    if let Some(c) = &accent {
+        let valid =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if !valid {
+            return Err(AppError::bad_request(
+                "invalid_color",
+                "accent color must look like #rrggbb",
+            ));
+        }
+    }
+    if let Some(att) = req.icon_attachment_id {
+        let owned: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ?")
+                .bind(att.0)
+                .bind(auth.user_id.0)
+                .fetch_optional(&state.pool)
+                .await?;
+        if owned.is_none() {
+            return Err(AppError::bad_request(
+                "bad_attachment",
+                "icon attachment not found",
+            ));
+        }
+    }
+
+    sqlx::query(
+        "UPDATE groups SET name = COALESCE(?, name), icon_attachment_id = ?, accent_color = ?
+         WHERE id = ?",
+    )
+    .bind(&name)
+    .bind(req.icon_attachment_id.map(|a| a.0))
+    .bind(&accent)
+    .bind(group_id)
+    .execute(&state.pool)
+    .await?;
+
+    let (name, owner_id, created_at, icon, accent): (
+        String,
+        i64,
+        i64,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT name, owner_id, created_at, icon_attachment_id, accent_color
+         FROM groups WHERE id = ?",
+    )
+    .bind(group_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    state.ws.broadcast(
+        &format!("group:{group_id}"),
+        "group.updated",
+        serde_json::json!({
+            "group_id": group_id,
+            "name": name,
+            "icon_attachment_id": icon,
+            "accent_color": accent,
+        }),
+    );
+
+    Ok(Json(Group {
+        id: group,
+        name,
+        owner_id: UserId(owner_id),
+        my_role: GroupRole::Admin,
+        icon_attachment_id: icon.map(writform_proto::AttachmentId),
+        accent_color: accent,
+        created_at,
+    }))
+}
 
 fn role_str(role: GroupRole) -> &'static str {
     match role {
@@ -63,6 +159,8 @@ pub async fn create_group(
         name: name.to_string(),
         owner_id: auth.user_id,
         my_role: GroupRole::Admin,
+        icon_attachment_id: None,
+        accent_color: None,
         created_at: now,
     }))
 }
@@ -71,8 +169,10 @@ pub async fn my_groups(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<Group>>, AppError> {
-    let rows: Vec<(i64, String, i64, i64, String)> = sqlx::query_as(
-        "SELECT g.id, g.name, g.owner_id, g.created_at, m.role
+    type Row = (i64, String, i64, i64, String, Option<i64>, Option<String>);
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT g.id, g.name, g.owner_id, g.created_at, m.role,
+                g.icon_attachment_id, g.accent_color
          FROM groups g JOIN group_members m ON m.group_id = g.id
          WHERE m.user_id = ? ORDER BY g.created_at",
     )
@@ -81,17 +181,21 @@ pub async fn my_groups(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(id, name, owner_id, created_at, role)| Group {
-                id: GroupId(id),
-                name,
-                owner_id: UserId(owner_id),
-                my_role: if role == "admin" {
-                    GroupRole::Admin
-                } else {
-                    GroupRole::Member
+            .map(
+                |(id, name, owner_id, created_at, role, icon, accent)| Group {
+                    id: GroupId(id),
+                    name,
+                    owner_id: UserId(owner_id),
+                    my_role: if role == "admin" {
+                        GroupRole::Admin
+                    } else {
+                        GroupRole::Member
+                    },
+                    icon_attachment_id: icon.map(writform_proto::AttachmentId),
+                    accent_color: accent,
+                    created_at,
                 },
-                created_at,
-            })
+            )
             .collect(),
     ))
 }
@@ -103,8 +207,18 @@ pub async fn members(
 ) -> Result<Json<Vec<Member>>, AppError> {
     let group = GroupId(group_id);
     perms::require_member(&state.pool, group, auth.user_id).await?;
-    let rows: Vec<(i64, String, Option<String>, String, i64)> = sqlx::query_as(
-        "SELECT u.id, u.username, u.display_name, m.role, m.joined_at
+    type Row = (
+        i64,
+        String,
+        Option<String>,
+        String,
+        i64,
+        Option<i64>,
+        Option<String>,
+    );
+    let rows: Vec<Row> = sqlx::query_as(
+        "SELECT u.id, u.username, u.display_name, m.role, m.joined_at,
+                u.avatar_attachment_id, u.accent_color
          FROM group_members m JOIN users u ON u.id = m.user_id
          WHERE m.group_id = ? ORDER BY m.joined_at",
     )
@@ -113,19 +227,17 @@ pub async fn members(
     .await?;
     Ok(Json(
         rows.into_iter()
-            .map(|(id, username, display_name, role, joined_at)| Member {
-                user: UserRef {
-                    id: UserId(id),
-                    username,
-                    display_name,
+            .map(
+                |(id, username, display_name, role, joined_at, avatar, accent)| Member {
+                    user: perms::user_ref(UserId(id), username, display_name, avatar, accent),
+                    role: if role == "admin" {
+                        GroupRole::Admin
+                    } else {
+                        GroupRole::Member
+                    },
+                    joined_at,
                 },
-                role: if role == "admin" {
-                    GroupRole::Admin
-                } else {
-                    GroupRole::Member
-                },
-                joined_at,
-            })
+            )
             .collect(),
     ))
 }
@@ -240,11 +352,19 @@ pub async fn redeem_invite(
         .bind(invite_id)
         .execute(&mut *tx)
         .await?;
-    let (name, owner_id, created_at): (String, i64, i64) =
-        sqlx::query_as("SELECT name, owner_id, created_at FROM groups WHERE id = ?")
-            .bind(group_id)
-            .fetch_one(&mut *tx)
-            .await?;
+    let (name, owner_id, created_at, icon, accent): (
+        String,
+        i64,
+        i64,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT name, owner_id, created_at, icon_attachment_id, accent_color
+         FROM groups WHERE id = ?",
+    )
+    .bind(group_id)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     // Tell current members someone joined.
@@ -259,6 +379,8 @@ pub async fn redeem_invite(
         name,
         owner_id: UserId(owner_id),
         my_role: GroupRole::Member,
+        icon_attachment_id: icon.map(writform_proto::AttachmentId),
+        accent_color: accent,
         created_at,
     }))
 }

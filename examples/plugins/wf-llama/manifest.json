@@ -1,0 +1,8 @@
+{
+  "id": "wf-llama",
+  "name": "Llama AI",
+  "version": "0.1.0",
+  "icon": "🦙",
+  "permissions": ["ui", "commands", "net", "data", "chat"],
+  "min_api_version": 1
+}

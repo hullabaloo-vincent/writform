@@ -46,3 +46,27 @@ estimation — session countdowns render off server time), generic
 
 Rooms: `user:{id}` (auto-joined), `group:{id}`, `channel:{id}`, `session:{id}`.
 Subscription requires membership; the server validates on `sub`.
+
+## Later additions (post-MVP round)
+
+- `PATCH /api/v1/groups/{id}` (admin): name/icon/accent customization →
+  `group.updated` to `group:{id}`.
+- `PATCH /api/v1/auth/me` now also takes `avatar_attachment_id` +
+  `accent_color`; `UserRef` carries both everywhere it appears.
+- `DELETE /api/v1/sessions/{id}` (creator/admin): hard delete incl. side-chat
+  channel → `session.deleted` to `session:{id}` + home channel.
+- Session creation posts a `kind = "session"` join-card message (content =
+  `{"session_id","title"}` JSON) to the home channel.
+- Voice: `/api/v1/groups/{id}/voice` (list/create), `/api/v1/voice/{id}`
+  (delete), `/join`, `/leave`, `/{id}/signal` — presence in memory, WebRTC
+  signaling relayed to `user:{id}` rooms; media is a P2P DTLS-SRTP mesh and
+  never touches the server. Events: `voice.channel.created/deleted`,
+  `voice.joined/left` (group room), `voice.signal` (user room).
+- `GET /api/v1/link-preview?url=` (auth required): the server fetches the page
+  (http/https only, 5s timeout, 512KB cap, HTML only, 15-minute in-memory
+  cache) and returns `{url, title, description, image_url}` for canvas link
+  cards. The endpoint can reach anything the *server* can reach (including
+  its LAN) — it is authenticated and intended for trusted friend-servers; do
+  not expose a WritForm server to untrusted registration.
+- Canvas element kinds now include `image` (attachment id in `text`) and
+  `link` (URL in `text`).

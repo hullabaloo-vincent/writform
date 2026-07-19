@@ -2,9 +2,7 @@ use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::Json;
 use serde::Deserialize;
-use writform_proto::chat::{
-    AttachmentMeta, EditMessageRequest, Message, SendMessageRequest, UserRef,
-};
+use writform_proto::chat::{AttachmentMeta, EditMessageRequest, Message, SendMessageRequest};
 use writform_proto::{AttachmentId, ChannelId, MessageId, UserId};
 
 use crate::auth::AuthUser;
@@ -64,6 +62,8 @@ type MessageRow = (
     i64,
     String,
     Option<String>,
+    Option<i64>,
+    Option<String>,
 );
 
 fn row_to_message(row: MessageRow, attachments: Vec<AttachmentMeta>) -> Message {
@@ -78,15 +78,13 @@ fn row_to_message(row: MessageRow, attachments: Vec<AttachmentMeta>) -> Message 
         author_id,
         username,
         display_name,
+        avatar,
+        accent,
     ) = row;
     Message {
         id: MessageId(id),
         channel_id: ChannelId(channel_id),
-        author: UserRef {
-            id: UserId(author_id),
-            username,
-            display_name,
-        },
+        author: perms::user_ref(UserId(author_id), username, display_name, avatar, accent),
         kind,
         content,
         reply_to_id: reply_to_id.map(MessageId),
@@ -110,7 +108,7 @@ pub async fn list_messages(
     let rows: Vec<MessageRow> = if let Some(after) = query.after {
         sqlx::query_as(
             "SELECT m.id, m.channel_id, m.kind, m.content, m.reply_to_id, m.created_at, m.edited_at,
-                    u.id, u.username, u.display_name
+                    u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
              FROM messages m JOIN users u ON u.id = m.author_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL AND m.id > ?
              ORDER BY m.id ASC LIMIT ?",
@@ -124,7 +122,7 @@ pub async fn list_messages(
         let before = query.before.unwrap_or(i64::MAX);
         let mut rows: Vec<MessageRow> = sqlx::query_as(
             "SELECT m.id, m.channel_id, m.kind, m.content, m.reply_to_id, m.created_at, m.edited_at,
-                    u.id, u.username, u.display_name
+                    u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
              FROM messages m JOIN users u ON u.id = m.author_id
              WHERE m.channel_id = ? AND m.deleted_at IS NULL AND m.id < ?
              ORDER BY m.id DESC LIMIT ?",
@@ -205,11 +203,17 @@ pub async fn send_message(
             .await?;
     }
 
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(auth.user_id.0)
-            .fetch_one(&mut *tx)
-            .await?;
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     let attachments = attachments_for(&state.pool, &[id])
@@ -219,11 +223,7 @@ pub async fn send_message(
     let message = Message {
         id: MessageId(id),
         channel_id: channel,
-        author: UserRef {
-            id: auth.user_id,
-            username,
-            display_name,
-        },
+        author: crate::perms::user_ref(auth.user_id, username, display_name, avatar, accent),
         kind: "text".into(),
         content: Some(content.to_string()),
         reply_to_id: req.reply_to_id,

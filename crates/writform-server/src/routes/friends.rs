@@ -21,16 +21,24 @@ fn canonical(a: i64, b: i64) -> (i64, i64) {
 }
 
 async fn user_ref(state: &AppState, id: i64) -> Result<UserRef, AppError> {
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?;
-    Ok(UserRef {
-        id: UserId(id),
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(crate::perms::user_ref(
+        UserId(id),
         username,
         display_name,
-    })
+        avatar,
+        accent,
+    ))
 }
 
 async fn are_friends(state: &AppState, a: i64, b: i64) -> Result<bool, AppError> {

@@ -1,7 +1,7 @@
 import { MessagesSquare } from "lucide-react";
 import { onResync } from "../../platform";
 import type { WritformApp } from "../../platform";
-import { ChatView } from "./ChatView";
+import { ChatView, GlobalVoiceBar } from "./ChatView";
 import { installChatWsHandler, resyncChat } from "./store";
 import { installVoiceWsHandler } from "./voice";
 
@@ -14,6 +14,11 @@ export const chatApp: WritformApp = {
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <ChatView />);
+    // Voice controls live in the statusbar so they follow you across apps.
+    ctx.ui.addToSlot("statusbar", {
+      id: "chat.voicebar",
+      render: () => <GlobalVoiceBar />,
+    });
     installChatWsHandler();
     installVoiceWsHandler();
     onResync(() => void resyncChat().catch(() => {}));

@@ -5,8 +5,10 @@ import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
-import { confirmDialog, onResync } from "../../platform";
+import { Avatar, confirmDialog, onResync } from "../../platform";
 import { chatApi } from "../chat/api";
+import { MessageActions } from "../chat/ChatView";
+import { MessageText } from "../chat/MessageText";
 import { useChat } from "../chat/store";
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -154,6 +156,12 @@ export function FriendsView() {
           {friends.map((f) => (
             <li key={f.user.id} className={dm?.peer.id === f.user.id ? "active" : ""}>
               <span className={`wf-presence-dot ${f.online ? "" : "off"}`} />
+              <Avatar
+                name={f.user.display_name ?? f.user.username}
+                attachmentId={f.user.avatar_attachment_id}
+                accentColor={f.user.accent_color}
+                size={22}
+              />
               <button
                 className="wf-friend-open"
                 onClick={() =>
@@ -220,6 +228,7 @@ function DmPane({ dm }: { dm: DmChannel }) {
       <div className="wf-chat-messages">
         {messages.map((m, i) => (
           <div key={m.id} className={`wf-msg ${messages[i - 1]?.author.id === m.author.id ? "compact" : ""}`}>
+            <MessageActions message={m} authorOnly />
             {messages[i - 1]?.author.id !== m.author.id && (
               <div className="wf-msg-meta">
                 <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
@@ -231,7 +240,11 @@ function DmPane({ dm }: { dm: DmChannel }) {
             {m.kind === "shared_note" ? (
               <SharedNoteCard content={m.content ?? "{}"} />
             ) : (
-              m.content && <div className="wf-msg-content">{m.content}</div>
+              m.content && (
+                <div className="wf-msg-content">
+                  <MessageText text={m.content} />
+                </div>
+              )
             )}
           </div>
         ))}

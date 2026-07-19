@@ -22,6 +22,7 @@ export const sessionApi = {
   create: (req: CreateSessionRequest) => api<WritingSession>("POST", "/api/v1/sessions", req),
   detail: (sessionId: number) => api<SessionDetail>("GET", `/api/v1/sessions/${sessionId}`),
   end: (sessionId: number) => api<null>("POST", `/api/v1/sessions/${sessionId}/end`),
+  deleteSession: (sessionId: number) => api<null>("DELETE", `/api/v1/sessions/${sessionId}`),
   createPrompt: (sessionId: number, promptDoc: unknown, timerSeconds: number | null) =>
     api<SessionPrompt>("POST", `/api/v1/sessions/${sessionId}/prompts`, {
       prompt_doc: promptDoc,

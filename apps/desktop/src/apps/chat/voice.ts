@@ -77,6 +77,9 @@ function myId(): number | null {
 function watchSpeaking(userId: number, stream: MediaStream) {
   try {
     audioCtx ??= new AudioContext();
+    // WKWebView starts AudioContexts suspended; a suspended graph reads pure
+    // silence, which kept every speaking indicator dark.
+    if (audioCtx.state === "suspended") void audioCtx.resume();
     const source = audioCtx.createMediaStreamSource(stream);
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 512;

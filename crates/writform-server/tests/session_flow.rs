@@ -310,3 +310,88 @@ async fn timer_expires_and_ends_prompt() {
     }
     assert!(ended, "timer never ended the prompt");
 }
+
+#[tokio::test]
+async fn session_share_card_and_delete() {
+    let server = boot().await;
+    let (alice, bob, channel) = setup_group(&server).await;
+
+    // Bob creates a session — a 'session' join card lands in the home channel.
+    let session: WritingSession = server
+        .post(
+            &bob.token,
+            "/sessions",
+            json!({"channel_id": channel, "title": "Deletable"}),
+        )
+        .await;
+    let messages: Vec<writform_proto::chat::Message> = server
+        .get(&alice.token, &format!("/channels/{channel}/messages"))
+        .await;
+    let card = messages
+        .iter()
+        .find(|m| m.kind == "session")
+        .expect("session card message posted to home channel");
+    let content: serde_json::Value =
+        serde_json::from_str(card.content.as_deref().unwrap()).unwrap();
+    assert_eq!(content["session_id"], session.id.0);
+    assert_eq!(content["title"], "Deletable");
+
+    // Carol (not creator, not admin) cannot delete it.
+    let carol = server.register("carol").await;
+    let invite: writform_proto::chat::Invite = server
+        .post(
+            &alice.token,
+            &format!("/groups/{}/invites", {
+                let g: Vec<writform_proto::chat::Group> = server.get(&alice.token, "/groups").await;
+                g[0].id.0
+            }),
+            json!({"expires_in_seconds": null, "max_uses": null}),
+        )
+        .await;
+    let _: writform_proto::chat::Group = server
+        .post(
+            &carol.token,
+            "/invites/redeem",
+            json!({"code": invite.code}),
+        )
+        .await;
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &carol.token,
+            &format!("/sessions/{}", session.id.0),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    // Alice (group admin, not creator) can. Session and its side chat vanish.
+    let chat_channel = session.chat_channel_id.0;
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/sessions/{}", session.id.0),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let res = server
+        .req(
+            reqwest::Method::GET,
+            &bob.token,
+            &format!("/sessions/{}", session.id.0),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 404);
+    let res = server
+        .req(
+            reqwest::Method::GET,
+            &bob.token,
+            &format!("/channels/{chat_channel}/messages"),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 404, "side-chat channel should be gone");
+}

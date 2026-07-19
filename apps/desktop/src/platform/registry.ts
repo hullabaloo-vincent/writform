@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type {
   AppContext,
   AppManifest,
+  ChatCommand,
   Command,
   SlotContribution,
   SlotName,
@@ -16,6 +17,8 @@ interface PlatformState {
   mainViews: Record<string, () => React.ReactNode>;
   slots: Partial<Record<SlotName, SlotContribution[]>>;
   commands: Record<string, Command>;
+  /** Chat slash commands by name (no leading slash). */
+  chatCommands: Record<string, ChatCommand>;
   activeAppId: string | null;
   setActiveApp: (appId: string) => void;
 }
@@ -26,6 +29,7 @@ export const usePlatform = create<PlatformState>((set) => ({
   mainViews: {},
   slots: {},
   commands: {},
+  chatCommands: {},
   activeAppId: null,
   setActiveApp: (appId) => set({ activeAppId: appId }),
 }));
@@ -90,6 +94,24 @@ function makeContext(manifest: AppManifest): AppContext {
         const cmd = usePlatform.getState().commands[id];
         if (!cmd) throw new Error(`unknown command: ${id}`);
         await cmd.run();
+      },
+    },
+    chat: {
+      registerCommand(cmd) {
+        const name = cmd.name.toLowerCase();
+        if (!/^[a-z0-9_-]{1,32}$/.test(name)) {
+          throw new Error(`invalid chat command name: ${cmd.name}`);
+        }
+        const command: ChatCommand = { ...cmd, name, appId: manifest.id };
+        usePlatform.setState((s) => ({
+          chatCommands: { ...s.chatCommands, [name]: command },
+        }));
+        return () => {
+          usePlatform.setState((s) => {
+            const { [name]: _removed, ...chatCommands } = s.chatCommands;
+            return { chatCommands };
+          });
+        };
       },
     },
   };

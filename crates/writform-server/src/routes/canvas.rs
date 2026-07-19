@@ -9,7 +9,6 @@ use writform_proto::canvas::{
     BoardDetail, CanvasBoard, CanvasElement, CreateBoardRequest, CreateElementRequest,
     UpdateElementRequest,
 };
-use writform_proto::chat::UserRef;
 use writform_proto::{GroupId, UserId};
 
 use crate::auth::AuthUser;
@@ -18,7 +17,8 @@ use crate::error::AppError;
 use crate::perms;
 use crate::routes::AppState;
 
-const ELEMENT_KINDS: &[&str] = &["sticky", "text", "frame", "connector"];
+/// `image` stores an attachment id in `text`; `link` stores a URL in `text`.
+const ELEMENT_KINDS: &[&str] = &["sticky", "text", "frame", "connector", "image", "link"];
 const MAX_TEXT: usize = 4000;
 const MAX_ELEMENTS_PER_BOARD: i64 = 2000;
 
@@ -41,25 +41,31 @@ async fn require_group_member(
     }
 }
 
-type BoardRow = (i64, i64, String, i64, i64, String, Option<String>);
+type BoardRow = (
+    i64,
+    i64,
+    String,
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+);
 
 fn row_to_board(row: BoardRow) -> CanvasBoard {
-    let (id, group_id, name, created_at, creator_id, username, display_name) = row;
+    let (id, group_id, name, created_at, creator_id, username, display_name, avatar, accent) = row;
     CanvasBoard {
         id,
         group_id: GroupId(group_id),
-        creator: UserRef {
-            id: UserId(creator_id),
-            username,
-            display_name,
-        },
+        creator: perms::user_ref(UserId(creator_id), username, display_name, avatar, accent),
         name,
         created_at,
     }
 }
 
 const BOARD_SELECT: &str = "SELECT b.id, b.group_id, b.name, b.created_at,
-    u.id, u.username, u.display_name
+    u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
     FROM canvas_boards b JOIN users u ON u.id = b.creator_id";
 
 /// Board access = membership of its group. Returns the board.
@@ -125,20 +131,22 @@ pub async fn create_board(
     .bind(now)
     .fetch_one(&state.pool)
     .await?;
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(auth.user_id.0)
-            .fetch_one(&state.pool)
-            .await?;
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&state.pool)
+    .await?;
 
     let board = CanvasBoard {
         id,
         group_id: GroupId(group_id),
-        creator: UserRef {
-            id: auth.user_id,
-            username,
-            display_name,
-        },
+        creator: crate::perms::user_ref(auth.user_id, username, display_name, avatar, accent),
         name: name.to_string(),
         created_at: now,
     };

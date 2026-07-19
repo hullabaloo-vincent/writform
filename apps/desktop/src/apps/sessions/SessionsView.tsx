@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
+import { Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
@@ -8,6 +9,7 @@ import { isCmdError } from "../../lib/backend";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "../chat/api";
+import { MessageText } from "../chat/MessageText";
 import { useChat } from "../chat/store";
 import { sessionApi } from "./api";
 import { useSessions } from "./store";
@@ -113,15 +115,37 @@ function SessionList({ channels }: { channels: number[] }) {
 
 function SessionCard({ session, onOpen }: { session: WritingSession; onOpen: () => void }) {
   const ended = session.state === "ended";
+  const me = useSession((s) => s.session?.user);
+  const groups = useChat((s) => s.groups);
+  const group = groups.find((g) => g.id === (useChat.getState().activeGroupId ?? -1));
+  const canDelete = me && (session.creator.id === me.id || group?.my_role === "admin");
   return (
-    <button className="wf-session-card" onClick={onOpen}>
-      <span className={`wf-session-state ${session.state}`}>{ended ? "ended" : "active"}</span>
-      <strong>{session.title}</strong>
-      <span className="wf-session-meta">
-        by {session.creator.display_name ?? session.creator.username} ·{" "}
-        {new Date(session.created_at).toLocaleDateString()}
-      </span>
-    </button>
+    <div className="wf-session-card-wrap">
+      <button className="wf-session-card" onClick={onOpen}>
+        <span className={`wf-session-state ${session.state}`}>{ended ? "ended" : "active"}</span>
+        <strong>{session.title}</strong>
+        <span className="wf-session-meta">
+          by {session.creator.display_name ?? session.creator.username} ·{" "}
+          {new Date(session.created_at).toLocaleDateString()}
+        </span>
+      </button>
+      {canDelete && (
+        <button
+          className="wf-session-delete"
+          title="Delete session"
+          onClick={() =>
+            void confirmDialog(
+              `Delete "${session.title}" and all its writing and chat? This cannot be undone.`,
+              { title: "Delete session", confirmLabel: "Delete forever", danger: true },
+            ).then((ok) => {
+              if (ok) void sessionApi.deleteSession(session.id).catch(() => {});
+            })
+          }
+        >
+          <Trash2 size={14} />
+        </button>
+      )}
+    </div>
   );
 }
 
@@ -145,7 +169,30 @@ function SessionRoom() {
           <button onClick={closeSession}>←</button>
           <h2>{session.title}</h2>
           {ended ? (
-            <span className="wf-session-state ended">ended</span>
+            <>
+              <span className="wf-session-state ended">ended</span>
+              {canModerate && (
+                <button
+                  className="wf-danger"
+                  title="Delete session"
+                  onClick={() =>
+                    void confirmDialog(
+                      `Delete "${session.title}" and all its writing and chat? This cannot be undone.`,
+                      { title: "Delete session", confirmLabel: "Delete forever", danger: true },
+                    ).then((ok) => {
+                      if (ok) {
+                        sessionApi
+                          .deleteSession(session.id)
+                          .then(closeSession)
+                          .catch((e) => setError(isCmdError(e) ? e.message : String(e)));
+                      }
+                    })
+                  }
+                >
+                  <Trash2 size={14} />
+                </button>
+              )}
+            </>
           ) : (
             canModerate && (
               <button
@@ -312,6 +359,7 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
         value={(mine?.doc as JSONContent) ?? EMPTY_DOC}
         placeholder="Start writing — it autosaves while the prompt runs."
         autoFocus
+        toolbar
         onChange={(doc) => {
           latest.current = doc;
           setStatus("idle");
@@ -350,7 +398,11 @@ function SessionChat({ channelId }: { channelId: number }) {
             <div className="wf-msg-meta">
               <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
             </div>
-            {m.content && <div className="wf-msg-content">{m.content}</div>}
+            {m.content && (
+              <div className="wf-msg-content">
+                <MessageText text={m.content} />
+              </div>
+            )}
           </div>
         ))}
         <div ref={bottomRef} />
@@ -402,6 +454,7 @@ function NewPrompt({ sessionId }: { sessionId: number }) {
           onChange={setDoc}
           placeholder="Write the prompt — formatting and images welcome."
           autoFocus
+          toolbar
         />
       </div>
       <div className="wf-prompt-actions">

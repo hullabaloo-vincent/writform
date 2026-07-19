@@ -43,8 +43,8 @@ export function devPreviewBackend(): Backend {
     for (const h of wsHandlers) h({ ev: "event", room, kind, data });
   };
   let nextId = 100;
-  const me = { id: 1, username: "you", display_name: null };
-  const pal = { id: 2, username: "inkfriend", display_name: "Ink Friend" };
+  const me = { id: 1, username: "you", display_name: null, avatar_attachment_id: null, accent_color: null };
+  const pal = { id: 2, username: "inkfriend", display_name: "Ink Friend", avatar_attachment_id: null, accent_color: "#93d3a2" };
   const groups = [
     { id: 1, name: "Writers Guild", owner_id: 2, my_role: "member", created_at: 0 },
   ];
@@ -154,6 +154,32 @@ export function devPreviewBackend(): Backend {
       messages[general.id] = [];
       return { status: 200, body: group };
     }
+    if ((match = m(/^\/api\/v1\/groups\/(\d+)$/)) && method === "PATCH") {
+      const gid = Number(match[1]);
+      const group = groups.find((g) => g.id === gid) as
+        | (typeof groups)[number]
+        | undefined;
+      if (!group) return { status: 404, body: { code: "no_such_group", message: "not found" } };
+      const req = body as {
+        name: string | null;
+        icon_attachment_id: number | null;
+        accent_color: string | null;
+      };
+      if (req.name) group.name = req.name;
+      (group as Record<string, unknown>).icon_attachment_id = req.icon_attachment_id;
+      (group as Record<string, unknown>).accent_color = req.accent_color;
+      setTimeout(
+        () =>
+          emit(`group:${gid}`, "group.updated", {
+            group_id: gid,
+            name: group.name,
+            icon_attachment_id: req.icon_attachment_id,
+            accent_color: req.accent_color,
+          }),
+        30,
+      );
+      return { status: 200, body: group };
+    }
     if ((match = m(/^\/api\/v1\/groups\/(\d+)\/channels$/)) && method === "GET") {
       const gid = Number(match[1]);
       return { status: 200, body: channels.filter((c) => c.group_id === gid) };
@@ -215,6 +241,25 @@ export function devPreviewBackend(): Backend {
       setTimeout(() => emit(`channel:${cid}`, "message.created", message), 30);
       return { status: 200, body: message };
     }
+    if ((match = m(/^\/api\/v1\/messages\/(\d+)$/)) && method === "DELETE") {
+      const mid = Number(match[1]);
+      for (const [cid, list] of Object.entries(messages)) {
+        const idx = (list as { id: number }[]).findIndex((msg) => msg.id === mid);
+        if (idx >= 0) {
+          list.splice(idx, 1);
+          setTimeout(
+            () =>
+              emit(`channel:${cid}`, "message.deleted", {
+                message_id: mid,
+                channel_id: Number(cid),
+              }),
+            30,
+          );
+          break;
+        }
+      }
+      return { status: 204, body: null };
+    }
     if (path === "/api/v1/friends" && method === "GET") {
       return {
         status: 200,
@@ -227,7 +272,7 @@ export function devPreviewBackend(): Backend {
     if (path === "/api/v1/auth/me" && method === "GET") {
       return {
         status: 200,
-        body: { id: 1, username: "you", display_name: null, is_server_admin: true, created_at: 0 },
+        body: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
       };
     }
     if (path === "/api/v1/auth/me" && method === "PATCH") {
@@ -235,7 +280,7 @@ export function devPreviewBackend(): Backend {
       if (session) session.user.display_name = req.display_name;
       return {
         status: 200,
-        body: { id: 1, username: "you", display_name: req.display_name, is_server_admin: true, created_at: 0 },
+        body: { id: 1, username: "you", display_name: req.display_name, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
       };
     }
     if (path === "/api/v1/auth/devices" && method === "GET") {
@@ -261,7 +306,7 @@ export function devPreviewBackend(): Backend {
         status: 200,
         body: [
           {
-            user: { id: 1, username: "you", display_name: null, is_server_admin: true, created_at: 0 },
+            user: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
             device_count: 2,
             online: true,
           },
@@ -301,7 +346,29 @@ export function devPreviewBackend(): Backend {
         ended_at: null,
       };
       sessions.push(session);
+      const card = {
+        id: nextId++,
+        channel_id: req.channel_id,
+        author: me,
+        kind: "session",
+        content: JSON.stringify({ session_id: session.id, title: req.title }),
+        reply_to_id: null,
+        attachments: [],
+        created_at: Date.now(),
+        edited_at: null,
+      };
+      (messages[req.channel_id] ??= []).push(card);
+      setTimeout(() => emit(`channel:${req.channel_id}`, "message.created", card), 30);
       return { status: 200, body: session };
+    }
+    if ((match = m(/^\/api\/v1\/sessions\/(\d+)$/)) && method === "DELETE") {
+      const sid = Number(match[1]);
+      const idx = sessions.findIndex((s) => s.id === sid);
+      if (idx >= 0) {
+        sessions.splice(idx, 1);
+        setTimeout(() => emit(`session:${sid}`, "session.deleted", { session_id: sid }), 30);
+      }
+      return { status: 204, body: null };
     }
     if ((match = m(/^\/api\/v1\/sessions\/(\d+)$/)) && method === "GET") {
       const sid = Number(match[1]);
@@ -445,6 +512,19 @@ export function devPreviewBackend(): Backend {
     }
     if (m(/^\/api\/v1\/voice\/(\d+)\/signal$/) && method === "POST") {
       return { status: 204, body: null };
+    }
+
+    if (path.startsWith("/api/v1/link-preview?") && method === "GET") {
+      const url = decodeURIComponent(path.split("url=")[1] ?? "");
+      return {
+        status: 200,
+        body: {
+          url,
+          title: "Example page title",
+          description: "A short description of the linked page.",
+          image_url: null,
+        },
+      };
     }
 
     // --- canvas boards ---
@@ -620,6 +700,8 @@ export function devPreviewBackend(): Backend {
           username,
           display_name: null,
           is_server_admin: true,
+          avatar_attachment_id: null,
+          accent_color: null,
           created_at: Date.now(),
         },
       };

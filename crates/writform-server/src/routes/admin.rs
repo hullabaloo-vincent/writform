@@ -63,10 +63,20 @@ pub async fn list_users(
     auth: AuthUser,
 ) -> Result<Json<Vec<AdminUser>>, AppError> {
     require_server_admin(&state, &auth).await?;
-    type Row = (i64, String, Option<String>, bool, i64, i64);
+    type Row = (
+        i64,
+        String,
+        Option<String>,
+        bool,
+        i64,
+        i64,
+        Option<i64>,
+        Option<String>,
+    );
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT u.id, u.username, u.display_name, u.is_server_admin, u.created_at,
-                (SELECT COUNT(*) FROM auth_sessions s WHERE s.user_id = u.id)
+                (SELECT COUNT(*) FROM auth_sessions s WHERE s.user_id = u.id),
+                u.avatar_attachment_id, u.accent_color
          FROM users u ORDER BY u.created_at",
     )
     .fetch_all(&state.pool)
@@ -74,7 +84,16 @@ pub async fn list_users(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(id, username, display_name, is_server_admin, created_at, device_count)| {
+                |(
+                    id,
+                    username,
+                    display_name,
+                    is_server_admin,
+                    created_at,
+                    device_count,
+                    avatar,
+                    accent,
+                )| {
                     AdminUser {
                         online: state.ws.is_online(UserId(id)),
                         user: User {
@@ -82,6 +101,8 @@ pub async fn list_users(
                             username,
                             display_name,
                             is_server_admin,
+                            avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
+                            accent_color: accent,
                             created_at,
                         },
                         device_count,

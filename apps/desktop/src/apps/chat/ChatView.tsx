@@ -2,62 +2,27 @@ import {
   ImageIcon,
   Mic,
   MicOff,
+  PenLine,
   PhoneOff,
   Plus,
+  Settings as SettingsIcon,
   SmilePlus,
   Trash2,
   Volume2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
-import type { Emote } from "../../bindings/proto/Emote";
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
+import { Avatar, confirmDialog, usePlatform } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
+import { MessageText } from "./MessageText";
 import { useChat } from "./store";
 import { useVoice, voiceApi } from "./voice";
 
 const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
-
-/** Render message text with `:name:` tokens replaced by the group's emotes. */
-export function EmoteText({ text }: { text: string }) {
-  const emotes = useChat((s) => s.emotes);
-  const byName = useMemo(() => {
-    const map = new Map<string, Emote>();
-    for (const e of emotes) map.set(e.name, e);
-    return map;
-  }, [emotes]);
-
-  const parts = useMemo(() => {
-    const out: React.ReactNode[] = [];
-    const re = /:([a-z0-9_]{1,32}):/g;
-    let last = 0;
-    let m: RegExpExecArray | null;
-    let key = 0;
-    while ((m = re.exec(text)) !== null) {
-      const emote = byName.get(m[1]);
-      if (!emote) continue;
-      if (m.index > last) out.push(text.slice(last, m.index));
-      out.push(
-        <img
-          key={key++}
-          className="wf-emote"
-          src={attSrc(emote.attachment_id)}
-          alt={`:${emote.name}:`}
-          title={`:${emote.name}:`}
-        />,
-      );
-      last = m.index + m[0].length;
-    }
-    if (out.length === 0) return null; // no emotes — render plain text as-is
-    if (last < text.length) out.push(text.slice(last));
-    return out;
-  }, [text, byName]);
-
-  return <>{parts ?? text}</>;
-}
 
 /** Emote grid popup: insert on click; admins can add and remove emotes. */
 function EmotePicker({
@@ -82,15 +47,7 @@ function EmotePicker({
     setBusy(true);
     setError(null);
     try {
-      const buf = new Uint8Array(await file.arrayBuffer());
-      let binary = "";
-      for (let i = 0; i < buf.length; i += 0x8000) {
-        binary += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-      }
-      const { backend } = await import("../../lib/backend");
-      const res = await backend.uploadAttachment({ dataBase64: btoa(binary), fileName: file.name });
-      if (res.status >= 400) throw (res.body ?? { message: "upload failed" }) as Error;
-      const meta = res.body as { id: number };
+      const meta = await uploadBlob(file, file.name);
       setPendingAttachment(meta.id);
       setName(file.name.replace(/\.[a-z0-9]+$/i, "").toLowerCase().replace(/[^a-z0-9_]/g, "_"));
     } catch (e) {
@@ -235,13 +192,27 @@ function GroupList() {
           key={g.id}
           className={`wf-chat-group-icon ${g.id === activeGroupId ? "active" : ""}`}
           title={g.name}
+          style={
+            g.icon_attachment_id == null && g.accent_color
+              ? { background: g.accent_color, color: "rgba(0,0,0,0.75)" }
+              : undefined
+          }
           onClick={() => void selectGroup(g.id)}
         >
-          {g.name
-            .split(/\s+/)
-            .slice(0, 2)
-            .map((w) => w[0]?.toUpperCase())
-            .join("")}
+          {g.icon_attachment_id != null ? (
+            <img
+              className="wf-chat-group-img"
+              src={`writform-att://attachment/${g.icon_attachment_id}`}
+              alt={g.name}
+              draggable={false}
+            />
+          ) : (
+            g.name
+              .split(/\s+/)
+              .slice(0, 2)
+              .map((w) => w[0]?.toUpperCase())
+              .join("")
+          )}
         </button>
       ))}
       <button className="wf-chat-group-icon wf-chat-group-add" title="Create or join a group"
@@ -321,6 +292,108 @@ function AddGroupDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
+/** Admin dialog: rename the group, upload an icon, pick an accent color. */
+function GroupSettingsDialog({
+  group,
+  onClose,
+}: {
+  group: NonNullable<ReturnType<typeof useChat.getState>["groups"][number]>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState(group.name);
+  const [iconId, setIconId] = useState<number | null>(group.icon_attachment_id);
+  const [color, setColor] = useState(group.accent_color ?? "#8ab6e8");
+  const [useColor, setUseColor] = useState(group.accent_color !== null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const save = () => {
+    setError(null);
+    setBusy(true);
+    chatApi
+      .updateGroup(group.id, {
+        name: name.trim() || null,
+        icon_attachment_id: iconId,
+        accent_color: useColor ? color : null,
+      })
+      .then((updated) => {
+        useChat.setState((s) => ({
+          groups: s.groups.map((g) => (g.id === group.id ? { ...g, ...updated } : g)),
+        }));
+        onClose();
+      })
+      .catch((e) => setError(isCmdError(e) ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <div className="wf-modal-backdrop" onClick={onClose}>
+      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
+        <h3>Group settings</h3>
+        {error && <p className="wf-connect-error">{error}</p>}
+        <label className="wf-field">
+          Name
+          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+        </label>
+        <div className="wf-field">
+          Icon
+          <div className="wf-connect-row" style={{ alignItems: "center" }}>
+            {iconId !== null ? (
+              <img className="wf-group-icon-preview" src={attSrc(iconId)} alt="group icon" />
+            ) : (
+              <span className="wf-session-meta">initials</span>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) {
+                  setBusy(true);
+                  uploadBlob(file, file.name)
+                    .then((meta) => setIconId(meta.id))
+                    .catch((err) => setError(isCmdError(err) ? err.message : String(err)))
+                    .finally(() => setBusy(false));
+                }
+                e.target.value = "";
+              }}
+            />
+            <button disabled={busy} onClick={() => fileRef.current?.click()}>
+              Upload image
+            </button>
+            {iconId !== null && <button onClick={() => setIconId(null)}>Remove</button>}
+          </div>
+        </div>
+        <label className="wf-field wf-field-row">
+          <input
+            type="checkbox"
+            checked={useColor}
+            onChange={(e) => setUseColor(e.target.checked)}
+          />
+          Accent color
+          <input
+            type="color"
+            value={color}
+            disabled={!useColor}
+            onChange={(e) => setColor(e.target.value)}
+          />
+        </label>
+        <div className="wf-connect-row">
+          <button onClick={onClose} disabled={busy}>
+            Cancel
+          </button>
+          <button className="wf-primary" onClick={save} disabled={busy || !name.trim()}>
+            {busy ? "…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ChannelList() {
   const channels = useChat((s) => s.channels);
   const activeChannelId = useChat((s) => s.activeChannelId);
@@ -331,6 +404,7 @@ function ChannelList() {
   const isAdmin = group?.my_role === "admin";
   const [invite, setInvite] = useState<string | null>(null);
   const [newChannel, setNewChannel] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [name, setName] = useState("");
 
   return (
@@ -338,16 +412,27 @@ function ChannelList() {
       <header className="wf-chat-channels-header">
         <span className="wf-chat-group-name">{group?.name}</span>
         {isAdmin && (
-          <button
-            title="Create invite"
-            onClick={() =>
-              void chatApi.createInvite(group!.id).then((i) => setInvite(i.code))
-            }
-          >
-            ✉
-          </button>
+          <>
+            <button
+              title="Group settings"
+              onClick={() => setSettingsOpen(true)}
+            >
+              <SettingsIcon size={14} />
+            </button>
+            <button
+              title="Create invite"
+              onClick={() =>
+                void chatApi.createInvite(group!.id).then((i) => setInvite(i.code))
+              }
+            >
+              ✉
+            </button>
+          </>
         )}
       </header>
+      {settingsOpen && group && (
+        <GroupSettingsDialog group={group} onClose={() => setSettingsOpen(false)} />
+      )}
       {invite && (
         <div className="wf-chat-invite" onClick={() => setInvite(null)} title="Click to dismiss">
           invite code: <code>{invite}</code>
@@ -393,7 +478,6 @@ function ChannelList() {
         )}
         {group && <VoiceSection groupId={group.id} isAdmin={!!isAdmin} />}
       </nav>
-      <VoiceBar />
     </>
   );
 }
@@ -431,6 +515,12 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
               {(occupants[c.id] ?? []).map((u) => (
                 <li key={u.id} className={speaking.has(u.id) ? "speaking" : ""}>
                   <span className="wf-voice-dot" />
+                  <Avatar
+                    name={u.display_name ?? u.username}
+                    attachmentId={u.avatar_attachment_id}
+                    accentColor={u.accent_color}
+                    size={16}
+                  />
                   {u.display_name ?? u.username}
                 </li>
               ))}
@@ -471,39 +561,45 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
   );
 }
 
-function VoiceBar() {
+/**
+ * Voice status + controls, mounted in the statusbar slot so the connection
+ * follows you everywhere in the app (the audio mesh itself is app-global).
+ */
+export function GlobalVoiceBar() {
   const connectedChannelId = useVoice((s) => s.connectedChannelId);
   const joining = useVoice((s) => s.joining);
   const muted = useVoice((s) => s.muted);
   const channels = useVoice((s) => s.channels);
+  const speaking = useVoice((s) => s.speaking);
   const leave = useVoice((s) => s.leave);
   const toggleMute = useVoice((s) => s.toggleMute);
+  const me = useSession((s) => s.session?.user);
 
   if (joining) {
     return (
-      <div className="wf-voice-bar">
+      <span className="wf-voice-bar">
         Connecting voice…
-        <span className="wf-statusbar-spacer" />
         <button title="Cancel" onClick={() => void leave()}>
-          <PhoneOff size={15} />
+          <PhoneOff size={13} />
         </button>
-      </div>
+      </span>
     );
   }
   if (connectedChannelId === null) return null;
   const channel = channels.find((c) => c.id === connectedChannelId);
+  const talking = me !== undefined && speaking.has(me.id) && !muted;
 
   return (
-    <div className="wf-voice-bar">
-      <Volume2 size={15} />
+    <span className={`wf-voice-bar ${talking ? "talking" : ""}`}>
+      <Volume2 size={13} />
       <span className="wf-voice-bar-name">{channel?.name ?? "voice"}</span>
       <button title={muted ? "Unmute" : "Mute"} onClick={toggleMute}>
-        {muted ? <MicOff size={15} /> : <Mic size={15} />}
+        {muted ? <MicOff size={13} /> : <Mic size={13} />}
       </button>
       <button title="Leave voice" onClick={() => void leave()}>
-        <PhoneOff size={15} />
+        <PhoneOff size={13} />
       </button>
-    </div>
+    </span>
   );
 }
 
@@ -523,6 +619,12 @@ function MemberList() {
         {members.map((m) => (
           <li key={m.user.id} className={online.has(m.user.id) ? "online" : "offline"}>
             <span className="wf-presence-dot" />
+            <Avatar
+              name={m.user.display_name ?? m.user.username}
+              attachmentId={m.user.avatar_attachment_id}
+              accentColor={m.user.accent_color}
+              size={22}
+            />
             <span className="wf-member-name">{m.user.display_name ?? m.user.username}</span>
             {m.role === "admin" && <span className="wf-member-badge">admin</span>}
             {isAdmin && m.user.id !== session?.user.id && (
@@ -577,6 +679,84 @@ function MessagePane() {
   );
 }
 
+/** Hover-revealed delete control; shown to the author or a group admin. */
+export function MessageActions({
+  message,
+  authorOnly = false,
+}: {
+  message: Message;
+  /** DMs have no group admin — only the author may delete. */
+  authorOnly?: boolean;
+}) {
+  const me = useSession((s) => s.session?.user);
+  const groups = useChat((s) => s.groups);
+  const activeGroupId = useChat((s) => s.activeGroupId);
+  const group = groups.find((g) => g.id === activeGroupId);
+  const canDelete =
+    me && (message.author.id === me.id || (!authorOnly && group?.my_role === "admin"));
+  if (!canDelete) return null;
+  return (
+    <span className="wf-msg-actions">
+      <button
+        title="Delete message"
+        onClick={() =>
+          void confirmDialog("Delete this message for everyone?", {
+            title: "Delete message",
+            confirmLabel: "Delete",
+            danger: true,
+          }).then((ok) => {
+            if (ok) void chatApi.deleteMessage(message.id).catch(() => {});
+          })
+        }
+      >
+        <Trash2 size={13} />
+      </button>
+    </span>
+  );
+}
+
+/** Join card for a writing session announced in the channel. */
+function SessionJoinCard({ content }: { content: string }) {
+  const [error, setError] = useState<string | null>(null);
+  let card: { session_id?: number; title?: string } = {};
+  try {
+    card = JSON.parse(content) as typeof card;
+  } catch {
+    // malformed card — render the shell
+  }
+  return (
+    <div className="wf-session-join">
+      <PenLine size={16} />
+      <div className="wf-plugin-info">
+        <strong>{card.title ?? "Writing session"}</strong>
+        <span className="wf-session-meta">
+          {error ?? "A writing session in this channel"}
+        </span>
+      </div>
+      <button
+        className="wf-primary"
+        onClick={() => {
+          const id = card.session_id;
+          if (id === undefined) return;
+          void import("../sessions/store").then(({ useSessions }) =>
+            useSessions
+              .getState()
+              .openSession(id)
+              .then(() => {
+                void import("../../platform").then(({ usePlatform }) =>
+                  usePlatform.getState().setActiveApp("writform.sessions"),
+                );
+              })
+              .catch(() => setError("This session no longer exists.")),
+          );
+        }}
+      >
+        Open session
+      </button>
+    </div>
+  );
+}
+
 function MessageRow({ message, compact }: { message: Message; compact: boolean }) {
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "2-digit",
@@ -584,18 +764,32 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
   });
   return (
     <div className={`wf-msg ${compact ? "compact" : ""}`}>
+      <MessageActions message={message} />
       {!compact && (
         <div className="wf-msg-meta">
-          <span className="wf-msg-author">
+          <Avatar
+            name={message.author.display_name ?? message.author.username}
+            attachmentId={message.author.avatar_attachment_id}
+            accentColor={message.author.accent_color}
+            size={22}
+          />
+          <span
+            className="wf-msg-author"
+            style={message.author.accent_color ? { color: message.author.accent_color } : undefined}
+          >
             {message.author.display_name ?? message.author.username}
           </span>
           <span className="wf-msg-time">{time}</span>
         </div>
       )}
-      {message.content && (
-        <div className="wf-msg-content">
-          <EmoteText text={message.content} />
-        </div>
+      {message.kind === "session" ? (
+        <SessionJoinCard content={message.content ?? "{}"} />
+      ) : (
+        message.content && (
+          <div className="wf-msg-content">
+            <MessageText text={message.content} />
+          </div>
+        )
       )}
       {message.attachments.map((a) => (
         <img
@@ -620,6 +814,7 @@ function Composer() {
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const send = useChat((s) => s.send);
@@ -627,28 +822,91 @@ function Composer() {
   const activeChannelId = useChat((s) => s.activeChannelId);
   const channel = channels.find((c) => c.id === activeChannelId);
 
-  const uploadBlob = async (blob: Blob, name: string) => {
+  const addUpload = async (upload: Promise<UploadedAttachment>, fallbackName: string) => {
     setUploading(true);
     try {
-      const buf = new Uint8Array(await blob.arrayBuffer());
-      let binary = "";
-      for (let i = 0; i < buf.length; i += 0x8000) {
-        binary += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-      }
-      const { backend } = await import("../../lib/backend");
-      const res = await backend.uploadAttachment({ dataBase64: btoa(binary), fileName: name });
-      if (res.status < 400) {
-        const meta = res.body as { id: number; original_name: string | null };
-        setUploads((u) => [...u, { id: meta.id, name: meta.original_name ?? name }]);
-      }
+      const meta = await upload;
+      setUploads((u) => [...u, { id: meta.id, name: meta.original_name ?? fallbackName }]);
+    } catch {
+      // upload failed — chip simply doesn't appear
     } finally {
       setUploading(false);
     }
+  };
+  const uploadBlobToChips = (blob: Blob, name: string) => addUpload(uploadBlob(blob, name), name);
+
+  // Native drag & drop: Tauri intercepts OS file drags, so listen to its
+  // drag-drop events and upload by path through the pinned Rust client.
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (event.payload.type === "over") setDragging(true);
+          else if (event.payload.type === "drop") {
+            setDragging(false);
+            for (const path of event.payload.paths) {
+              const name = path.split(/[/\\]/).pop() ?? "file";
+              void addUpload(uploadPath(path), name);
+            }
+          } else setDragging(false);
+        })
+        .then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
+        }),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Slash commands: "/name args" runs a registered chat command instead of
+  // sending a message. A menu of matches shows while the draft starts with /.
+  const chatCommands = usePlatform((s) => s.chatCommands);
+  const [cmdError, setCmdError] = useState<string | null>(null);
+  const isCommandDraft = draft.startsWith("/") && !draft.includes("\n");
+  const commandQuery = isCommandDraft ? draft.slice(1).split(" ")[0].toLowerCase() : "";
+  const commandMatches = isCommandDraft
+    ? Object.values(chatCommands)
+        .filter((c) => c.name.startsWith(commandQuery))
+        .sort((a, b) => a.name.localeCompare(b.name))
+    : [];
+
+  const runCommand = (content: string): boolean => {
+    if (!content.startsWith("/")) return false;
+    const space = content.indexOf(" ");
+    const name = (space === -1 ? content.slice(1) : content.slice(1, space)).toLowerCase();
+    const args = space === -1 ? "" : content.slice(space + 1).trim();
+    const cmd = usePlatform.getState().chatCommands[name];
+    if (!cmd) {
+      setCmdError(`Unknown command /${name}`);
+      return true;
+    }
+    if (activeChannelId === null) return true;
+    setDraft("");
+    setCmdError(null);
+    const ctx = {
+      channelId: activeChannelId,
+      groupId: useChat.getState().activeGroupId,
+      send: async (text: string) => {
+        await chatApi.sendMessage(activeChannelId, text);
+      },
+    };
+    Promise.resolve(cmd.run(args, ctx)).catch((e) =>
+      setCmdError(`/${name}: ${isCmdError(e) ? e.message : String(e)}`),
+    );
+    return true;
   };
 
   const submit = () => {
     const content = draft.trim();
     if (!content && uploads.length === 0) return;
+    if (runCommand(content)) return;
     const attachmentIds = uploads.map((u) => u.id);
     setDraft("");
     setUploads([]);
@@ -661,8 +919,43 @@ function Composer() {
   };
 
   return (
-    <div className="wf-composer-wrap">
+    <div
+      className={`wf-composer-wrap ${dragging ? "dragging" : ""}`}
+      onDragOver={(e) => {
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={() => setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        for (const file of e.dataTransfer.files) {
+          void uploadBlobToChips(file, file.name);
+        }
+      }}
+    >
       {pickerOpen && <EmotePicker onPick={insertEmote} onClose={() => setPickerOpen(false)} />}
+      {cmdError && (
+        <p className="wf-connect-error wf-cmd-error" onClick={() => setCmdError(null)}>
+          {cmdError}
+        </p>
+      )}
+      {isCommandDraft && commandMatches.length > 0 && (
+        <div className="wf-cmd-menu">
+          {commandMatches.slice(0, 8).map((c) => (
+            <button
+              key={c.name}
+              onClick={() => {
+                setDraft(`/${c.name} `);
+                draftRef.current?.focus();
+              }}
+            >
+              <code>/{c.name}</code>
+              <span>{c.description}</span>
+            </button>
+          ))}
+        </div>
+      )}
       {uploads.length > 0 && (
         <div className="wf-upload-chips">
           {uploads.map((u) => (
@@ -683,7 +976,7 @@ function Composer() {
           hidden
           onChange={(e) => {
             const file = e.target.files?.[0];
-            if (file) void uploadBlob(file, file.name);
+            if (file) void uploadBlobToChips(file, file.name);
             e.target.value = "";
           }}
         />
@@ -713,7 +1006,7 @@ function Composer() {
             const file = item?.getAsFile();
             if (file) {
               e.preventDefault();
-              void uploadBlob(file, "pasted.png");
+              void uploadBlobToChips(file, "pasted.png");
             }
           }}
           onKeyDown={(e) => {

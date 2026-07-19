@@ -110,3 +110,21 @@ pub async fn user_groups(pool: &SqlitePool, user: UserId) -> Result<Vec<GroupId>
         .await?;
     Ok(rows.into_iter().map(|(id,)| GroupId(id)).collect())
 }
+
+/// Build a wire `UserRef` from the standard user columns
+/// `(username, display_name, avatar_attachment_id, accent_color)`.
+pub fn user_ref(
+    id: writform_proto::UserId,
+    username: String,
+    display_name: Option<String>,
+    avatar_attachment_id: Option<i64>,
+    accent_color: Option<String>,
+) -> writform_proto::chat::UserRef {
+    writform_proto::chat::UserRef {
+        id,
+        username,
+        display_name,
+        avatar_attachment_id: avatar_attachment_id.map(writform_proto::AttachmentId),
+        accent_color,
+    }
+}

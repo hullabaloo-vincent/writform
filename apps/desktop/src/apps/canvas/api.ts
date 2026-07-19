@@ -1,5 +1,6 @@
 import type { BoardDetail } from "../../bindings/proto/BoardDetail";
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
+import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { CreateElementRequest } from "../../bindings/proto/CreateElementRequest";
 import type { UpdateElementRequest } from "../../bindings/proto/UpdateElementRequest";
@@ -28,4 +29,6 @@ export const canvasApi = {
   updateElement: (elementId: number, req: Partial<UpdateElementRequest>) =>
     api<CanvasElement>("PATCH", `/api/v1/elements/${elementId}`, req),
   deleteElement: (elementId: number) => api<null>("DELETE", `/api/v1/elements/${elementId}`),
+  linkPreview: (url: string) =>
+    api<LinkPreview>("GET", `/api/v1/link-preview?url=${encodeURIComponent(url)}`),
 };

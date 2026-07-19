@@ -166,6 +166,18 @@ export function installChatWsHandler(): () => void {
     } else if (kind === "channel.deleted") {
       const { channel_id } = data as { channel_id: number };
       useChat.setState((s) => ({ channels: s.channels.filter((c) => c.id !== channel_id) }));
+    } else if (kind === "group.updated") {
+      const { group_id, name, icon_attachment_id, accent_color } = data as {
+        group_id: number;
+        name: string;
+        icon_attachment_id: number | null;
+        accent_color: string | null;
+      };
+      useChat.setState((s) => ({
+        groups: s.groups.map((g) =>
+          g.id === group_id ? { ...g, name, icon_attachment_id, accent_color } : g,
+        ),
+      }));
     } else if (kind === "emote.created") {
       const emote = data as Emote;
       if (emote.group_id === state.activeGroupId) {

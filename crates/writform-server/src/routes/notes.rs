@@ -1,7 +1,6 @@
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
-use writform_proto::chat::UserRef;
 use writform_proto::UserId;
 
 use crate::auth::AuthUser;
@@ -107,21 +106,29 @@ pub async fn share_note(
     .bind(now)
     .fetch_one(&mut *tx)
     .await?;
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(auth.user_id.0)
-            .fetch_one(&mut *tx)
-            .await?;
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
 
     let message = writform_proto::chat::Message {
         id: writform_proto::MessageId(message_id),
         channel_id: writform_proto::ChannelId(channel_id),
-        author: UserRef {
-            id: UserId(auth.user_id.0),
+        author: crate::perms::user_ref(
+            UserId(auth.user_id.0),
             username,
             display_name,
-        },
+            avatar,
+            accent,
+        ),
         kind: "shared_note".into(),
         content: Some(payload),
         reply_to_id: None,

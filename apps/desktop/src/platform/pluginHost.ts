@@ -129,7 +129,17 @@ export async function loadEnabledPlugins(): Promise<void> {
           name: manifest.name,
           icon: manifest.icon || "🧩",
           permissions: manifest.permissions.filter((p): p is AppPermission =>
-            ["ui", "commands", "data", "net", "vault:read", "vault:write", "editor", "events"].includes(p),
+            [
+              "ui",
+              "commands",
+              "chat",
+              "data",
+              "net",
+              "vault:read",
+              "vault:write",
+              "editor",
+              "events",
+            ].includes(p),
           ),
         },
         activate(ctx) {
@@ -145,6 +155,18 @@ export async function loadEnabledPlugins(): Promise<void> {
           }
           if (manifest.permissions.includes("commands")) {
             scoped.commands = ctx.commands;
+          }
+          if (manifest.permissions.includes("chat")) {
+            scoped.chat = {
+              registerCommand: ctx.chat.registerCommand,
+              // Post a message to a channel the user can access.
+              send: (channelId: number, content: string) =>
+                backend.apiFetch("POST", `/api/v1/channels/${channelId}/messages`, {
+                  content,
+                  reply_to_id: null,
+                  attachment_ids: [],
+                }),
+            };
           }
           reg.activate(scoped);
         },

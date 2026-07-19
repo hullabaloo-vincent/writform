@@ -70,33 +70,41 @@ async fn channel_group(state: &AppState, channel_id: i64) -> Result<GroupId, App
 async fn user_refs(state: &AppState, ids: &[i64]) -> Result<Vec<UserRef>, AppError> {
     let mut out = Vec::with_capacity(ids.len());
     for id in ids {
-        let row: Option<(i64, String, Option<String>)> =
-            sqlx::query_as("SELECT id, username, display_name FROM users WHERE id = ?")
-                .bind(id)
-                .fetch_optional(&state.pool)
-                .await?;
-        if let Some((id, username, display_name)) = row {
-            out.push(UserRef {
-                id: UserId(id),
+        type Row = (i64, String, Option<String>, Option<i64>, Option<String>);
+        let row: Option<Row> = sqlx::query_as(
+            "SELECT id, username, display_name, avatar_attachment_id, accent_color
+             FROM users WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(&state.pool)
+        .await?;
+        if let Some((id, username, display_name, avatar, accent)) = row {
+            out.push(perms::user_ref(
+                UserId(id),
                 username,
                 display_name,
-            });
+                avatar,
+                accent,
+            ));
         }
     }
     Ok(out)
 }
 
 async fn user_ref(state: &AppState, id: UserId) -> Result<UserRef, AppError> {
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(id.0)
-            .fetch_one(&state.pool)
-            .await?;
-    Ok(UserRef {
-        id,
-        username,
-        display_name,
-    })
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color
+         FROM users WHERE id = ?",
+    )
+    .bind(id.0)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(perms::user_ref(id, username, display_name, avatar, accent))
 }
 
 pub async fn list_channels(

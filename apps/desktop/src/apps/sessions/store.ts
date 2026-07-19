@@ -69,6 +69,16 @@ export function installSessionsWsHandler(): () => void {
     } else if (kind === "session.ended") {
       const { session_id } = data as { session_id: number };
       if (session_id === state.activeSessionId) void state.refreshDetail();
+    } else if (kind === "session.deleted") {
+      const { session_id } = data as { session_id: number };
+      useSessions.setState((s) => {
+        const byChannel: typeof s.byChannel = {};
+        for (const [cid, list] of Object.entries(s.byChannel)) {
+          byChannel[Number(cid)] = list.filter((sess) => sess.id !== session_id);
+        }
+        return { byChannel };
+      });
+      if (state.activeSessionId === session_id) state.closeSession();
     } else if (kind === "session.created") {
       const session = data as WritingSession;
       useSessions.setState((s) => ({

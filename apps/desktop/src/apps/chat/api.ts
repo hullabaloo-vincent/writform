@@ -28,6 +28,10 @@ export const chatApi = {
       expires_in_seconds: 24 * 3600,
       max_uses: null,
     }),
+  updateGroup: (
+    groupId: number,
+    req: { name: string | null; icon_attachment_id: number | null; accent_color: string | null },
+  ) => api<Group>("PATCH", `/api/v1/groups/${groupId}`, req),
   channels: (groupId: number) => api<Channel[]>("GET", `/api/v1/groups/${groupId}/channels`),
   createChannel: (groupId: number, name: string) =>
     api<Channel>("POST", `/api/v1/groups/${groupId}/channels`, { name }),
@@ -58,4 +62,5 @@ export const chatApi = {
     }),
   kick: (groupId: number, userId: number) =>
     api<null>("DELETE", `/api/v1/groups/${groupId}/members/${userId}`),
+  deleteMessage: (messageId: number) => api<null>("DELETE", `/api/v1/messages/${messageId}`),
 };

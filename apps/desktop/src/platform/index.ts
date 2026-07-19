@@ -1,4 +1,5 @@
 export { AppShell } from "./AppShell";
+export { Avatar, initials } from "./Avatar";
 export { ConfirmHost, confirmDialog } from "./confirm";
 export { installResync, onResync } from "./resync";
 export { Slot } from "./Slot";

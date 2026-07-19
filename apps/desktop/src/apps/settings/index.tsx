@@ -20,7 +20,8 @@ import {
   type Reachability,
   type SavedServer,
 } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { uploadBlob } from "../../lib/upload";
+import { Avatar, confirmDialog } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { useSession } from "../../stores/session";
 
@@ -85,8 +86,31 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
   const session = useSession((s) => s.session);
   const setConnected = useSession((s) => s.setConnected);
   const [displayName, setDisplayName] = useState(session?.user.display_name ?? "");
+  const [avatarId, setAvatarId] = useState<number | null>(
+    session?.user.avatar_attachment_id ?? null,
+  );
+  const [useColor, setUseColor] = useState(!!session?.user.accent_color);
+  const [color, setColor] = useState(session?.user.accent_color ?? "#8ab6e8");
   const [saved, setSaved] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   if (!session) return null;
+
+  const save = () => {
+    onError(null);
+    setBusy(true);
+    api<User>("PATCH", "/api/v1/auth/me", {
+      display_name: displayName.trim() || null,
+      avatar_attachment_id: avatarId,
+      accent_color: useColor ? color : null,
+    })
+      .then((user) => {
+        setConnected({ ...session, user });
+        setSaved(true);
+      })
+      .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
 
   return (
     <section>
@@ -95,6 +119,70 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
         Signed in as <strong>@{session.user.username}</strong>
         {session.user.is_server_admin && " · server admin"}
       </p>
+      <div className="wf-settings-field">
+        Avatar
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          <Avatar
+            name={displayName.trim() || session.user.username}
+            attachmentId={avatarId}
+            accentColor={useColor ? color : null}
+            size={42}
+          />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setBusy(true);
+                uploadBlob(file, file.name)
+                  .then((meta) => {
+                    setAvatarId(meta.id);
+                    setSaved(false);
+                  })
+                  .catch((err) => onError(isCmdError(err) ? err.message : String(err)))
+                  .finally(() => setBusy(false));
+              }
+              e.target.value = "";
+            }}
+          />
+          <button disabled={busy} onClick={() => fileRef.current?.click()}>
+            Upload image
+          </button>
+          {avatarId !== null && (
+            <button
+              onClick={() => {
+                setAvatarId(null);
+                setSaved(false);
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={useColor}
+          onChange={(e) => {
+            setUseColor(e.target.checked);
+            setSaved(false);
+          }}
+        />
+        Accent color
+        <input
+          type="color"
+          value={color}
+          disabled={!useColor}
+          onChange={(e) => {
+            setColor(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </label>
       <label className="wf-settings-field">
         Display name
         <div className="wf-connect-row">
@@ -106,21 +194,8 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
               setSaved(false);
             }}
           />
-          <button
-            className="wf-primary"
-            onClick={() => {
-              onError(null);
-              api<User>("PATCH", "/api/v1/auth/me", {
-                display_name: displayName.trim() || null,
-              })
-                .then((user) => {
-                  setConnected({ ...session, user });
-                  setSaved(true);
-                })
-                .catch((e) => onError(isCmdError(e) ? e.message : String(e)));
-            }}
-          >
-            {saved ? "Saved ✓" : "Save"}
+          <button className="wf-primary" disabled={busy} onClick={save}>
+            {saved ? "Saved ✓" : "Save profile"}
           </button>
         </div>
       </label>

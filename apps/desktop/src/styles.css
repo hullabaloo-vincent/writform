@@ -486,7 +486,7 @@ body,
 
 .wf-chat {
   display: flex;
-  height: 100%;
+  height: calc(100% + 48px);
   margin: -24px; /* fill the main view padding */
 }
 
@@ -505,6 +505,8 @@ body,
 .wf-chat-group-icon {
   width: 42px;
   height: 42px;
+  display: grid;
+  place-items: center;
   border-radius: 12px;
   border: 1px solid var(--wf-border);
   background: var(--wf-bg-raised);
@@ -1020,7 +1022,7 @@ body,
 .wf-session-room {
   display: flex;
   gap: 0;
-  height: 100%;
+  height: calc(100% + 48px);
   margin: -24px;
 }
 
@@ -1263,7 +1265,7 @@ body,
 
 .wf-friends {
   display: flex;
-  height: 100%;
+  height: calc(100% + 48px);
   margin: -24px;
 }
 
@@ -1352,7 +1354,7 @@ body,
 
 .wf-notes {
   display: flex;
-  height: 100%;
+  height: calc(100% + 48px);
   margin: -24px;
 }
 
@@ -1712,7 +1714,7 @@ body,
 .wf-board-wrap {
   display: flex;
   flex-direction: column;
-  height: 100%;
+  height: calc(100% + 48px);
   margin: -24px;
 }
 
@@ -2132,20 +2134,26 @@ textarea.wf-el-edit {
   box-shadow: 0 0 5px #4caf7d;
 }
 
+/* Compact voice controls living in the statusbar. */
 .wf-voice-bar {
-  margin-top: auto;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-  border-top: 1px solid var(--wf-border);
-  background: var(--wf-bg);
-  font-size: 13px;
+  gap: 6px;
+  padding: 1px 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: 20px;
+  background: var(--wf-bg-raised);
+  font-size: 12px;
   color: #4caf7d;
 }
 
+.wf-voice-bar.talking {
+  border-color: #4caf7d;
+  box-shadow: 0 0 6px rgba(76, 175, 125, 0.5);
+}
+
 .wf-voice-bar-name {
-  flex: 1;
+  max-width: 140px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2155,15 +2163,387 @@ textarea.wf-el-edit {
 .wf-voice-bar button {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--wf-border);
-  border-radius: 7px;
-  background: var(--wf-bg-raised);
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
   color: var(--wf-text);
   cursor: pointer;
+  padding: 0;
 }
 
 .wf-voice-bar button:hover {
   border-color: var(--wf-accent);
+}
+
+/* ---- message hover actions ---- */
+
+.wf-msg {
+  position: relative;
+  border-radius: 6px;
+}
+
+.wf-msg:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.wf-msg-actions {
+  display: none;
+  position: absolute;
+  top: -8px;
+  right: 8px;
+  gap: 4px;
+  z-index: 5;
+}
+
+.wf-msg:hover .wf-msg-actions {
+  display: flex;
+}
+
+.wf-msg-actions button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 1px solid var(--wf-border);
+  border-radius: 7px;
+  background: var(--wf-bg-raised);
+  color: var(--wf-text-dim);
+  cursor: pointer;
+}
+
+.wf-msg-actions button:hover {
+  color: #e88;
+  border-color: #b13c3c;
+}
+
+/* ---- session card delete + join card ---- */
+
+.wf-session-card-wrap {
+  position: relative;
+  display: flex;
+}
+
+.wf-session-card-wrap .wf-session-card {
+  flex: 1;
+}
+
+.wf-session-delete {
+  display: none;
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  background: var(--wf-bg);
+  color: var(--wf-text-dim);
+  cursor: pointer;
+}
+
+.wf-session-card-wrap:hover .wf-session-delete {
+  display: grid;
+}
+
+.wf-session-delete:hover {
+  color: #e88;
+  border-color: #b13c3c;
+}
+
+.wf-session-join {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 12px 16px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-accent);
+  border-radius: 10px;
+}
+
+.wf-session-join > svg {
+  color: var(--wf-accent);
+  flex-shrink: 0;
+}
+
+.wf-session-join button {
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--wf-accent);
+  background: var(--wf-accent);
+  color: white;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ---- chat markdown ---- */
+
+.wf-msg-content {
+  white-space: pre-wrap;
+}
+
+.wf-msg-content code {
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12px;
+}
+
+.wf-md-block {
+  margin: 4px 0;
+  padding: 8px 10px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  font-size: 12px;
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.wf-msg-content a {
+  color: var(--wf-accent);
+}
+
+/* ---- slash command menu ---- */
+
+.wf-cmd-menu {
+  margin: 10px 16px 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  background: var(--wf-bg-raised);
+  overflow: hidden;
+}
+
+.wf-cmd-menu button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--wf-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.wf-cmd-menu button:hover {
+  background: var(--wf-bg-hover);
+}
+
+.wf-cmd-menu code {
+  color: var(--wf-accent);
+  font-size: 13px;
+}
+
+.wf-cmd-menu span {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+}
+
+.wf-cmd-error {
+  margin: 8px 16px 0;
+  cursor: pointer;
+}
+
+.wf-composer-wrap.dragging {
+  outline: 2px dashed var(--wf-accent);
+  outline-offset: -4px;
+  border-radius: 10px;
+}
+
+/* ---- editor toolbar ---- */
+
+.wf-editor-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 6px 8px;
+  border: 1px solid var(--wf-border);
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  background: var(--wf-bg-raised);
+}
+
+.wf-editor-toolbar button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--wf-text-dim);
+  cursor: pointer;
+}
+
+.wf-editor-toolbar button:hover {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+
+.wf-editor-toolbar button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-accent);
+}
+
+.wf-editor-toolbar button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.wf-toolbar-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--wf-border);
+  margin: 0 6px;
+}
+
+.wf-rich-wrap:has(.wf-editor-toolbar) .wf-rich.editable .ProseMirror {
+  border-radius: 0 0 10px 10px;
+}
+
+/* ---- canvas image + link elements ---- */
+
+.wf-el-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 8px;
+  pointer-events: none;
+  user-select: none;
+}
+
+.wf-el.wf-el-image,
+.wf-el.wf-el-link {
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.wf-el-link-card {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.wf-el-link-thumb {
+  width: 34%;
+  object-fit: cover;
+  pointer-events: none;
+  user-select: none;
+}
+
+.wf-el-link-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  overflow: hidden;
+}
+
+.wf-el-link-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--wf-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-el-link-desc {
+  font-size: 11px;
+  color: var(--wf-text-dim);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.wf-el-link-domain {
+  margin-top: auto;
+  font-size: 10px;
+  color: var(--wf-text-dim);
+}
+
+.wf-el-link-open {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  color: var(--wf-text-dim);
+  border-left: 1px solid var(--wf-border);
+}
+
+.wf-el-link-open:hover {
+  color: var(--wf-accent);
+  background: var(--wf-bg-hover);
+}
+
+/* ---- avatars + group customization ---- */
+
+.wf-msg-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-chat-group-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 11px;
+  pointer-events: none;
+}
+
+.wf-group-icon-preview {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  object-fit: cover;
+  border: 1px solid var(--wf-border);
+}
+
+.wf-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--wf-text-dim);
+  margin-bottom: 12px;
+}
+
+.wf-field-row {
+  flex-direction: row !important;
+  align-items: center;
+  gap: 10px !important;
+}
+
+.wf-field-row input[type="color"] {
+  width: 42px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wf-friend-list li,
+.wf-chat-members li {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }

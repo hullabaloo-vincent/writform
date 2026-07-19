@@ -20,8 +20,22 @@ pub struct Group {
     pub name: String,
     pub owner_id: UserId,
     pub my_role: GroupRole,
+    #[serde(default)]
+    pub icon_attachment_id: Option<AttachmentId>,
+    #[serde(default)]
+    pub accent_color: Option<String>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
+}
+
+/// `PATCH /api/v1/groups/{id}` (admin only). Icon/color are full replacement
+/// (send the current value to keep it); name only changes when Some.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateGroupRequest {
+    pub name: Option<String>,
+    pub icon_attachment_id: Option<AttachmentId>,
+    pub accent_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -66,6 +80,10 @@ pub struct UserRef {
     pub id: UserId,
     pub username: String,
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub avatar_attachment_id: Option<AttachmentId>,
+    #[serde(default)]
+    pub accent_color: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 export type AppPermission =
   | "ui"
   | "commands"
+  | "chat"
   | "data"
   | "net"
   | "vault:read"
@@ -54,6 +55,25 @@ export interface Command {
   run: () => void | Promise<void>;
 }
 
+/** Where a chat slash command was invoked, plus a way to reply. */
+export interface ChatCommandContext {
+  channelId: number;
+  /** Null in DMs. */
+  groupId: number | null;
+  /** Post a message to the channel the command ran in. */
+  send(content: string): Promise<void>;
+}
+
+/** A `/name args` command usable from any chat composer. */
+export interface ChatCommand {
+  /** Invocation name without the slash, lowercase [a-z0-9_-]. */
+  name: string;
+  appId: string;
+  /** One-line help shown in the composer's command menu. */
+  description: string;
+  run(args: string, ctx: ChatCommandContext): void | Promise<void>;
+}
+
 /**
  * The API handed to an app's `activate`. For core apps this is a direct
  * in-process object; for third-party plugins the same shape is served through
@@ -73,6 +93,10 @@ export interface AppContext {
   commands: {
     register(cmd: Omit<Command, "appId">): () => void;
     execute(id: string): Promise<void>;
+  };
+  chat: {
+    /** Register a `/name` slash command available in chat composers. */
+    registerCommand(cmd: Omit<ChatCommand, "appId">): () => void;
   };
 }
 

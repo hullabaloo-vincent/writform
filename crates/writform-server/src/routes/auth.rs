@@ -55,18 +55,28 @@ async fn create_session(
     Ok(token)
 }
 
-fn user_row_to_api(
-    id: i64,
-    username: String,
-    display_name: Option<String>,
-    is_server_admin: bool,
-    created_at: i64,
-) -> User {
+type UserRow = (
+    i64,
+    String,
+    Option<String>,
+    bool,
+    i64,
+    Option<i64>,
+    Option<String>,
+);
+
+const USER_SELECT: &str = "SELECT id, username, display_name, is_server_admin, created_at,
+    avatar_attachment_id, accent_color FROM users WHERE id = ?";
+
+fn user_row_to_api(row: UserRow) -> User {
+    let (id, username, display_name, is_server_admin, created_at, avatar, accent) = row;
     User {
         id: UserId(id),
         username,
         display_name,
         is_server_admin,
+        avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
+        accent_color: accent,
         created_at,
     }
 }
@@ -116,7 +126,7 @@ pub async fn register(
     let token = create_session(&state, UserId(id), None).await?;
     Ok(Json(AuthResponse {
         token,
-        user: user_row_to_api(id, req.username, None, is_first, now),
+        user: user_row_to_api((id, req.username, None, is_first, now, None, None)),
     }))
 }
 
@@ -133,25 +143,17 @@ pub async fn login(
         ));
     }
 
-    let row: Option<(i64, String, String, Option<String>, bool, i64)> = sqlx::query_as(
-        "SELECT id, username, password_hash, display_name, is_server_admin, created_at FROM users WHERE username = ?",
-    )
-    .bind(&req.username)
-    .fetch_optional(&state.pool)
-    .await?;
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT id, password_hash FROM users WHERE username = ?")
+            .bind(&req.username)
+            .fetch_optional(&state.pool)
+            .await?;
 
     // Verify against a dummy hash on unknown users so response timing doesn't
     // reveal whether the username exists.
-    let (id, username, password_hash, display_name, is_server_admin, created_at) = match row {
+    let (id, password_hash) = match row {
         Some(r) => r,
-        None => (
-            0,
-            String::new(),
-            crate::routes::dummy_password_hash().to_string(),
-            None,
-            false,
-            0,
-        ),
+        None => (0, crate::routes::dummy_password_hash().to_string()),
     };
 
     let password = req.password;
@@ -171,7 +173,13 @@ pub async fn login(
     let token = create_session(&state, UserId(id), req.device_label).await?;
     Ok(Json(AuthResponse {
         token,
-        user: user_row_to_api(id, username, display_name, is_server_admin, created_at),
+        user: {
+            let row: UserRow = sqlx::query_as(USER_SELECT)
+                .bind(id)
+                .fetch_one(&state.pool)
+                .await?;
+            user_row_to_api(row)
+        },
     }))
 }
 
@@ -184,25 +192,11 @@ pub async fn logout(State(state): State<AppState>, auth: AuthUser) -> Result<Sta
 }
 
 pub async fn me(State(state): State<AppState>, auth: AuthUser) -> Result<Json<User>, AppError> {
-    let (id, username, display_name, is_server_admin, created_at): (
-        i64,
-        String,
-        Option<String>,
-        bool,
-        i64,
-    ) = sqlx::query_as(
-        "SELECT id, username, display_name, is_server_admin, created_at FROM users WHERE id = ?",
-    )
-    .bind(auth.user_id.0)
-    .fetch_one(&state.pool)
-    .await?;
-    Ok(Json(user_row_to_api(
-        id,
-        username,
-        display_name,
-        is_server_admin,
-        created_at,
-    )))
+    let row: UserRow = sqlx::query_as(USER_SELECT)
+        .bind(auth.user_id.0)
+        .fetch_one(&state.pool)
+        .await?;
+    Ok(Json(user_row_to_api(row)))
 }
 
 pub async fn update_profile(
@@ -220,11 +214,44 @@ pub async fn update_profile(
             "display name must be at most 64 characters",
         ));
     }
-    sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
-        .bind(&display_name)
-        .bind(auth.user_id.0)
-        .execute(&state.pool)
-        .await?;
+    let accent = req
+        .accent_color
+        .map(|c| c.trim().to_lowercase())
+        .filter(|c| !c.is_empty());
+    if let Some(c) = &accent {
+        let valid =
+            c.len() == 7 && c.starts_with('#') && c[1..].chars().all(|ch| ch.is_ascii_hexdigit());
+        if !valid {
+            return Err(AppError::bad_request(
+                "invalid_color",
+                "accent color must look like #rrggbb",
+            ));
+        }
+    }
+    if let Some(att) = req.avatar_attachment_id {
+        // The avatar must be the caller's own upload.
+        let owned: Option<(i64,)> =
+            sqlx::query_as("SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ?")
+                .bind(att.0)
+                .bind(auth.user_id.0)
+                .fetch_optional(&state.pool)
+                .await?;
+        if owned.is_none() {
+            return Err(AppError::bad_request(
+                "bad_attachment",
+                "avatar attachment not found",
+            ));
+        }
+    }
+    sqlx::query(
+        "UPDATE users SET display_name = ?, avatar_attachment_id = ?, accent_color = ? WHERE id = ?",
+    )
+    .bind(&display_name)
+    .bind(req.avatar_attachment_id.map(|a| a.0))
+    .bind(&accent)
+    .bind(auth.user_id.0)
+    .execute(&state.pool)
+    .await?;
     me(State(state), auth).await
 }
 

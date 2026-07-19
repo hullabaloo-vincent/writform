@@ -1,5 +1,7 @@
 import {
+  ExternalLink,
   Frame as FrameIcon,
+  Link2,
   MousePointer2,
   Spline,
   StickyNote,
@@ -11,12 +13,73 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
+import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import { isCmdError } from "../../lib/backend";
+import { uploadBlob } from "../../lib/upload";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useChat } from "../chat/store";
 import { canvasApi } from "./api";
 import { useCanvas } from "./store";
+
+/** One preview fetch per URL per session; cards share the promise. */
+const previewCache = new Map<string, Promise<LinkPreview>>();
+function fetchPreview(url: string): Promise<LinkPreview> {
+  let p = previewCache.get(url);
+  if (!p) {
+    p = canvasApi.linkPreview(url);
+    previewCache.set(url, p);
+  }
+  return p;
+}
+
+/** Link card: server-fetched title/description/thumbnail, opens externally. */
+function LinkCard({ url }: { url: string }) {
+  const [preview, setPreview] = useState<LinkPreview | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchPreview(url)
+      .then((p) => {
+        if (live) setPreview(p);
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  let domain = url;
+  try {
+    domain = new URL(url).host;
+  } catch {
+    // keep raw url
+  }
+  return (
+    <div className="wf-el-link-card">
+      {preview?.image_url && (
+        <img className="wf-el-link-thumb" src={preview.image_url} alt="" draggable={false} />
+      )}
+      <div className="wf-el-link-body">
+        <span className="wf-el-link-title">
+          <Link2 size={13} /> {preview?.title ?? domain}
+        </span>
+        {preview?.description && (
+          <span className="wf-el-link-desc">{preview.description}</span>
+        )}
+        <span className="wf-el-link-domain">{domain}</span>
+      </div>
+      <a
+        className="wf-el-link-open"
+        href={url}
+        target="_blank"
+        rel="noreferrer"
+        title="Open link"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        <ExternalLink size={14} />
+      </a>
+    </div>
+  );
+}
 
 const STICKY_COLORS: Record<string, string> = {
   yellow: "#e8d478",
@@ -86,6 +149,85 @@ export function BoardRoom() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selected]);
+
+  // Paste onto the board: images become image elements, URLs become link
+  // cards, other text becomes a sticky — placed at the viewport center.
+  useEffect(() => {
+    const centerWorld = () => {
+      const rect = surfaceRef.current?.getBoundingClientRect();
+      const v = viewRef.current;
+      if (!rect) return { x: 0, y: 0 };
+      return {
+        x: (rect.width / 2 - v.tx) / v.scale,
+        y: (rect.height / 2 - v.ty) / v.scale,
+      };
+    };
+    const create = (
+      kind: string,
+      text: string,
+      w: number,
+      h: number,
+      color = "",
+    ) => {
+      const boardId = useCanvas.getState().board?.id;
+      if (boardId === undefined) return;
+      const { x, y } = centerWorld();
+      canvasApi
+        .createElement(boardId, {
+          kind,
+          x: x - w / 2,
+          y: y - h / 2,
+          w,
+          h,
+          text,
+          color,
+          from_id: null,
+          to_id: null,
+        })
+        .then((el) => {
+          useCanvas.getState().applyElement(el);
+          setSelected(el.id);
+        })
+        .catch(fail);
+    };
+    const onPaste = (e: ClipboardEvent) => {
+      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
+      if (tag === "textarea" || tag === "input") return; // typing somewhere
+      const item = [...(e.clipboardData?.items ?? [])].find((i) =>
+        i.type.startsWith("image/"),
+      );
+      const file = item?.getAsFile();
+      if (file) {
+        e.preventDefault();
+        void uploadBlob(file, "pasted.png")
+          .then((meta) => {
+            // Natural aspect ratio, capped at 480px on the long edge.
+            const img = new window.Image();
+            img.onload = () => {
+              const scale = Math.min(1, 480 / Math.max(img.width, img.height));
+              create(
+                "image",
+                String(meta.id),
+                Math.max(60, Math.round(img.width * scale)),
+                Math.max(60, Math.round(img.height * scale)),
+              );
+            };
+            img.onerror = () => create("image", String(meta.id), 320, 240);
+            img.src = URL.createObjectURL(file);
+          })
+          .catch(fail);
+        return;
+      }
+      const text = e.clipboardData?.getData("text/plain")?.trim();
+      if (!text) return;
+      e.preventDefault();
+      if (/^https?:\/\/\S+$/.test(text)) create("link", text, 280, 96);
+      else create("sticky", text.slice(0, 4000), 180, 140, "yellow");
+    };
+    window.addEventListener("paste", onPaste);
+    return () => window.removeEventListener("paste", onPaste);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   if (!board) return <div className="wf-sessions-empty">Loading…</div>;
   const group = groups.find((g) => g.id === board.group_id);
@@ -272,7 +414,7 @@ export function BoardRoom() {
   const all = Object.values(elements);
   const frames = all.filter((el) => el.kind === "frame").sort((a, b) => a.z - b.z);
   const bodies = all
-    .filter((el) => el.kind === "sticky" || el.kind === "text")
+    .filter((el) => ["sticky", "text", "image", "link"].includes(el.kind))
     .sort((a, b) => a.z - b.z);
   const connectors = all.filter((el) => el.kind === "connector");
   const selectedEl = selected !== null ? elements[selected] : undefined;
@@ -386,14 +528,25 @@ export function BoardRoom() {
                 background: el.kind === "sticky" ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow) : undefined,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
-              onDoubleClick={() => setEditing(el.id)}
+              onDoubleClick={() => el.kind !== "image" && el.kind !== "link" && setEditing(el.id)}
             >
-              <ElementText
-                el={el}
-                editing={editing === el.id}
-                onCommit={(text) => commitText(el, text)}
-                className={el.kind === "sticky" ? "wf-el-sticky-text" : "wf-el-text-text"}
-              />
+              {el.kind === "image" ? (
+                <img
+                  className="wf-el-image"
+                  src={`writform-att://attachment/${el.text}`}
+                  alt=""
+                  draggable={false}
+                />
+              ) : el.kind === "link" ? (
+                <LinkCard url={el.text} />
+              ) : (
+                <ElementText
+                  el={el}
+                  editing={editing === el.id}
+                  onCommit={(text) => commitText(el, text)}
+                  className={el.kind === "sticky" ? "wf-el-sticky-text" : "wf-el-text-text"}
+                />
+              )}
               {selected === el.id && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
               )}

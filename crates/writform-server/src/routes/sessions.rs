@@ -1,7 +1,6 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use writform_proto::chat::UserRef;
 use writform_proto::sessions::{
     CreatePromptRequest, CreateSessionRequest, PromptState, SaveSubmissionRequest, SessionDetail,
     SessionPrompt, SessionState, Submission, WritingSession,
@@ -63,6 +62,8 @@ type SessionRow = (
     i64,
     String,
     Option<String>,
+    Option<i64>,
+    Option<String>,
 );
 
 fn row_to_session(row: SessionRow) -> WritingSession {
@@ -77,15 +78,13 @@ fn row_to_session(row: SessionRow) -> WritingSession {
         creator_id,
         username,
         display_name,
+        avatar,
+        accent,
     ) = row;
     WritingSession {
         id: WritingSessionId(id),
         channel_id: ChannelId(channel_id),
-        creator: UserRef {
-            id: UserId(creator_id),
-            username,
-            display_name,
-        },
+        creator: perms::user_ref(UserId(creator_id), username, display_name, avatar, accent),
         title,
         state: if state == "ended" {
             SessionState::Ended
@@ -99,7 +98,8 @@ fn row_to_session(row: SessionRow) -> WritingSession {
 }
 
 const SESSION_SELECT: &str = "SELECT s.id, s.channel_id, s.title, s.state, s.chat_channel_id,
-    s.created_at, s.ended_at, u.id, u.username, u.display_name
+    s.created_at, s.ended_at, u.id, u.username, u.display_name,
+    u.avatar_attachment_id, u.accent_color
     FROM writing_sessions s JOIN users u ON u.id = s.creator_id";
 
 /// Session access = access to its home channel. Returns the session row.
@@ -167,21 +167,58 @@ pub async fn create_session(
     .bind(now)
     .fetch_one(&mut *tx)
     .await?;
-    let (username, display_name): (String, Option<String>) =
-        sqlx::query_as("SELECT username, display_name FROM users WHERE id = ?")
-            .bind(auth.user_id.0)
-            .fetch_one(&mut *tx)
-            .await?;
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&mut *tx)
+    .await?;
+    // Announce the session in its home channel so members can join from chat.
+    let card_content = serde_json::json!({ "session_id": id, "title": title }).to_string();
+    let message_id: i64 = sqlx::query_scalar(
+        "INSERT INTO messages (channel_id, author_id, kind, content, created_at)
+         VALUES (?, ?, 'session', ?, ?) RETURNING id",
+    )
+    .bind(req.channel_id.0)
+    .bind(auth.user_id.0)
+    .bind(&card_content)
+    .bind(now)
+    .fetch_one(&mut *tx)
+    .await?;
     tx.commit().await?;
+
+    state.ws.broadcast(
+        &format!("channel:{}", req.channel_id.0),
+        "message.created",
+        serde_json::to_value(writform_proto::chat::Message {
+            id: writform_proto::MessageId(message_id),
+            channel_id: req.channel_id,
+            author: perms::user_ref(
+                auth.user_id,
+                username.clone(),
+                display_name.clone(),
+                avatar,
+                accent.clone(),
+            ),
+            kind: "session".into(),
+            content: Some(card_content),
+            reply_to_id: None,
+            attachments: vec![],
+            created_at: now,
+            edited_at: None,
+        })
+        .expect("serializable"),
+    );
 
     let session = WritingSession {
         id: WritingSessionId(id),
         channel_id: req.channel_id,
-        creator: UserRef {
-            id: auth.user_id,
-            username,
-            display_name,
-        },
+        creator: perms::user_ref(auth.user_id, username, display_name, avatar, accent),
         title: title.to_string(),
         state: SessionState::Active,
         chat_channel_id: ChannelId(chat_channel_id),
@@ -257,9 +294,20 @@ pub async fn session_detail(
         .collect();
 
     // Own submissions always; everyone's once the prompt has ended.
-    type SubRow = (i64, i64, String, i64, i64, String, Option<String>);
+    type SubRow = (
+        i64,
+        i64,
+        String,
+        i64,
+        i64,
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    );
     let sub_rows: Vec<SubRow> = sqlx::query_as(
-        "SELECT sub.id, sub.prompt_id, sub.doc, sub.updated_at, u.id, u.username, u.display_name
+        "SELECT sub.id, sub.prompt_id, sub.doc, sub.updated_at, u.id, u.username, u.display_name,
+                u.avatar_attachment_id, u.accent_color
          FROM session_submissions sub
          JOIN session_prompts p ON p.id = sub.prompt_id
          JOIN users u ON u.id = sub.user_id
@@ -273,16 +321,14 @@ pub async fn session_detail(
     let submissions = sub_rows
         .into_iter()
         .map(
-            |(id, prompt_id, doc, updated_at, uid, username, display_name)| Submission {
-                id,
-                prompt_id,
-                author: UserRef {
-                    id: UserId(uid),
-                    username,
-                    display_name,
-                },
-                doc: serde_json::from_str(&doc).unwrap_or(serde_json::Value::Null),
-                updated_at,
+            |(id, prompt_id, doc, updated_at, uid, username, display_name, avatar, accent)| {
+                Submission {
+                    id,
+                    prompt_id,
+                    author: perms::user_ref(UserId(uid), username, display_name, avatar, accent),
+                    doc: serde_json::from_str(&doc).unwrap_or(serde_json::Value::Null),
+                    updated_at,
+                }
             },
         )
         .collect();
@@ -292,6 +338,41 @@ pub async fn session_detail(
         prompts,
         submissions,
     }))
+}
+
+/// Permanently delete a session: its prompts, submissions, snapshots (FK
+/// cascades) and its dedicated side-chat channel (messages cascade).
+pub async fn delete_session(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(session_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let session = require_session_access(&state, session_id, auth.user_id).await?;
+    require_creator_or_admin(&state, &session, auth.user_id).await?;
+
+    let mut tx = state.pool.begin().await?;
+    sqlx::query("DELETE FROM writing_sessions WHERE id = ?")
+        .bind(session_id)
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("DELETE FROM channels WHERE id = ?")
+        .bind(session.chat_channel_id.0)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+
+    let data = serde_json::json!({ "session_id": session_id });
+    state.ws.broadcast(
+        &format!("session:{session_id}"),
+        "session.deleted",
+        data.clone(),
+    );
+    state.ws.broadcast(
+        &format!("channel:{}", session.channel_id.0),
+        "session.deleted",
+        data,
+    );
+    Ok(StatusCode::NO_CONTENT)
 }
 
 pub async fn end_session(

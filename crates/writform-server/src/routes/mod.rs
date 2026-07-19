@@ -8,6 +8,7 @@ mod friends;
 mod groups;
 mod healthz;
 mod identity;
+pub mod link_preview;
 mod messages;
 mod notes;
 mod plugin_data;
@@ -45,6 +46,7 @@ pub struct AppState {
     pub login_limiter: Arc<LoginRateLimiter>,
     pub ws: Arc<WsHub>,
     pub voice: Arc<voice::VoiceRegistry>,
+    pub previews: Arc<link_preview::PreviewCache>,
     pub attachments_dir: Arc<PathBuf>,
 }
 
@@ -79,6 +81,7 @@ impl AppState {
             login_limiter: Arc::new(LoginRateLimiter::default()),
             ws: Arc::new(WsHub::default()),
             voice: Arc::new(voice::VoiceRegistry::default()),
+            previews: Arc::new(link_preview::PreviewCache::default()),
             attachments_dir: Arc::new(data_dir.join("attachments")),
         }
     }
@@ -102,6 +105,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/groups",
             post(groups::create_group).get(groups::my_groups),
         )
+        .route("/api/v1/groups/{id}", patch(groups::update_group))
         .route("/api/v1/groups/{id}/members", get(groups::members))
         .route("/api/v1/groups/{id}/presence", get(groups::presence))
         .route("/api/v1/groups/{id}/invites", post(groups::create_invite))
@@ -158,7 +162,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/channels/{id}/sessions",
             get(sessions::list_sessions),
         )
-        .route("/api/v1/sessions/{id}", get(sessions::session_detail))
+        .route(
+            "/api/v1/sessions/{id}",
+            get(sessions::session_detail).delete(sessions::delete_session),
+        )
         .route("/api/v1/sessions/{id}/end", post(sessions::end_session))
         .route(
             "/api/v1/sessions/{id}/prompts",
@@ -178,6 +185,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/voice/{id}/join", post(voice::join))
         .route("/api/v1/voice/leave", post(voice::leave))
         .route("/api/v1/voice/{id}/signal", post(voice::signal))
+        .route("/api/v1/link-preview", get(link_preview::link_preview))
         .route(
             "/api/v1/groups/{id}/boards",
             get(canvas::list_boards).post(canvas::create_board),
