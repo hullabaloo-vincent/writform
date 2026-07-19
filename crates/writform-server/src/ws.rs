@@ -205,6 +205,8 @@ async fn handle_socket(state: AppState, socket: WebSocket) {
     writer.abort();
     if !state.ws.is_online(user_id) {
         broadcast_presence(&state, user_id, false).await;
+        // A user with no sockets left can't be in a voice room.
+        let _ = crate::routes::voice::leave_current(&state, user_id).await;
     }
 }
 

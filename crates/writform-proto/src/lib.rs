@@ -10,6 +10,7 @@ pub mod chat;
 pub mod friends;
 pub mod ids;
 pub mod sessions;
+pub mod voice;
 pub mod ws;
 
 pub use ids::*;

@@ -1,8 +1,9 @@
 import { Presentation } from "lucide-react";
 
+import { onResync } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { CanvasView } from "./CanvasView";
-import { installCanvasWsHandler } from "./store";
+import { installCanvasWsHandler, useCanvas } from "./store";
 
 export const canvasApp: WritformApp = {
   manifest: {
@@ -14,6 +15,13 @@ export const canvasApp: WritformApp = {
   activate(ctx) {
     ctx.ui.registerMainView(() => <CanvasView />);
     installCanvasWsHandler();
+    onResync(() => {
+      const s = useCanvas.getState();
+      if (s.activeBoardId !== null) void s.openBoard(s.activeBoardId).catch(() => {});
+      for (const groupId of Object.keys(s.byGroup)) {
+        void s.loadBoards(Number(groupId)).catch(() => {});
+      }
+    });
     ctx.commands.register({
       id: "canvas.open",
       title: "Canvas: Open",

@@ -100,6 +100,10 @@ export function devPreviewBackend(): Backend {
   }
   let boards: PreviewBoard[] = [];
   let boardElements: PreviewElement[] = [];
+  const voiceChannels: { id: number; group_id: number; name: string; created_at: number }[] = [
+    { id: 90, group_id: 1, name: "Lounge", created_at: 0 },
+  ];
+  let voiceJoined: number | null = null;
   const vault: Record<string, { content: string; mtime: number }> = {
     Welcome: {
       content: "# Welcome\n\nThis is your vault. Link notes like [[Ideas]].\n",
@@ -410,6 +414,39 @@ export function devPreviewBackend(): Backend {
       return { status: 204, body: null };
     }
 
+    // --- voice ---
+    if ((match = m(/^\/api\/v1\/groups\/(\d+)\/voice$/)) && method === "GET") {
+      const gid = Number(match[1]);
+      return {
+        status: 200,
+        body: voiceChannels
+          .filter((c) => c.group_id === gid)
+          .map((c) => ({ channel: c, participants: c.id === voiceJoined ? [pal] : [] })),
+      };
+    }
+    if ((match = m(/^\/api\/v1\/groups\/(\d+)\/voice$/)) && method === "POST") {
+      const channel = {
+        id: nextId++,
+        group_id: Number(match[1]),
+        name: (body as { name: string }).name,
+        created_at: Date.now(),
+      };
+      voiceChannels.push(channel);
+      setTimeout(() => emit(`group:${channel.group_id}`, "voice.channel.created", channel), 30);
+      return { status: 200, body: channel };
+    }
+    if ((match = m(/^\/api\/v1\/voice\/(\d+)\/join$/)) && method === "POST") {
+      voiceJoined = Number(match[1]);
+      return { status: 200, body: { participants: [] } };
+    }
+    if (path === "/api/v1/voice/leave" && method === "POST") {
+      voiceJoined = null;
+      return { status: 204, body: null };
+    }
+    if (m(/^\/api\/v1\/voice\/(\d+)\/signal$/) && method === "POST") {
+      return { status: 204, body: null };
+    }
+
     // --- canvas boards ---
     if ((match = m(/^\/api\/v1\/groups\/(\d+)\/boards$/)) && method === "GET") {
       const gid = Number(match[1]);
@@ -504,6 +541,8 @@ export function devPreviewBackend(): Backend {
       wsHandlers.add(handler);
       return () => wsHandlers.delete(handler);
     },
+    // The preview "socket" never drops.
+    onWsStatus: () => () => {},
     async vaultList() {
       return Object.entries(vault).map(([name, v]) => ({ name, modified_at: v.mtime }));
     },

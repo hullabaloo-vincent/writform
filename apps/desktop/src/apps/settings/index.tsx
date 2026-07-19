@@ -1,11 +1,12 @@
 import {
+  ArrowDownToLine,
   Fingerprint,
   MonitorSmartphone,
   Settings as SettingsIcon,
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AdminStats } from "../../bindings/proto/AdminStats";
 import type { AdminUser } from "../../bindings/proto/AdminUser";
@@ -35,7 +36,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.body as T;
 }
 
-type Tab = "profile" | "devices" | "server" | "admin";
+type Tab = "profile" | "devices" | "server" | "app" | "admin";
 
 function SettingsView() {
   const me = useSession((s) => s.session?.user);
@@ -46,6 +47,7 @@ function SettingsView() {
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: true },
     { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: true },
+    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: true },
     { id: "admin", label: "Admin", icon: <ShieldCheck size={15} />, show: !!me?.is_server_admin },
   ];
 
@@ -72,6 +74,7 @@ function SettingsView() {
         {tab === "profile" && <ProfileTab onError={setError} />}
         {tab === "devices" && <DevicesTab onError={setError} />}
         {tab === "server" && <ServerTab onError={setError} />}
+        {tab === "app" && <AppTab onError={setError} />}
         {tab === "admin" && <AdminTab onError={setError} />}
       </div>
     </div>
@@ -320,6 +323,97 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
         </div>
       )}
     </>
+  );
+}
+
+function AppTab({ onError }: { onError: (e: string | null) => void }) {
+  const inTauri = "__TAURI_INTERNALS__" in window;
+  const [version, setVersion] = useState<string | null>(null);
+  const [status, setStatus] = useState<
+    "idle" | "checking" | "up_to_date" | "available" | "installing" | "installed"
+  >("idle");
+  const updateRef = useRef<{ version: string; downloadAndInstall: () => Promise<void> } | null>(
+    null,
+  );
+
+  useEffect(() => {
+    if (!inTauri) return;
+    void import("@tauri-apps/api/app").then(({ getVersion }) =>
+      getVersion().then(setVersion).catch(() => {}),
+    );
+  }, [inTauri]);
+
+  const check = async () => {
+    setStatus("checking");
+    onError(null);
+    try {
+      const { check } = await import("@tauri-apps/plugin-updater");
+      const update = await check();
+      if (!update) {
+        setStatus("up_to_date");
+        return;
+      }
+      updateRef.current = update;
+      setStatus("available");
+    } catch (e) {
+      onError(`update check failed: ${isCmdError(e) ? e.message : String(e)}`);
+      setStatus("idle");
+    }
+  };
+
+  const install = async () => {
+    const update = updateRef.current;
+    if (!update) return;
+    setStatus("installing");
+    onError(null);
+    try {
+      await update.downloadAndInstall();
+      setStatus("installed");
+      const restart = await confirmDialog("Update installed. Restart WritForm now?", {
+        title: "Update ready",
+        confirmLabel: "Restart now",
+      });
+      if (restart) {
+        const { relaunch } = await import("@tauri-apps/plugin-process");
+        await relaunch();
+      }
+    } catch (e) {
+      onError(`update failed: ${isCmdError(e) ? e.message : String(e)}`);
+      setStatus("available");
+    }
+  };
+
+  return (
+    <section>
+      <h3>Application</h3>
+      <p className="wf-session-meta">
+        WritForm {version ?? ""} — updates are downloaded from GitHub Releases and verified
+        against the app's signing key before installing.
+      </p>
+      {!inTauri ? (
+        <p className="wf-session-meta">Updates are only available in the desktop app.</p>
+      ) : (
+        <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
+          {status === "available" ? (
+            <button className="wf-primary" onClick={() => void install()}>
+              Install {updateRef.current?.version}
+            </button>
+          ) : (
+            <button onClick={() => void check()} disabled={status === "checking" || status === "installing"}>
+              {status === "checking"
+                ? "Checking…"
+                : status === "installing"
+                  ? "Installing…"
+                  : "Check for updates"}
+            </button>
+          )}
+          {status === "up_to_date" && <span className="wf-session-meta">You're up to date.</span>}
+          {status === "installed" && (
+            <span className="wf-session-meta">Installed — restart to finish.</span>
+          )}
+        </div>
+      )}
+    </section>
   );
 }
 

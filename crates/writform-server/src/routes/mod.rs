@@ -12,6 +12,7 @@ mod messages;
 mod notes;
 mod plugin_data;
 pub mod sessions;
+pub mod voice;
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,6 +44,7 @@ pub struct AppState {
     pub cert_binding_sig_b64: Arc<str>,
     pub login_limiter: Arc<LoginRateLimiter>,
     pub ws: Arc<WsHub>,
+    pub voice: Arc<voice::VoiceRegistry>,
     pub attachments_dir: Arc<PathBuf>,
 }
 
@@ -76,6 +78,7 @@ impl AppState {
             cert_binding_sig_b64: B64URL.encode(cert_binding_sig).into(),
             login_limiter: Arc::new(LoginRateLimiter::default()),
             ws: Arc::new(WsHub::default()),
+            voice: Arc::new(voice::VoiceRegistry::default()),
             attachments_dir: Arc::new(data_dir.join("attachments")),
         }
     }
@@ -167,6 +170,14 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/prompts/{id}/submission",
             put(sessions::save_submission),
         )
+        .route(
+            "/api/v1/groups/{id}/voice",
+            get(voice::list_channels).post(voice::create_channel),
+        )
+        .route("/api/v1/voice/{id}", delete(voice::delete_channel))
+        .route("/api/v1/voice/{id}/join", post(voice::join))
+        .route("/api/v1/voice/leave", post(voice::leave))
+        .route("/api/v1/voice/{id}/signal", post(voice::signal))
         .route(
             "/api/v1/groups/{id}/boards",
             get(canvas::list_boards).post(canvas::create_board),

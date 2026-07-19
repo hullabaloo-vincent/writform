@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { Channel } from "../../bindings/proto/Channel";
+import type { Emote } from "../../bindings/proto/Emote";
 import type { Group } from "../../bindings/proto/Group";
 import type { Member } from "../../bindings/proto/Member";
 import type { Message } from "../../bindings/proto/Message";
@@ -15,6 +16,8 @@ interface ChatState {
   messages: Record<number, Message[]>;
   members: Member[];
   online: Set<number>;
+  /** Custom emotes of the active group. */
+  emotes: Emote[];
 
   loadGroups: () => Promise<void>;
   selectGroup: (groupId: number) => Promise<void>;
@@ -30,6 +33,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: {},
   members: [],
   online: new Set(),
+  emotes: [],
 
   loadGroups: async () => {
     const groups = await chatApi.myGroups();
@@ -43,13 +47,20 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   selectGroup: async (groupId) => {
-    set({ activeGroupId: groupId, channels: [], activeChannelId: null, members: [] });
-    const [channels, members, presence] = await Promise.all([
+    set({
+      activeGroupId: groupId,
+      channels: [],
+      activeChannelId: null,
+      members: [],
+      emotes: [],
+    });
+    const [channels, members, presence, emotes] = await Promise.all([
       chatApi.channels(groupId),
       chatApi.members(groupId),
       chatApi.presence(groupId),
+      chatApi.emotes(groupId),
     ]);
-    set({ channels, members, online: new Set(presence.online) });
+    set({ channels, members, online: new Set(presence.online), emotes });
     const first = channels.find((c) => c.kind === "text");
     if (first) await get().selectChannel(first.id);
   },
@@ -68,6 +79,45 @@ export const useChat = create<ChatState>((set, get) => ({
     // The message lands via ws fan-out; nothing else to do.
   },
 }));
+
+/** Reconnect catch-up: refresh group/member state and pull missed messages. */
+export async function resyncChat(): Promise<void> {
+  const state = useChat.getState();
+  const groups = await chatApi.myGroups();
+  useChat.setState({ groups });
+  await backend.wsSub(groups.map((g) => `group:${g.id}`));
+
+  if (state.activeGroupId !== null && groups.some((g) => g.id === state.activeGroupId)) {
+    const [channels, members, presence, emotes] = await Promise.all([
+      chatApi.channels(state.activeGroupId),
+      chatApi.members(state.activeGroupId),
+      chatApi.presence(state.activeGroupId),
+      chatApi.emotes(state.activeGroupId),
+    ]);
+    useChat.setState({ channels, members, online: new Set(presence.online), emotes });
+  }
+
+  // `?after=` catch-up for every channel we hold history for.
+  for (const [cid, existing] of Object.entries(state.messages)) {
+    const channelId = Number(cid);
+    const last = existing[existing.length - 1];
+    try {
+      const fresh = last
+        ? await chatApi.messagesAfter(channelId, last.id)
+        : await chatApi.messages(channelId);
+      if (fresh.length === 0) continue;
+      useChat.setState((s) => {
+        const current = s.messages[channelId] ?? [];
+        const known = new Set(current.map((m) => m.id));
+        const additions = fresh.filter((m) => !known.has(m.id));
+        if (additions.length === 0) return s;
+        return { messages: { ...s.messages, [channelId]: [...current, ...additions] } };
+      });
+    } catch {
+      // channel may be gone (kicked, deleted) — the next selection reloads
+    }
+  }
+}
 
 /** Apply WS events to the store. Installed once from the chat app. */
 export function installChatWsHandler(): () => void {
@@ -116,6 +166,16 @@ export function installChatWsHandler(): () => void {
     } else if (kind === "channel.deleted") {
       const { channel_id } = data as { channel_id: number };
       useChat.setState((s) => ({ channels: s.channels.filter((c) => c.id !== channel_id) }));
+    } else if (kind === "emote.created") {
+      const emote = data as Emote;
+      if (emote.group_id === state.activeGroupId) {
+        useChat.setState((s) =>
+          s.emotes.some((e) => e.id === emote.id) ? s : { emotes: [...s.emotes, emote] },
+        );
+      }
+    } else if (kind === "emote.deleted") {
+      const { emote_id } = data as { emote_id: number };
+      useChat.setState((s) => ({ emotes: s.emotes.filter((e) => e.id !== emote_id) }));
     } else if (kind === "presence.update") {
       const { user_id, online } = data as { user_id: number; online: boolean };
       useChat.setState((s) => {

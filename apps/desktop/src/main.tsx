@@ -8,7 +8,7 @@ import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
 import { settingsApp } from "./apps/settings";
 import { sessionsApp } from "./apps/sessions";
-import { registerApp } from "./platform";
+import { installResync, registerApp } from "./platform";
 import { loadEnabledPlugins } from "./platform/pluginHost";
 import { Root } from "./Root";
 import "./styles.css";
@@ -25,6 +25,9 @@ registerApp(settingsApp);
 
 // Third-party plugins join the same registry after user-granted consent.
 void loadEnabledPlugins();
+
+// After a socket outage, stores re-fetch what they're showing.
+installResync();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -35,11 +35,21 @@ export const chatApi = {
   presence: (groupId: number) =>
     api<PresenceSnapshot>("GET", `/api/v1/groups/${groupId}/presence`),
   emotes: (groupId: number) => api<Emote[]>("GET", `/api/v1/groups/${groupId}/emotes`),
+  createEmote: (groupId: number, name: string, attachmentId: number) =>
+    api<Emote>("POST", `/api/v1/groups/${groupId}/emotes`, {
+      name,
+      attachment_id: attachmentId,
+    }),
+  deleteEmote: (groupId: number, emoteId: number) =>
+    api<null>("DELETE", `/api/v1/groups/${groupId}/emotes/${emoteId}`),
   messages: (channelId: number, before?: number) =>
     api<Message[]>(
       "GET",
       `/api/v1/channels/${channelId}/messages${before ? `?before=${before}` : ""}`,
     ),
+  /** Catch-up after a socket outage: only messages newer than `after`. */
+  messagesAfter: (channelId: number, after: number) =>
+    api<Message[]>("GET", `/api/v1/channels/${channelId}/messages?after=${after}`),
   sendMessage: (channelId: number, content: string, attachmentIds: number[] = []) =>
     api<Message>("POST", `/api/v1/channels/${channelId}/messages`, {
       content,

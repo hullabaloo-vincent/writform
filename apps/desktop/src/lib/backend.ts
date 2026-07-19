@@ -99,6 +99,8 @@ export interface Backend {
   wsUnsub(rooms: string[]): Promise<void>;
   /** Subscribe to WS frames; returns an unsubscribe fn. */
   onWsEvent(handler: (event: WsEvent) => void): () => void;
+  /** Connection up/down transitions of the socket; returns an unsubscribe fn. */
+  onWsStatus(handler: (connected: boolean) => void): () => void;
 
   vaultList(): Promise<{ name: string; modified_at: number }[]>;
   vaultRead(name: string): Promise<string>;
@@ -155,6 +157,22 @@ function tauriBackend(): Backend {
         unlisten?.();
       };
     },
+    onWsStatus: (handler) => {
+      let unlisten: (() => void) | null = null;
+      let cancelled = false;
+      void import("@tauri-apps/api/event").then(({ listen }) =>
+        listen("ws:status", (e) =>
+          handler((e.payload as { connected: boolean }).connected),
+        ).then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
+        }),
+      );
+      return () => {
+        cancelled = true;
+        unlisten?.();
+      };
+    },
     vaultList: () => invoke("vault_list"),
     vaultRead: (name) => invoke("vault_read", { name }),
     vaultWrite: (name, content) => invoke("vault_write", { name, content }),
@@ -199,6 +217,7 @@ function unavailableBackend(): Backend {
     wsSub: fail,
     wsUnsub: fail,
     onWsEvent: () => () => {},
+    onWsStatus: () => () => {},
     vaultList: fail,
     vaultRead: fail,
     vaultWrite: fail,

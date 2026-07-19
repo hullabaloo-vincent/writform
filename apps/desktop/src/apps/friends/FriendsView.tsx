@@ -5,7 +5,7 @@ import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, onResync } from "../../platform";
 import { chatApi } from "../chat/api";
 import { useChat } from "../chat/store";
 
@@ -73,6 +73,7 @@ export function FriendsView() {
     void friendsApi.requests().then(setRequests).catch(() => {});
   };
   useEffect(refresh, []);
+  useEffect(() => onResync(refresh), []);
 
   useEffect(
     () =>

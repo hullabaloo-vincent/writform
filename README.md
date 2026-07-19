@@ -28,7 +28,9 @@ attachments, presence. ✍️ **Sessions** — a session holds multiple rich-tex
 prompts; each is started/timed/stopped by its creator, everyone writes privately,
 writings reveal when the prompt ends, side chat throughout, full history browsable.
 🎨 **Canvas** — group storyboards: sticky notes, text, frames, connectors, live
-multi-user editing. 👥 **Friends** — requests, DMs, note sharing. 📝 **Notes** —
+multi-user editing. 🔊 **Voice** — audio channels per group: peer-to-peer WebRTC
+mesh (media never touches the server), mute, speaking indicators. 👥 **Friends**
+— requests, DMs, note sharing. 📝 **Notes** —
 local-first markdown vault (Obsidian-compatible files), wiki-links + backlinks,
 share snapshots to friends. 🧩 **Plugins** — enable third-party plugins with
 per-plugin permissions.

@@ -1,12 +1,191 @@
-import { ImageIcon, Plus } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  ImageIcon,
+  Mic,
+  MicOff,
+  PhoneOff,
+  Plus,
+  SmilePlus,
+  Trash2,
+  Volume2,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { Emote } from "../../bindings/proto/Emote";
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 import { useChat } from "./store";
+import { useVoice, voiceApi } from "./voice";
+
+const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
+
+/** Render message text with `:name:` tokens replaced by the group's emotes. */
+export function EmoteText({ text }: { text: string }) {
+  const emotes = useChat((s) => s.emotes);
+  const byName = useMemo(() => {
+    const map = new Map<string, Emote>();
+    for (const e of emotes) map.set(e.name, e);
+    return map;
+  }, [emotes]);
+
+  const parts = useMemo(() => {
+    const out: React.ReactNode[] = [];
+    const re = /:([a-z0-9_]{1,32}):/g;
+    let last = 0;
+    let m: RegExpExecArray | null;
+    let key = 0;
+    while ((m = re.exec(text)) !== null) {
+      const emote = byName.get(m[1]);
+      if (!emote) continue;
+      if (m.index > last) out.push(text.slice(last, m.index));
+      out.push(
+        <img
+          key={key++}
+          className="wf-emote"
+          src={attSrc(emote.attachment_id)}
+          alt={`:${emote.name}:`}
+          title={`:${emote.name}:`}
+        />,
+      );
+      last = m.index + m[0].length;
+    }
+    if (out.length === 0) return null; // no emotes — render plain text as-is
+    if (last < text.length) out.push(text.slice(last));
+    return out;
+  }, [text, byName]);
+
+  return <>{parts ?? text}</>;
+}
+
+/** Emote grid popup: insert on click; admins can add and remove emotes. */
+function EmotePicker({
+  onPick,
+  onClose,
+}: {
+  onPick: (name: string) => void;
+  onClose: () => void;
+}) {
+  const emotes = useChat((s) => s.emotes);
+  const groups = useChat((s) => s.groups);
+  const activeGroupId = useChat((s) => s.activeGroupId);
+  const group = groups.find((g) => g.id === activeGroupId);
+  const isAdmin = group?.my_role === "admin";
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [pendingAttachment, setPendingAttachment] = useState<number | null>(null);
+  const [name, setName] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const upload = async (file: File) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const buf = new Uint8Array(await file.arrayBuffer());
+      let binary = "";
+      for (let i = 0; i < buf.length; i += 0x8000) {
+        binary += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+      }
+      const { backend } = await import("../../lib/backend");
+      const res = await backend.uploadAttachment({ dataBase64: btoa(binary), fileName: file.name });
+      if (res.status >= 400) throw (res.body ?? { message: "upload failed" }) as Error;
+      const meta = res.body as { id: number };
+      setPendingAttachment(meta.id);
+      setName(file.name.replace(/\.[a-z0-9]+$/i, "").toLowerCase().replace(/[^a-z0-9_]/g, "_"));
+    } catch (e) {
+      setError(isCmdError(e) ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const create = () => {
+    if (!group || pendingAttachment === null || !name.trim()) return;
+    setError(null);
+    chatApi
+      .createEmote(group.id, name.trim(), pendingAttachment)
+      .then(() => {
+        setPendingAttachment(null);
+        setName("");
+      })
+      .catch((e) => setError(isCmdError(e) ? e.message : String(e)));
+  };
+
+  return (
+    <div className="wf-emote-picker" onPointerDown={(e) => e.stopPropagation()}>
+      <header>
+        <span>Emotes{group ? ` — ${group.name}` : ""}</span>
+        <button onClick={onClose}>×</button>
+      </header>
+      {error && <p className="wf-connect-error">{error}</p>}
+      <div className="wf-emote-grid">
+        {emotes.map((e) => (
+          <span key={e.id} className="wf-emote-tile">
+            <button title={`:${e.name}:`} onClick={() => onPick(e.name)}>
+              <img src={attSrc(e.attachment_id)} alt={e.name} />
+            </button>
+            {isAdmin && group && (
+              <button
+                className="wf-emote-remove"
+                title="Remove emote"
+                onClick={() =>
+                  void confirmDialog(`Remove :${e.name}: for everyone in ${group.name}?`, {
+                    title: "Remove emote",
+                    confirmLabel: "Remove",
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok) void chatApi.deleteEmote(group.id, e.id).catch(() => {});
+                  })
+                }
+              >
+                <Trash2 size={11} />
+              </button>
+            )}
+          </span>
+        ))}
+        {emotes.length === 0 && (
+          <p className="wf-friend-dim">
+            No custom emotes yet{isAdmin ? " — add one below." : "."}
+          </p>
+        )}
+      </div>
+      {isAdmin && (
+        <div className="wf-emote-add">
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void upload(file);
+              e.target.value = "";
+            }}
+          />
+          {pendingAttachment === null ? (
+            <button disabled={busy} onClick={() => fileRef.current?.click()}>
+              {busy ? "Uploading…" : "+ Add emote (upload image)"}
+            </button>
+          ) : (
+            <div className="wf-connect-row">
+              <input
+                placeholder="emote_name"
+                value={name}
+                autoFocus
+                onChange={(e) => setName(e.target.value.toLowerCase())}
+                onKeyDown={(e) => e.key === "Enter" && create()}
+              />
+              <button className="wf-primary" disabled={!name.trim()} onClick={create}>
+                Add
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ChatView() {
   const groups = useChat((s) => s.groups);
@@ -212,8 +391,119 @@ function ChannelList() {
             />
           </form>
         )}
+        {group && <VoiceSection groupId={group.id} isAdmin={!!isAdmin} />}
       </nav>
+      <VoiceBar />
     </>
+  );
+}
+
+function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean }) {
+  const channels = useVoice((s) => s.channels);
+  const occupants = useVoice((s) => s.occupants);
+  const connectedChannelId = useVoice((s) => s.connectedChannelId);
+  const speaking = useVoice((s) => s.speaking);
+  const join = useVoice((s) => s.join);
+  const loadChannels = useVoice((s) => s.loadChannels);
+  const error = useVoice((s) => s.error);
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+
+  useEffect(() => {
+    void loadChannels(groupId).catch(() => {});
+  }, [groupId, loadChannels]);
+
+  return (
+    <div className="wf-voice-section">
+      <span className="wf-voice-heading">Voice</span>
+      {error && <p className="wf-connect-error">{error}</p>}
+      {channels.map((c) => (
+        <div key={c.id}>
+          <button
+            className={`wf-chat-channel wf-voice-channel ${c.id === connectedChannelId ? "active" : ""}`}
+            title={c.id === connectedChannelId ? "Connected" : "Join voice"}
+            onClick={() => void join(c)}
+          >
+            <Volume2 size={14} /> {c.name}
+          </button>
+          {(occupants[c.id] ?? []).length > 0 && (
+            <ul className="wf-voice-occupants">
+              {(occupants[c.id] ?? []).map((u) => (
+                <li key={u.id} className={speaking.has(u.id) ? "speaking" : ""}>
+                  <span className="wf-voice-dot" />
+                  {u.display_name ?? u.username}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      ))}
+      {isAdmin && !adding && (
+        <button className="wf-chat-channel wf-chat-channel-add" onClick={() => setAdding(true)}>
+          + new voice channel
+        </button>
+      )}
+      {adding && (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!name.trim()) return;
+            void voiceApi
+              .create(groupId, name.trim())
+              .then(() => {
+                setName("");
+                setAdding(false);
+              })
+              .catch(() => setAdding(false));
+          }}
+        >
+          <input
+            className="wf-chat-channel-input"
+            placeholder="voice channel name"
+            value={name}
+            autoFocus
+            onChange={(e) => setName(e.target.value)}
+            onBlur={() => setAdding(false)}
+          />
+        </form>
+      )}
+    </div>
+  );
+}
+
+function VoiceBar() {
+  const connectedChannelId = useVoice((s) => s.connectedChannelId);
+  const joining = useVoice((s) => s.joining);
+  const muted = useVoice((s) => s.muted);
+  const channels = useVoice((s) => s.channels);
+  const leave = useVoice((s) => s.leave);
+  const toggleMute = useVoice((s) => s.toggleMute);
+
+  if (joining) {
+    return (
+      <div className="wf-voice-bar">
+        Connecting voice…
+        <span className="wf-statusbar-spacer" />
+        <button title="Cancel" onClick={() => void leave()}>
+          <PhoneOff size={15} />
+        </button>
+      </div>
+    );
+  }
+  if (connectedChannelId === null) return null;
+  const channel = channels.find((c) => c.id === connectedChannelId);
+
+  return (
+    <div className="wf-voice-bar">
+      <Volume2 size={15} />
+      <span className="wf-voice-bar-name">{channel?.name ?? "voice"}</span>
+      <button title={muted ? "Unmute" : "Mute"} onClick={toggleMute}>
+        {muted ? <MicOff size={15} /> : <Mic size={15} />}
+      </button>
+      <button title="Leave voice" onClick={() => void leave()}>
+        <PhoneOff size={15} />
+      </button>
+    </div>
   );
 }
 
@@ -302,12 +592,16 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
           <span className="wf-msg-time">{time}</span>
         </div>
       )}
-      {message.content && <div className="wf-msg-content">{message.content}</div>}
+      {message.content && (
+        <div className="wf-msg-content">
+          <EmoteText text={message.content} />
+        </div>
+      )}
       {message.attachments.map((a) => (
         <img
           key={a.id}
           className="wf-msg-image"
-          src={`writform-att://attachment/${a.id}`}
+          src={attSrc(a.id)}
           alt={a.original_name ?? "attachment"}
         />
       ))}
@@ -325,7 +619,9 @@ function Composer() {
   const [draft, setDraft] = useState("");
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+  const draftRef = useRef<HTMLTextAreaElement>(null);
   const send = useChat((s) => s.send);
   const channels = useChat((s) => s.channels);
   const activeChannelId = useChat((s) => s.activeChannelId);
@@ -359,8 +655,14 @@ function Composer() {
     void send(content, attachmentIds);
   };
 
+  const insertEmote = (name: string) => {
+    setDraft((d) => `${d}${d && !d.endsWith(" ") ? " " : ""}:${name}: `);
+    draftRef.current?.focus();
+  };
+
   return (
     <div className="wf-composer-wrap">
+      {pickerOpen && <EmotePicker onPick={insertEmote} onClose={() => setPickerOpen(false)} />}
       {uploads.length > 0 && (
         <div className="wf-upload-chips">
           {uploads.map((u) => (
@@ -393,7 +695,15 @@ function Composer() {
         >
           {uploading ? "…" : <Plus size={18} />}
         </button>
+        <button
+          className="wf-composer-attach"
+          title="Emotes"
+          onClick={() => setPickerOpen((v) => !v)}
+        >
+          <SmilePlus size={18} />
+        </button>
         <textarea
+          ref={draftRef}
           rows={1}
           placeholder={`Message #${channel?.name ?? ""}`}
           value={draft}

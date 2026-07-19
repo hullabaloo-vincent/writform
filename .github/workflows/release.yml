@@ -2,10 +2,12 @@
 # - Server: Docker image → GHCR (GitHub Packages) + bare Linux binary on the Release
 # - Desktop: signed Tauri bundles + updater manifest → GitHub Releases
 #
-# Desktop auto-update setup (one-time, before the first desktop release):
-#   1. npx @tauri-apps/cli signer generate  → keep the private key SAFE
-#   2. repo secrets: TAURI_SIGNING_PRIVATE_KEY, TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-#   3. add the PUBLIC key + endpoint to tauri.conf.json's updater plugin config
+# Desktop auto-update: the public key + GitHub Releases endpoint are configured
+# in apps/desktop/src-tauri/tauri.conf.json. The matching PRIVATE key lives at
+# ~/.tauri/writform-updater.key on the machine that generated it (empty
+# password) — NEVER commit it. One-time before the first release, add repo
+# secrets: TAURI_SIGNING_PRIVATE_KEY (file contents) and
+# TAURI_SIGNING_PRIVATE_KEY_PASSWORD (empty string).
 name: Release
 
 on:
