@@ -1,0 +1,8 @@
+{
+  "id": "wf-scratchpad",
+  "name": "Scratchpad",
+  "version": "0.1.0",
+  "icon": "🗒️",
+  "permissions": ["ui", "commands", "net", "data"],
+  "min_api_version": 1
+}

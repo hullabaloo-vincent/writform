@@ -1,0 +1,22 @@
+# Rust
+/target
+**/*.rs.bk
+
+# Node
+node_modules/
+dist/
+
+# Tauri
+apps/desktop/src-tauri/gen/
+
+# ts-rs default export dir (real bindings live in apps/desktop/src/bindings/proto)
+crates/writform-proto/bindings/
+
+# Local server data
+/tmp-data/
+*.db
+*.db-wal
+*.db-shm
+
+# OS
+.DS_Store

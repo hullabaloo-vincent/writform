@@ -1,0 +1,42 @@
+[package]
+name = "writform-desktop"
+description = "WritForm desktop client (Tauri core)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "writform_desktop_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+writform-proto = { workspace = true }
+writform-crypto = { workspace = true }
+
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+tokio = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "json", "multipart"] }
+rustls = { workspace = true }
+x509-parser = { workspace = true }
+sha2 = { workspace = true }
+base64 = { workspace = true }
+tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+
+[dev-dependencies]
+rcgen = { workspace = true }
+writform-server = { path = "../../../crates/writform-server" }
+axum-server = { workspace = true }
+tempfile = "3"

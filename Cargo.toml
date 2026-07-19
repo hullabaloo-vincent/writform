@@ -1,0 +1,63 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/writform-proto",
+    "crates/writform-crypto",
+    "crates/writform-server",
+    "apps/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/VAliquo/writform"
+
+[workspace.dependencies]
+writform-proto = { path = "crates/writform-proto" }
+writform-crypto = { path = "crates/writform-crypto" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ts-rs = { version = "10", features = ["serde-json-impl"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "fs"] }
+axum = { version = "0.8", features = ["ws", "multipart"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["trace", "limit"] }
+sqlx = { version = "0.8", default-features = false, features = ["sqlite", "runtime-tokio", "migrate", "macros"] }
+
+rand = "0.8"
+sha2 = "0.10"
+hmac = "0.12"
+pbkdf2 = { version = "0.12", default-features = false, features = ["hmac"] }
+base64 = "0.22"
+subtle = "2"
+# Pre-1.0 PQ crate: pinned exactly; all use is isolated inside writform-crypto
+# so it can be swapped (e.g. for aws-lc-rs) without touching anything else.
+ml-dsa = { version = "=0.1.1", features = ["rand_core"] }
+signature = "3"
+rustls = { version = "0.23", features = ["prefer-post-quantum"] }
+rcgen = "0.14"
+x509-parser = "0.16"
+axum-server = { version = "0.8", features = ["tls-rustls"] }
+
+[profile.release]
+lto = "thin"
+strip = true
+
+# PBKDF2/ML-DSA are unusably slow at opt-level 0; keep crypto fast in dev/test.
+[profile.dev.package.sha2]
+opt-level = 3
+[profile.dev.package.hmac]
+opt-level = 3
+[profile.dev.package.pbkdf2]
+opt-level = 3
+[profile.dev.package.ml-dsa]
+opt-level = 3
+[profile.dev.package.aws-lc-rs]
+opt-level = 3

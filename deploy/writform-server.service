@@ -1,0 +1,23 @@
+# systemd unit for a bare-metal WritForm server.
+# Install: copy the writform-server binary to /usr/local/bin, then:
+#   sudo cp deploy/writform-server.service /etc/systemd/system/
+#   sudo systemctl enable --now writform-server
+[Unit]
+Description=WritForm self-hosted server
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/writform-server --data-dir /var/lib/writform
+User=writform
+Group=writform
+StateDirectory=writform
+Environment=WRITFORM_DATA_DIR=/var/lib/writform
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/writform
+
+[Install]
+WantedBy=multi-user.target

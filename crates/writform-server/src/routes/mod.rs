@@ -1,0 +1,178 @@
+mod attachments;
+mod auth;
+mod channels;
+mod emotes;
+mod friends;
+mod groups;
+mod healthz;
+mod identity;
+mod messages;
+mod notes;
+mod plugin_data;
+pub mod sessions;
+
+use std::path::PathBuf;
+use std::sync::Arc;
+
+use axum::extract::DefaultBodyLimit;
+use axum::routing::{delete, get, patch, post, put};
+use axum::Router;
+use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
+use base64::Engine;
+use sqlx::SqlitePool;
+use tower_http::trace::TraceLayer;
+
+use crate::auth::LoginRateLimiter;
+use crate::ws::WsHub;
+
+/// Valid PBKDF2 hash of a fixed dummy password; verified against on unknown
+/// usernames so login timing doesn't reveal whether an account exists. (A
+/// caller "guessing" the dummy password is still rejected by the id==0 check.)
+pub fn dummy_password_hash() -> &'static str {
+    static DUMMY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    DUMMY.get_or_init(|| writform_crypto::password::hash_password("writform-timing-dummy"))
+}
+
+#[derive(Clone)]
+pub struct AppState {
+    pub server_name: Arc<str>,
+    pub pool: SqlitePool,
+    pub identity_pubkey_b64: Arc<str>,
+    pub cert_binding_sig_b64: Arc<str>,
+    pub login_limiter: Arc<LoginRateLimiter>,
+    pub ws: Arc<WsHub>,
+    pub attachments_dir: Arc<PathBuf>,
+}
+
+impl AppState {
+    pub fn new(
+        server_name: String,
+        pool: SqlitePool,
+        identity_pubkey: &[u8],
+        cert_binding_sig: &[u8],
+    ) -> Self {
+        Self::with_data_dir(
+            server_name,
+            pool,
+            identity_pubkey,
+            cert_binding_sig,
+            std::env::temp_dir(),
+        )
+    }
+
+    pub fn with_data_dir(
+        server_name: String,
+        pool: SqlitePool,
+        identity_pubkey: &[u8],
+        cert_binding_sig: &[u8],
+        data_dir: PathBuf,
+    ) -> Self {
+        Self {
+            server_name: server_name.into(),
+            pool,
+            identity_pubkey_b64: B64URL.encode(identity_pubkey).into(),
+            cert_binding_sig_b64: B64URL.encode(cert_binding_sig).into(),
+            login_limiter: Arc::new(LoginRateLimiter::default()),
+            ws: Arc::new(WsHub::default()),
+            attachments_dir: Arc::new(data_dir.join("attachments")),
+        }
+    }
+}
+
+pub fn router(state: AppState) -> Router {
+    Router::new()
+        .route("/api/v1/healthz", get(healthz::healthz))
+        .route("/api/v1/identity", get(identity::identity))
+        .route("/api/v1/auth/register", post(auth::register))
+        .route("/api/v1/auth/login", post(auth::login))
+        .route("/api/v1/auth/logout", post(auth::logout))
+        .route("/api/v1/auth/me", get(auth::me))
+        .route("/api/v1/ws", get(crate::ws::ws_handler))
+        .route(
+            "/api/v1/groups",
+            post(groups::create_group).get(groups::my_groups),
+        )
+        .route("/api/v1/groups/{id}/members", get(groups::members))
+        .route("/api/v1/groups/{id}/presence", get(groups::presence))
+        .route("/api/v1/groups/{id}/invites", post(groups::create_invite))
+        .route("/api/v1/groups/{id}/leave", post(groups::leave_group))
+        .route(
+            "/api/v1/groups/{group_id}/members/{user_id}",
+            delete(groups::kick_member),
+        )
+        .route(
+            "/api/v1/groups/{group_id}/members/{user_id}/role",
+            put(groups::set_role),
+        )
+        .route("/api/v1/invites/redeem", post(groups::redeem_invite))
+        .route(
+            "/api/v1/groups/{id}/channels",
+            get(channels::list_channels).post(channels::create_channel),
+        )
+        .route("/api/v1/channels/{id}", delete(channels::delete_channel))
+        .route(
+            "/api/v1/channels/{id}/messages",
+            get(messages::list_messages).post(messages::send_message),
+        )
+        .route(
+            "/api/v1/messages/{id}",
+            patch(messages::edit_message).delete(messages::delete_message),
+        )
+        .route("/api/v1/friends", get(friends::list_friends))
+        .route("/api/v1/friends/{user_id}", delete(friends::remove_friend))
+        .route(
+            "/api/v1/friends/requests",
+            get(friends::list_requests).post(friends::send_request),
+        )
+        .route(
+            "/api/v1/friends/requests/{id}/accept",
+            post(friends::accept_request),
+        )
+        .route(
+            "/api/v1/friends/requests/{id}",
+            delete(friends::delete_request),
+        )
+        .route("/api/v1/notes/share", post(notes::share_note))
+        .route(
+            "/api/v1/plugins/{plugin_id}/data/{scope}/{scope_id}",
+            get(plugin_data::list_keys),
+        )
+        .route(
+            "/api/v1/plugins/{plugin_id}/data/{scope}/{scope_id}/{key}",
+            get(plugin_data::get_key).put(plugin_data::put_key),
+        )
+        .route("/api/v1/dms", get(friends::list_dms))
+        .route("/api/v1/dms/{user_id}", post(friends::open_dm))
+        .route("/api/v1/sessions", post(sessions::create_session))
+        .route(
+            "/api/v1/channels/{id}/sessions",
+            get(sessions::list_sessions),
+        )
+        .route("/api/v1/sessions/{id}", get(sessions::session_detail))
+        .route("/api/v1/sessions/{id}/end", post(sessions::end_session))
+        .route(
+            "/api/v1/sessions/{id}/prompts",
+            post(sessions::create_prompt),
+        )
+        .route("/api/v1/prompts/{id}/start", post(sessions::start_prompt))
+        .route("/api/v1/prompts/{id}/stop", post(sessions::stop_prompt))
+        .route(
+            "/api/v1/prompts/{id}/submission",
+            put(sessions::save_submission),
+        )
+        .route("/api/v1/attachments", post(attachments::upload))
+        .route("/api/v1/attachments/{id}", get(attachments::download))
+        .route(
+            "/api/v1/groups/{id}/emotes",
+            get(emotes::list_emotes).post(emotes::create_emote),
+        )
+        .route(
+            "/api/v1/groups/{group_id}/emotes/{emote_id}",
+            delete(emotes::delete_emote),
+        )
+        .layer(DefaultBodyLimit::max(
+            attachments::MAX_ATTACHMENT_BYTES + 1024 * 1024,
+        ))
+        .layer(TraceLayer::new_for_http())
+        .with_state(state)
+}
