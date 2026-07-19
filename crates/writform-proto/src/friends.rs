@@ -29,6 +29,8 @@ pub struct Friend {
     pub user: UserRef,
     #[ts(type = "number")]
     pub since: UnixMillis,
+    /// Live at request time; deltas arrive as `presence.update` on `user:{me}`.
+    pub online: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

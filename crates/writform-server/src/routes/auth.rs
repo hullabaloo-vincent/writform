@@ -59,12 +59,14 @@ fn user_row_to_api(
     id: i64,
     username: String,
     display_name: Option<String>,
+    is_server_admin: bool,
     created_at: i64,
 ) -> User {
     User {
         id: UserId(id),
         username,
         display_name,
+        is_server_admin,
         created_at,
     }
 }
@@ -84,11 +86,17 @@ pub async fn register(
     .map_err(AppError::internal)?;
 
     let now = now_millis();
+    // The first account on a fresh server is its admin.
+    let is_first: bool = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.pool)
+        .await?
+        == 0;
     let result = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO users (username, password_hash, created_at) VALUES (?, ?, ?) RETURNING id",
+        "INSERT INTO users (username, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?) RETURNING id",
     )
     .bind(&req.username)
     .bind(&password_hash)
+    .bind(is_first)
     .bind(now)
     .fetch_one(&state.pool)
     .await;
@@ -108,7 +116,7 @@ pub async fn register(
     let token = create_session(&state, UserId(id), None).await?;
     Ok(Json(AuthResponse {
         token,
-        user: user_row_to_api(id, req.username, None, now),
+        user: user_row_to_api(id, req.username, None, is_first, now),
     }))
 }
 
@@ -125,8 +133,8 @@ pub async fn login(
         ));
     }
 
-    let row: Option<(i64, String, String, Option<String>, i64)> = sqlx::query_as(
-        "SELECT id, username, password_hash, display_name, created_at FROM users WHERE username = ?",
+    let row: Option<(i64, String, String, Option<String>, bool, i64)> = sqlx::query_as(
+        "SELECT id, username, password_hash, display_name, is_server_admin, created_at FROM users WHERE username = ?",
     )
     .bind(&req.username)
     .fetch_optional(&state.pool)
@@ -134,13 +142,14 @@ pub async fn login(
 
     // Verify against a dummy hash on unknown users so response timing doesn't
     // reveal whether the username exists.
-    let (id, username, password_hash, display_name, created_at) = match row {
+    let (id, username, password_hash, display_name, is_server_admin, created_at) = match row {
         Some(r) => r,
         None => (
             0,
             String::new(),
             crate::routes::dummy_password_hash().to_string(),
             None,
+            false,
             0,
         ),
     };
@@ -162,7 +171,7 @@ pub async fn login(
     let token = create_session(&state, UserId(id), req.device_label).await?;
     Ok(Json(AuthResponse {
         token,
-        user: user_row_to_api(id, username, display_name, created_at),
+        user: user_row_to_api(id, username, display_name, is_server_admin, created_at),
     }))
 }
 
@@ -175,15 +184,86 @@ pub async fn logout(State(state): State<AppState>, auth: AuthUser) -> Result<Sta
 }
 
 pub async fn me(State(state): State<AppState>, auth: AuthUser) -> Result<Json<User>, AppError> {
-    let (id, username, display_name, created_at): (i64, String, Option<String>, i64) =
-        sqlx::query_as("SELECT id, username, display_name, created_at FROM users WHERE id = ?")
-            .bind(auth.user_id.0)
-            .fetch_one(&state.pool)
-            .await?;
+    let (id, username, display_name, is_server_admin, created_at): (
+        i64,
+        String,
+        Option<String>,
+        bool,
+        i64,
+    ) = sqlx::query_as(
+        "SELECT id, username, display_name, is_server_admin, created_at FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&state.pool)
+    .await?;
     Ok(Json(user_row_to_api(
         id,
         username,
         display_name,
+        is_server_admin,
         created_at,
     )))
+}
+
+pub async fn update_profile(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(req): Json<writform_proto::api::UpdateProfileRequest>,
+) -> Result<Json<User>, AppError> {
+    let display_name = req
+        .display_name
+        .map(|d| d.trim().to_string())
+        .filter(|d| !d.is_empty());
+    if display_name.as_ref().is_some_and(|d| d.len() > 64) {
+        return Err(AppError::bad_request(
+            "invalid_display_name",
+            "display name must be at most 64 characters",
+        ));
+    }
+    sqlx::query("UPDATE users SET display_name = ? WHERE id = ?")
+        .bind(&display_name)
+        .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    me(State(state), auth).await
+}
+
+pub async fn list_devices(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<writform_proto::api::DeviceSession>>, AppError> {
+    let rows: Vec<(i64, Option<String>, i64, i64, String)> = sqlx::query_as(
+        "SELECT id, device_label, created_at, last_seen_at, token_hash
+         FROM auth_sessions WHERE user_id = ? ORDER BY last_seen_at DESC",
+    )
+    .bind(auth.user_id.0)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, device_label, created_at, last_seen_at, token_hash)| {
+                writform_proto::api::DeviceSession {
+                    id,
+                    device_label,
+                    created_at,
+                    last_seen_at,
+                    current: token_hash == auth.token_hash,
+                }
+            })
+            .collect(),
+    ))
+}
+
+/// Revoke one of YOUR device sessions (force-logout that device).
+pub async fn revoke_device(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    axum::extract::Path(session_id): axum::extract::Path<i64>,
+) -> Result<StatusCode, AppError> {
+    sqlx::query("DELETE FROM auth_sessions WHERE id = ? AND user_id = ?")
+        .bind(session_id)
+        .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
 }

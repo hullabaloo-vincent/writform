@@ -1,3 +1,4 @@
+import { PenLine } from "lucide-react";
 import type { WritformApp } from "../../platform";
 import { SessionsView } from "./SessionsView";
 import { installSessionsWsHandler } from "./store";
@@ -6,7 +7,7 @@ export const sessionsApp: WritformApp = {
   manifest: {
     id: "writform.sessions",
     name: "Sessions",
-    icon: "✍️",
+    icon: <PenLine size={20} />,
     permissions: ["ui", "commands", "net", "events", "editor"],
   },
   activate(ctx) {

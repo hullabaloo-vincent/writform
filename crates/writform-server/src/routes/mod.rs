@@ -1,5 +1,7 @@
+mod admin;
 mod attachments;
 mod auth;
+mod canvas;
 mod channels;
 mod emotes;
 mod friends;
@@ -86,7 +88,12 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/logout", post(auth::logout))
-        .route("/api/v1/auth/me", get(auth::me))
+        .route("/api/v1/auth/me", get(auth::me).patch(auth::update_profile))
+        .route("/api/v1/auth/devices", get(auth::list_devices))
+        .route("/api/v1/auth/devices/{id}", delete(auth::revoke_device))
+        .route("/api/v1/admin/stats", get(admin::stats))
+        .route("/api/v1/admin/users", get(admin::list_users))
+        .route("/api/v1/admin/users/{id}/logout", post(admin::force_logout))
         .route("/api/v1/ws", get(crate::ws::ws_handler))
         .route(
             "/api/v1/groups",
@@ -159,6 +166,19 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/prompts/{id}/submission",
             put(sessions::save_submission),
+        )
+        .route(
+            "/api/v1/groups/{id}/boards",
+            get(canvas::list_boards).post(canvas::create_board),
+        )
+        .route(
+            "/api/v1/boards/{id}",
+            get(canvas::board_detail).delete(canvas::delete_board),
+        )
+        .route("/api/v1/boards/{id}/elements", post(canvas::create_element))
+        .route(
+            "/api/v1/elements/{id}",
+            patch(canvas::update_element).delete(canvas::delete_element),
         )
         .route("/api/v1/attachments", post(attachments::upload))
         .route("/api/v1/attachments/{id}", get(attachments::download))

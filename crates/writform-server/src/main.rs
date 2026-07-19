@@ -1,8 +1,5 @@
-use std::net::SocketAddr;
-
-use anyhow::Context;
 use clap::Parser;
-use writform_server::{config, db, routes, tls};
+use writform_server::{config, serve};
 
 fn main() -> anyhow::Result<()> {
     // Install the aws-lc-rs provider once, before any rustls config is built —
@@ -26,34 +23,13 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let config = config::Config::parse();
-    tokio::fs::create_dir_all(&config.data_dir)
-        .await
-        .with_context(|| format!("creating data dir {}", config.data_dir.display()))?;
-
-    let tls_identity = tls::load_or_generate(&config.data_dir).await?;
-    let pool = db::connect(&config.data_dir).await?;
-    let state = routes::AppState::with_data_dir(
-        config.server_name.clone(),
-        pool,
-        &tls_identity.identity.public_key_bytes(),
-        &tls_identity.cert_binding_sig,
-        config.data_dir.clone(),
-    );
-    routes::sessions::rehydrate_timers(&state)
-        .await
-        .context("rehydrating prompt timers")?;
-    let app = routes::router(state);
-
-    let addr: SocketAddr = format!("{}:{}", config.bind, config.port)
-        .parse()
-        .with_context(|| format!("invalid bind address {}:{}", config.bind, config.port))?;
-    tracing::info!(
-        "WritForm server listening on https://{addr} (identity fingerprint {})",
-        writform_crypto::identity::fingerprint(&tls_identity.identity.public_key_bytes())
-    );
-
-    axum_server::bind_rustls(addr, tls_identity.rustls_config)
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>())
-        .await?;
+    let started = serve::start(serve::ServeOptions {
+        data_dir: config.data_dir,
+        bind: config.bind,
+        port: config.port,
+        server_name: config.server_name,
+    })
+    .await?;
+    started.wait().await;
     Ok(())
 }

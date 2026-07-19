@@ -19,11 +19,12 @@ export type AppPermission =
   | "events";
 
 export interface AppManifest {
-  /** Unique reverse-dns-ish id, e.g. "writform.hello". */
+  /** Unique reverse-dns-ish id, e.g. "writform.chat". */
   id: string;
   name: string;
-  /** Emoji (for now) shown in the nav rail. */
-  icon: string;
+  /** Dock icon: an icon element (core apps use lucide) or an emoji string
+   *  (third-party plugins declare emoji in manifest.json). */
+  icon: ReactNode;
   permissions: AppPermission[];
 }
 

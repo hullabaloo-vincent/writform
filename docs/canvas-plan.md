@@ -1,8 +1,35 @@
-# Freeform canvas / storyboarding — planning doc
+# Freeform canvas / storyboarding — plan & implementation notes
 
-Status: **planned, not started.** The canvas ships as a later phase, as an
-app on the platform layer (like chat/sessions/notes) — dock icon 🎨, main
-view per board, presence in the group's rooms.
+Status: **v1 implemented** as a platform app (`apps/desktop/src/apps/canvas/`),
+server side in `crates/writform-server/src/routes/canvas.rs` + migration
+`0002_canvas.sql`, covered by `tests/canvas_flow.rs`. The sections below are
+the original plan annotated with what shipped and what was deliberately
+deferred.
+
+## What shipped in v1
+
+- **Boards per group** — create/open/delete (creator or group admin deletes),
+  live board list via `canvas.board.*` events on the group room.
+- **Elements:** sticky notes (5 colors), text blocks, named frames, and
+  connectors (arrows between two elements). Drag, resize, double-click text
+  editing, bring-to-front, delete (toolbar or Delete key).
+- **Realtime:** server-authoritative element rows updated **last-write-wins**
+  over REST, fanned out on the `canvas:{board_id}` WS room; drags are
+  throttled (~8 updates/s) with a final commit on release. Elements held
+  locally (mid-drag) ignore remote echoes.
+- **Viewport:** pan (drag background), zoom (wheel/pinch + toolbar, 20–250%).
+- **Permissions:** board access = group membership, enforced on every route
+  and on WS room subscription.
+
+**v1 uses LWW rows, not a CRDT.** Whole-element last-write-wins is the right
+cost/benefit for storyboarding (elements are small and rarely co-edited);
+the CRDT design below remains the upgrade path if per-character text merging
+or offline editing becomes a requirement. Rendering is DOM + an SVG layer for
+connectors rather than Canvas2D — free text editing/accessibility, and boards
+of hundreds of elements don't need more.
+
+**Not yet:** image elements, freehand ink, presence cursors, undo/redo,
+per-board view-only flag, "present" mode. These are the next milestones.
 
 ## Goals
 

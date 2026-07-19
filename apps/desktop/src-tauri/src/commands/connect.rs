@@ -19,7 +19,7 @@ pub struct CmdError {
 }
 
 impl CmdError {
-    fn new(code: &str, message: impl Into<String>) -> Self {
+    pub fn new(code: &str, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),

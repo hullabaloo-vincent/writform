@@ -1,3 +1,5 @@
+import { LogOut } from "lucide-react";
+
 import { useSession } from "../stores/session";
 import { CommandPalette } from "./CommandPalette";
 import { usePlatform } from "./registry";
@@ -11,7 +13,7 @@ function SessionStatus() {
     <span className="wf-session-status">
       {session.user.username} @ {session.addr}
       <button onClick={() => void logout()} title="Log out">
-        ⏻
+        <LogOut size={13} />
       </button>
     </span>
   );

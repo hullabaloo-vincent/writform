@@ -1,5 +1,6 @@
 pub mod att_protocol;
 pub mod commands;
+pub mod host;
 pub mod net;
 pub mod plugins;
 pub mod servers;
@@ -24,6 +25,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(ConnectionManager::default())
+        .manage(host::HostManager::default())
         .manage(Arc::new(WsManager::default()))
         .register_asynchronous_uri_scheme_protocol("writform-att", att_protocol::handle)
         .setup(|app| {
@@ -31,6 +33,15 @@ pub fn run() {
             match app.path().app_config_dir() {
                 Ok(dir) => manager.load(dir),
                 Err(e) => tracing::error!("no app config dir: {e}"),
+            }
+            match (app.path().app_config_dir(), app.path().app_data_dir()) {
+                (Ok(config_dir), Ok(data_dir)) => {
+                    app.state::<host::HostManager>().init(config_dir, data_dir);
+                    host::auto_start(app.handle());
+                }
+                (config, data) => {
+                    tracing::error!("hosting unavailable: config={config:?} data={data:?}")
+                }
             }
             Ok(())
         })
@@ -43,6 +54,10 @@ pub fn run() {
             commands::connect::register,
             commands::connect::logout,
             commands::connect::current_session,
+            host::host_status,
+            host::host_start,
+            host::host_stop,
+            host::host_reachability,
             commands::api::api_fetch,
             commands::api::upload_attachment,
             wsclient::ws_sub,

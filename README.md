@@ -27,9 +27,11 @@ palette), and third-party plugins use the exact same extension points — see
 attachments, presence. ✍️ **Sessions** — a session holds multiple rich-text
 prompts; each is started/timed/stopped by its creator, everyone writes privately,
 writings reveal when the prompt ends, side chat throughout, full history browsable.
-👥 **Friends** — requests, DMs, note sharing. 📝 **Notes** — local-first markdown
-vault (Obsidian-compatible files), wiki-links + backlinks, share snapshots to
-friends. 🧩 **Plugins** — enable third-party plugins with per-plugin permissions.
+🎨 **Canvas** — group storyboards: sticky notes, text, frames, connectors, live
+multi-user editing. 👥 **Friends** — requests, DMs, note sharing. 📝 **Notes** —
+local-first markdown vault (Obsidian-compatible files), wiki-links + backlinks,
+share snapshots to friends. 🧩 **Plugins** — enable third-party plugins with
+per-plugin permissions.
 
 ## Development
 
@@ -56,6 +58,12 @@ they drift from the Rust types.
 
 ## Self-hosting & updates
 
+- **Easiest — no server admin at all:** open the desktop app and pick **"Host on
+  this computer"** on the welcome screen. It runs a full server inside the app
+  (data under the app's data directory), makes you the server admin, and shows
+  shareable addresses in Settings → Server — including one-click UPnP port
+  mapping for internet access, with port-forward/Tailscale guidance when the
+  router refuses.
 - **Docker:** `docker run -p 7311:7311 -v writform-data:/data ghcr.io/valiquo/writform-server`
 - **Bare metal:** grab `writform-server` from GitHub Releases + `deploy/writform-server.service`
 - Upgrading = pull the new image / binary and restart; SQLite migrations run at startup.

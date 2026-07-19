@@ -1,7 +1,9 @@
+import { ImageIcon, Plus } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
+import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 import { useChat } from "./store";
@@ -237,11 +239,15 @@ function MemberList() {
               <button
                 className="wf-member-kick"
                 title="Kick"
-                onClick={() => {
-                  if (window.confirm(`Kick ${m.user.username}?`) && group) {
-                    void chatApi.kick(group.id, m.user.id);
-                  }
-                }}
+                onClick={() =>
+                  void confirmDialog(`Kick ${m.user.username} from ${group?.name}?`, {
+                    title: "Kick member",
+                    confirmLabel: "Kick",
+                    danger: true,
+                  }).then((ok) => {
+                    if (ok && group) void chatApi.kick(group.id, m.user.id);
+                  })
+                }
               >
                 ×
               </button>
@@ -359,7 +365,7 @@ function Composer() {
         <div className="wf-upload-chips">
           {uploads.map((u) => (
             <span key={u.id} className="wf-upload-chip">
-              🖼 {u.name}
+              <ImageIcon size={13} /> {u.name}
               <button onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}>
                 ×
               </button>
@@ -385,7 +391,7 @@ function Composer() {
           disabled={uploading}
           onClick={() => fileRef.current?.click()}
         >
-          {uploading ? "…" : "+"}
+          {uploading ? "…" : <Plus size={18} />}
         </button>
         <textarea
           rows={1}

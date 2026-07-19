@@ -1,9 +1,11 @@
+import { FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
+import { confirmDialog } from "../../platform";
 import { chatApi } from "../chat/api";
 import { useChat } from "../chat/store";
 
@@ -41,7 +43,9 @@ function SharedNoteCard({ content }: { content: string }) {
   const title = note.title ?? "shared note";
   return (
     <div className="wf-shared-note">
-      <span>📝 {title}</span>
+      <span className="wf-shared-note-title">
+        <FileText size={15} /> {title}
+      </span>
       <button
         disabled={saved}
         onClick={() => {
@@ -75,6 +79,12 @@ export function FriendsView() {
       backend.onWsEvent((event) => {
         if (event.ev !== "event") return;
         if (event.kind.startsWith("friend.")) refresh();
+        if (event.kind === "presence.update") {
+          const { user_id, online } = event.data as { user_id: number; online: boolean };
+          setFriends((list) =>
+            list.map((f) => (f.user.id === user_id ? { ...f, online } : f)),
+          );
+        }
       }),
     [],
   );
@@ -142,6 +152,7 @@ export function FriendsView() {
         <ul className="wf-friend-list">
           {friends.map((f) => (
             <li key={f.user.id} className={dm?.peer.id === f.user.id ? "active" : ""}>
+              <span className={`wf-presence-dot ${f.online ? "" : "off"}`} />
               <button
                 className="wf-friend-open"
                 onClick={() =>
@@ -155,12 +166,17 @@ export function FriendsView() {
               </button>
               <button
                 title="Remove friend"
-                onClick={() => {
-                  if (window.confirm(`Remove ${f.user.username}?`)) {
+                onClick={() =>
+                  void confirmDialog(`Remove ${f.user.username} from your friends?`, {
+                    title: "Remove friend",
+                    confirmLabel: "Remove",
+                    danger: true,
+                  }).then((ok) => {
+                    if (!ok) return;
                     if (dm?.peer.id === f.user.id) setDm(null);
                     act(() => friendsApi.remove(f.user.id));
-                  }
-                }}
+                  })
+                }
               >
                 ×
               </button>

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 
 import { isCmdError } from "../../lib/backend";
+import { Puzzle } from "lucide-react";
+import { confirmDialog } from "../../platform";
 import type { WritformApp } from "../../platform";
 import {
   pluginManager,
@@ -21,9 +23,10 @@ function PluginManagerView() {
       const perms = manifest.permissions.length
         ? manifest.permissions.join(", ")
         : "none";
-      const ok = window.confirm(
-        `Enable "${manifest.name}"?\n\nPermissions it requests: ${perms}\n\n` +
+      const ok = await confirmDialog(
+        `Permissions it requests: ${perms}\n\n` +
           `Plugins run with the app's access — only enable plugins you trust.`,
+        { title: `Enable "${manifest.name}"?`, confirmLabel: "Enable plugin" },
       );
       if (!ok) return;
     }
@@ -74,7 +77,7 @@ export const pluginManagerApp: WritformApp = {
   manifest: {
     id: "writform.plugins",
     name: "Plugins",
-    icon: "🧩",
+    icon: <Puzzle size={20} />,
     permissions: ["ui", "commands"],
   },
   activate(ctx) {

@@ -56,8 +56,59 @@ pub struct User {
     pub id: UserId,
     pub username: String,
     pub display_name: Option<String>,
+    #[serde(default)]
+    pub is_server_admin: bool,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateProfileRequest {
+    /// None clears the display name.
+    pub display_name: Option<String>,
+}
+
+/// A device row from `auth_sessions` (token never leaves the server).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DeviceSession {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub device_label: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+    #[ts(type = "number")]
+    pub last_seen_at: UnixMillis,
+    /// True for the session making this request.
+    pub current: bool,
+}
+
+/// `GET /api/v1/admin/stats`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AdminStats {
+    #[ts(type = "number")]
+    pub users: i64,
+    #[ts(type = "number")]
+    pub groups: i64,
+    #[ts(type = "number")]
+    pub messages: i64,
+    #[ts(type = "number")]
+    pub sessions: i64,
+    #[ts(type = "number")]
+    pub attachments_bytes: i64,
+    #[ts(type = "number")]
+    pub online_users: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct AdminUser {
+    pub user: User,
+    #[ts(type = "number")]
+    pub device_count: i64,
+    pub online: bool,
 }
 
 /// Uniform error body for all non-2xx API responses.

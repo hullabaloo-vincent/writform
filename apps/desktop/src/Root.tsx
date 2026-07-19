@@ -1,5 +1,5 @@
 import { ConnectScreen } from "./connect/ConnectScreen";
-import { AppShell } from "./platform";
+import { AppShell, ConfirmHost } from "./platform";
 import { useSession } from "./stores/session";
 
 /** Gate: connect + auth first, then the platform shell. */
@@ -8,5 +8,10 @@ export function Root() {
   if (phase === "loading") {
     return <div className="wf-boot" />;
   }
-  return phase === "connected" ? <AppShell /> : <ConnectScreen />;
+  return (
+    <>
+      {phase === "connected" ? <AppShell /> : <ConnectScreen />}
+      <ConfirmHost />
+    </>
+  );
 }

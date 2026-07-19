@@ -5,6 +5,7 @@
 //! `apps/desktop/src/bindings/proto/` (see `just bindings` / CI drift guard).
 
 pub mod api;
+pub mod canvas;
 pub mod chat;
 pub mod friends;
 pub mod ids;

@@ -18,6 +18,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 writform-proto = { workspace = true }
 writform-crypto = { workspace = true }
+writform-server = { path = "../../../crates/writform-server" }
 
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
@@ -35,8 +36,11 @@ base64 = { workspace = true }
 tokio-tungstenite = { version = "0.26", features = ["rustls-tls-native-roots"] }
 futures-util = "0.3"
 
+# "Host on this computer": LAN interface discovery + router UPnP port mapping.
+if-addrs = "0.15"
+igd-next = { version = "0.17", features = ["aio_tokio"] }
+
 [dev-dependencies]
 rcgen = { workspace = true }
-writform-server = { path = "../../../crates/writform-server" }
 axum-server = { workspace = true }
 tempfile = "3"

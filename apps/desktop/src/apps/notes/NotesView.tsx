@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { Friend } from "../../bindings/proto/Friend";
 import { backend, isCmdError } from "../../lib/backend";
+import { confirmDialog } from "../../platform";
 import { friendsApi } from "../friends/FriendsView";
 
 interface NoteMeta {
@@ -145,11 +146,15 @@ function NoteEditor({
         <span className="wf-statusbar-spacer" />
         <button onClick={() => setSharing(true)}>Share</button>
         <button
-          onClick={() => {
-            if (window.confirm(`Delete "${name}"?`)) {
-              void backend.vaultDelete(name).then(() => onRenamedOrDeleted(null));
-            }
-          }}
+          onClick={() =>
+            void confirmDialog(`Delete "${name}"? This removes the file from your vault.`, {
+              title: "Delete note",
+              confirmLabel: "Delete",
+              danger: true,
+            }).then((ok) => {
+              if (ok) void backend.vaultDelete(name).then(() => onRenamedOrDeleted(null));
+            })
+          }
         >
           Delete
         </button>

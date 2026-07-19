@@ -1,3 +1,4 @@
+import { MessagesSquare } from "lucide-react";
 import type { WritformApp } from "../../platform";
 import { ChatView } from "./ChatView";
 import { installChatWsHandler } from "./store";
@@ -6,7 +7,7 @@ export const chatApp: WritformApp = {
   manifest: {
     id: "writform.chat",
     name: "Chat",
-    icon: "💬",
+    icon: <MessagesSquare size={20} />,
     permissions: ["ui", "commands", "net", "events"],
   },
   activate(ctx) {

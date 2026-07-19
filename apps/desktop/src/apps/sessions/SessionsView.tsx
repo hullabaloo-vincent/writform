@@ -5,6 +5,7 @@ import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { RichDoc, RichEditor } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
+import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "../chat/api";
 import { useChat } from "../chat/store";
@@ -150,10 +151,15 @@ function SessionRoom() {
               <button
                 className="wf-danger"
                 onClick={() =>
-                  window.confirm("End this session for everyone?") &&
-                  sessionApi
-                    .end(session.id)
-                    .catch((e) => setError(isCmdError(e) ? e.message : String(e)))
+                  void confirmDialog(
+                    "End this session for everyone? Running prompts stop and all writing is revealed.",
+                    { title: "End session", confirmLabel: "End session", danger: true },
+                  ).then((ok) => {
+                    if (!ok) return;
+                    sessionApi
+                      .end(session.id)
+                      .catch((e) => setError(isCmdError(e) ? e.message : String(e)));
+                  })
                 }
               >
                 End session

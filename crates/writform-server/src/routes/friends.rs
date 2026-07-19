@@ -235,6 +235,7 @@ pub async fn list_friends(
     for (a, b, since) in rows {
         let other = if a == auth.user_id.0 { b } else { a };
         friends.push(Friend {
+            online: state.ws.is_online(UserId(other)),
             user: user_ref(&state, other).await?,
             since,
         });

@@ -265,6 +265,22 @@ async fn room_allowed(state: &AppState, room: &str, user: UserId) -> Result<bool
                 .await
                 .is_ok(),
         ),
+        // Boards belong to a group; access = group membership.
+        "canvas" => {
+            let row: Option<(i64,)> =
+                sqlx::query_as("SELECT group_id FROM canvas_boards WHERE id = ?")
+                    .bind(id)
+                    .fetch_optional(&state.pool)
+                    .await
+                    .map_err(|_| ())?;
+            match row {
+                Some((group_id,)) => Ok(perms::member_role(&state.pool, GroupId(group_id), user)
+                    .await
+                    .map_err(|_| ())?
+                    .is_some()),
+                None => Err(()),
+            }
+        }
         // Sessions live in a channel; access = channel access (Phase 3).
         "session" => {
             let row: Option<(i64,)> =

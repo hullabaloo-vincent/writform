@@ -4,5 +4,6 @@ pub mod db;
 pub mod error;
 pub mod perms;
 pub mod routes;
+pub mod serve;
 pub mod tls;
 pub mod ws;
