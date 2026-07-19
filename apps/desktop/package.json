@@ -18,6 +18,7 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@uiw/react-codemirror": "^4.25.11",
     "lucide-react": "^1.25.0",
+    "marked": "^18.0.6",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "zustand": "^5.0.14"

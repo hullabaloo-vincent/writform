@@ -365,12 +365,14 @@ body,
 }
 
 .wf-server-badge {
+  display: inline-block;
   font-size: 10px;
   color: var(--wf-accent);
   border: 1px solid var(--wf-accent);
   border-radius: 4px;
   padding: 0 4px;
   vertical-align: 1px;
+  white-space: nowrap;
 }
 
 .wf-link {
@@ -2410,7 +2412,7 @@ textarea.wf-el-edit {
 
 /* ---- canvas image + link elements ---- */
 
-.wf-el-image {
+.wf-el-img {
   width: 100%;
   height: 100%;
   object-fit: cover;
@@ -2546,4 +2548,195 @@ textarea.wf-el-edit {
   display: flex;
   align-items: center;
   gap: 7px;
+}
+
+.wf-invite-btn {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* ---- board interaction fixes ---- */
+
+.wf-board {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wf-board textarea,
+.wf-board input {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* WKWebView starts native image drags even with draggable={false}; this
+   attribute is what actually disables them, keeping pointer events flowing. */
+.wf-el-img,
+.wf-el-link-thumb,
+.wf-chat-group-img,
+.wf-avatar,
+.wf-msg-image,
+.wf-emote {
+  -webkit-user-drag: none;
+}
+
+.wf-marquee {
+  position: absolute;
+  border: 1px solid var(--wf-accent);
+  background: rgba(124, 108, 240, 0.12);
+  pointer-events: none;
+}
+
+/* ---- connector styling controls ---- */
+
+.wf-cap {
+  fill: var(--wf-text-dim);
+}
+
+.wf-link.selected + .wf-cap,
+.wf-board-links .selected .wf-cap {
+  fill: var(--wf-accent);
+}
+
+.wf-board-toolbar select {
+  padding: 4px 6px;
+  font-size: 12px;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  border: 1px solid var(--wf-border);
+  border-radius: 7px;
+  outline: none;
+}
+
+.wf-conn-cap {
+  font-size: 12px;
+  min-width: 28px;
+}
+
+/* ---- docs app ---- */
+
+.wf-docs {
+  display: flex;
+  gap: 0;
+  height: calc(100% + 48px);
+  margin: -24px;
+}
+
+.wf-docs-nav {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 18px 12px;
+  background: var(--wf-bg-raised);
+  border-right: 1px solid var(--wf-border);
+  overflow-y: auto;
+}
+
+.wf-docs-nav h3 {
+  margin: 0 8px 10px;
+  font-size: 14px;
+}
+
+.wf-docs-nav button {
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wf-docs-nav button:hover {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+
+.wf-docs-nav button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-accent);
+}
+
+.wf-docs-note {
+  margin-top: auto;
+  padding: 8px;
+  font-size: 11px;
+  color: var(--wf-text-dim);
+}
+
+.wf-docs-body {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 28px 40px 60px;
+  max-width: 820px;
+  line-height: 1.65;
+  font-size: 14px;
+}
+
+.wf-docs-body h1 {
+  font-size: 26px;
+  margin-top: 0;
+}
+
+.wf-docs-body h2 {
+  font-size: 19px;
+  margin-top: 32px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-docs-body a {
+  color: var(--wf-accent);
+}
+
+.wf-docs-body code {
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 12.5px;
+}
+
+.wf-docs-body pre {
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  padding: 12px 14px;
+  overflow-x: auto;
+}
+
+.wf-docs-body pre code {
+  border: none;
+  background: transparent;
+  padding: 0;
+}
+
+.wf-docs-body table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+}
+
+.wf-docs-body th,
+.wf-docs-body td {
+  border: 1px solid var(--wf-border);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.wf-docs-body th {
+  background: var(--wf-bg-raised);
+}
+
+.wf-docs-body blockquote {
+  margin: 12px 0;
+  padding: 4px 14px;
+  border-left: 3px solid var(--wf-accent);
+  color: var(--wf-text-dim);
 }

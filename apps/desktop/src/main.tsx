@@ -3,6 +3,7 @@ import ReactDOM from "react-dom/client";
 
 import { canvasApp } from "./apps/canvas";
 import { chatApp } from "./apps/chat";
+import { docsApp } from "./apps/docs";
 import { friendsApp } from "./apps/friends";
 import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
@@ -21,6 +22,7 @@ registerApp(canvasApp);
 registerApp(friendsApp);
 registerApp(notesApp);
 registerApp(pluginManagerApp);
+registerApp(docsApp);
 registerApp(settingsApp);
 
 // Third-party plugins join the same registry after user-granted consent.

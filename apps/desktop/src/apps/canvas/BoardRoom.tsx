@@ -91,6 +91,67 @@ const STICKY_COLORS: Record<string, string> = {
 
 type Tool = "select" | "sticky" | "text" | "frame" | "connect";
 
+/** Connector styling, stored as JSON in the connector element's `text`. */
+type ConnAnchor = "auto" | "top" | "bottom" | "left" | "right";
+type ConnCap = "none" | "arrow" | "dot";
+interface ConnStyle {
+  from_anchor: ConnAnchor;
+  to_anchor: ConnAnchor;
+  dash: boolean;
+  start_cap: ConnCap;
+  end_cap: ConnCap;
+}
+
+const CONN_DEFAULTS: ConnStyle = {
+  from_anchor: "auto",
+  to_anchor: "auto",
+  dash: false,
+  start_cap: "none",
+  end_cap: "none",
+};
+
+function connStyle(text: string): ConnStyle {
+  try {
+    const parsed = JSON.parse(text) as Partial<ConnStyle>;
+    return { ...CONN_DEFAULTS, ...parsed };
+  } catch {
+    return { ...CONN_DEFAULTS };
+  }
+}
+
+/** Endpoint of a connector on an element for the chosen anchor side. */
+function anchorPoint(el: CanvasElement, a: ConnAnchor): { x: number; y: number } {
+  switch (a) {
+    case "top":
+      return { x: el.x + el.w / 2, y: el.y };
+    case "bottom":
+      return { x: el.x + el.w / 2, y: el.y + el.h };
+    case "left":
+      return { x: el.x, y: el.y + el.h / 2 };
+    case "right":
+      return { x: el.x + el.w, y: el.y + el.h / 2 };
+    default:
+      return { x: el.x + el.w / 2, y: el.y + el.h / 2 };
+  }
+}
+
+/** Where the segment from `el`'s center toward `toward` exits `el`'s rect —
+ *  used for "auto" anchors so end decorations aren't hidden under elements. */
+function clipToRect(el: CanvasElement, toward: { x: number; y: number }): { x: number; y: number } {
+  const cx = el.x + el.w / 2;
+  const cy = el.y + el.h / 2;
+  const dx = toward.x - cx;
+  const dy = toward.y - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const tx = dx !== 0 ? el.w / 2 / Math.abs(dx) : Infinity;
+  const ty = dy !== 0 ? el.h / 2 / Math.abs(dy) : Infinity;
+  const t = Math.min(tx, ty, 1);
+  return { x: cx + dx * t, y: cy + dy * t };
+}
+
+const CAP_CYCLE: ConnCap[] = ["none", "arrow", "dot"];
+const CAP_LABEL: Record<ConnCap, string> = { none: "—", arrow: "▶", dot: "●" };
+
 interface Viewport {
   tx: number;
   ty: number;
@@ -124,7 +185,10 @@ export function BoardRoom() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<Viewport>({ tx: 60, ty: 40, scale: 1 });
   const [tool, setTool] = useState<Tool>("select");
-  const [selected, setSelected] = useState<number | null>(null);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
+    null,
+  );
   const [editing, setEditing] = useState<number | null>(null);
   const [connectFrom, setConnectFrom] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -140,10 +204,12 @@ export function BoardRoom() {
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "textarea" || tag === "input") return;
-      if (selected !== null) {
-        canvasApi.deleteElement(selected).catch(fail);
-        useCanvas.getState().removeElement(selected);
-        setSelected(null);
+      if (selected.size > 0) {
+        for (const id of selected) {
+          canvasApi.deleteElement(id).catch(fail);
+          useCanvas.getState().removeElement(id);
+        }
+        setSelected(new Set());
       }
     };
     window.addEventListener("keydown", onKey);
@@ -186,7 +252,7 @@ export function BoardRoom() {
         })
         .then((el) => {
           useCanvas.getState().applyElement(el);
-          setSelected(el.id);
+          setSelected(new Set([el.id]));
         })
         .catch(fail);
     };
@@ -275,7 +341,7 @@ export function BoardRoom() {
       })
       .then((el) => {
         useCanvas.getState().applyElement(el);
-        setSelected(el.id);
+        setSelected(new Set([el.id]));
         if (kind !== "frame") setEditing(el.id);
       })
       .catch(fail);
@@ -289,8 +355,37 @@ export function BoardRoom() {
       placeElement(tool, x, y);
       return;
     }
+    e.preventDefault();
+    if (e.shiftKey) {
+      // Marquee select.
+      const start = toWorld(e.clientX, e.clientY);
+      const rect = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
+      setMarquee(rect);
+      const onMove = (ev: PointerEvent) => {
+        const now = toWorld(ev.clientX, ev.clientY);
+        rect.x2 = now.x;
+        rect.y2 = now.y;
+        setMarquee({ ...rect });
+      };
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        setMarquee(null);
+        const [lx, hx] = [Math.min(rect.x1, rect.x2), Math.max(rect.x1, rect.x2)];
+        const [ly, hy] = [Math.min(rect.y1, rect.y2), Math.max(rect.y1, rect.y2)];
+        const hit = new Set<number>();
+        for (const el of Object.values(useCanvas.getState().elements)) {
+          if (el.kind === "connector") continue;
+          if (el.x < hx && el.x + el.w > lx && el.y < hy && el.y + el.h > ly) hit.add(el.id);
+        }
+        setSelected(hit);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+      return;
+    }
     // Pan.
-    setSelected(null);
+    setSelected(new Set());
     setConnectFrom(null);
     const start = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
     const target = e.currentTarget;
@@ -333,39 +428,79 @@ export function BoardRoom() {
       }
       return;
     }
-    setSelected(el.id);
+    e.preventDefault(); // stops native image drag + text selection
+    // Shift-click toggles membership without dragging.
+    if (e.shiftKey) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        if (next.has(el.id)) next.delete(el.id);
+        else next.add(el.id);
+        return next;
+      });
+      return;
+    }
+    // Click on an unselected element selects just it; a selected one keeps
+    // the group so the whole selection drags together.
+    const dragSet = new Set(selected.has(el.id) ? selected : [el.id]);
+    if (!selected.has(el.id)) setSelected(new Set([el.id]));
     if (editing !== null && editing !== el.id) setEditing(null);
 
-    // Bring to front once per grab.
-    const top = maxZ(useCanvas.getState().elements);
+    const all = useCanvas.getState().elements;
+    // A frame carries everything whose center sits inside it.
+    for (const id of [...dragSet]) {
+      const f = all[id];
+      if (!f || f.kind !== "frame") continue;
+      for (const other of Object.values(all)) {
+        if (other.id === f.id || other.kind === "connector") continue;
+        const cx = other.x + other.w / 2;
+        const cy = other.y + other.h / 2;
+        if (cx >= f.x && cx <= f.x + f.w && cy >= f.y && cy <= f.y + f.h) {
+          dragSet.add(other.id);
+        }
+      }
+    }
+
+    // Bring the grabbed element to front once per grab.
+    const top = maxZ(all);
     if (el.z < top) {
       patchLocal(el.id, { z: top + 1 });
       canvasApi.updateElement(el.id, { z: top + 1 }).catch(() => {});
     }
 
     // Drag to move, throttled sync while moving, final patch on release.
-    hold(el.id, true);
+    const origins = new Map<number, { x: number; y: number }>();
+    for (const id of dragSet) {
+      const item = all[id];
+      if (!item) continue;
+      origins.set(id, { x: item.x, y: item.y });
+      hold(id, true);
+    }
     const startWorld = toWorld(e.clientX, e.clientY);
-    const origin = { x: el.x, y: el.y };
-    let last = { x: el.x, y: el.y };
+    const last = new Map<number, { x: number; y: number }>(origins);
     let lastSent = 0;
     const onMove = (ev: PointerEvent) => {
       const now = toWorld(ev.clientX, ev.clientY);
-      last = { x: origin.x + now.x - startWorld.x, y: origin.y + now.y - startWorld.y };
-      patchLocal(el.id, last);
+      const dx = now.x - startWorld.x;
+      const dy = now.y - startWorld.y;
       const t = Date.now();
-      if (t - lastSent > 120) {
-        lastSent = t;
-        canvasApi.updateElement(el.id, last).catch(() => {});
+      const send = t - lastSent > 120;
+      if (send) lastSent = t;
+      for (const [id, origin] of origins) {
+        const pos = { x: origin.x + dx, y: origin.y + dy };
+        last.set(id, pos);
+        patchLocal(id, pos);
+        if (send) canvasApi.updateElement(id, pos).catch(() => {});
       }
     };
     const onUp = () => {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
-      canvasApi
-        .updateElement(el.id, last)
-        .catch(fail)
-        .finally(() => hold(el.id, false));
+      for (const [id, pos] of last) {
+        canvasApi
+          .updateElement(id, pos)
+          .catch(fail)
+          .finally(() => hold(id, false));
+      }
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -417,7 +552,9 @@ export function BoardRoom() {
     .filter((el) => ["sticky", "text", "image", "link"].includes(el.kind))
     .sort((a, b) => a.z - b.z);
   const connectors = all.filter((el) => el.kind === "connector");
-  const selectedEl = selected !== null ? elements[selected] : undefined;
+    // Single-selection element (color swatches, connector styling, resize).
+  const soleId = selected.size === 1 ? [...selected][0] : null;
+  const selectedEl = soleId !== null ? elements[soleId] : undefined;
 
   return (
     <div className="wf-board-wrap">
@@ -465,7 +602,7 @@ export function BoardRoom() {
           {frames.map((el) => (
             <div
               key={el.id}
-              className={`wf-el wf-el-frame ${selected === el.id ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
+              className={`wf-el wf-el-frame ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
               style={{ left: el.x, top: el.y, width: el.w, height: el.h }}
               onPointerDown={(e) => onElementDown(e, el)}
               onDoubleClick={() => setEditing(el.id)}
@@ -476,40 +613,70 @@ export function BoardRoom() {
                 onCommit={(text) => commitText(el, text)}
                 className="wf-el-frame-label"
               />
-              {selected === el.id && (
+              {selected.has(el.id) && selected.size === 1 && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
               )}
             </div>
           ))}
 
           <svg className="wf-board-links">
+            <defs>
+              <marker
+                id="wf-cap-arrow"
+                viewBox="0 0 10 10"
+                refX="9"
+                refY="5"
+                markerWidth="7"
+                markerHeight="7"
+                orient="auto-start-reverse"
+              >
+                <path d="M0,0 L10,5 L0,10 z" className="wf-cap" />
+              </marker>
+              <marker id="wf-cap-dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
+                <circle cx="5" cy="5" r="4" className="wf-cap" />
+              </marker>
+            </defs>
             {connectors.map((c) => {
               const from = c.from_id !== null ? elements[c.from_id] : undefined;
               const to = c.to_id !== null ? elements[c.to_id] : undefined;
               if (!from || !to) return null;
-              const x1 = from.x + from.w / 2;
-              const y1 = from.y + from.h / 2;
-              const x2 = to.x + to.w / 2;
-              const y2 = to.y + to.h / 2;
+              const cs = connStyle(c.text);
+              const fromCenter = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+              const toCenter = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+              // Auto anchors attach at the element edge (center-to-center
+              // endpoints would bury the arrowheads under the elements).
+              const p1 =
+                cs.from_anchor === "auto"
+                  ? clipToRect(from, toCenter)
+                  : anchorPoint(from, cs.from_anchor);
+              const p2 =
+                cs.to_anchor === "auto"
+                  ? clipToRect(to, fromCenter)
+                  : anchorPoint(to, cs.to_anchor);
+              const cap = (v: ConnCap) =>
+                v === "arrow" ? "url(#wf-cap-arrow)" : v === "dot" ? "url(#wf-cap-dot)" : undefined;
               return (
                 <g key={c.id}>
                   <line
                     className="wf-link-hit"
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
                     onPointerDown={(e) => {
                       e.stopPropagation();
-                      setSelected(c.id);
+                      setSelected(new Set([c.id]));
                     }}
                   />
                   <line
-                    className={`wf-link ${selected === c.id ? "selected" : ""}`}
-                    x1={x1}
-                    y1={y1}
-                    x2={x2}
-                    y2={y2}
+                    className={`wf-link ${selected.has(c.id) ? "selected" : ""}`}
+                    x1={p1.x}
+                    y1={p1.y}
+                    x2={p2.x}
+                    y2={p2.y}
+                    strokeDasharray={cs.dash ? "7 5" : undefined}
+                    markerStart={cap(cs.start_cap)}
+                    markerEnd={cap(cs.end_cap)}
                   />
                 </g>
               );
@@ -519,7 +686,7 @@ export function BoardRoom() {
           {bodies.map((el) => (
             <div
               key={el.id}
-              className={`wf-el wf-el-${el.kind} ${selected === el.id ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
+              className={`wf-el wf-el-${el.kind} ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
@@ -532,7 +699,7 @@ export function BoardRoom() {
             >
               {el.kind === "image" ? (
                 <img
-                  className="wf-el-image"
+                  className="wf-el-img"
                   src={`writform-att://attachment/${el.text}`}
                   alt=""
                   draggable={false}
@@ -547,11 +714,23 @@ export function BoardRoom() {
                   className={el.kind === "sticky" ? "wf-el-sticky-text" : "wf-el-text-text"}
                 />
               )}
-              {selected === el.id && (
+              {selected.has(el.id) && selected.size === 1 && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
               )}
             </div>
           ))}
+
+          {marquee && (
+            <div
+              className="wf-marquee"
+              style={{
+                left: Math.min(marquee.x1, marquee.x2),
+                top: Math.min(marquee.y1, marquee.y2),
+                width: Math.abs(marquee.x2 - marquee.x1),
+                height: Math.abs(marquee.y2 - marquee.y1),
+              }}
+            />
+          )}
         </div>
 
         <div className="wf-board-toolbar" onPointerDown={(e) => e.stopPropagation()}>
@@ -586,6 +765,16 @@ export function BoardRoom() {
           <button title="Zoom in" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1.2)}>
             <ZoomIn size={17} />
           </button>
+          {selectedEl && selectedEl.kind === "connector" && (
+            <ConnectorControls
+              connector={selectedEl}
+              onChange={(cs) => {
+                const text = JSON.stringify(cs);
+                patchLocal(selectedEl.id, { text });
+                canvasApi.updateElement(selectedEl.id, { text }).catch(fail);
+              }}
+            />
+          )}
           {selectedEl && selectedEl.kind === "sticky" && (
             <>
               <span className="wf-board-toolbar-sep" />
@@ -603,15 +792,17 @@ export function BoardRoom() {
               ))}
             </>
           )}
-          {selectedEl && (
+          {selected.size > 0 && (
             <>
               <span className="wf-board-toolbar-sep" />
               <button
                 title="Delete element"
                 onClick={() => {
-                  canvasApi.deleteElement(selectedEl.id).catch(fail);
-                  useCanvas.getState().removeElement(selectedEl.id);
-                  setSelected(null);
+                  for (const id of selected) {
+                    canvasApi.deleteElement(id).catch(fail);
+                    useCanvas.getState().removeElement(id);
+                  }
+                  setSelected(new Set());
                 }}
               >
                 <Trash2 size={17} />
@@ -685,5 +876,66 @@ function ElementText({
       }}
       onPointerDown={(e) => e.stopPropagation()}
     />
+  );
+}
+
+/** Anchor + line-style controls shown while a connector is selected. */
+function ConnectorControls({
+  connector,
+  onChange,
+}: {
+  connector: CanvasElement;
+  onChange: (cs: ConnStyle) => void;
+}) {
+  const cs = connStyle(connector.text);
+  const anchors: ConnAnchor[] = ["auto", "top", "right", "bottom", "left"];
+  const cycleCap = (v: ConnCap) => CAP_CYCLE[(CAP_CYCLE.indexOf(v) + 1) % CAP_CYCLE.length];
+  return (
+    <>
+      <span className="wf-board-toolbar-sep" />
+      <button
+        title={`Start decoration: ${cs.start_cap} (click to change)`}
+        className="wf-conn-cap"
+        onClick={() => onChange({ ...cs, start_cap: cycleCap(cs.start_cap) })}
+      >
+        {CAP_LABEL[cs.start_cap]}
+      </button>
+      <select
+        title="Start attaches to this side"
+        value={cs.from_anchor}
+        onChange={(e) => onChange({ ...cs, from_anchor: e.target.value as ConnAnchor })}
+      >
+        {anchors.map((a) => (
+          <option key={a} value={a}>
+            {a}
+          </option>
+        ))}
+      </select>
+      <button
+        title={cs.dash ? "Dashed (click for solid)" : "Solid (click for dashed)"}
+        className={cs.dash ? "active" : ""}
+        onClick={() => onChange({ ...cs, dash: !cs.dash })}
+      >
+        {cs.dash ? "┅" : "—"}
+      </button>
+      <select
+        title="End attaches to this side"
+        value={cs.to_anchor}
+        onChange={(e) => onChange({ ...cs, to_anchor: e.target.value as ConnAnchor })}
+      >
+        {anchors.map((a) => (
+          <option key={a} value={a}>
+            {a}
+          </option>
+        ))}
+      </select>
+      <button
+        title={`End decoration: ${cs.end_cap} (click to change)`}
+        className="wf-conn-cap"
+        onClick={() => onChange({ ...cs, end_cap: cycleCap(cs.end_cap) })}
+      >
+        {CAP_LABEL[cs.end_cap]}
+      </button>
+    </>
   );
 }

@@ -156,7 +156,14 @@ function SessionRoom() {
   const groups = useChat((s) => s.groups);
   const [error, setError] = useState<string | null>(null);
 
-  if (!detail) return <div className="wf-sessions-empty">Loading…</div>;
+  if (!detail) {
+    // Escape hatch: if loading stalls (server hiccup), don't trap the user.
+    return (
+      <div className="wf-sessions-empty">
+        Loading… <button onClick={closeSession}>← Back to sessions</button>
+      </div>
+    );
+  }
   const { session, prompts } = detail;
   const group = groups.find((g) => g.id === (useChat.getState().activeGroupId ?? -1));
   const canModerate = me && (session.creator.id === me.id || group?.my_role === "admin");

@@ -8,6 +8,7 @@ import {
   Settings as SettingsIcon,
   SmilePlus,
   Trash2,
+  UserPlus,
   Volume2,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -420,12 +421,13 @@ function ChannelList() {
               <SettingsIcon size={14} />
             </button>
             <button
-              title="Create invite"
+              className="wf-invite-btn"
+              title="Invite people — generate a temporary invite code"
               onClick={() =>
                 void chatApi.createInvite(group!.id).then((i) => setInvite(i.code))
               }
             >
-              ✉
+              <UserPlus size={13} /> Invite
             </button>
           </>
         )}

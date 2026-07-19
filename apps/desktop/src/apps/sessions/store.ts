@@ -2,7 +2,7 @@ import { create } from "zustand";
 
 import type { SessionDetail } from "../../bindings/proto/SessionDetail";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
-import { backend } from "../../lib/backend";
+import { backend, isCmdError } from "../../lib/backend";
 import { sessionApi } from "./api";
 
 interface SessionsState {
@@ -32,11 +32,18 @@ export const useSessions = create<SessionsState>((set, get) => ({
 
   openSession: async (sessionId) => {
     set({ activeSessionId: sessionId, detail: null });
-    await backend.wsSub([`session:${sessionId}`]);
-    const detail = await sessionApi.detail(sessionId);
-    // Also watch the side chat so it flows into the chat store's buckets.
-    await backend.wsSub([`channel:${detail.session.chat_channel_id}`]);
-    set({ detail });
+    try {
+      await backend.wsSub([`session:${sessionId}`]);
+      const detail = await sessionApi.detail(sessionId);
+      // Also watch the side chat so it flows into the chat store's buckets.
+      await backend.wsSub([`channel:${detail.session.chat_channel_id}`]);
+      set({ detail });
+    } catch (e) {
+      // The session may be deleted or the server unreachable. Roll the room
+      // state back so the Sessions app doesn't sit on "Loading…" forever.
+      get().closeSession();
+      throw e;
+    }
   },
 
   closeSession: () => {
@@ -50,8 +57,14 @@ export const useSessions = create<SessionsState>((set, get) => ({
   refreshDetail: async () => {
     const { activeSessionId } = get();
     if (activeSessionId === null) return;
-    const detail = await sessionApi.detail(activeSessionId);
-    set({ detail });
+    try {
+      const detail = await sessionApi.detail(activeSessionId);
+      set({ detail });
+    } catch (e) {
+      // A vanished session (deleted while we looked away) closes the room.
+      if (isCmdError(e) && e.code === "no_such_session") get().closeSession();
+      else throw e;
+    }
   },
 }));
 
