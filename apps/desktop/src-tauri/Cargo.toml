@@ -22,6 +22,7 @@ writform-server = { path = "../../../crates/writform-server" }
 
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
+tauri-plugin-notification = "2"
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 serde = { workspace = true }

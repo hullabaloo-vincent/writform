@@ -867,6 +867,31 @@ function Composer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // @mention / #channel autocomplete on the draft's trailing token.
+  const members = useChat((s) => s.members);
+  const mentionMatch = /(^|\s)@([A-Za-z0-9_-]*)$/.exec(draft);
+  const channelRefMatch = /(^|\s)#([a-z0-9_-]*)$/.exec(draft);
+  const mentionSuggestions = mentionMatch
+    ? members
+        .filter((mm) =>
+          mm.user.username.toLowerCase().startsWith(mentionMatch[2].toLowerCase()),
+        )
+        .slice(0, 6)
+    : [];
+  const channelSuggestions = channelRefMatch
+    ? channels
+        .filter((c) => c.kind === "text" && (c.name ?? "").startsWith(channelRefMatch[2]))
+        .slice(0, 6)
+    : [];
+  const completeMention = (username: string) => {
+    setDraft((d) => d.replace(/@[A-Za-z0-9_-]*$/, `@${username} `));
+    draftRef.current?.focus();
+  };
+  const completeChannelRef = (name: string) => {
+    setDraft((d) => d.replace(/#[a-z0-9_-]*$/, `#${name} `));
+    draftRef.current?.focus();
+  };
+
   // Slash commands: "/name args" runs a registered chat command instead of
   // sending a message. A menu of matches shows while the draft starts with /.
   const chatCommands = usePlatform((s) => s.chatCommands);
@@ -942,6 +967,31 @@ function Composer() {
           {cmdError}
         </p>
       )}
+      {mentionSuggestions.length > 0 && (
+        <div className="wf-cmd-menu">
+          {mentionSuggestions.map((mm) => (
+            <button key={mm.user.id} onClick={() => completeMention(mm.user.username)}>
+              <Avatar
+                name={mm.user.display_name ?? mm.user.username}
+                attachmentId={mm.user.avatar_attachment_id}
+                accentColor={mm.user.accent_color}
+                size={18}
+              />
+              <code>@{mm.user.username}</code>
+              {mm.user.display_name && <span>{mm.user.display_name}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+      {channelSuggestions.length > 0 && (
+        <div className="wf-cmd-menu">
+          {channelSuggestions.map((c) => (
+            <button key={c.id} onClick={() => completeChannelRef(c.name ?? "")}>
+              <code>#{c.name}</code>
+            </button>
+          ))}
+        </div>
+      )}
       {isCommandDraft && commandMatches.length > 0 && (
         <div className="wf-cmd-menu">
           {commandMatches.slice(0, 8).map((c) => (
@@ -1012,6 +1062,18 @@ function Composer() {
             }
           }}
           onKeyDown={(e) => {
+            if (
+              (e.key === "Enter" || e.key === "Tab") &&
+              (mentionSuggestions.length > 0 || channelSuggestions.length > 0)
+            ) {
+              e.preventDefault();
+              if (mentionSuggestions.length > 0) {
+                completeMention(mentionSuggestions[0].user.username);
+              } else {
+                completeChannelRef(channelSuggestions[0].name ?? "");
+              }
+              return;
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               submit();

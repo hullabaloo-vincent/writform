@@ -9,6 +9,7 @@ import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
 import { settingsApp } from "./apps/settings";
 import { sessionsApp } from "./apps/sessions";
+import { installNotifications } from "./lib/notifications";
 import { installResync, registerApp } from "./platform";
 import { loadEnabledPlugins } from "./platform/pluginHost";
 import { Root } from "./Root";
@@ -30,6 +31,9 @@ void loadEnabledPlugins();
 
 // After a socket outage, stores re-fetch what they're showing.
 installResync();
+
+// OS notifications for DMs, mentions, sessions, and friend activity.
+installNotifications();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

@@ -2740,3 +2740,40 @@ textarea.wf-el-edit {
   border-left: 3px solid var(--wf-accent);
   color: var(--wf-text-dim);
 }
+
+/* ---- mentions + channel refs ---- */
+
+.wf-mention {
+  display: inline-block;
+  padding: 0 5px;
+  border-radius: 6px;
+  background: rgba(124, 108, 240, 0.18);
+  color: var(--wf-accent);
+  font-weight: 600;
+}
+
+.wf-mention.me {
+  background: var(--wf-accent);
+  color: white;
+}
+
+.wf-channel-ref {
+  display: inline-block;
+  padding: 0 5px;
+  border: none;
+  border-radius: 6px;
+  background: rgba(124, 108, 240, 0.18);
+  color: var(--wf-accent);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wf-channel-ref:hover {
+  background: var(--wf-accent);
+  color: white;
+}
+
+.wf-cmd-menu button .wf-avatar {
+  flex-shrink: 0;
+}
