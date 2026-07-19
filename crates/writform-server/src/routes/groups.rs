@@ -249,14 +249,27 @@ pub async fn presence(
 ) -> Result<Json<PresenceSnapshot>, AppError> {
     let group = GroupId(group_id);
     perms::require_member(&state.pool, group, auth.user_id).await?;
-    let rows: Vec<(i64,)> = sqlx::query_as("SELECT user_id FROM group_members WHERE group_id = ?")
-        .bind(group.0)
-        .fetch_all(&state.pool)
-        .await?;
-    let candidates: Vec<UserId> = rows.into_iter().map(|(id,)| UserId(id)).collect();
-    Ok(Json(PresenceSnapshot {
-        online: state.ws.online_among(&candidates),
-    }))
+    let rows: Vec<(i64, String)> = sqlx::query_as(
+        "SELECT m.user_id, u.status FROM group_members m JOIN users u ON u.id = m.user_id
+         WHERE m.group_id = ?",
+    )
+    .bind(group.0)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut online = Vec::new();
+    let mut busy = Vec::new();
+    for (id, status) in rows {
+        let uid = UserId(id);
+        if !state.ws.is_online(uid) || status == "hidden" {
+            continue;
+        }
+        if status == "busy" {
+            busy.push(uid);
+        } else {
+            online.push(uid);
+        }
+    }
+    Ok(Json(PresenceSnapshot { online, busy }))
 }
 
 pub async fn create_invite(

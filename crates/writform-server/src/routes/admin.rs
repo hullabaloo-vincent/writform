@@ -72,11 +72,13 @@ pub async fn list_users(
         i64,
         Option<i64>,
         Option<String>,
+        String,
+        Option<String>,
     );
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT u.id, u.username, u.display_name, u.is_server_admin, u.created_at,
                 (SELECT COUNT(*) FROM auth_sessions s WHERE s.user_id = u.id),
-                u.avatar_attachment_id, u.accent_color
+                u.avatar_attachment_id, u.accent_color, u.status, u.bio
          FROM users u ORDER BY u.created_at",
     )
     .fetch_all(&state.pool)
@@ -93,6 +95,8 @@ pub async fn list_users(
                     device_count,
                     avatar,
                     accent,
+                    status,
+                    bio,
                 )| {
                     AdminUser {
                         online: state.ws.is_online(UserId(id)),
@@ -103,6 +107,8 @@ pub async fn list_users(
                             is_server_admin,
                             avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
                             accent_color: accent,
+                            status,
+                            bio,
                             created_at,
                         },
                         device_count,

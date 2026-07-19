@@ -1,6 +1,7 @@
 import {
   ArrowDownToLine,
   Fingerprint,
+  Mic,
   MonitorSmartphone,
   Settings as SettingsIcon,
   ShieldCheck,
@@ -21,6 +22,11 @@ import {
   type SavedServer,
 } from "../../lib/backend";
 import { uploadBlob } from "../../lib/upload";
+import {
+  loadVoiceSettings,
+  saveVoiceSettings,
+  type VoiceSettings,
+} from "../../lib/voiceSettings";
 import { Avatar, confirmDialog } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -37,7 +43,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.body as T;
 }
 
-type Tab = "profile" | "devices" | "server" | "app" | "admin";
+type Tab = "profile" | "voice" | "devices" | "server" | "app" | "admin";
 
 function SettingsView() {
   const me = useSession((s) => s.session?.user);
@@ -46,6 +52,7 @@ function SettingsView() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
+    { id: "voice", label: "Voice", icon: <Mic size={15} />, show: true },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: true },
     { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: true },
     { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: true },
@@ -73,6 +80,7 @@ function SettingsView() {
       <div className="wf-settings-body">
         {error && <p className="wf-connect-error">{error}</p>}
         {tab === "profile" && <ProfileTab onError={setError} />}
+        {tab === "voice" && <VoiceTab onError={setError} />}
         {tab === "devices" && <DevicesTab onError={setError} />}
         {tab === "server" && <ServerTab onError={setError} />}
         {tab === "app" && <AppTab onError={setError} />}
@@ -86,6 +94,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
   const session = useSession((s) => s.session);
   const setConnected = useSession((s) => s.setConnected);
   const [displayName, setDisplayName] = useState(session?.user.display_name ?? "");
+  const [bio, setBio] = useState(session?.user.bio ?? "");
   const [avatarId, setAvatarId] = useState<number | null>(
     session?.user.avatar_attachment_id ?? null,
   );
@@ -103,6 +112,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
       display_name: displayName.trim() || null,
       avatar_attachment_id: avatarId,
       accent_color: useColor ? color : null,
+      bio: bio.trim() || null,
     })
       .then((user) => {
         setConnected({ ...session, user });
@@ -184,6 +194,20 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
         />
       </label>
       <label className="wf-settings-field">
+        About me (shown on your profile card)
+        <textarea
+          className="wf-bio-input"
+          rows={3}
+          maxLength={300}
+          placeholder="Say something about yourself…"
+          value={bio}
+          onChange={(e) => {
+            setBio(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </label>
+      <label className="wf-settings-field">
         Display name
         <div className="wf-connect-row">
           <input
@@ -199,6 +223,148 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
           </button>
         </div>
       </label>
+    </section>
+  );
+}
+
+function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
+  const [settings, setSettings] = useState<VoiceSettings>(() => loadVoiceSettings());
+  const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [testing, setTesting] = useState(false);
+  const [level, setLevel] = useState(0);
+  const testStop = useRef<(() => void) | null>(null);
+
+  const apply = (patch: Partial<VoiceSettings>) => {
+    const next = { ...settings, ...patch };
+    setSettings(next);
+    saveVoiceSettings(next);
+  };
+
+  const refreshDevices = async () => {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      setInputs(devices.filter((d) => d.kind === "audioinput"));
+    } catch {
+      // devices stay unknown until permission is granted
+    }
+  };
+  useEffect(() => {
+    void refreshDevices();
+    return () => testStop.current?.();
+  }, []);
+
+  const stopTest = () => {
+    testStop.current?.();
+    testStop.current = null;
+    setTesting(false);
+    setLevel(0);
+  };
+
+  const startTest = async () => {
+    onError(null);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: settings.inputDeviceId
+          ? { deviceId: { ideal: settings.inputDeviceId } }
+          : true,
+      });
+      // Labels become available once permission is granted.
+      void refreshDevices();
+      const ctx = new AudioContext();
+      if (ctx.state === "suspended") void ctx.resume();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 512;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      const buf = new Uint8Array(512);
+      const gain = () => loadVoiceSettings().inputGain;
+      const timer = setInterval(() => {
+        analyser.getByteTimeDomainData(buf);
+        let sum = 0;
+        for (let i = 0; i < buf.length; i++) {
+          const v = (buf[i] - 128) / 128;
+          sum += v * v;
+        }
+        setLevel(Math.min(1, Math.sqrt(sum / buf.length) * 3.5 * gain()));
+      }, 80);
+      testStop.current = () => {
+        clearInterval(timer);
+        stream.getTracks().forEach((t) => t.stop());
+        void ctx.close();
+      };
+      setTesting(true);
+    } catch (e) {
+      onError(
+        e instanceof DOMException
+          ? "microphone access was denied"
+          : isCmdError(e)
+            ? e.message
+            : String(e),
+      );
+    }
+  };
+
+  return (
+    <section>
+      <h3>Voice</h3>
+      <label className="wf-settings-field">
+        Microphone
+        <select
+          value={settings.inputDeviceId ?? ""}
+          onChange={(e) => apply({ inputDeviceId: e.target.value || null })}
+        >
+          <option value="">System default</option>
+          {inputs.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Microphone ${d.deviceId.slice(0, 6)}`}
+            </option>
+          ))}
+        </select>
+        {inputs.every((d) => !d.label) && (
+          <span className="wf-session-meta">
+            Run a mic test once to grant access and see device names.
+          </span>
+        )}
+      </label>
+      <label className="wf-settings-field wf-field-row">
+        Input volume
+        <input
+          type="range"
+          min={0}
+          max={2}
+          step={0.05}
+          value={settings.inputGain}
+          onChange={(e) => apply({ inputGain: Number(e.target.value) })}
+        />
+        <span className="wf-session-meta">{Math.round(settings.inputGain * 100)}%</span>
+      </label>
+      <label className="wf-settings-field wf-field-row">
+        Speaker volume
+        <input
+          type="range"
+          min={0}
+          max={1}
+          step={0.05}
+          value={settings.outputVolume}
+          onChange={(e) => apply({ outputVolume: Number(e.target.value) })}
+        />
+        <span className="wf-session-meta">{Math.round(settings.outputVolume * 100)}%</span>
+      </label>
+      <div className="wf-settings-field">
+        <div className="wf-connect-row" style={{ alignItems: "center", justifyContent: "flex-start" }}>
+          <button className={testing ? "" : "wf-primary"} onClick={() => (testing ? stopTest() : void startTest())}>
+            {testing ? "Stop test" : "Mic test"}
+          </button>
+          <div className="wf-mic-meter">
+            {Array.from({ length: 24 }, (_, i) => (
+              <span key={i} className={level * 24 > i ? "lit" : ""} />
+            ))}
+          </div>
+        </div>
+        <span className="wf-session-meta">
+          Speak — the meter shows your level after the input-volume setting.
+          Device changes apply the next time you join a voice channel.
+        </span>
+      </div>
     </section>
   );
 }

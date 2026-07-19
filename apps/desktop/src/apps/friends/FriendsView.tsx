@@ -5,7 +5,7 @@ import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
-import { Avatar, confirmDialog, onResync } from "../../platform";
+import { Avatar, confirmDialog, onResync, showProfile } from "../../platform";
 import { chatApi } from "../chat/api";
 import { MessageActions } from "../chat/ChatView";
 import { MessageText } from "../chat/MessageText";
@@ -83,9 +83,15 @@ export function FriendsView() {
         if (event.ev !== "event") return;
         if (event.kind.startsWith("friend.")) refresh();
         if (event.kind === "presence.update") {
-          const { user_id, online } = event.data as { user_id: number; online: boolean };
+          const { user_id, online, status } = event.data as {
+            user_id: number;
+            online: boolean;
+            status?: string | null;
+          };
           setFriends((list) =>
-            list.map((f) => (f.user.id === user_id ? { ...f, online } : f)),
+            list.map((f) =>
+              f.user.id === user_id ? { ...f, online, status: status ?? null } : f,
+            ),
           );
         }
       }),
@@ -155,13 +161,19 @@ export function FriendsView() {
         <ul className="wf-friend-list">
           {friends.map((f) => (
             <li key={f.user.id} className={dm?.peer.id === f.user.id ? "active" : ""}>
-              <span className={`wf-presence-dot ${f.online ? "" : "off"}`} />
-              <Avatar
-                name={f.user.display_name ?? f.user.username}
-                attachmentId={f.user.avatar_attachment_id}
-                accentColor={f.user.accent_color}
-                size={22}
+              <span
+                className={`wf-presence-dot ${
+                  f.status === "busy" ? "busy" : f.online ? "" : "off"
+                }`}
               />
+              <button className="wf-user-link" onClick={() => showProfile(f.user.id)}>
+                <Avatar
+                  name={f.user.display_name ?? f.user.username}
+                  attachmentId={f.user.avatar_attachment_id}
+                  accentColor={f.user.accent_color}
+                  size={22}
+                />
+              </button>
               <button
                 className="wf-friend-open"
                 onClick={() =>

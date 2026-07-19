@@ -168,3 +168,84 @@ async fn profile_and_group_customization() {
     assert_eq!(groups[0].accent_color.as_deref(), Some("#93d3a2"));
     assert_eq!(groups[0].icon_attachment_id.map(|a| a.0), Some(att_id));
 }
+
+#[tokio::test]
+async fn status_and_profile() {
+    let (base, client) = boot().await;
+    let alice = register(&base, &client, "alice").await;
+    let bob = register(&base, &client, "bob").await;
+
+    // Invalid status rejected.
+    let res = client
+        .put(format!("{base}/auth/status"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"status": "away"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+
+    // Set busy + a bio; both round-trip through /auth/me.
+    let me: User = client
+        .put(format!("{base}/auth/status"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"status": "busy"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me.status, "busy");
+    let me: User = client
+        .patch(format!("{base}/auth/me"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"display_name": null, "bio": "I write about rain."}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me.bio.as_deref(), Some("I write about rain."));
+
+    // Bio length cap.
+    let res = client
+        .patch(format!("{base}/auth/me"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"display_name": null, "bio": "x".repeat(301)}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+
+    // Bob can read Alice's profile; she has no sockets → offline regardless
+    // of her chosen status.
+    let profile: serde_json::Value = client
+        .get(format!("{base}/users/{}/profile", alice.user.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(profile["username"], "alice");
+    assert_eq!(profile["bio"], "I write about rain.");
+    assert!(profile["status"].is_null());
+
+    // Unknown user → 404; unauthenticated → 401.
+    let res = client
+        .get(format!("{base}/users/99999/profile"))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 404);
+    let res = client
+        .get(format!("{base}/users/{}/profile", alice.user.id.0))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 401);
+}

@@ -242,8 +242,10 @@ pub async fn list_friends(
     let mut friends = Vec::new();
     for (a, b, since) in rows {
         let other = if a == auth.user_id.0 { b } else { a };
+        let status = crate::ws::effective_status(&state, UserId(other)).await;
         friends.push(Friend {
-            online: state.ws.is_online(UserId(other)),
+            online: status.is_some(),
+            status,
             user: user_ref(&state, other).await?,
             since,
         });

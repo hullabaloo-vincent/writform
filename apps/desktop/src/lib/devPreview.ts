@@ -208,7 +208,7 @@ export function devPreviewBackend(): Backend {
       };
     }
     if ((match = m(/^\/api\/v1\/groups\/(\d+)\/presence$/)) && method === "GET") {
-      return { status: 200, body: { online: [me.id, pal.id] } };
+      return { status: 200, body: { online: [me.id], busy: [pal.id] } };
     }
     if ((match = m(/^\/api\/v1\/groups\/(\d+)\/emotes$/)) && method === "GET") {
       return { status: 200, body: [] };
@@ -260,6 +260,31 @@ export function devPreviewBackend(): Backend {
       }
       return { status: 204, body: null };
     }
+    if (path === "/api/v1/auth/status" && method === "PUT") {
+      const req = body as { status: string };
+      (me as Record<string, unknown>).status = req.status;
+      return {
+        status: 200,
+        body: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, status: req.status, bio: null, created_at: 0 },
+      };
+    }
+    if ((match = m(/^\/api\/v1\/users\/(\d+)\/profile$/)) && method === "GET") {
+      const uid = Number(match[1]);
+      const u = uid === 2 ? pal : me;
+      return {
+        status: 200,
+        body: {
+          id: uid,
+          username: u.username,
+          display_name: u.display_name,
+          avatar_attachment_id: null,
+          accent_color: u.accent_color ?? null,
+          bio: uid === 2 ? "Ink-stained collaborator. Writes at dawn." : null,
+          status: uid === 2 ? "busy" : "online",
+          created_at: 1700000000000,
+        },
+      };
+    }
     if (path === "/api/v1/friends" && method === "GET") {
       return {
         status: 200,
@@ -272,7 +297,7 @@ export function devPreviewBackend(): Backend {
     if (path === "/api/v1/auth/me" && method === "GET") {
       return {
         status: 200,
-        body: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
+        body: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, status: "online", bio: null, created_at: 0 },
       };
     }
     if (path === "/api/v1/auth/me" && method === "PATCH") {
@@ -280,7 +305,7 @@ export function devPreviewBackend(): Backend {
       if (session) session.user.display_name = req.display_name;
       return {
         status: 200,
-        body: { id: 1, username: "you", display_name: req.display_name, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
+        body: { id: 1, username: "you", display_name: req.display_name, is_server_admin: true, avatar_attachment_id: null, accent_color: null, status: "online", bio: null, created_at: 0 },
       };
     }
     if (path === "/api/v1/auth/devices" && method === "GET") {
@@ -306,7 +331,7 @@ export function devPreviewBackend(): Backend {
         status: 200,
         body: [
           {
-            user: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, created_at: 0 },
+            user: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, status: "online", bio: null, created_at: 0 },
             device_count: 2,
             online: true,
           },
@@ -702,6 +727,8 @@ export function devPreviewBackend(): Backend {
           is_server_admin: true,
           avatar_attachment_id: null,
           accent_color: null,
+          status: "online",
+          bio: null,
           created_at: Date.now(),
         },
       };

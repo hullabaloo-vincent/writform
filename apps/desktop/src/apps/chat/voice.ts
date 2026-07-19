@@ -5,6 +5,7 @@ import type { VoiceChannel } from "../../bindings/proto/VoiceChannel";
 import type { VoiceChannelInfo } from "../../bindings/proto/VoiceChannelInfo";
 import type { VoiceJoinResponse } from "../../bindings/proto/VoiceJoinResponse";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
+import { loadVoiceSettings, onVoiceSettingsChange } from "../../lib/voiceSettings";
 import { useSession } from "../../stores/session";
 
 /**
@@ -67,8 +68,17 @@ const peers = new Map<number, RTCPeerConnection>();
 const audioEls = new Map<number, HTMLAudioElement>();
 const analysers = new Map<number, AnalyserNode>();
 let localStream: MediaStream | null = null;
+/** Post-gain stream actually sent to peers. */
+let sendStream: MediaStream | null = null;
+let inputGainNode: GainNode | null = null;
 let audioCtx: AudioContext | null = null;
 let speakingTimer: ReturnType<typeof setInterval> | null = null;
+
+// Gain/volume changes apply live; the input device applies on the next join.
+onVoiceSettingsChange((settings) => {
+  if (inputGainNode) inputGainNode.gain.value = settings.inputGain;
+  for (const el of audioEls.values()) el.volume = settings.outputVolume;
+});
 
 function myId(): number | null {
   return useSession.getState().session?.user.id ?? null;
@@ -118,6 +128,7 @@ function attachAudio(peerId: number, stream: MediaStream) {
     el.autoplay = true;
     audioEls.set(peerId, el);
   }
+  el.volume = loadVoiceSettings().outputVolume;
   el.srcObject = stream;
   void el.play().catch(() => {});
   watchSpeaking(peerId, stream);
@@ -132,8 +143,9 @@ function sendSignal(peerId: number, data: unknown) {
 async function createPeer(peerId: number, initiator: boolean): Promise<RTCPeerConnection> {
   const pc = new RTCPeerConnection(RTC_CONFIG);
   peers.set(peerId, pc);
-  if (localStream) {
-    for (const track of localStream.getTracks()) pc.addTrack(track, localStream);
+  const outgoing = sendStream ?? localStream;
+  if (outgoing) {
+    for (const track of outgoing.getTracks()) pc.addTrack(track, outgoing);
   }
   pc.onicecandidate = (e) => {
     if (e.candidate) sendSignal(peerId, { type: "ice", candidate: e.candidate.toJSON() });
@@ -169,6 +181,8 @@ function teardown() {
   for (const id of [...peers.keys()]) closePeer(id);
   localStream?.getTracks().forEach((t) => t.stop());
   localStream = null;
+  sendStream = null;
+  inputGainNode = null;
   analysers.clear();
   if (speakingTimer) {
     clearInterval(speakingTimer);
@@ -230,16 +244,36 @@ export const useVoice = create<VoiceState>((set, get) => ({
         // Switching rooms: tear down the old mesh first (keeps the mic).
         for (const id of [...peers.keys()]) closePeer(id);
       }
+      const settings = loadVoiceSettings();
       const stream =
-        localStream ?? (await navigator.mediaDevices.getUserMedia({ audio: true }));
+        localStream ??
+        (await navigator.mediaDevices.getUserMedia({
+          audio: settings.inputDeviceId
+            ? { deviceId: { ideal: settings.inputDeviceId } }
+            : true,
+        }));
       if (generation !== joinGeneration) {
         // Cancelled while waiting on the mic prompt.
         stream.getTracks().forEach((t) => t.stop());
         return;
       }
       localStream = stream;
+      // Input volume: mic → gain → the stream peers actually receive.
+      try {
+        audioCtx ??= new AudioContext();
+        if (audioCtx.state === "suspended") void audioCtx.resume();
+        const source = audioCtx.createMediaStreamSource(stream);
+        inputGainNode = audioCtx.createGain();
+        inputGainNode.gain.value = settings.inputGain;
+        const destination = audioCtx.createMediaStreamDestination();
+        source.connect(inputGainNode);
+        inputGainNode.connect(destination);
+        sendStream = destination.stream;
+      } catch {
+        sendStream = stream; // gain unavailable — send the raw mic
+      }
       const me = myId();
-      if (me !== null) watchSpeaking(me, localStream);
+      if (me !== null && sendStream) watchSpeaking(me, sendStream);
       startSpeakingLoop();
 
       const res = await voiceApi.join(channel.id);

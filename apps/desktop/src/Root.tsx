@@ -1,5 +1,5 @@
 import { ConnectScreen } from "./connect/ConnectScreen";
-import { AppShell, ConfirmHost } from "./platform";
+import { AppShell, ConfirmHost, ProfileCardHost } from "./platform";
 import { useSession } from "./stores/session";
 
 /** Gate: connect + auth first, then the platform shell. */
@@ -12,6 +12,7 @@ export function Root() {
     <>
       {phase === "connected" ? <AppShell /> : <ConnectScreen />}
       <ConfirmHost />
+      <ProfileCardHost />
     </>
   );
 }

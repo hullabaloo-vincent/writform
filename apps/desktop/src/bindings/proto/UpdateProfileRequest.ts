@@ -13,4 +13,8 @@ avatar_attachment_id: AttachmentId | null,
 /**
  * `#rrggbb`, or None for the default look.
  */
-accent_color: string | null, };
+accent_color: string | null, 
+/**
+ * "About me" shown on the profile card (None clears, max 300 chars).
+ */
+bio: string | null, };

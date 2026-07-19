@@ -5,4 +5,8 @@ export type Friend = { user: UserRef, since: number,
 /**
  * Live at request time; deltas arrive as `presence.update` on `user:{me}`.
  */
-online: boolean, };
+online: boolean, 
+/**
+ * "online" | "busy" when online, None when offline (or hidden).
+ */
+status: string | null, };

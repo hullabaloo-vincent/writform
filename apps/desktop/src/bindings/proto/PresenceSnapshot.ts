@@ -5,4 +5,12 @@ import type { UserId } from "./UserId";
  * Online user ids for a group (REST snapshot; deltas arrive via
  * `presence.update` WS events).
  */
-export type PresenceSnapshot = { online: Array<UserId>, };
+export type PresenceSnapshot = { 
+/**
+ * Members with sockets and status "online" (hidden users never appear).
+ */
+online: Array<UserId>, 
+/**
+ * Members with sockets and status "busy".
+ */
+busy: Array<UserId>, };

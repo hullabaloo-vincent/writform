@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
-import { Avatar, confirmDialog, usePlatform } from "../../platform";
+import { Avatar, confirmDialog, showProfile, usePlatform } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 import { MessageText } from "./MessageText";
@@ -608,6 +608,7 @@ export function GlobalVoiceBar() {
 function MemberList() {
   const members = useChat((s) => s.members);
   const online = useChat((s) => s.online);
+  const busy = useChat((s) => s.busy);
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
   const session = useSession((s) => s.session);
@@ -619,15 +620,20 @@ function MemberList() {
       <header className="wf-chat-members-header">Members — {members.length}</header>
       <ul>
         {members.map((m) => (
-          <li key={m.user.id} className={online.has(m.user.id) ? "online" : "offline"}>
-            <span className="wf-presence-dot" />
-            <Avatar
-              name={m.user.display_name ?? m.user.username}
-              attachmentId={m.user.avatar_attachment_id}
-              accentColor={m.user.accent_color}
-              size={22}
-            />
-            <span className="wf-member-name">{m.user.display_name ?? m.user.username}</span>
+          <li
+            key={m.user.id}
+            className={online.has(m.user.id) || busy.has(m.user.id) ? "online" : "offline"}
+          >
+            <span className={`wf-presence-dot ${busy.has(m.user.id) ? "busy" : ""}`} />
+            <button className="wf-user-link" onClick={() => showProfile(m.user.id)}>
+              <Avatar
+                name={m.user.display_name ?? m.user.username}
+                attachmentId={m.user.avatar_attachment_id}
+                accentColor={m.user.accent_color}
+                size={22}
+              />
+              <span className="wf-member-name">{m.user.display_name ?? m.user.username}</span>
+            </button>
             {m.role === "admin" && <span className="wf-member-badge">admin</span>}
             {isAdmin && m.user.id !== session?.user.id && (
               <button
@@ -769,18 +775,22 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
       <MessageActions message={message} />
       {!compact && (
         <div className="wf-msg-meta">
-          <Avatar
-            name={message.author.display_name ?? message.author.username}
-            attachmentId={message.author.avatar_attachment_id}
-            accentColor={message.author.accent_color}
-            size={22}
-          />
-          <span
-            className="wf-msg-author"
-            style={message.author.accent_color ? { color: message.author.accent_color } : undefined}
-          >
-            {message.author.display_name ?? message.author.username}
-          </span>
+          <button className="wf-user-link" onClick={() => showProfile(message.author.id)}>
+            <Avatar
+              name={message.author.display_name ?? message.author.username}
+              attachmentId={message.author.avatar_attachment_id}
+              accentColor={message.author.accent_color}
+              size={22}
+            />
+            <span
+              className="wf-msg-author"
+              style={
+                message.author.accent_color ? { color: message.author.accent_color } : undefined
+              }
+            >
+              {message.author.display_name ?? message.author.username}
+            </span>
+          </button>
           <span className="wf-msg-time">{time}</span>
         </div>
       )}

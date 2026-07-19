@@ -324,16 +324,67 @@ fn send_error(state: &AppState, conn_id: ConnId, code: &str, message: &str) {
     );
 }
 
-async fn broadcast_presence(state: &AppState, user: UserId, online: bool) {
-    let Ok(groups) = perms::user_groups(&state.pool, user).await else {
-        return;
+/// Presence fan-out honoring the user's chosen status: hidden users are
+/// announced as offline; otherwise status is "online" or "busy". Reaches the
+/// user's groups and every friend's user room.
+pub async fn broadcast_presence(state: &AppState, user: UserId, sockets_online: bool) {
+    let status: String = sqlx::query_scalar("SELECT status FROM users WHERE id = ?")
+        .bind(user.0)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| "online".to_string());
+    let effective = if sockets_online && status != "hidden" {
+        Some(status)
+    } else {
+        None
     };
-    let data = serde_json::json!({ "user_id": user, "online": online });
-    for group in groups {
-        state.ws.broadcast(
-            &format!("group:{}", group.0),
-            "presence.update",
-            data.clone(),
-        );
+    let data = serde_json::json!({
+        "user_id": user,
+        "online": effective.is_some(),
+        "status": effective,
+    });
+    if let Ok(groups) = perms::user_groups(&state.pool, user).await {
+        for group in groups {
+            state.ws.broadcast(
+                &format!("group:{}", group.0),
+                "presence.update",
+                data.clone(),
+            );
+        }
+    }
+    let friends: Result<Vec<(i64, i64)>, _> =
+        sqlx::query_as("SELECT user_a, user_b FROM friendships WHERE user_a = ? OR user_b = ?")
+            .bind(user.0)
+            .bind(user.0)
+            .fetch_all(&state.pool)
+            .await;
+    if let Ok(rows) = friends {
+        for (a, b) in rows {
+            let other = if a == user.0 { b } else { a };
+            state
+                .ws
+                .broadcast(&format!("user:{other}"), "presence.update", data.clone());
+        }
+    }
+}
+
+/// The presence others should see: Some("online" | "busy"), or None when the
+/// user has no sockets or chose to be hidden.
+pub async fn effective_status(state: &AppState, user: UserId) -> Option<String> {
+    if !state.ws.is_online(user) {
+        return None;
+    }
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM users WHERE id = ?")
+        .bind(user.0)
+        .fetch_optional(&state.pool)
+        .await
+        .ok()
+        .flatten();
+    match status.as_deref() {
+        Some("hidden") => None,
+        Some("busy") => Some("busy".into()),
+        _ => Some("online".into()),
     }
 }

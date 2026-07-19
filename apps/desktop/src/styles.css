@@ -2777,3 +2777,182 @@ textarea.wf-el-edit {
 .wf-cmd-menu button .wf-avatar {
   flex-shrink: 0;
 }
+
+/* ---- presence status + profile cards ---- */
+
+.wf-presence-dot.busy {
+  background: #e0a03c !important;
+  box-shadow: none;
+}
+
+.wf-user-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  padding: 0;
+  cursor: pointer;
+}
+
+.wf-user-link:hover .wf-member-name,
+.wf-user-link:hover .wf-msg-author {
+  text-decoration: underline;
+}
+
+.wf-status-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.wf-session-status {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-session-addr {
+  color: var(--wf-text-dim);
+}
+
+.wf-status-menu {
+  position: absolute;
+  bottom: 26px;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 130px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  overflow: hidden;
+  z-index: 60;
+}
+
+.wf-status-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: none;
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 13px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.wf-status-menu button:hover {
+  background: var(--wf-bg-hover);
+}
+
+.wf-profile-card {
+  width: min(380px, 92vw);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.wf-profile-banner {
+  height: 90px;
+}
+
+.wf-profile-avatar {
+  margin: -36px 0 0 20px;
+  width: 78px;
+  height: 78px;
+  border-radius: 50%;
+  background: var(--wf-bg-raised);
+  display: grid;
+  place-items: center;
+}
+
+.wf-profile-body {
+  padding: 8px 20px 20px;
+}
+
+.wf-profile-body h3 {
+  margin: 4px 0 0;
+  font-size: 19px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-profile-username {
+  margin: 2px 0 0;
+  color: var(--wf-text-dim);
+  font-size: 13px;
+}
+
+.wf-profile-bio {
+  margin: 12px 0 0;
+  font-size: 14px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.wf-profile-since {
+  margin: 14px 0 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+
+.wf-bio-input {
+  width: 100%;
+  padding: 10px 12px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--wf-text);
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  outline: none;
+  resize: vertical;
+}
+
+/* ---- voice settings ---- */
+
+.wf-settings-field select {
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--wf-text);
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  outline: none;
+  max-width: 360px;
+}
+
+.wf-settings-field input[type="range"] {
+  width: 220px;
+  accent-color: var(--wf-accent);
+}
+
+.wf-mic-meter {
+  display: inline-flex;
+  gap: 3px;
+  align-items: center;
+}
+
+.wf-mic-meter span {
+  width: 6px;
+  height: 22px;
+  border-radius: 2px;
+  background: var(--wf-bg-hover);
+}
+
+.wf-mic-meter span.lit {
+  background: #4caf7d;
+}

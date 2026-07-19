@@ -13,6 +13,7 @@ mod messages;
 mod notes;
 mod plugin_data;
 pub mod sessions;
+mod users;
 pub mod voice;
 
 use std::path::PathBuf;
@@ -95,6 +96,8 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/me", get(auth::me).patch(auth::update_profile))
+        .route("/api/v1/auth/status", put(auth::set_status))
+        .route("/api/v1/users/{id}/profile", get(users::profile))
         .route("/api/v1/auth/devices", get(auth::list_devices))
         .route("/api/v1/auth/devices/{id}", delete(auth::revoke_device))
         .route("/api/v1/admin/stats", get(admin::stats))

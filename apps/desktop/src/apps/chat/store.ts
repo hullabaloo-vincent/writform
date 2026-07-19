@@ -16,6 +16,8 @@ interface ChatState {
   messages: Record<number, Message[]>;
   members: Member[];
   online: Set<number>;
+  /** Members whose status is "busy" (subset semantics like `online`). */
+  busy: Set<number>;
   /** Custom emotes of the active group. */
   emotes: Emote[];
 
@@ -33,6 +35,7 @@ export const useChat = create<ChatState>((set, get) => ({
   messages: {},
   members: [],
   online: new Set(),
+  busy: new Set(),
   emotes: [],
 
   loadGroups: async () => {
@@ -60,7 +63,13 @@ export const useChat = create<ChatState>((set, get) => ({
       chatApi.presence(groupId),
       chatApi.emotes(groupId),
     ]);
-    set({ channels, members, online: new Set(presence.online), emotes });
+    set({
+      channels,
+      members,
+      online: new Set(presence.online),
+      busy: new Set(presence.busy ?? []),
+      emotes,
+    });
     const first = channels.find((c) => c.kind === "text");
     if (first) await get().selectChannel(first.id);
   },
@@ -94,7 +103,13 @@ export async function resyncChat(): Promise<void> {
       chatApi.presence(state.activeGroupId),
       chatApi.emotes(state.activeGroupId),
     ]);
-    useChat.setState({ channels, members, online: new Set(presence.online), emotes });
+    useChat.setState({
+      channels,
+      members,
+      online: new Set(presence.online),
+      busy: new Set(presence.busy ?? []),
+      emotes,
+    });
   }
 
   // `?after=` catch-up for every channel we hold history for.
@@ -189,12 +204,21 @@ export function installChatWsHandler(): () => void {
       const { emote_id } = data as { emote_id: number };
       useChat.setState((s) => ({ emotes: s.emotes.filter((e) => e.id !== emote_id) }));
     } else if (kind === "presence.update") {
-      const { user_id, online } = data as { user_id: number; online: boolean };
+      const { user_id, online, status } = data as {
+        user_id: number;
+        online: boolean;
+        status?: string | null;
+      };
       useChat.setState((s) => {
-        const next = new Set(s.online);
-        if (online) next.add(user_id);
-        else next.delete(user_id);
-        return { online: next };
+        const nextOnline = new Set(s.online);
+        const nextBusy = new Set(s.busy);
+        nextOnline.delete(user_id);
+        nextBusy.delete(user_id);
+        if (online) {
+          if (status === "busy") nextBusy.add(user_id);
+          else nextOnline.add(user_id);
+        }
+        return { online: nextOnline, busy: nextBusy };
       });
     } else if (kind === "member.joined" || kind === "member.left") {
       const { group_id } = data as { group_id: number };

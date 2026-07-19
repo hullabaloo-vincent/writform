@@ -62,6 +62,38 @@ pub struct User {
     pub avatar_attachment_id: Option<AttachmentId>,
     #[serde(default)]
     pub accent_color: Option<String>,
+    /// "online" | "busy" | "hidden" — the user's chosen presence.
+    #[serde(default = "default_status")]
+    pub status: String,
+    #[serde(default)]
+    pub bio: Option<String>,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+}
+
+fn default_status() -> String {
+    "online".into()
+}
+
+/// `PUT /api/v1/auth/status`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SetStatusRequest {
+    pub status: String,
+}
+
+/// `GET /api/v1/users/{id}/profile` — the public profile card.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UserProfile {
+    pub id: UserId,
+    pub username: String,
+    pub display_name: Option<String>,
+    pub avatar_attachment_id: Option<AttachmentId>,
+    pub accent_color: Option<String>,
+    pub bio: Option<String>,
+    /// "online" | "busy" when reachable, None when offline (or hidden).
+    pub status: Option<String>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
 }
@@ -77,6 +109,9 @@ pub struct UpdateProfileRequest {
     /// `#rrggbb`, or None for the default look.
     #[serde(default)]
     pub accent_color: Option<String>,
+    /// "About me" shown on the profile card (None clears, max 300 chars).
+    #[serde(default)]
+    pub bio: Option<String>,
 }
 
 /// A device row from `auth_sessions` (token never leaves the server).

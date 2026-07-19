@@ -2,4 +2,8 @@
 import type { AttachmentId } from "./AttachmentId";
 import type { UserId } from "./UserId";
 
-export type User = { id: UserId, username: string, display_name: string | null, is_server_admin: boolean, avatar_attachment_id: AttachmentId | null, accent_color: string | null, created_at: number, };
+export type User = { id: UserId, username: string, display_name: string | null, is_server_admin: boolean, avatar_attachment_id: AttachmentId | null, accent_color: string | null, 
+/**
+ * "online" | "busy" | "hidden" — the user's chosen presence.
+ */
+status: string, bio: string | null, created_at: number, };

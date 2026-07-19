@@ -31,6 +31,9 @@ pub struct Friend {
     pub since: UnixMillis,
     /// Live at request time; deltas arrive as `presence.update` on `user:{me}`.
     pub online: bool,
+    /// "online" | "busy" when online, None when offline (or hidden).
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

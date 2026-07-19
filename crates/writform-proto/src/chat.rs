@@ -191,5 +191,9 @@ pub struct CreateEmoteRequest {
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct PresenceSnapshot {
+    /// Members with sockets and status "online" (hidden users never appear).
     pub online: Vec<UserId>,
+    /// Members with sockets and status "busy".
+    #[serde(default)]
+    pub busy: Vec<UserId>,
 }

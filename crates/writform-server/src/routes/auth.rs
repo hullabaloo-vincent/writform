@@ -63,13 +63,16 @@ type UserRow = (
     i64,
     Option<i64>,
     Option<String>,
+    String,
+    Option<String>,
 );
 
 const USER_SELECT: &str = "SELECT id, username, display_name, is_server_admin, created_at,
-    avatar_attachment_id, accent_color FROM users WHERE id = ?";
+    avatar_attachment_id, accent_color, status, bio FROM users WHERE id = ?";
 
 fn user_row_to_api(row: UserRow) -> User {
-    let (id, username, display_name, is_server_admin, created_at, avatar, accent) = row;
+    let (id, username, display_name, is_server_admin, created_at, avatar, accent, status, bio) =
+        row;
     User {
         id: UserId(id),
         username,
@@ -77,6 +80,8 @@ fn user_row_to_api(row: UserRow) -> User {
         is_server_admin,
         avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
         accent_color: accent,
+        status,
+        bio,
         created_at,
     }
 }
@@ -126,7 +131,17 @@ pub async fn register(
     let token = create_session(&state, UserId(id), None).await?;
     Ok(Json(AuthResponse {
         token,
-        user: user_row_to_api((id, req.username, None, is_first, now, None, None)),
+        user: user_row_to_api((
+            id,
+            req.username,
+            None,
+            is_first,
+            now,
+            None,
+            None,
+            "online".into(),
+            None,
+        )),
     }))
 }
 
@@ -243,15 +258,49 @@ pub async fn update_profile(
             ));
         }
     }
+    let bio = req
+        .bio
+        .map(|b| b.trim().to_string())
+        .filter(|b| !b.is_empty());
+    if bio.as_ref().is_some_and(|b| b.chars().count() > 300) {
+        return Err(AppError::bad_request(
+            "bio_too_long",
+            "bio must be at most 300 characters",
+        ));
+    }
     sqlx::query(
-        "UPDATE users SET display_name = ?, avatar_attachment_id = ?, accent_color = ? WHERE id = ?",
+        "UPDATE users SET display_name = ?, avatar_attachment_id = ?, accent_color = ?, bio = ?
+         WHERE id = ?",
     )
     .bind(&display_name)
     .bind(req.avatar_attachment_id.map(|a| a.0))
     .bind(&accent)
+    .bind(&bio)
     .bind(auth.user_id.0)
     .execute(&state.pool)
     .await?;
+    me(State(state), auth).await
+}
+
+/// `PUT /api/v1/auth/status` — set presence: online | busy | hidden.
+pub async fn set_status(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(req): Json<writform_proto::api::SetStatusRequest>,
+) -> Result<Json<User>, AppError> {
+    if !["online", "busy", "hidden"].contains(&req.status.as_str()) {
+        return Err(AppError::bad_request(
+            "invalid_status",
+            "status must be online, busy, or hidden",
+        ));
+    }
+    sqlx::query("UPDATE users SET status = ? WHERE id = ?")
+        .bind(&req.status)
+        .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    let online = state.ws.is_online(auth.user_id);
+    crate::ws::broadcast_presence(&state, auth.user_id, online).await;
     me(State(state), auth).await
 }
 
