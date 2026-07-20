@@ -116,6 +116,8 @@ export interface Backend {
   vaultRead(name: string): Promise<string>;
   vaultWrite(name: string, content: string): Promise<void>;
   vaultDelete(name: string): Promise<void>;
+  /** Renames a note and repoints `[[old]]` links vault-wide; returns the name used. */
+  vaultRename(name: string, newName: string): Promise<string>;
   vaultBacklinks(name: string): Promise<string[]>;
 
   pluginsList(): Promise<
@@ -193,6 +195,7 @@ function tauriBackend(): Backend {
     vaultRead: (name) => invoke("vault_read", { name }),
     vaultWrite: (name, content) => invoke("vault_write", { name, content }),
     vaultDelete: (name) => invoke("vault_delete", { name }),
+    vaultRename: (name, newName) => invoke("vault_rename", { name, newName }),
     vaultBacklinks: (name) => invoke("vault_backlinks", { name }),
     pluginsList: () => invoke("plugins_list"),
     pluginReadEntry: (id) => invoke("plugin_read_entry", { id }),
@@ -244,6 +247,7 @@ function unavailableBackend(): Backend {
     vaultRead: fail,
     vaultWrite: fail,
     vaultDelete: fail,
+    vaultRename: fail,
     vaultBacklinks: fail,
     pluginsList: fail,
     pluginReadEntry: fail,

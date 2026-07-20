@@ -1522,13 +1522,10 @@ body,
 }
 
 .wf-notes-side-top button {
-  width: 36px;
-  border-radius: 8px;
-  border: 1px solid var(--wf-border);
+  align-self: stretch;
   background: var(--wf-bg);
   color: var(--wf-text-dim);
   font-size: 18px;
-  cursor: pointer;
 }
 
 .wf-notes-side ul {
@@ -1572,22 +1569,119 @@ body,
 .wf-notes-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--wf-border);
 }
 
-.wf-notes-header button {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--wf-border);
-  background: var(--wf-bg-raised);
+/* The title doubles as the rename control, so it reads as text, not a chip. */
+.wf-notes-header .wf-notes-title {
+  min-width: 0;
+  padding: 0;
+  gap: 8px;
+  border: none;
+  background: none;
+  font-size: 16px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-notes-title svg {
+  opacity: 0;
+  color: var(--wf-text-dim);
+  transition: opacity 0.12s;
+}
+
+.wf-notes-title:hover {
+  background: none;
+}
+
+.wf-notes-title:hover svg {
+  opacity: 1;
+}
+
+.wf-notes-title-input {
+  min-width: 0;
+  padding: 4px 8px;
+  background: var(--wf-bg);
   color: var(--wf-text);
-  cursor: pointer;
+  border: 1px solid var(--wf-accent);
+  border-radius: 6px;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  outline: none;
+}
+
+.wf-notes-modes {
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 9px;
+}
+
+.wf-notes-modes button {
+  min-height: 24px;
+  width: 28px;
+  border: none;
+  background: none;
+  color: var(--wf-text-dim);
+}
+
+.wf-notes-modes button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+
+.wf-notes-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-wrap: wrap;
+  padding: 6px 16px;
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-notes-toolbar button {
+  min-height: 26px;
+  border-color: transparent;
+  background: none;
+  color: var(--wf-text-dim);
+}
+
+.wf-notes-toolbar button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+
+.wf-notes-toolbar-sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 6px;
+  background: var(--wf-border);
+}
+
+.wf-notes-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.wf-notes-body-split > * {
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-notes-body-split .wf-notes-editor {
+  border-right: 1px solid var(--wf-border);
 }
 
 .wf-notes-editor {
   flex: 1;
+  min-width: 0;
   min-height: 0;
   overflow: auto;
 }
@@ -1600,6 +1694,35 @@ body,
 
 .wf-notes-editor .cm-editor.cm-focused {
   outline: none;
+}
+
+.wf-notes-empty {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+  color: var(--wf-text-dim);
+}
+
+.wf-notes-empty p {
+  margin: 0;
+}
+
+.wf-notes-empty-hint {
+  max-width: 42ch;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.wf-notes-empty-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
 }
 
 .wf-notes-links {
@@ -1619,6 +1742,341 @@ body,
   cursor: pointer;
   font-size: 12px;
   padding: 0 4px;
+}
+
+/* ---- notes preview (rendered markdown) ---- */
+
+.wf-notes-preview {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 28px 48px;
+  font-size: 14px;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.wf-notes-preview > :first-child {
+  margin-top: 0;
+}
+
+.wf-notes-preview h1,
+.wf-notes-preview h2,
+.wf-notes-preview h3,
+.wf-notes-preview h4 {
+  margin: 1.4em 0 0.5em;
+  line-height: 1.3;
+}
+
+.wf-notes-preview h1 {
+  font-size: 1.7em;
+}
+.wf-notes-preview h2 {
+  font-size: 1.35em;
+  padding-bottom: 0.25em;
+  border-bottom: 1px solid var(--wf-border);
+}
+.wf-notes-preview h3 {
+  font-size: 1.15em;
+}
+
+.wf-notes-preview p,
+.wf-notes-preview ul,
+.wf-notes-preview ol {
+  margin: 0.7em 0;
+}
+
+.wf-notes-preview ul,
+.wf-notes-preview ol {
+  padding-left: 1.5em;
+}
+
+.wf-notes-preview li {
+  margin: 0.25em 0;
+}
+
+.wf-notes-preview li::marker {
+  color: var(--wf-text-dim);
+}
+
+/* GFM task lists: drop the bullet, keep the checkbox aligned with the text. */
+.wf-notes-preview li:has(> input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.3em;
+}
+
+.wf-notes-preview input[type="checkbox"] {
+  margin-right: 0.55em;
+  accent-color: var(--wf-accent);
+  vertical-align: -1px;
+}
+
+.wf-notes-preview a {
+  color: var(--wf-accent);
+}
+
+.wf-notes-preview hr {
+  margin: 1.6em 0;
+  border: none;
+  border-top: 1px solid var(--wf-border);
+}
+
+.wf-notes-preview blockquote {
+  margin: 0.8em 0;
+  padding: 0.1em 0 0.1em 1em;
+  border-left: 3px solid var(--wf-border);
+  color: var(--wf-text-dim);
+}
+
+.wf-notes-preview table {
+  border-collapse: collapse;
+  margin: 0.9em 0;
+  font-size: 13px;
+}
+
+.wf-notes-preview th,
+.wf-notes-preview td {
+  padding: 6px 12px;
+  border: 1px solid var(--wf-border);
+  text-align: left;
+}
+
+.wf-notes-preview th {
+  background: var(--wf-bg-raised);
+}
+
+.wf-notes-preview code {
+  padding: 0.15em 0.4em;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 5px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.88em;
+}
+
+.wf-notes-preview pre {
+  margin: 0.9em 0;
+  padding: 12px 14px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  overflow-x: auto;
+}
+
+.wf-notes-preview pre code {
+  padding: 0;
+  background: none;
+  border: none;
+  font-size: 12.5px;
+  line-height: 1.55;
+}
+
+.wf-notes-preview img {
+  max-width: 100%;
+}
+
+/* Links to other notes. `.missing` = no such note yet; clicking creates it. */
+.wf-wikilink {
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--wf-accent);
+  white-space: normal;
+  text-align: left;
+}
+
+.wf-wikilink:hover:not(:disabled) {
+  background: none;
+  text-decoration: underline;
+}
+
+.wf-wikilink.missing {
+  color: var(--wf-text-dim);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* ---- callouts (`> [!tip] Title`) ---- */
+
+.wf-callout {
+  --wf-callout: var(--wf-accent);
+  margin: 0.9em 0;
+  padding: 10px 14px;
+  background: color-mix(in srgb, var(--wf-callout) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--wf-callout) 32%, transparent);
+  border-left: 3px solid var(--wf-callout);
+  border-radius: 8px;
+}
+
+.wf-callout-note {
+  --wf-callout: #5b9dd9;
+}
+.wf-callout-abstract {
+  --wf-callout: #56b6c2;
+}
+.wf-callout-tip {
+  --wf-callout: #4fbf9f;
+}
+.wf-callout-success {
+  --wf-callout: #6cc070;
+}
+.wf-callout-question {
+  --wf-callout: #d9a441;
+}
+.wf-callout-warning {
+  --wf-callout: #dd9155;
+}
+.wf-callout-danger {
+  --wf-callout: #e08080;
+}
+.wf-callout-example {
+  --wf-callout: #a78bfa;
+}
+.wf-callout-quote {
+  --wf-callout: #9a9aad;
+}
+
+.wf-callout-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  color: var(--wf-callout);
+}
+
+details.wf-callout > .wf-callout-title {
+  cursor: pointer;
+}
+
+details.wf-callout > .wf-callout-title::marker,
+details.wf-callout > .wf-callout-title::-webkit-details-marker {
+  display: none;
+  content: "";
+}
+
+.wf-callout-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.wf-callout-body > :first-child {
+  margin-top: 0.5em;
+}
+
+.wf-callout-body > :last-child {
+  margin-bottom: 0;
+}
+
+.wf-callout-body blockquote {
+  border-left-color: color-mix(in srgb, var(--wf-callout) 45%, transparent);
+}
+
+/* ---- syntax highlighting (highlight.js token classes) ---- */
+
+.wf-notes-preview .hljs-comment,
+.wf-notes-preview .hljs-quote {
+  color: #6f6f85;
+  font-style: italic;
+}
+
+.wf-notes-preview .hljs-keyword,
+.wf-notes-preview .hljs-selector-tag,
+.wf-notes-preview .hljs-literal,
+.wf-notes-preview .hljs-meta {
+  color: #c78bf5;
+}
+
+.wf-notes-preview .hljs-string,
+.wf-notes-preview .hljs-regexp,
+.wf-notes-preview .hljs-symbol {
+  color: #8fce9b;
+}
+
+.wf-notes-preview .hljs-number,
+.wf-notes-preview .hljs-built_in,
+.wf-notes-preview .hljs-type {
+  color: #e0a678;
+}
+
+.wf-notes-preview .hljs-title,
+.wf-notes-preview .hljs-title.function_,
+.wf-notes-preview .hljs-section {
+  color: #7fb6f0;
+}
+
+.wf-notes-preview .hljs-attr,
+.wf-notes-preview .hljs-attribute,
+.wf-notes-preview .hljs-property,
+.wf-notes-preview .hljs-variable {
+  color: #e0d78a;
+}
+
+.wf-notes-preview .hljs-name,
+.wf-notes-preview .hljs-selector-class,
+.wf-notes-preview .hljs-selector-id {
+  color: #71c6d4;
+}
+
+.wf-notes-preview .hljs-deletion {
+  color: #e08080;
+}
+
+.wf-notes-preview .hljs-addition {
+  color: #6cc070;
+}
+
+/* ---- formatting cheatsheet ---- */
+
+.wf-notes-help {
+  max-width: 620px;
+}
+
+.wf-cheatsheet {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 14px 0 0;
+  max-height: 52vh;
+  overflow-y: auto;
+}
+
+.wf-cheatsheet > div {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 7px 4px;
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-cheatsheet dt {
+  flex: 0 0 190px;
+}
+
+.wf-cheatsheet dt code {
+  display: block;
+  padding: 4px 7px;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+}
+
+.wf-cheatsheet dd {
+  margin: 0;
+  font-size: 13px;
+  color: var(--wf-text-dim);
+}
+
+.wf-notes-help-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .wf-shared-note {

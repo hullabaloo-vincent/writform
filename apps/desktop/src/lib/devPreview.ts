@@ -1061,6 +1061,29 @@ export function devPreviewBackend(): Backend {
     async vaultDelete(name) {
       delete vault[name];
     },
+    async vaultRename(name, newName) {
+      const old = name.trim();
+      const next = newName.trim();
+      if (old.toLowerCase() !== next.toLowerCase() && vault[next]) {
+        throw { code: "name_taken", message: `a note named "${next}" already exists` } as CmdError;
+      }
+      const note = vault[old];
+      if (!note) throw { code: "io", message: "note not found" } as CmdError;
+      delete vault[old];
+      vault[next] = note;
+      const target = old.toLowerCase();
+      for (const [n, v] of Object.entries(vault)) {
+        vault[n] = {
+          ...v,
+          content: v.content.replace(
+            /\[\[([^\]|\n]+)(\|[^\]\n]*)?\]\]/g,
+            (raw, link: string, label = "") =>
+              link.trim().toLowerCase() === target ? `[[${next}${label}]]` : raw,
+          ),
+        };
+      }
+      return next;
+    },
     async vaultBacklinks(name) {
       const target = name.toLowerCase();
       return Object.entries(vault)

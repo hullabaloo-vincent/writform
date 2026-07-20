@@ -75,6 +75,7 @@ pub fn run() {
             vault::vault_read,
             vault::vault_write,
             vault::vault_delete,
+            vault::vault_rename,
             vault::vault_backlinks,
             plugins::plugins_list,
             plugins::plugin_read_entry,

@@ -103,6 +103,46 @@ pub fn vault_delete(app: tauri::AppHandle, name: String) -> Result<(), CmdError>
     std::fs::remove_file(note_path(&app, &name)?).map_err(io_err)
 }
 
+/// Renames a note and repoints every `[[old]]` link in the vault at the new
+/// name, so the backlink graph survives the rename. Returns the trimmed name
+/// actually used.
+#[tauri::command]
+pub fn vault_rename(
+    app: tauri::AppHandle,
+    name: String,
+    new_name: String,
+) -> Result<String, CmdError> {
+    let from = note_path(&app, &name)?;
+    let to = note_path(&app, &new_name)?;
+    let old = name.trim().to_string();
+    let new = new_name.trim().to_string();
+
+    // A case-only rename ("notes" → "Notes") targets the same file on
+    // case-insensitive filesystems, so `exists` there is not a collision.
+    if !old.eq_ignore_ascii_case(&new) && to.exists() {
+        return Err(CmdError {
+            code: "name_taken".into(),
+            message: format!("a note named \"{new}\" already exists"),
+        });
+    }
+    if from != to {
+        std::fs::rename(&from, &to).map_err(io_err)?;
+    }
+
+    // Includes the renamed note itself, so a self-link stays self-referential.
+    for note in vault_list(app.clone())? {
+        let path = note_path(&app, &note.name)?;
+        let Ok(content) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        let rewritten = rewrite_wiki_links(&content, &old, &new);
+        if rewritten != content {
+            std::fs::write(&path, rewritten).map_err(io_err)?;
+        }
+    }
+    Ok(new)
+}
+
 /// Notes whose content links to `name` via `[[name]]` or `[[name|label]]`
 /// (case-insensitive, Obsidian semantics).
 #[tauri::command]
@@ -149,6 +189,45 @@ pub fn extract_wiki_links(content: &str) -> Vec<String> {
     links
 }
 
+/// Repoints `[[old]]` / `[[old|label]]` at `new`, matching the target
+/// case-insensitively like [`extract_wiki_links`]. Labels and every other
+/// link are left untouched.
+pub fn rewrite_wiki_links(content: &str, old: &str, new: &str) -> String {
+    let target = old.trim().to_lowercase();
+    let mut out = String::with_capacity(content.len());
+    let mut rest = content;
+    while let Some(start) = rest.find("[[") {
+        let Some(end) = rest[start + 2..].find("]]") else {
+            break;
+        };
+        let inner = &rest[start + 2..start + 2 + end];
+        // An unclosed `[[` swallows text up to the next real link; restart the
+        // scan from the nested opener, same as extract_wiki_links.
+        if let Some(nested) = inner.find("[[") {
+            let resume = start + 2 + nested;
+            out.push_str(&rest[..resume]);
+            rest = &rest[resume..];
+            continue;
+        }
+        out.push_str(&rest[..start]);
+        let (link, label) = match inner.split_once('|') {
+            Some((link, label)) => (link, Some(label)),
+            None => (inner, None),
+        };
+        if link.trim().to_lowercase() == target {
+            match label {
+                Some(label) => out.push_str(&format!("[[{new}|{label}]]")),
+                None => out.push_str(&format!("[[{new}]]")),
+            }
+        } else {
+            out.push_str(&rest[start..start + 2 + end + 2]);
+        }
+        rest = &rest[start + 2 + end + 2..];
+    }
+    out.push_str(rest);
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,5 +236,29 @@ mod tests {
     fn wiki_link_extraction() {
         let content = "See [[Alpha]] and [[Beta|the second one]].\nBroken [[ and [[Gamma]]";
         assert_eq!(extract_wiki_links(content), vec!["Alpha", "Beta", "Gamma"]);
+    }
+
+    #[test]
+    fn wiki_link_rewrite_preserves_labels_and_other_links() {
+        let content = "See [[Alpha]], [[alpha|the first]] and [[Beta]].";
+        assert_eq!(
+            rewrite_wiki_links(content, "Alpha", "Project Alpha"),
+            "See [[Project Alpha]], [[Project Alpha|the first]] and [[Beta]].",
+        );
+    }
+
+    #[test]
+    fn wiki_link_rewrite_leaves_unrelated_content_alone() {
+        let content = "No links here, just [brackets] and [[Gamma]].";
+        assert_eq!(rewrite_wiki_links(content, "Alpha", "Beta"), content);
+    }
+
+    #[test]
+    fn wiki_link_rewrite_survives_unclosed_opener() {
+        let content = "Broken [[ and [[Alpha]] after it";
+        assert_eq!(
+            rewrite_wiki_links(content, "Alpha", "Beta"),
+            "Broken [[ and [[Beta]] after it",
+        );
     }
 }

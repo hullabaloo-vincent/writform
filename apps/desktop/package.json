@@ -25,6 +25,8 @@
     "@tiptap/starter-kit": "^3.28.0",
     "@tiptap/y-tiptap": "^3.0.7",
     "@uiw/react-codemirror": "^4.25.11",
+    "dompurify": "^3.4.12",
+    "highlight.js": "^11.11.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.25.0",
     "mammoth": "^1.12.0",
