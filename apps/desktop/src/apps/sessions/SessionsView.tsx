@@ -399,7 +399,7 @@ function SessionChat({ channelId }: { channelId: number }) {
   return (
     <>
       <header className="wf-session-chat-header">Session chat</header>
-      <div className="wf-session-chat-messages">
+      <div className="wf-session-chat-messages" data-msg-scroll>
         {messages.map((m) => (
           <div key={m.id} className="wf-msg">
             <div className="wf-msg-meta">

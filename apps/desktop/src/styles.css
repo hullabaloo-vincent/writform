@@ -3451,7 +3451,8 @@ textarea.wf-el-edit {
   z-index: 5;
 }
 
-.wf-msg:hover .wf-msg-actions {
+.wf-msg:hover .wf-msg-actions,
+.wf-msg-actions.open {
   display: flex;
 }
 
@@ -3468,7 +3469,14 @@ textarea.wf-el-edit {
   cursor: pointer;
 }
 
+/* Destructive styling belongs to delete alone — this rule predates the
+   reaction button, which was inheriting the red. */
 .wf-msg-actions button:hover {
+  color: var(--wf-text);
+  border-color: var(--wf-accent);
+}
+
+.wf-msg-actions .wf-msg-delete:hover {
   color: #e88;
   border-color: #b13c3c;
 }
@@ -4254,6 +4262,28 @@ textarea.wf-el-edit {
   display: inline-flex;
 }
 
+/* An invisible bridge (::after) spans the gap down to the button, so moving
+   the pointer into the drawer never crosses un-hovered space. */
+.wf-react-picker::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 10px;
+}
+
+/* Flipped below when opening upward would be clipped by the scroll list. */
+.wf-react-picker.below {
+  top: calc(100% + 6px);
+  bottom: auto;
+}
+
+.wf-react-picker.below::after {
+  top: auto;
+  bottom: 100%;
+}
+
 .wf-react-picker {
   position: absolute;
   right: 0;
@@ -4332,19 +4362,16 @@ textarea.wf-el-edit {
   filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.5));
 }
 
+/* Background and text colour are set inline from the peer's colour — using
+   `currentColor` here would resolve against this element's own `color`
+   (making the pill the same colour as its text, i.e. invisible). */
 .wf-cursor-label {
   padding: 1px 6px;
   font-size: 11px;
   font-weight: 600;
   line-height: 1.5;
-  color: #fff;
   white-space: nowrap;
-  background: currentColor;
   border-radius: 4px;
-}
-
-/* The label text is white on the user's colour; the box uses currentColor. */
-.wf-cursor-label {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
@@ -4404,4 +4431,10 @@ textarea.wf-el-edit {
   right: 14px;
   bottom: 14px;
   z-index: 20;
+}
+
+/* Image transforms rotate/flip the picture inside its box; the box itself
+   stays axis-aligned so dragging, resizing and connectors keep working. */
+.wf-el-img {
+  transform-origin: center;
 }

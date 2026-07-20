@@ -12,7 +12,7 @@ import {
   UserPlus,
   Volume2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
@@ -677,7 +677,7 @@ function MessagePane() {
   return (
     <>
       <header className="wf-chat-main-header"># {channel?.name}</header>
-      <div className="wf-chat-messages">
+      <div className="wf-chat-messages" data-msg-scroll>
         {messages.map((m, i) => (
           <MessageRow key={m.id} message={m} compact={messages[i - 1]?.author.id === m.author.id} />
         ))}
@@ -710,7 +710,10 @@ export function MessageActions({
   const canReact = message.kind === "text" || message.kind === "shared_note";
 
   return (
-    <span className="wf-msg-actions">
+    // `open` keeps the bar visible while the picker is up: it is otherwise
+    // only shown on `.wf-msg:hover`, and the picker sits above the row, so
+    // reaching for an emoji left the row and closed the drawer.
+    <span className={`wf-msg-actions ${pickerOpen ? "open" : ""}`}>
       {canReact && (
         <span className="wf-react-anchor">
           <button
@@ -733,7 +736,7 @@ export function MessageActions({
       )}
       {canDelete && (
         <button
-          className="wf-icon"
+          className="wf-icon wf-msg-delete"
           title="Delete message"
           onClick={() =>
             void confirmDialog("Delete this message for everyone?", {
@@ -762,6 +765,9 @@ function ReactionPicker({
   onPick: (emoji: string) => void;
   onClose: () => void;
 }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [below, setBelow] = useState(false);
+
   useEffect(() => {
     const close = () => onClose();
     // Deferred so the click that opened the picker doesn't immediately close it.
@@ -771,8 +777,25 @@ function ReactionPicker({
       window.removeEventListener("pointerdown", close);
     };
   }, [onClose]);
+
+  // The drawer opens upward, but the message list is a scroll container, so
+  // near the top it would be clipped. Flip it below when it doesn't fit.
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const scroller = el.closest<HTMLElement>("[data-msg-scroll]");
+    if (!scroller) return;
+    if (el.getBoundingClientRect().top < scroller.getBoundingClientRect().top) {
+      setBelow(true);
+    }
+  }, []);
+
   return (
-    <span className="wf-react-picker" onPointerDown={(e) => e.stopPropagation()}>
+    <span
+      ref={ref}
+      className={`wf-react-picker ${below ? "below" : ""}`}
+      onPointerDown={(e) => e.stopPropagation()}
+    >
       {QUICK_REACTIONS.map((emoji) => (
         <button key={emoji} className="wf-react-option" onClick={() => onPick(emoji)}>
           {emoji}

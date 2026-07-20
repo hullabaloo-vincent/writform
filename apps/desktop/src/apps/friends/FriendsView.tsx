@@ -237,7 +237,7 @@ function DmPane({ dm }: { dm: DmChannel }) {
   return (
     <>
       <header className="wf-chat-main-header">@ {dm.peer.display_name ?? dm.peer.username}</header>
-      <div className="wf-chat-messages">
+      <div className="wf-chat-messages" data-msg-scroll>
         {messages.map((m, i) => (
           <div key={m.id} className={`wf-msg ${messages[i - 1]?.author.id === m.author.id ? "compact" : ""}`}>
             <MessageActions message={m} authorOnly />

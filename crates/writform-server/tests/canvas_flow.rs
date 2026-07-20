@@ -535,3 +535,108 @@ async fn canvas_ws_fanout_between_members() {
     assert_eq!(ev["id"].as_i64().unwrap(), created.id);
     assert_eq!(ev["x"].as_f64().unwrap(), 300.0);
 }
+
+/// A text edit must survive a concurrent update from someone else.
+///
+/// Clicking any element rewrites its `z` and broadcasts it, so while one
+/// person is typing the other's clicks stream in. This pins the server half:
+/// a `text`-only PATCH must not be clobbered by an interleaved `z` PATCH on
+/// another element, and the response must carry the new text.
+#[tokio::test]
+async fn text_edit_survives_concurrent_updates() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let (_group_id, board) = group_with_board(&server, &alice, &bob).await;
+
+    let sticky: CanvasElement = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/boards/{}/elements", board.id),
+            Some(json!({
+                "kind": "sticky", "x": 0.0, "y": 0.0, "w": 180.0, "h": 140.0,
+                "text": "", "color": "yellow", "style": "",
+                "from_id": null, "to_id": null
+            })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let other: CanvasElement = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &format!("/boards/{}/elements", board.id),
+            Some(json!({
+                "kind": "sticky", "x": 300.0, "y": 0.0, "w": 180.0, "h": 140.0,
+                "text": "bob's", "color": "blue", "style": "",
+                "from_id": null, "to_id": null
+            })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+
+    // Bob clicks his sticky (bring-to-front) while alice types in hers.
+    let bumped: CanvasElement = server
+        .req(
+            reqwest::Method::PATCH,
+            &bob.token,
+            &format!("/elements/{}", other.id),
+            Some(json!({ "z": 50 })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(bumped.z, 50);
+
+    let typed: CanvasElement = server
+        .req(
+            reqwest::Method::PATCH,
+            &alice.token,
+            &format!("/elements/{}", sticky.id),
+            Some(json!({ "text": "a line of writing" })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(typed.text, "a line of writing");
+    // A text-only patch must leave everything else alone.
+    assert_eq!(typed.color, "yellow");
+    assert_eq!(typed.w, 180.0);
+
+    // Bob clicks again afterwards; alice's text must not be rolled back.
+    server
+        .req(
+            reqwest::Method::PATCH,
+            &bob.token,
+            &format!("/elements/{}", other.id),
+            Some(json!({ "z": 51 })),
+        )
+        .await;
+    let detail: BoardDetail = server
+        .req(
+            reqwest::Method::GET,
+            &bob.token,
+            &format!("/boards/{}", board.id),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let saved = detail
+        .elements
+        .iter()
+        .find(|e| e.id == sticky.id)
+        .expect("sticky still on the board");
+    assert_eq!(
+        saved.text, "a line of writing",
+        "text must persist through other people's updates"
+    );
+}

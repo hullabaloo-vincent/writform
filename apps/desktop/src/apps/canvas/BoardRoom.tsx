@@ -6,6 +6,13 @@ import {
   ExternalLink,
   Frame as FrameIcon,
   ChevronDown,
+  Crop,
+  FlipHorizontal,
+  FlipVertical,
+  Maximize2,
+  RefreshCw,
+  RotateCcw,
+  RotateCw,
   Grid3x3,
   Map as MapIcon,
   Italic,
@@ -120,6 +127,12 @@ interface TextStyle {
   underline?: boolean;
   align?: "left" | "center" | "right";
   list?: "bullet";
+  /** Image transforms — stored here so they need no schema change. */
+  rotate?: number;
+  flipX?: boolean;
+  flipY?: boolean;
+  /** How the image fills its box: contain (default) or cover (crop). */
+  fit?: "contain" | "cover";
 }
 
 function textStyle(raw: string): TextStyle {
@@ -131,8 +144,27 @@ function textStyle(raw: string): TextStyle {
   }
 }
 
+/** CSS transform for an image element's stored rotate/flip. */
+function imageTransform(st: TextStyle): string | undefined {
+  const parts: string[] = [];
+  if (st.rotate) parts.push(`rotate(${st.rotate}deg)`);
+  if (st.flipX) parts.push("scaleX(-1)");
+  if (st.flipY) parts.push("scaleY(-1)");
+  return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
 const FONT_SIZES = [12, 14, 16, 20, 24, 32, 40, 48];
 const ALIGN_CYCLE: NonNullable<TextStyle["align"]>[] = ["left", "center", "right"];
+
+/**
+ * Stacking bands. DOM order is stable (by id) so focus is never lost when
+ * someone else's `z` changes; layering comes from these instead. The gaps are
+ * far larger than `MAX_ELEMENTS_PER_BOARD`, so per-element `z` can never
+ * bleed from one band into the next.
+ */
+const Z_BAND_FRAME = 0;
+const Z_BAND_CONNECTOR = 100_000;
+const Z_BAND_BODY = 200_000;
 
 /** Grid step for snap-to-grid (world units). */
 const GRID = 8;
@@ -265,6 +297,9 @@ export function BoardRoom() {
   viewRef.current = view;
   // Must live above the `!board` early return: hooks cannot be conditional.
   const lastCursorSent = useRef(0);
+  /** Text an edit began with — autosave rewrites `el.text` mid-edit, so this
+   *  is what "did anything actually change?" and undo must compare against. */
+  const editingOriginal = useRef("");
 
   // The wheel gesture zooms the board, but React registers `onWheel`
   // passively, so the event also bubbles to `.wf-main` (overflow: auto) and
@@ -604,7 +639,7 @@ export function BoardRoom() {
       .then((el) => {
         useCanvas.getState().applyElement(el);
         setSelected(new Set([el.id]));
-        if (kind !== "frame") setEditing(el.id);
+        if (kind !== "frame") beginEditing(el);
         recordCreate(el, `Add ${kind}`);
       })
       .catch(fail);
@@ -824,17 +859,53 @@ export function BoardRoom() {
     window.addEventListener("pointerup", onUp);
   };
 
+  /** Snap the element box back to the image's natural aspect ratio, keeping
+   *  the current width. Rotation is applied to the content, not the box, so
+   *  a quarter-turn swaps the ratio. */
+  const fitImageToContent = (el: CanvasElement) => {
+    const img = new window.Image();
+    img.onload = () => {
+      if (!img.width || !img.height) return;
+      const quarterTurned = Math.abs(((textStyle(el.style).rotate ?? 0) / 90) % 2) === 1;
+      const ratio = quarterTurned ? img.width / img.height : img.height / img.width;
+      const h = Math.max(60, Math.round(el.w * ratio));
+      applyPatchWithHistory(el, { h }, "Fit image");
+    };
+    img.src = `writform-att://attachment/${el.text}`;
+  };
+
+  const beginEditing = (el: CanvasElement) => {
+    editingOriginal.current = el.text;
+    setEditing(el.id);
+  };
+
+  /** Persist while typing so an interrupted edit can never lose work. No
+   *  history entry — the whole edit becomes one undo step on commit. */
+  const autosaveText = (el: CanvasElement, text: string) => {
+    if (text === el.text) return;
+    void commitPatch(el.id, { text }).catch(() => {});
+  };
+
   const commitText = (el: CanvasElement, text: string) => {
     setEditing(null);
-    if (text === el.text) return;
-    applyPatchWithHistory(el, { text }, "Edit text");
+    const original = editingOriginal.current;
+    if (text === original) return;
+    void commitPatch(el.id, { text }).catch(fail);
+    recordPatch(el.id, { text: original }, { text }, "Edit text");
   };
 
   const all = Object.values(elements);
-  const frames = all.filter((el) => el.kind === "frame").sort((a, b) => a.z - b.z);
+  // Render order is by id — deliberately NOT by `z`. Stacking is expressed
+  // with z-index instead (see Z_BAND_*), because sorting the DOM by `z` made
+  // React *move* nodes whenever anyone's `z` changed, and every click
+  // rewrites `z` and broadcasts it. Moving a node blurs whatever is focused
+  // inside it, so another person clicking anything killed your open text
+  // editor mid-edit and silently dropped what you typed.
+  const byId = (a: CanvasElement, b: CanvasElement) => a.id - b.id;
+  const frames = all.filter((el) => el.kind === "frame").sort(byId);
   const bodies = all
     .filter((el) => ["sticky", "text", "image", "link", "document"].includes(el.kind))
-    .sort((a, b) => a.z - b.z);
+    .sort(byId);
   const connectors = all.filter((el) => el.kind === "connector");
     // Single-selection element (color swatches, connector styling, resize).
   const soleId = selected.size === 1 ? [...selected][0] : null;
@@ -893,16 +964,18 @@ export function BoardRoom() {
                 top: el.y,
                 width: el.w,
                 height: el.h,
+                zIndex: Z_BAND_FRAME + el.z,
                 background: FRAME_COLORS[el.color]?.bg,
                 borderColor: FRAME_COLORS[el.color]?.border,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
-              onDoubleClick={() => setEditing(el.id)}
+              onDoubleClick={() => beginEditing(el)}
             >
               <ElementText
                 el={el}
                 editing={editing === el.id}
                 onCommit={(text) => commitText(el, text)}
+                onDraft={(text) => autosaveText(el, text)}
                 className="wf-el-frame-label"
               />
               {selected.has(el.id) && selected.size === 1 && (
@@ -911,7 +984,7 @@ export function BoardRoom() {
             </div>
           ))}
 
-          <svg className="wf-board-links">
+          <svg className="wf-board-links" style={{ zIndex: Z_BAND_CONNECTOR }}>
             <defs>
               <marker
                 id="wf-cap-arrow"
@@ -984,6 +1057,7 @@ export function BoardRoom() {
                 top: el.y,
                 width: el.w,
                 height: el.h,
+                zIndex: Z_BAND_BODY + el.z,
                 background: el.kind === "sticky" ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow) : undefined,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
@@ -991,7 +1065,7 @@ export function BoardRoom() {
                 el.kind !== "image" &&
                 el.kind !== "link" &&
                 el.kind !== "document" &&
-                setEditing(el.id)
+                beginEditing(el)
               }
             >
               {el.kind === "image" ? (
@@ -1000,6 +1074,10 @@ export function BoardRoom() {
                   src={`writform-att://attachment/${el.text}`}
                   alt=""
                   draggable={false}
+                  style={{
+                    transform: imageTransform(textStyle(el.style)),
+                    objectFit: textStyle(el.style).fit ?? "contain",
+                  }}
                 />
               ) : el.kind === "link" ? (
                 <LinkCard url={el.text} />
@@ -1010,6 +1088,7 @@ export function BoardRoom() {
                   el={el}
                   editing={editing === el.id}
                   onCommit={(text) => commitText(el, text)}
+                  onDraft={(text) => autosaveText(el, text)}
                   className={el.kind === "sticky" ? "wf-el-sticky-text" : "wf-el-text-text"}
                 />
               )}
@@ -1045,7 +1124,16 @@ export function BoardRoom() {
               }}
             >
               <MousePointer2 size={16} className="wf-cursor-arrow" />
-              <span className="wf-cursor-label">
+              {/* Background is set here rather than via `currentColor` in CSS:
+                  the label also sets its own text colour, which would make
+                  `currentColor` resolve to that instead of the cursor's. */}
+              <span
+                className="wf-cursor-label"
+                style={{
+                  background: c.user.accent_color ?? cursorColor(c.user.username),
+                  color: contrastText(c.user.accent_color ?? cursorColor(c.user.username)),
+                }}
+              >
                 {c.user.display_name ?? c.user.username}
               </span>
             </div>
@@ -1129,6 +1217,15 @@ export function BoardRoom() {
                 />
               ))}
             </>
+          )}
+          {selectedEl && selectedEl.kind === "image" && (
+            <ImageControls
+              element={selectedEl}
+              onChange={(st) =>
+                applyPatchWithHistory(selectedEl, { style: JSON.stringify(st) }, "Transform image")
+              }
+              onFitBox={() => fitImageToContent(selectedEl)}
+            />
           )}
           {selectedEl && selectedEl.kind === "frame" && (
             <>
@@ -1221,11 +1318,14 @@ function ElementText({
   el,
   editing,
   onCommit,
+  onDraft,
   className,
 }: {
   el: CanvasElement;
   editing: boolean;
   onCommit: (text: string) => void;
+  /** Called on a pause in typing, so work survives an interrupted edit. */
+  onDraft?: (text: string) => void;
   className: string;
 }) {
   const [draft, setDraft] = useState(el.text);
@@ -1233,6 +1333,16 @@ function ElementText({
     if (editing) setDraft(el.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
+
+  // Autosave after a short pause; the blur commit still records the undo step.
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  useEffect(() => {
+    if (!editing || !onDraft) return;
+    const timer = setTimeout(() => onDraft(draftRef.current), 600);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft, editing]);
 
   const st = textStyle(el.style);
   const css = textStyleCss(st);
@@ -1419,6 +1529,22 @@ function cursorColor(name: string): string {
   return CURSOR_COLORS[h % CURSOR_COLORS.length];
 }
 
+/**
+ * Readable text colour for an arbitrary background. Accent colours are
+ * user-chosen and can be pale, so a fixed white label would be unreadable.
+ */
+function contrastText(hex: string): string {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return "#fff";
+  const n = parseInt(m[1], 16);
+  const [r, g, b] = [(n >> 16) & 255, (n >> 8) & 255, n & 255].map((v) => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  const luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  return luminance > 0.45 ? "#101014" : "#fff";
+}
+
 /** Bounding box of everything on the board, in world coordinates. */
 function contentBounds(elements: Record<number, CanvasElement>) {
   const items = Object.values(elements).filter((el) => el.kind !== "connector");
@@ -1556,5 +1682,71 @@ function Minimap({
         <ChevronDown size={13} />
       </button>
     </div>
+  );
+}
+
+
+/** Rotate / flip / fit controls shown while an image element is selected. */
+function ImageControls({
+  element,
+  onChange,
+  onFitBox,
+}: {
+  element: CanvasElement;
+  onChange: (st: TextStyle) => void;
+  onFitBox: () => void;
+}) {
+  const st = textStyle(element.style);
+  const rotate = st.rotate ?? 0;
+  // Keep rotation in [0, 360) so the label stays readable after many turns.
+  const turn = (delta: number) => onChange({ ...st, rotate: (((rotate + delta) % 360) + 360) % 360 });
+  return (
+    <>
+      <span className="wf-board-toolbar-sep" />
+      <button className="wf-icon" title="Rotate left" onClick={() => turn(-90)}>
+        <RotateCcw size={15} />
+      </button>
+      <button className="wf-icon" title="Rotate right" onClick={() => turn(90)}>
+        <RotateCw size={15} />
+      </button>
+      <span className="wf-board-fontsize" title="Rotation">
+        {rotate}°
+      </span>
+      <button
+        className={`wf-icon ${st.flipX ? "active" : ""}`}
+        title="Flip horizontally"
+        onClick={() => onChange({ ...st, flipX: !st.flipX || undefined })}
+      >
+        <FlipHorizontal size={15} />
+      </button>
+      <button
+        className={`wf-icon ${st.flipY ? "active" : ""}`}
+        title="Flip vertically"
+        onClick={() => onChange({ ...st, flipY: !st.flipY || undefined })}
+      >
+        <FlipVertical size={15} />
+      </button>
+      <button
+        className={`wf-icon ${st.fit === "cover" ? "active" : ""}`}
+        title={st.fit === "cover" ? "Filling the box (click to fit inside)" : "Fitting inside the box (click to fill)"}
+        onClick={() => onChange({ ...st, fit: st.fit === "cover" ? undefined : "cover" })}
+      >
+        <Crop size={15} />
+      </button>
+      <button className="wf-icon" title="Match the image's aspect ratio" onClick={onFitBox}>
+        <Maximize2 size={15} />
+      </button>
+      {(rotate !== 0 || st.flipX || st.flipY || st.fit) && (
+        <button
+          className="wf-icon"
+          title="Reset transform"
+          onClick={() =>
+            onChange({ ...st, rotate: undefined, flipX: undefined, flipY: undefined, fit: undefined })
+          }
+        >
+          <RefreshCw size={15} />
+        </button>
+      )}
+    </>
   );
 }
