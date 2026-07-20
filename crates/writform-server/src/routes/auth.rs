@@ -2,7 +2,9 @@ use axum::extract::{ConnectInfo, State};
 use axum::http::StatusCode;
 use axum::Json;
 use std::net::SocketAddr;
-use writform_proto::api::{AuthResponse, LoginRequest, RegisterRequest, User};
+use writform_proto::api::{
+    AuthResponse, LoginRequest, RegisterRequest, ResetPasswordRequest, User,
+};
 use writform_proto::UserId;
 
 use crate::auth::{AuthUser, SESSION_LIFETIME_MS};
@@ -339,6 +341,63 @@ pub async fn revoke_device(
     sqlx::query("DELETE FROM auth_sessions WHERE id = ? AND user_id = ?")
         .bind(session_id)
         .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Redeem an admin-issued one-time reset code for a new password.
+/// Unauthenticated by design (the user is locked out); the code is short-
+/// lived, single-use, and every session is revoked on success.
+pub async fn reset_password(
+    State(state): State<AppState>,
+    Json(req): Json<ResetPasswordRequest>,
+) -> Result<StatusCode, AppError> {
+    validate_password(&req.new_password)?;
+    let generic = || {
+        AppError::new(
+            StatusCode::FORBIDDEN,
+            "bad_reset",
+            "unknown user, or the reset code is wrong or expired",
+        )
+    };
+    let row: Option<(i64, String, i64)> = sqlx::query_as(
+        "SELECT u.id, r.code_hash, r.expires_at FROM users u
+         JOIN password_resets r ON r.user_id = u.id WHERE u.username = ?",
+    )
+    .bind(req.username.trim())
+    .fetch_optional(&state.pool)
+    .await?;
+    let Some((user_id, code_hash, expires_at)) = row else {
+        return Err(generic());
+    };
+    let presented = {
+        use sha2::Digest;
+        hex::encode(sha2::Sha256::digest(
+            req.code.trim().to_uppercase().replace('-', "").as_bytes(),
+        ))
+    };
+    if presented != code_hash || now_millis() > expires_at {
+        return Err(generic());
+    }
+
+    let password_hash = tokio::task::spawn_blocking(move || {
+        writform_crypto::password::hash_password(&req.new_password)
+    })
+    .await
+    .map_err(AppError::internal)?;
+    sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+        .bind(&password_hash)
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
+    // Single use, and any session an attacker (or the old password) held dies.
+    sqlx::query("DELETE FROM password_resets WHERE user_id = ?")
+        .bind(user_id)
+        .execute(&state.pool)
+        .await?;
+    sqlx::query("DELETE FROM auth_sessions WHERE user_id = ?")
+        .bind(user_id)
         .execute(&state.pool)
         .await?;
     Ok(StatusCode::NO_CONTENT)

@@ -82,6 +82,8 @@ export interface Backend {
   removeServer(addr: string): Promise<void>;
   login(addr: string, username: string, password: string): Promise<SessionInfo>;
   register(addr: string, username: string, password: string): Promise<SessionInfo>;
+  /** Redeem an admin-issued reset code for a new password (pre-auth). */
+  resetPassword(addr: string, username: string, code: string, newPassword: string): Promise<void>;
   logout(): Promise<void>;
   currentSession(): Promise<SessionInfo | null>;
 
@@ -95,6 +97,8 @@ export interface Backend {
     filePath?: string;
     fileName?: string;
   }): Promise<ApiResponse>;
+  /** Save an export archive; resolves to a human-readable location. */
+  saveExport(fileName: string, dataBase64: string): Promise<string>;
   wsSub(rooms: string[]): Promise<void>;
   wsUnsub(rooms: string[]): Promise<void>;
   /** Subscribe to WS frames; returns an unsubscribe fn. */
@@ -128,6 +132,8 @@ function tauriBackend(): Backend {
     removeServer: (addr) => invoke("remove_server", { addr }),
     login: (addr, username, password) => invoke("login", { addr, username, password }),
     register: (addr, username, password) => invoke("register", { addr, username, password }),
+    resetPassword: (addr, username, code, newPassword) =>
+      invoke("reset_password", { addr, username, code, newPassword }),
     logout: () => invoke("logout"),
     currentSession: () => invoke("current_session"),
     hostStatus: () => invoke("host_status"),
@@ -141,6 +147,7 @@ function tauriBackend(): Backend {
         filePath: filePath ?? null,
         fileName: fileName ?? null,
       }),
+    saveExport: (fileName, dataBase64) => invoke("save_export", { fileName, dataBase64 }),
     wsSub: (rooms) => invoke("ws_sub", { rooms }),
     wsUnsub: (rooms) => invoke("ws_unsub", { rooms }),
     onWsEvent: (handler) => {
@@ -206,6 +213,7 @@ function unavailableBackend(): Backend {
     removeServer: fail,
     login: fail,
     register: fail,
+    resetPassword: fail,
     logout: fail,
     currentSession: fail,
     hostStatus: fail,
@@ -214,6 +222,7 @@ function unavailableBackend(): Backend {
     hostReachability: fail,
     apiFetch: fail,
     uploadAttachment: fail,
+    saveExport: fail,
     wsSub: fail,
     wsUnsub: fail,
     onWsEvent: () => () => {},

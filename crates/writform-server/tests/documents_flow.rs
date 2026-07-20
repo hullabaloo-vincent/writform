@@ -8,8 +8,8 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use writform_proto::api::AuthResponse;
 use writform_proto::documents::{
-    Document, DocumentActivity, DocumentDetail, DocumentListItem, DocumentThread, DocumentUpdateBatch,
-    DocumentVersion, DocumentVersionMeta,
+    Document, DocumentActivity, DocumentDetail, DocumentListItem, DocumentThread,
+    DocumentUpdateBatch, DocumentVersion, DocumentVersionMeta,
 };
 use writform_proto::ws::{ClientFrame, ServerFrame};
 use writform_server::routes;
@@ -854,4 +854,249 @@ async fn document_ws_fanout() {
         .await;
     let ev = wait_for_event(&mut bob_ws, "document.meta").await;
     assert_eq!(ev["format"], "screenplay");
+}
+
+#[tokio::test]
+async fn folders_move_share_and_search() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    server.befriend(&alice, &bob).await;
+
+    // Folder CRUD.
+    let folder: serde_json::Value = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/document-folders",
+            Some(json!({"name": "Novels"})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let folder_id = folder["id"].as_i64().unwrap();
+    let res = server
+        .req(
+            reqwest::Method::PATCH,
+            &alice.token,
+            &format!("/document-folders/{folder_id}"),
+            Some(json!({"name": "Long fiction"})),
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    // Not bob's folder.
+    let res = server
+        .req(
+            reqwest::Method::PATCH,
+            &bob.token,
+            &format!("/document-folders/{folder_id}"),
+            Some(json!({"name": "mine now"})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    // Move documents in; folder listing counts them.
+    let doc_a = create_doc(&server, &alice.token, "Whale story").await;
+    let doc_b = create_doc(&server, &alice.token, "Space story").await;
+    for doc in [&doc_a, &doc_b] {
+        let res = server
+            .req(
+                reqwest::Method::POST,
+                &alice.token,
+                &format!("/documents/{}/move", doc.id),
+                Some(json!({"folder_id": folder_id})),
+            )
+            .await;
+        assert_eq!(res.status(), 200);
+    }
+    let folders: Vec<serde_json::Value> = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/document-folders",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(folders.len(), 1);
+    assert_eq!(folders[0]["document_count"].as_i64().unwrap(), 2);
+    // Moving into someone else's folder is rejected.
+    let bob_doc = create_doc(&server, &bob.token, "Bob's draft").await;
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &format!("/documents/{}/move", bob_doc.id),
+            Some(json!({"folder_id": folder_id})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    // Folder share grants bob read on every document inside (no chat cards).
+    let shares: Vec<serde_json::Value> = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/document-folders/{folder_id}/share"),
+            Some(json!({"subject_kind": "user", "subject_id": bob.user.id.0, "access": "read"})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(shares.len(), 2);
+    let list: Vec<DocumentListItem> = server
+        .req(reqwest::Method::GET, &bob.token, "/documents", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    // Bob sees his own + the two shared.
+    assert_eq!(list.len(), 3);
+    assert!(list
+        .iter()
+        .filter(|i| i.my_access == "read")
+        .all(|i| ["Whale story", "Space story"].contains(&i.document.title.as_str())));
+
+    // Search: title match respects access, content match hits content_json.
+    let res: Vec<DocumentListItem> = server
+        .req(reqwest::Method::GET, &bob.token, "/documents?q=whale", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].document.title, "Whale story");
+    // Content search: snapshot writes content_json.
+    let doc_json =
+        json!({"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "Call me Ishmael."}]}]})
+            .to_string();
+    server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/snapshot", doc_a.id),
+            Some(json!({"doc_json": doc_json})),
+        )
+        .await;
+    let res: Vec<DocumentListItem> = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/documents?q=Ishmael",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(res.len(), 1);
+    assert_eq!(res[0].document.id, doc_a.id);
+    // LIKE wildcards in the query are literal, not wildcards.
+    let res: Vec<DocumentListItem> = server
+        .req(reqwest::Method::GET, &alice.token, "/documents?q=%25", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(res.is_empty());
+
+    // Deleting the folder keeps the documents, now folderless.
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/document-folders/{folder_id}"),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let list: Vec<DocumentListItem> = server
+        .req(reqwest::Method::GET, &alice.token, "/documents", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(list
+        .iter()
+        .filter(|i| i.my_access == "owner")
+        .all(|i| i.document.folder_id.is_none()));
+}
+
+#[tokio::test]
+async fn password_reset_flow() {
+    let server = boot().await;
+    let admin = server.register("admin").await; // first account = server admin
+    let alice = server.register("alice").await;
+
+    // Non-admins cannot mint codes.
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/admin/users/{}/reset-code", alice.user.id.0),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    let issued: serde_json::Value = server
+        .req(
+            reqwest::Method::POST,
+            &admin.token,
+            &format!("/admin/users/{}/reset-code", alice.user.id.0),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let code = issued["code"].as_str().unwrap().to_string();
+    assert_eq!(code.len(), 11); // XXXXX-XXXXX
+
+    // Wrong code fails; right code (dashes optional, case-insensitive) works.
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token, // token irrelevant: public endpoint
+            "/auth/reset-password",
+            Some(json!({"username": "alice", "code": "WRONG-CODE1", "new_password": "brand-new-pass"})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/auth/reset-password",
+            Some(json!({"username": "alice", "code": code.to_lowercase(), "new_password": "brand-new-pass"})),
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+
+    // Old sessions are revoked, the code is single-use, and the new password logs in.
+    let res = server
+        .req(reqwest::Method::GET, &alice.token, "/auth/me", None)
+        .await;
+    assert_eq!(res.status(), 401);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &admin.token,
+            "/auth/reset-password",
+            Some(json!({"username": "alice", "code": code, "new_password": "another-pass-99"})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+    let res = server
+        .client
+        .post(format!("{}/auth/login", server.base))
+        .json(&json!({"username": "alice", "password": "brand-new-pass", "device_label": null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
 }

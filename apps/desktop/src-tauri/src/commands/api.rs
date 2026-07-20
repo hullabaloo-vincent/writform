@@ -137,3 +137,37 @@ pub async fn upload_attachment(
     let body: serde_json::Value = res.json().await.unwrap_or(serde_json::Value::Null);
     Ok(ApiResponse { status, body })
 }
+
+/// Write an export archive to the user's Downloads folder (Documents, then
+/// home as fallbacks). No dialog: the caller shows the returned path.
+#[tauri::command]
+pub async fn save_export(
+    app: tauri::AppHandle,
+    file_name: String,
+    data_base64: String,
+) -> Result<String, CmdError> {
+    use tauri::Manager;
+    let bytes = B64
+        .decode(&data_base64)
+        .map_err(|_| CmdError::new("bad_data", "export payload is not valid base64"))?;
+    let safe: String = file_name
+        .chars()
+        .filter(|c| !matches!(c, '/' | '\\' | ':' | '\0'))
+        .collect();
+    let name = if safe.trim().is_empty() {
+        "writform-export.zip".to_string()
+    } else {
+        safe
+    };
+    let dir = app
+        .path()
+        .download_dir()
+        .or_else(|_| app.path().document_dir())
+        .or_else(|_| app.path().home_dir())
+        .map_err(|e| CmdError::new("no_dir", format!("no writable folder found: {e}")))?;
+    let path = dir.join(name);
+    tokio::fs::write(&path, &bytes)
+        .await
+        .map_err(|e| CmdError::new("write_failed", format!("could not write export: {e}")))?;
+    Ok(path.display().to_string())
+}

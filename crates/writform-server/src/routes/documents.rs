@@ -17,9 +17,10 @@ use std::collections::HashMap;
 use writform_proto::chat::UserRef;
 use writform_proto::documents::{
     AppendUpdateRequest, AppendUpdateResponse, AwarenessRequest, CreateDocumentRequest,
-    CreateThreadRequest, Document, DocumentActivity, DocumentDetail, DocumentListItem,
-    DocumentShare, DocumentThread, DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion,
-    DocumentVersionMeta, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
+    CreateFolderRequest, CreateThreadRequest, Document, DocumentActivity, DocumentDetail,
+    DocumentFolder, DocumentListItem, DocumentShare, DocumentThread, DocumentThreadMessage,
+    DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion, DocumentVersionMeta,
+    MoveDocumentRequest, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
     UpdateDocumentRequest, UpdateThreadRequest,
 };
 use writform_proto::{GroupId, UserId};
@@ -64,6 +65,7 @@ type DocRow = (
     i64,
     String,
     String,
+    Option<i64>,
     i64,
     i64,
     String,
@@ -72,7 +74,8 @@ type DocRow = (
     Option<String>,
 );
 
-const DOC_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.created_at, d.updated_at,
+const DOC_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.folder_id,
+    d.created_at, d.updated_at,
     u.username, u.display_name, u.avatar_attachment_id, u.accent_color
     FROM documents d JOIN users u ON u.id = d.owner_id";
 
@@ -82,6 +85,7 @@ fn row_to_document(row: DocRow) -> (Document, i64) {
         owner_id,
         title,
         format,
+        folder_id,
         created_at,
         updated_at,
         username,
@@ -95,6 +99,7 @@ fn row_to_document(row: DocRow) -> (Document, i64) {
             owner: perms::user_ref(UserId(owner_id), username, display_name, avatar, accent),
             title,
             format,
+            folder_id,
             created_at,
             updated_at,
         },
@@ -305,6 +310,7 @@ type DocShareRow = (
     i64,
     String,
     String,
+    Option<i64>,
     i64,
     i64,
     String,
@@ -314,24 +320,55 @@ type DocShareRow = (
     String,
 );
 
-const DOC_SHARE_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.created_at,
-    d.updated_at, u.username, u.display_name, u.avatar_attachment_id, u.accent_color, s.access
+const DOC_SHARE_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.folder_id,
+    d.created_at, d.updated_at,
+    u.username, u.display_name, u.avatar_attachment_id, u.accent_color, s.access
     FROM documents d JOIN users u ON u.id = d.owner_id
     JOIN document_shares s ON s.doc_id = d.id";
 
 fn share_row_split(r: DocShareRow) -> (DocRow, Access) {
-    let access = if r.10 == "write" {
+    let access = if r.11 == "write" {
         Access::Write
     } else {
         Access::Read
     };
-    ((r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9), access)
+    (
+        (r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10),
+        access,
+    )
 }
+
+#[derive(Debug, Deserialize)]
+pub struct ListParams {
+    /// Search text: matches the title or the document's content.
+    #[serde(default)]
+    pub q: Option<String>,
+}
+
+/// `LIKE` pattern for a user query, with `%`/`_`/`\` escaped (`ESCAPE '\'`).
+fn like_pattern(q: &str) -> String {
+    let mut escaped = String::with_capacity(q.len() + 2);
+    for c in q.chars() {
+        if c == '%' || c == '_' || c == '\\' {
+            escaped.push('\\');
+        }
+        escaped.push(c);
+    }
+    format!("%{escaped}%")
+}
+
+const SEARCH_FILTER: &str =
+    " AND (d.title LIKE ? ESCAPE '\\' OR COALESCE(d.content_json, '') LIKE ? ESCAPE '\\')";
 
 pub async fn list_documents(
     State(state): State<AppState>,
     auth: AuthUser,
+    Query(params): Query<ListParams>,
 ) -> Result<Json<Vec<DocumentListItem>>, AppError> {
+    let query = params.q.as_deref().map(str::trim).filter(|q| !q.is_empty());
+    let pattern = query.map(like_pattern);
+    let filter = if pattern.is_some() { SEARCH_FILTER } else { "" };
+
     let mut best: std::collections::HashMap<i64, (Document, Access)> =
         std::collections::HashMap::new();
     let add = |row: DocRow,
@@ -346,21 +383,22 @@ pub async fn list_documents(
         }
     };
 
-    let owned: Vec<DocRow> = sqlx::query_as(&format!("{DOC_SELECT} WHERE d.owner_id = ?"))
-        .bind(auth.user_id.0)
-        .fetch_all(&state.pool)
-        .await?;
-    for row in owned {
+    let owned_sql = format!("{DOC_SELECT} WHERE d.owner_id = ?{filter}");
+    let mut owned_q = sqlx::query_as::<_, DocRow>(&owned_sql).bind(auth.user_id.0);
+    if let Some(p) = &pattern {
+        owned_q = owned_q.bind(p).bind(p);
+    }
+    for row in owned_q.fetch_all(&state.pool).await? {
         add(row, Access::Owner, &mut best);
     }
 
-    let user_shared: Vec<DocShareRow> = sqlx::query_as(&format!(
-        "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'user' AND s.subject_id = ?"
-    ))
-    .bind(auth.user_id.0)
-    .fetch_all(&state.pool)
-    .await?;
-    for r in user_shared {
+    let user_sql =
+        format!("{DOC_SHARE_SELECT} WHERE s.subject_kind = 'user' AND s.subject_id = ?{filter}");
+    let mut user_q = sqlx::query_as::<_, DocShareRow>(&user_sql).bind(auth.user_id.0);
+    if let Some(p) = &pattern {
+        user_q = user_q.bind(p).bind(p);
+    }
+    for r in user_q.fetch_all(&state.pool).await? {
         let (row, access) = share_row_split(r);
         add(row, access, &mut best);
     }
@@ -369,14 +407,16 @@ pub async fn list_documents(
     if !groups.is_empty() {
         let placeholders = vec!["?"; groups.len()].join(", ");
         let sql = format!(
-            "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'group' AND s.subject_id IN ({placeholders})"
+            "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'group' AND s.subject_id IN ({placeholders}){filter}"
         );
         let mut q = sqlx::query_as::<_, DocShareRow>(&sql);
         for g in &groups {
             q = q.bind(g.0);
         }
-        let rows = q.fetch_all(&state.pool).await?;
-        for r in rows {
+        if let Some(p) = &pattern {
+            q = q.bind(p).bind(p);
+        }
+        for r in q.fetch_all(&state.pool).await? {
             let (row, access) = share_row_split(r);
             add(row, access, &mut best);
         }
@@ -424,7 +464,17 @@ pub async fn document_detail(
     .fetch_optional(&state.pool)
     .await?;
     if recent_open.is_none_or(|(at,)| now - at >= 60_000) {
-        insert_activity(&state, doc_id, auth.user_id, "opened", None, None, None, None).await?;
+        insert_activity(
+            &state,
+            doc_id,
+            auth.user_id,
+            "opened",
+            None,
+            None,
+            None,
+            None,
+        )
+        .await?;
     }
     Ok(Json(DocumentDetail {
         document: doc,
@@ -434,6 +484,7 @@ pub async fn document_detail(
     }))
 }
 
+#[allow(clippy::too_many_arguments)] // mirrors the document_activity columns
 async fn insert_activity(
     state: &AppState,
     doc_id: i64,
@@ -714,7 +765,21 @@ type VersionRow = (
 );
 
 fn row_to_version(row: VersionRow) -> DocumentVersionMeta {
-    let (id, doc_id, kind, name, changed_blocks, added_words, removed_words, created_at, uid, username, display_name, avatar, accent) = row;
+    let (
+        id,
+        doc_id,
+        kind,
+        name,
+        changed_blocks,
+        added_words,
+        removed_words,
+        created_at,
+        uid,
+        username,
+        display_name,
+        avatar,
+        accent,
+    ) = row;
     DocumentVersionMeta {
         id,
         doc_id,
@@ -740,7 +805,9 @@ fn node_text(value: &serde_json::Value, out: &mut String) {
 }
 
 fn snapshot_blocks(raw: &str) -> Vec<String> {
-    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else { return Vec::new() };
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else {
+        return Vec::new();
+    };
     value
         .get("content")
         .and_then(|v| v.as_array())
@@ -818,11 +885,7 @@ fn change_stats(previous: Option<&str>, current: &str) -> (i64, i64, i64) {
     (changed, added, removed)
 }
 
-fn next_position(
-    positions: &HashMap<&str, Vec<usize>>,
-    block: &str,
-    from: usize,
-) -> Option<usize> {
+fn next_position(positions: &HashMap<&str, Vec<usize>>, block: &str, from: usize) -> Option<usize> {
     let matches = positions.get(block)?;
     let index = matches.partition_point(|position| *position < from);
     matches.get(index).copied()
@@ -857,9 +920,15 @@ pub async fn snapshot(
         }
         None => None,
     };
-    let kind = req.kind.as_deref().unwrap_or(if name.is_some() { "named" } else { "auto" });
+    let kind = req
+        .kind
+        .as_deref()
+        .unwrap_or(if name.is_some() { "named" } else { "auto" });
     if !matches!(kind, "auto" | "named" | "draft") || (kind == "draft" && name.is_none()) {
-        return Err(AppError::bad_request("invalid_kind", "snapshot kind must be auto, named, or a named draft"));
+        return Err(AppError::bad_request(
+            "invalid_kind",
+            "snapshot kind must be auto, named, or a named draft",
+        ));
     }
 
     let now = now_millis();
@@ -894,8 +963,10 @@ pub async fn snapshot(
     .bind(doc_id)
     .fetch_optional(&state.pool)
     .await?;
-    let (changed_blocks, added_words, removed_words) =
-        change_stats(previous.as_ref().map(|(json,)| json.as_str()), &req.doc_json);
+    let (changed_blocks, added_words, removed_words) = change_stats(
+        previous.as_ref().map(|(json,)| json.as_str()),
+        &req.doc_json,
+    );
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO document_versions
          (doc_id, kind, name, doc_json, content_hash, changed_blocks, added_words, removed_words, created_by, created_at)
@@ -919,7 +990,17 @@ pub async fn snapshot(
         .await?;
     let meta = row_to_version(row);
     if kind == "draft" {
-        insert_activity(&state, doc_id, auth.user_id, "draft_saved", None, None, name.as_deref(), None).await?;
+        insert_activity(
+            &state,
+            doc_id,
+            auth.user_id,
+            "draft_saved",
+            None,
+            None,
+            name.as_deref(),
+            None,
+        )
+        .await?;
     }
     state.ws.broadcast(
         &doc_room(doc_id),
@@ -980,13 +1061,37 @@ const ACTIVITY_SELECT: &str = "SELECT a.id, a.doc_id, a.kind, a.subject_kind,
     FROM document_activity a JOIN users u ON u.id = a.actor_id";
 
 type ActivityRow = (
-    i64, i64, String, Option<String>, Option<i64>, Option<String>, Option<String>, i64,
-    i64, String, Option<String>, Option<i64>, Option<String>,
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
+    Option<String>,
+    i64,
+    i64,
+    String,
+    Option<String>,
+    Option<i64>,
+    Option<String>,
 );
 
 fn row_to_activity(row: ActivityRow) -> DocumentActivity {
-    let (id, doc_id, kind, subject_kind, subject_id, subject_name, detail, created_at,
-        uid, username, display_name, avatar, accent) = row;
+    let (
+        id,
+        doc_id,
+        kind,
+        subject_kind,
+        subject_id,
+        subject_name,
+        detail,
+        created_at,
+        uid,
+        username,
+        display_name,
+        avatar,
+        accent,
+    ) = row;
     DocumentActivity {
         id,
         doc_id,
@@ -1071,6 +1176,21 @@ pub async fn set_share(
 ) -> Result<Json<DocumentShare>, AppError> {
     let (doc, access) = require_access(&state, doc_id, auth.user_id, false).await?;
     require_owner(access)?;
+    let share = grant_share(&state, &doc, auth.user_id, &req, true).await?;
+    Ok(Json(share))
+}
+
+/// Validate and apply one share grant: friendship/membership checks, upsert,
+/// list-change broadcast, activity entry, and (when `announce`) the group
+/// chat card. Folder shares reuse this per document without the card spam.
+async fn grant_share(
+    state: &AppState,
+    doc: &Document,
+    owner: UserId,
+    req: &SetShareRequest,
+    announce: bool,
+) -> Result<DocumentShare, AppError> {
+    let doc_id = doc.id;
     if req.access != "read" && req.access != "write" {
         return Err(AppError::bad_request(
             "bad_access",
@@ -1079,16 +1199,16 @@ pub async fn set_share(
     }
     match req.subject_kind.as_str() {
         "user" => {
-            if req.subject_id == auth.user_id.0 {
+            if req.subject_id == owner.0 {
                 return Err(AppError::bad_request(
                     "bad_subject",
                     "cannot share with yourself",
                 ));
             }
-            let (a, b) = if auth.user_id.0 < req.subject_id {
-                (auth.user_id.0, req.subject_id)
+            let (a, b) = if owner.0 < req.subject_id {
+                (owner.0, req.subject_id)
             } else {
-                (req.subject_id, auth.user_id.0)
+                (req.subject_id, owner.0)
             };
             let friends: Option<(i64,)> =
                 sqlx::query_as("SELECT 1 FROM friendships WHERE user_a = ? AND user_b = ?")
@@ -1105,7 +1225,7 @@ pub async fn set_share(
             }
         }
         "group" => {
-            if perms::member_role(&state.pool, GroupId(req.subject_id), auth.user_id)
+            if perms::member_role(&state.pool, GroupId(req.subject_id), owner)
                 .await?
                 .is_none()
             {
@@ -1143,12 +1263,12 @@ pub async fn set_share(
     .bind(&req.subject_kind)
     .bind(req.subject_id)
     .bind(&req.access)
-    .bind(auth.user_id.0)
+    .bind(owner.0)
     .bind(now)
     .execute(&state.pool)
     .await?;
 
-    let owner = fetch_user_ref(&state, auth.user_id).await?;
+    let owner_ref = fetch_user_ref(state, owner).await?;
     if req.subject_kind == "user" {
         state.ws.broadcast(
             &format!("user:{}", req.subject_id),
@@ -1157,7 +1277,7 @@ pub async fn set_share(
                 "reason": "shared",
                 "document_id": doc_id,
                 "title": doc.title,
-                "by": owner,
+                "by": owner_ref,
             }),
         );
     } else {
@@ -1168,25 +1288,24 @@ pub async fn set_share(
                 "reason": "shared",
                 "document_id": doc_id,
                 "title": doc.title,
-                "by": owner,
+                "by": owner_ref,
             }),
         );
-        post_share_card(
-            &state,
-            &doc,
-            GroupId(req.subject_id),
-            auth.user_id,
-            &req.access,
-        )
-        .await?;
+        if announce {
+            post_share_card(state, doc, GroupId(req.subject_id), owner, &req.access).await?;
+        }
     }
 
-    let name = subject_name(&state, &req.subject_kind, req.subject_id).await?;
-    let activity_kind = if previous_access.is_some() { "share_updated" } else { "shared" };
+    let name = subject_name(state, &req.subject_kind, req.subject_id).await?;
+    let activity_kind = if previous_access.is_some() {
+        "share_updated"
+    } else {
+        "shared"
+    };
     insert_activity(
-        &state,
+        state,
         doc_id,
-        auth.user_id,
+        owner,
         activity_kind,
         Some(&req.subject_kind),
         Some(req.subject_id),
@@ -1194,14 +1313,14 @@ pub async fn set_share(
         Some(&req.access),
     )
     .await?;
-    Ok(Json(DocumentShare {
+    Ok(DocumentShare {
         doc_id,
-        subject_kind: req.subject_kind,
+        subject_kind: req.subject_kind.clone(),
         subject_id: req.subject_id,
         subject_name: name,
-        access: req.access,
+        access: req.access.clone(),
         created_at: now,
-    }))
+    })
 }
 
 /// Announce a group share as a `document` card message in the group's first
@@ -1297,6 +1416,186 @@ pub async fn delete_share(
     )
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ------------------------------------------------------------------ folders
+
+async fn require_folder_owner(
+    state: &AppState,
+    folder_id: i64,
+    user: UserId,
+) -> Result<String, AppError> {
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT owner_id, name FROM document_folders WHERE id = ?")
+            .bind(folder_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((owner_id, name)) = row else {
+        return Err(AppError::new(
+            StatusCode::NOT_FOUND,
+            "no_such_folder",
+            "folder not found",
+        ));
+    };
+    if owner_id != user.0 {
+        return Err(AppError::new(
+            StatusCode::FORBIDDEN,
+            "not_allowed",
+            "not your folder",
+        ));
+    }
+    Ok(name)
+}
+
+fn validate_folder_name(name: &str) -> Result<&str, AppError> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 80 {
+        return Err(AppError::bad_request(
+            "invalid_name",
+            "folder name must be 1-80 characters",
+        ));
+    }
+    Ok(name)
+}
+
+pub async fn list_folders(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<DocumentFolder>>, AppError> {
+    let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(
+        "SELECT f.id, f.name, f.created_at, COUNT(d.id)
+         FROM document_folders f LEFT JOIN documents d ON d.folder_id = f.id
+         WHERE f.owner_id = ? GROUP BY f.id ORDER BY f.name COLLATE NOCASE",
+    )
+    .bind(auth.user_id.0)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(
+        rows.into_iter()
+            .map(|(id, name, created_at, document_count)| DocumentFolder {
+                id,
+                name,
+                document_count,
+                created_at,
+            })
+            .collect(),
+    ))
+}
+
+pub async fn create_folder(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Json(req): Json<CreateFolderRequest>,
+) -> Result<Json<DocumentFolder>, AppError> {
+    let name = validate_folder_name(&req.name)?;
+    let now = now_millis();
+    let id: i64 = sqlx::query_scalar(
+        "INSERT INTO document_folders (owner_id, name, created_at) VALUES (?, ?, ?) RETURNING id",
+    )
+    .bind(auth.user_id.0)
+    .bind(name)
+    .bind(now)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(DocumentFolder {
+        id,
+        name: name.to_string(),
+        document_count: 0,
+        created_at: now,
+    }))
+}
+
+pub async fn rename_folder(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(folder_id): Path<i64>,
+    Json(req): Json<CreateFolderRequest>,
+) -> Result<Json<DocumentFolder>, AppError> {
+    require_folder_owner(&state, folder_id, auth.user_id).await?;
+    let name = validate_folder_name(&req.name)?;
+    sqlx::query("UPDATE document_folders SET name = ? WHERE id = ?")
+        .bind(name)
+        .bind(folder_id)
+        .execute(&state.pool)
+        .await?;
+    let (created_at, document_count): (i64, i64) = sqlx::query_as(
+        "SELECT f.created_at, (SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id)
+         FROM document_folders f WHERE f.id = ?",
+    )
+    .bind(folder_id)
+    .fetch_one(&state.pool)
+    .await?;
+    Ok(Json(DocumentFolder {
+        id: folder_id,
+        name: name.to_string(),
+        document_count,
+        created_at,
+    }))
+}
+
+/// Deleting a folder keeps its documents (they fall back to "no folder").
+pub async fn delete_folder(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(folder_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    require_folder_owner(&state, folder_id, auth.user_id).await?;
+    sqlx::query("DELETE FROM document_folders WHERE id = ?")
+        .bind(folder_id)
+        .execute(&state.pool)
+        .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Move one of your documents into a folder (`folder_id: null` = out).
+pub async fn move_document(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(doc_id): Path<i64>,
+    Json(req): Json<MoveDocumentRequest>,
+) -> Result<Json<Document>, AppError> {
+    let (_, access) = require_access(&state, doc_id, auth.user_id, false).await?;
+    require_owner(access)?;
+    if let Some(folder_id) = req.folder_id {
+        require_folder_owner(&state, folder_id, auth.user_id).await?;
+    }
+    sqlx::query("UPDATE documents SET folder_id = ? WHERE id = ?")
+        .bind(req.folder_id)
+        .bind(doc_id)
+        .execute(&state.pool)
+        .await?;
+    let (doc, _) = fetch_document(&state, doc_id).await?;
+    Ok(Json(doc))
+}
+
+/// Share every document currently in a folder (owner only). Applies the
+/// same per-document rules as a direct share, minus the chat-card spam —
+/// recipients discover the batch through their document list instead.
+pub async fn share_folder(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(folder_id): Path<i64>,
+    Json(req): Json<SetShareRequest>,
+) -> Result<Json<Vec<DocumentShare>>, AppError> {
+    require_folder_owner(&state, folder_id, auth.user_id).await?;
+    let doc_ids: Vec<(i64,)> =
+        sqlx::query_as("SELECT id FROM documents WHERE folder_id = ? AND owner_id = ? ORDER BY id")
+            .bind(folder_id)
+            .bind(auth.user_id.0)
+            .fetch_all(&state.pool)
+            .await?;
+    if doc_ids.is_empty() {
+        return Err(AppError::bad_request(
+            "empty_folder",
+            "this folder is empty",
+        ));
+    }
+    let mut shares = Vec::with_capacity(doc_ids.len());
+    for (doc_id,) in doc_ids {
+        let (doc, _) = fetch_document(&state, doc_id).await?;
+        shares.push(grant_share(&state, &doc, auth.user_id, &req, false).await?);
+    }
+    Ok(Json(shares))
 }
 
 // ------------------------------------------------------------------ threads
@@ -1613,14 +1912,24 @@ mod tests {
     #[test]
     fn change_stats_treats_a_middle_insertion_as_one_changed_block() {
         let before = document(&["First line", "Second line", "Third line"]);
-        let after = document(&["First line", "A newly inserted line", "Second line", "Third line"]);
+        let after = document(&[
+            "First line",
+            "A newly inserted line",
+            "Second line",
+            "Third line",
+        ]);
 
         assert_eq!(change_stats(Some(&before), &after), (1, 4, 0));
     }
 
     #[test]
     fn change_stats_treats_a_middle_deletion_as_one_changed_block() {
-        let before = document(&["First line", "Remove this line", "Second line", "Third line"]);
+        let before = document(&[
+            "First line",
+            "Remove this line",
+            "Second line",
+            "Third line",
+        ]);
         let after = document(&["First line", "Second line", "Third line"]);
 
         assert_eq!(change_stats(Some(&before), &after), (1, 0, 3));

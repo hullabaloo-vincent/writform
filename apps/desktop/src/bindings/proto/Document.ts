@@ -5,4 +5,8 @@ export type Document = { id: number, owner: UserRef, title: string,
 /**
  * `none` | `screenplay` | `stageplay` | `manuscript` | `poetry`.
  */
-format: string, created_at: number, updated_at: number, };
+format: string, 
+/**
+ * The owner's folder this document sits in (personal organization).
+ */
+folder_id: number | null, created_at: number, updated_at: number, };

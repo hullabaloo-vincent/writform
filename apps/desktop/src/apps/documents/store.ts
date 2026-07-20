@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import type { Document } from "../../bindings/proto/Document";
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
+import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import type { DocumentShare } from "../../bindings/proto/DocumentShare";
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
@@ -20,7 +21,10 @@ export function activeProvider(): DocProvider | null {
 
 interface DocumentsState {
   items: DocumentListItem[];
+  folders: DocumentFolder[];
   loaded: boolean;
+  /** Panel the editor should open with (set by "Version history" etc.). */
+  pendingPanel: "history" | "feedback" | null;
   activeDocId: number | null;
   meta: Document | null;
   myAccess: string | null;
@@ -31,6 +35,7 @@ interface DocumentsState {
   error: string | null;
 
   load: () => Promise<void>;
+  loadFolders: () => Promise<void>;
   openDocument: (id: number) => Promise<void>;
   closeDocument: () => void;
   refreshVersions: () => Promise<void>;
@@ -42,7 +47,9 @@ interface DocumentsState {
 
 export const useDocuments = create<DocumentsState>((set, get) => ({
   items: [],
+  folders: [],
   loaded: false,
+  pendingPanel: null,
   activeDocId: null,
   meta: null,
   myAccess: null,
@@ -55,6 +62,11 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
   load: async () => {
     const items = await documentsApi.list();
     set({ items, loaded: true });
+  },
+
+  loadFolders: async () => {
+    const folders = await documentsApi.listFolders();
+    set({ folders });
   },
 
   openDocument: async (id) => {

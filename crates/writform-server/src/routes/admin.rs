@@ -133,3 +133,60 @@ pub async fn force_logout(
         .await?;
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Generate a one-time password reset code for a user. The code is shown to
+/// the admin exactly once (only its hash is stored), lasts an hour, replaces
+/// any earlier code, and is consumed by `POST /auth/reset-password`.
+pub async fn create_reset_code(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(user_id): Path<i64>,
+) -> Result<Json<writform_proto::api::ResetCodeResponse>, AppError> {
+    require_server_admin(&state, &auth).await?;
+    let exists: Option<(i64,)> = sqlx::query_as("SELECT id FROM users WHERE id = ?")
+        .bind(user_id)
+        .fetch_optional(&state.pool)
+        .await?;
+    if exists.is_none() {
+        return Err(AppError::new(
+            StatusCode::NOT_FOUND,
+            "no_such_user",
+            "user not found",
+        ));
+    }
+
+    // Unambiguous alphabet (no 0/O/1/I); shown grouped for easy dictation.
+    const ALPHABET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+    let raw: String = {
+        use rand::Rng;
+        let mut rng = rand::thread_rng();
+        (0..10)
+            .map(|_| ALPHABET[rng.gen_range(0..ALPHABET.len())] as char)
+            .collect()
+    };
+    let code = format!("{}-{}", &raw[..5], &raw[5..]);
+    let code_hash = {
+        use sha2::Digest;
+        hex::encode(sha2::Sha256::digest(raw.as_bytes()))
+    };
+    let now = crate::db::now_millis();
+    let expires_at = now + 60 * 60 * 1000;
+    sqlx::query(
+        "INSERT INTO password_resets (user_id, code_hash, expires_at, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?)
+         ON CONFLICT (user_id) DO UPDATE SET
+            code_hash = excluded.code_hash, expires_at = excluded.expires_at,
+            created_by = excluded.created_by, created_at = excluded.created_at",
+    )
+    .bind(user_id)
+    .bind(&code_hash)
+    .bind(expires_at)
+    .bind(auth.user_id.0)
+    .bind(now)
+    .execute(&state.pool)
+    .await?;
+    Ok(Json(writform_proto::api::ResetCodeResponse {
+        code,
+        expires_at,
+    }))
+}

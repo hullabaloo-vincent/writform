@@ -63,6 +63,8 @@ pub fn run() {
             host::host_reachability,
             commands::api::api_fetch,
             commands::api::upload_attachment,
+            commands::api::save_export,
+            commands::connect::reset_password,
             wsclient::ws_sub,
             wsclient::ws_unsub,
             vault::vault_list,

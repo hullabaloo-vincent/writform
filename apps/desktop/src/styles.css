@@ -2854,6 +2854,167 @@ textarea.wf-el-edit {
   padding: 12px;
 }
 
+/* --- documents organization (folders, search, context menu) --- */
+
+.wf-doc-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: 999px;
+  background: var(--wf-bg-raised);
+  color: var(--wf-text-dim);
+  min-width: 260px;
+}
+
+.wf-doc-search input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  outline: none;
+  min-width: 0;
+}
+
+.wf-doc-search button {
+  border: none;
+  background: transparent;
+  padding: 0 2px;
+}
+
+.wf-doc-search-note {
+  color: var(--wf-text-dim);
+  font-size: 13px;
+  margin: 4px 0 12px;
+}
+
+.wf-doc-breadcrumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  margin-bottom: 10px;
+  color: var(--wf-text-dim);
+}
+
+.wf-doc-breadcrumb:hover {
+  color: var(--wf-text);
+}
+
+.wf-doc-card {
+  position: relative;
+}
+
+.wf-doc-card-kebab {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: none;
+  padding: 3px;
+  border-radius: 6px;
+  color: var(--wf-text-dim);
+}
+
+.wf-doc-card:hover .wf-doc-card-kebab {
+  display: inline-flex;
+}
+
+.wf-doc-card-kebab:hover {
+  background: var(--wf-bg);
+  color: var(--wf-text);
+}
+
+.wf-folder-card .wf-doc-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wf-context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 180px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+}
+
+.wf-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.wf-context-menu button:hover {
+  background: var(--wf-bg);
+}
+
+.wf-context-menu button.wf-danger:hover {
+  background: rgba(200, 80, 80, 0.15);
+}
+
+.wf-doc-move-target {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.wf-doc-move-target:hover:not(:disabled) {
+  background: var(--wf-bg);
+}
+
+.wf-doc-move-target:disabled {
+  opacity: 0.5;
+}
+
+/* --- password reset --- */
+
+.wf-linklike {
+  border: none;
+  background: transparent;
+  color: var(--wf-text-dim);
+  text-decoration: underline;
+  font-size: 12px;
+}
+
+.wf-linklike:hover {
+  color: var(--wf-text);
+}
+
+.wf-reset-code {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  background: var(--wf-bg-raised);
+}
+
+.wf-reset-code code {
+  display: inline-block;
+  font-size: 20px;
+  letter-spacing: 0.12em;
+  padding: 6px 12px;
+  margin: 6px 0;
+  border-radius: 8px;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  user-select: all;
+}
+
 .wf-board-hint {
   position: absolute;
   top: 14px;

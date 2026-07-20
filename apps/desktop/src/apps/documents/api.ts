@@ -3,6 +3,7 @@ import type { CreateThreadRequest } from "../../bindings/proto/CreateThreadReque
 import type { Document } from "../../bindings/proto/Document";
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
+import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import type { DocumentShare } from "../../bindings/proto/DocumentShare";
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
@@ -28,6 +29,19 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
 
 export const documentsApi = {
   list: () => api<DocumentListItem[]>("GET", "/api/v1/documents"),
+  search: (q: string) =>
+    api<DocumentListItem[]>("GET", `/api/v1/documents?q=${encodeURIComponent(q)}`),
+
+  listFolders: () => api<DocumentFolder[]>("GET", "/api/v1/document-folders"),
+  createFolder: (name: string) =>
+    api<DocumentFolder>("POST", "/api/v1/document-folders", { name }),
+  renameFolder: (id: number, name: string) =>
+    api<DocumentFolder>("PATCH", `/api/v1/document-folders/${id}`, { name }),
+  deleteFolder: (id: number) => api<null>("DELETE", `/api/v1/document-folders/${id}`),
+  shareFolder: (id: number, req: SetShareRequest) =>
+    api<DocumentShare[]>("POST", `/api/v1/document-folders/${id}/share`, req),
+  moveDocument: (id: number, folderId: number | null) =>
+    api<Document>("POST", `/api/v1/documents/${id}/move`, { folder_id: folderId }),
   create: (title: string, format: string) =>
     api<Document>("POST", "/api/v1/documents", { title, format }),
   detail: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}`),

@@ -436,3 +436,38 @@ fn hostname_label() -> Option<String> {
 }
 
 use sha2::Digest;
+
+/// Redeem an admin-issued one-time reset code for a new password. Pre-auth:
+/// rides the pinned TLS client for a saved server, no session required.
+#[tauri::command]
+pub async fn reset_password(
+    manager: State<'_, ConnectionManager>,
+    addr: String,
+    username: String,
+    code: String,
+    new_password: String,
+) -> CmdResult<()> {
+    let addr = normalize_addr(&addr)?;
+    let client = pinned_client_for(&manager, &addr)?;
+    let res = client
+        .post(format!("https://{addr}/api/v1/auth/reset-password"))
+        .json(&serde_json::json!({
+            "username": username,
+            "code": code,
+            "new_password": new_password,
+        }))
+        .send()
+        .await
+        .map_err(|e| CmdError::new("unreachable", format!("could not reach server: {e}")))?;
+    if !res.status().is_success() {
+        let err: writform_proto::api::ApiError =
+            res.json()
+                .await
+                .unwrap_or_else(|_| writform_proto::api::ApiError {
+                    code: "unknown".into(),
+                    message: "password reset failed".into(),
+                });
+        return Err(CmdError::new("reset_failed", err.message).with_code(err.code));
+    }
+    Ok(())
+}

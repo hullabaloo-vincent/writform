@@ -68,6 +68,17 @@ export function DocumentEditor() {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Honor "open with this panel" requests from the list (e.g. Version history).
+  const metaId = meta?.id;
+  useEffect(() => {
+    if (metaId === undefined) return;
+    const requested = useDocuments.getState().pendingPanel;
+    if (requested) {
+      setPanel(requested);
+      useDocuments.setState({ pendingPanel: null });
+    }
+  }, [metaId]);
+
   if (!meta || !provider) return <div className="wf-sessions-empty">Opening…</div>;
   return (
     <EditorInner

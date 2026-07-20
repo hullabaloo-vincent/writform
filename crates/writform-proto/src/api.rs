@@ -50,6 +50,24 @@ pub struct AuthResponse {
     pub user: User,
 }
 
+/// Redeem an admin-issued one-time reset code for a new password.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ResetPasswordRequest {
+    pub username: String,
+    pub code: String,
+    pub new_password: String,
+}
+
+/// A freshly generated reset code — shown to the admin exactly once.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ResetCodeResponse {
+    pub code: String,
+    #[ts(type = "number")]
+    pub expires_at: crate::UnixMillis,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct User {

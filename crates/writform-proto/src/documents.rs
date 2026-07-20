@@ -18,10 +18,41 @@ pub struct Document {
     pub title: String,
     /// `none` | `screenplay` | `stageplay` | `manuscript` | `poetry`.
     pub format: String,
+    /// The owner's folder this document sits in (personal organization).
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub folder_id: Option<i64>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
     #[ts(type = "number")]
     pub updated_at: UnixMillis,
+}
+
+/// A personal folder for organizing one's own documents (flat, per-user).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DocumentFolder {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub name: String,
+    #[ts(type = "number")]
+    pub document_count: i64,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CreateFolderRequest {
+    pub name: String,
+}
+
+/// Move a document into a folder (`null` = out of any folder).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MoveDocumentRequest {
+    #[ts(type = "number | null")]
+    pub folder_id: Option<i64>,
 }
 
 /// List entry: a document plus the caller's access to it.

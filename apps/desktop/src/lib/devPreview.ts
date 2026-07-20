@@ -128,6 +128,7 @@ export function devPreviewBackend(): Backend {
     owner: PreviewUser;
     title: string;
     format: string;
+    folder_id: number | null;
     created_at: number;
     updated_at: number;
   }
@@ -138,11 +139,15 @@ export function devPreviewBackend(): Backend {
         owner: pal,
         title: "Waterpark quest outline",
         format: "manuscript",
+        folder_id: null,
         created_at: Date.now() - 86_400_000,
         updated_at: Date.now() - 3_600_000,
       },
       my_access: "read",
     },
+  ];
+  let docFolders: { id: number; name: string; created_at: number }[] = [
+    { id: 70, name: "Drafts", created_at: Date.now() - 172_800_000 },
   ];
   const docSeqs: Record<number, number> = {};
   const docVersions: Record<number, unknown[]> = {};
@@ -677,8 +682,12 @@ export function devPreviewBackend(): Backend {
     }
 
     // --- documents ---
-    if (path === "/api/v1/documents" && method === "GET") {
-      return { status: 200, body: previewDocs };
+    if ((path === "/api/v1/documents" || path.startsWith("/api/v1/documents?")) && method === "GET") {
+      const q = decodeURIComponent(path.split("q=")[1] ?? "").toLowerCase();
+      const results = q
+        ? previewDocs.filter((d) => d.document.title.toLowerCase().includes(q))
+        : previewDocs;
+      return { status: 200, body: results };
     }
     if (path === "/api/v1/documents" && method === "POST") {
       const req = body as { title: string; format: string };
@@ -687,11 +696,73 @@ export function devPreviewBackend(): Backend {
         owner: me,
         title: req.title,
         format: req.format || "none",
+        folder_id: null,
         created_at: Date.now(),
         updated_at: Date.now(),
       };
       previewDocs = [{ document, my_access: "owner" }, ...previewDocs];
       return { status: 200, body: document };
+    }
+    if (path === "/api/v1/document-folders" && method === "GET") {
+      return {
+        status: 200,
+        body: docFolders.map((f) => ({
+          ...f,
+          document_count: previewDocs.filter((d) => d.document.folder_id === f.id).length,
+        })),
+      };
+    }
+    if (path === "/api/v1/document-folders" && method === "POST") {
+      const folder = {
+        id: nextId++,
+        name: (body as { name: string }).name,
+        created_at: Date.now(),
+      };
+      docFolders.push(folder);
+      return { status: 200, body: { ...folder, document_count: 0 } };
+    }
+    if ((match = m(/^\/api\/v1\/document-folders\/(\d+)$/))) {
+      const fid = Number(match[1]);
+      const folder = docFolders.find((f) => f.id === fid);
+      if (!folder) return { status: 404, body: { code: "no_such_folder", message: "preview" } };
+      if (method === "PATCH") {
+        folder.name = (body as { name: string }).name;
+        return { status: 200, body: { ...folder, document_count: 0 } };
+      }
+      docFolders = docFolders.filter((f) => f.id !== fid);
+      for (const d of previewDocs) {
+        if (d.document.folder_id === fid) d.document.folder_id = null;
+      }
+      return { status: 204, body: null };
+    }
+    if ((match = m(/^\/api\/v1\/document-folders\/(\d+)\/share$/)) && method === "POST") {
+      const fid = Number(match[1]);
+      const req = body as { subject_kind: string; subject_id: number; access: string };
+      const inFolder = previewDocs.filter((d) => d.document.folder_id === fid);
+      return {
+        status: 200,
+        body: inFolder.map((d) => ({
+          doc_id: d.document.id,
+          subject_kind: req.subject_kind,
+          subject_id: req.subject_id,
+          subject_name: req.subject_kind === "user" ? "Ink Friend" : "Preview Group",
+          access: req.access,
+          created_at: Date.now(),
+        })),
+      };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/move$/)) && method === "POST") {
+      const did = Number(match[1]);
+      const entry = previewDocs.find((d) => d.document.id === did);
+      if (!entry) return { status: 404, body: { code: "no_such_document", message: "preview" } };
+      entry.document.folder_id = (body as { folder_id: number | null }).folder_id;
+      return { status: 200, body: entry.document };
+    }
+    if (m(/^\/api\/v1\/admin\/users\/(\d+)\/reset-code$/) && method === "POST") {
+      return {
+        status: 200,
+        body: { code: "ABCDE-FGHJK", expires_at: Date.now() + 3_600_000 },
+      };
     }
     if ((match = m(/^\/api\/v1\/documents\/(\d+)$/))) {
       const did = Number(match[1]);
@@ -894,6 +965,19 @@ export function devPreviewBackend(): Backend {
       await delay(120);
       return mockApi(method.toUpperCase(), path, body);
     },
+    saveExport: async (fileName, dataBase64) => {
+      // Browser preview: a plain download.
+      const bin = atob(dataBase64);
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = fileName;
+      a.click();
+      URL.revokeObjectURL(url);
+      return "your browser's downloads folder";
+    },
     uploadAttachment: async () => ({
       status: 400,
       body: { code: "mock", message: "uploads need the real app" },
@@ -994,6 +1078,9 @@ export function devPreviewBackend(): Backend {
     },
     async register(addr, username) {
       return this.login(addr, username, "");
+    },
+    async resetPassword() {
+      await delay(300);
     },
     async logout() {
       session = null;

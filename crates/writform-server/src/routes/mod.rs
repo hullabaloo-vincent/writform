@@ -205,9 +205,30 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/attachments", post(attachments::upload))
         .route("/api/v1/attachments/{id}", get(attachments::download))
+        .route("/api/v1/auth/reset-password", post(auth::reset_password))
+        .route(
+            "/api/v1/admin/users/{id}/reset-code",
+            post(admin::create_reset_code),
+        )
         .route(
             "/api/v1/documents",
             get(documents::list_documents).post(documents::create_document),
+        )
+        .route(
+            "/api/v1/document-folders",
+            get(documents::list_folders).post(documents::create_folder),
+        )
+        .route(
+            "/api/v1/document-folders/{id}",
+            patch(documents::rename_folder).delete(documents::delete_folder),
+        )
+        .route(
+            "/api/v1/document-folders/{id}/share",
+            post(documents::share_folder),
+        )
+        .route(
+            "/api/v1/documents/{id}/move",
+            post(documents::move_document),
         )
         .route(
             "/api/v1/documents/{id}",

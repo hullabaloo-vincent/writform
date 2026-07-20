@@ -661,6 +661,7 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
 function AdminTab({ onError }: { onError: (e: string | null) => void }) {
   const [stats, setStats] = useState<AdminStats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
+  const [resetCode, setResetCode] = useState<{ username: string; code: string } | null>(null);
 
   const refresh = () => {
     void api<AdminStats>("GET", "/api/v1/admin/stats").then(setStats).catch(() => {});
@@ -700,6 +701,19 @@ function AdminTab({ onError }: { onError: (e: string | null) => void }) {
               </span>
             </div>
             <button
+              title="Generate a one-time password reset code for this user"
+              onClick={() =>
+                void api<{ code: string }>(
+                  "POST",
+                  `/api/v1/admin/users/${u.user.id}/reset-code`,
+                )
+                  .then((r) => setResetCode({ username: u.user.username, code: r.code }))
+                  .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
+              }
+            >
+              Reset code
+            </button>
+            <button
               onClick={() =>
                 void confirmDialog(`Log @${u.user.username} out of every device?`, {
                   title: "Force logout",
@@ -718,6 +732,29 @@ function AdminTab({ onError }: { onError: (e: string | null) => void }) {
           </li>
         ))}
       </ul>
+      {resetCode && (
+        <div className="wf-reset-code">
+          <p>
+            One-time password reset code for <strong>@{resetCode.username}</strong> (valid for
+            1 hour, shown only now):
+          </p>
+          <code>{resetCode.code}</code>
+          <div className="wf-connect-row">
+            <button
+              onClick={() => {
+                void navigator.clipboard?.writeText(resetCode.code).catch(() => {});
+              }}
+            >
+              Copy
+            </button>
+            <button onClick={() => setResetCode(null)}>Done</button>
+          </div>
+          <p className="wf-session-meta">
+            Hand it to them out of band — they enter it under “Forgot password?” on the login
+            screen.
+          </p>
+        </div>
+      )}
     </section>
   );
 }

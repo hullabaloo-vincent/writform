@@ -418,9 +418,11 @@ function AuthForm({
   onBack: () => void;
   onError: (msg: string | null) => void;
 }) {
-  const [mode, setMode] = useState<"login" | "register">(defaultMode);
+  const [mode, setMode] = useState<"login" | "register" | "reset">(defaultMode);
   const [username, setUsername] = useState(lastUsername ?? "");
   const [password, setPassword] = useState("");
+  const [resetCode, setResetCode] = useState("");
+  const [resetDone, setResetDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const setConnected = useSession((s) => s.setConnected);
 
@@ -428,11 +430,19 @@ function AuthForm({
     setBusy(true);
     onError(null);
     try {
-      const session =
-        mode === "login"
-          ? await backend.login(probe.addr, username, password)
-          : await backend.register(probe.addr, username, password);
-      setConnected(session);
+      if (mode === "reset") {
+        await backend.resetPassword(probe.addr, username.trim(), resetCode, password);
+        setResetDone(true);
+        setPassword("");
+        setResetCode("");
+        setMode("login");
+      } else {
+        const session =
+          mode === "login"
+            ? await backend.login(probe.addr, username, password)
+            : await backend.register(probe.addr, username, password);
+        setConnected(session);
+      }
     } catch (e) {
       onError(isCmdError(e) ? e.message : String(e));
     } finally {
@@ -456,6 +466,9 @@ function AuthForm({
           Your server is live. Create your account — the first account becomes the server admin.
         </p>
       )}
+      {resetDone && mode === "login" && (
+        <p className="wf-connect-dim">Password changed — log in with your new password.</p>
+      )}
       <div className="wf-auth-tabs">
         <button
           type="button"
@@ -472,6 +485,11 @@ function AuthForm({
           Create account
         </button>
       </div>
+      {mode === "reset" && (
+        <p className="wf-connect-dim">
+          Ask your server admin for a one-time reset code, then set a new password here.
+        </p>
+      )}
       <input
         placeholder="username"
         value={username}
@@ -480,8 +498,19 @@ function AuthForm({
         autoCapitalize="off"
         autoCorrect="off"
       />
+      {mode === "reset" && (
+        <input
+          placeholder="reset code (e.g. ABCDE-FGHJK)"
+          value={resetCode}
+          onChange={(e) => setResetCode(e.target.value)}
+          autoCapitalize="off"
+          autoCorrect="off"
+        />
+      )}
       <input
-        placeholder={mode === "register" ? "password (8+ characters)" : "password"}
+        placeholder={
+          mode === "login" ? "password" : "new password (8+ characters)"
+        }
         type="password"
         value={password}
         onChange={(e) => setPassword(e.target.value)}
@@ -491,12 +520,38 @@ function AuthForm({
         <button type="button" onClick={onBack} disabled={busy}>
           Back
         </button>
+        {mode === "login" && (
+          <button
+            type="button"
+            className="wf-linklike"
+            onClick={() => {
+              setMode("reset");
+              setPassword("");
+              onError(null);
+            }}
+          >
+            Forgot password?
+          </button>
+        )}
+        {mode === "reset" && (
+          <button type="button" className="wf-linklike" onClick={() => setMode("login")}>
+            Back to log in
+          </button>
+        )}
         <button
           type="submit"
           className="wf-primary"
-          disabled={busy || !username.trim() || !password}
+          disabled={
+            busy || !username.trim() || !password || (mode === "reset" && !resetCode.trim())
+          }
         >
-          {busy ? "…" : mode === "login" ? "Log in" : "Create account"}
+          {busy
+            ? "…"
+            : mode === "login"
+              ? "Log in"
+              : mode === "register"
+                ? "Create account"
+                : "Set new password"}
         </button>
       </div>
     </form>

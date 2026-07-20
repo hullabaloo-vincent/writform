@@ -13,7 +13,7 @@ z: number, text: string,
 /**
  * Sticky color key (e.g. "yellow"); empty for other kinds.
  */
-color: string,
+color: string, 
 /**
  * Text styling JSON (size/bold/italic/underline/align/list); empty = defaults.
  */

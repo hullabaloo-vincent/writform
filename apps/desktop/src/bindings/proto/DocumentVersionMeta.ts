@@ -3,6 +3,6 @@ import type { UserRef } from "./UserRef";
 
 export type DocumentVersionMeta = { id: number, doc_id: number, 
 /**
- * `auto` | `named` | `draft`.
+ * `auto` | `named`.
  */
 kind: string, name: string | null, changed_blocks: number, added_words: number, removed_words: number, created_by: UserRef, created_at: number, };
