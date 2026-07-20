@@ -4805,7 +4805,8 @@ textarea.wf-el-edit {
 
 .wf-cursor {
   position: absolute;
-  z-index: 40;
+  /* z-index is set inline (Z_BAND_CURSOR) so it stacks above the element
+     bands, which also use inline z-index in the same stacking context. */
   display: flex;
   align-items: flex-start;
   gap: 2px;

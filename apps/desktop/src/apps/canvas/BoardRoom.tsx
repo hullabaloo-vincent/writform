@@ -165,6 +165,10 @@ const ALIGN_CYCLE: NonNullable<TextStyle["align"]>[] = ["left", "center", "right
 const Z_BAND_FRAME = 0;
 const Z_BAND_CONNECTOR = 100_000;
 const Z_BAND_BODY = 200_000;
+// Peers' pointers sit above every element band so they're never hidden behind
+// a note or frame — same stacking context, so a plain CSS z-index would lose
+// to the inline band numbers above.
+const Z_BAND_CURSOR = 900_000;
 
 /** Grid step for snap-to-grid (world units). */
 const GRID = 8;
@@ -1163,6 +1167,7 @@ export function BoardRoom() {
               style={{
                 left: c.x,
                 top: c.y,
+                zIndex: Z_BAND_CURSOR,
                 transform: `scale(${1 / view.scale})`,
                 color: c.user.accent_color ?? cursorColor(c.user.username),
               }}
