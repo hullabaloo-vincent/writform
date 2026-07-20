@@ -43,8 +43,28 @@ export function devPreviewBackend(): Backend {
     for (const h of wsHandlers) h({ ev: "event", room, kind, data });
   };
   let nextId = 100;
-  const me = { id: 1, username: "you", display_name: null, avatar_attachment_id: null, accent_color: null };
-  const pal = { id: 2, username: "inkfriend", display_name: "Ink Friend", avatar_attachment_id: null, accent_color: "#93d3a2" };
+  interface PreviewUser {
+    id: number;
+    username: string;
+    display_name: string | null;
+    avatar_attachment_id: number | null;
+    accent_color: string | null;
+    status?: string;
+  }
+  const me: PreviewUser = {
+    id: 1,
+    username: "you",
+    display_name: null,
+    avatar_attachment_id: null,
+    accent_color: null,
+  };
+  const pal: PreviewUser = {
+    id: 2,
+    username: "inkfriend",
+    display_name: "Ink Friend",
+    avatar_attachment_id: null,
+    accent_color: "#93d3a2",
+  };
   const groups = [
     { id: 1, name: "Writers Guild", owner_id: 2, my_role: "member", created_at: 0 },
   ];
@@ -67,7 +87,7 @@ export function devPreviewBackend(): Backend {
   const sessions: {
     id: number;
     channel_id: number;
-    creator: typeof me;
+    creator: PreviewUser;
     title: string;
     state: string;
     chat_channel_id: number;
@@ -93,6 +113,7 @@ export function devPreviewBackend(): Backend {
     z: number;
     text: string;
     color: string;
+    style: string;
     from_id: number | null;
     to_id: number | null;
     updated_by: number;
@@ -100,6 +121,33 @@ export function devPreviewBackend(): Backend {
   }
   let boards: PreviewBoard[] = [];
   let boardElements: PreviewElement[] = [];
+
+  // --- documents fixtures (CRDT sync is stubbed: single-user local edits) ---
+  interface PreviewDoc {
+    id: number;
+    owner: PreviewUser;
+    title: string;
+    format: string;
+    created_at: number;
+    updated_at: number;
+  }
+  let previewDocs: { document: PreviewDoc; my_access: string }[] = [
+    {
+      document: {
+        id: 60,
+        owner: pal,
+        title: "Waterpark quest outline",
+        format: "manuscript",
+        created_at: Date.now() - 86_400_000,
+        updated_at: Date.now() - 3_600_000,
+      },
+      my_access: "read",
+    },
+  ];
+  const docSeqs: Record<number, number> = {};
+  const docVersions: Record<number, unknown[]> = {};
+  const docThreads: Record<number, unknown[]> = {};
+  const docShares: Record<number, unknown[]> = {};
   const voiceChannels: { id: number; group_id: number; name: string; created_at: number }[] = [
     { id: 90, group_id: 1, name: "Lounge", created_at: 0 },
   ];
@@ -262,7 +310,7 @@ export function devPreviewBackend(): Backend {
     }
     if (path === "/api/v1/auth/status" && method === "PUT") {
       const req = body as { status: string };
-      (me as Record<string, unknown>).status = req.status;
+      me.status = req.status;
       return {
         status: 200,
         body: { id: 1, username: "you", display_name: null, is_server_admin: true, avatar_attachment_id: null, accent_color: null, status: req.status, bio: null, created_at: 0 },
@@ -626,6 +674,216 @@ export function devPreviewBackend(): Backend {
         );
       }
       return { status: 204, body: null };
+    }
+
+    // --- documents ---
+    if (path === "/api/v1/documents" && method === "GET") {
+      return { status: 200, body: previewDocs };
+    }
+    if (path === "/api/v1/documents" && method === "POST") {
+      const req = body as { title: string; format: string };
+      const document: PreviewDoc = {
+        id: nextId++,
+        owner: me,
+        title: req.title,
+        format: req.format || "none",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      };
+      previewDocs = [{ document, my_access: "owner" }, ...previewDocs];
+      return { status: 200, body: document };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)$/))) {
+      const did = Number(match[1]);
+      const entry = previewDocs.find((d) => d.document.id === did);
+      if (!entry) return { status: 404, body: { code: "no_such_document", message: "preview" } };
+      if (method === "GET") {
+        return {
+          status: 200,
+          body: {
+            document: entry.document,
+            my_access: entry.my_access,
+            state_b64: "",
+            seq: docSeqs[did] ?? 0,
+          },
+        };
+      }
+      if (method === "PATCH") {
+        const req = body as { title?: string | null; format?: string | null };
+        if (req.title) entry.document.title = req.title;
+        if (req.format) entry.document.format = req.format;
+        entry.document.updated_at = Date.now();
+        setTimeout(() => emit(`document:${did}`, "document.meta", { ...entry.document }), 30);
+        return { status: 200, body: entry.document };
+      }
+      if (method === "DELETE") {
+        previewDocs = previewDocs.filter((d) => d.document.id !== did);
+        setTimeout(() => emit(`document:${did}`, "document.deleted", { doc_id: did }), 30);
+        return { status: 204, body: null };
+      }
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/updates/))) {
+      const did = Number(match[1]);
+      if (method === "POST") {
+        docSeqs[did] = (docSeqs[did] ?? 0) + 1;
+        return { status: 200, body: { seq: docSeqs[did] } };
+      }
+      return { status: 200, body: { updates: [], truncated: false } };
+    }
+    if (m(/^\/api\/v1\/documents\/(\d+)\/awareness$/)) {
+      return { status: 204, body: null };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/snapshot$/)) && method === "POST") {
+      const did = Number(match[1]);
+      const req = body as { doc_json: string; name?: string | null };
+      const meta = {
+        id: nextId++,
+        doc_id: did,
+        kind: req.name ? "named" : "auto",
+        name: req.name ?? null,
+        created_by: me,
+        created_at: Date.now(),
+      };
+      docVersions[did] = [{ meta, doc_json: req.doc_json }, ...(docVersions[did] ?? [])];
+      return { status: 200, body: meta };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/versions$/)) && method === "GET") {
+      const did = Number(match[1]);
+      return {
+        status: 200,
+        body: (docVersions[did] ?? []).map((v) => (v as { meta: unknown }).meta),
+      };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/versions\/(\d+)$/)) && method === "GET") {
+      const did = Number(match[1]);
+      const vid = Number(match[2]);
+      const v = (docVersions[did] ?? []).find(
+        (x) => (x as { meta: { id: number } }).meta.id === vid,
+      );
+      if (!v) return { status: 404, body: { code: "no_such_version", message: "preview" } };
+      return { status: 200, body: v };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/shares$/))) {
+      const did = Number(match[1]);
+      if (method === "PUT") {
+        const req = body as { subject_kind: string; subject_id: number; access: string };
+        const share = {
+          doc_id: did,
+          subject_kind: req.subject_kind,
+          subject_id: req.subject_id,
+          subject_name: req.subject_kind === "user" ? "Ink Friend" : "Preview Group",
+          access: req.access,
+          created_at: Date.now(),
+        };
+        docShares[did] = [
+          ...(docShares[did] ?? []).filter(
+            (s) =>
+              (s as { subject_kind: string; subject_id: number }).subject_kind !==
+                req.subject_kind ||
+              (s as { subject_id: number }).subject_id !== req.subject_id,
+          ),
+          share,
+        ];
+        return { status: 200, body: share };
+      }
+      return { status: 200, body: docShares[did] ?? [] };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/shares\/(\w+)\/(\d+)$/)) && method === "DELETE") {
+      const did = Number(match[1]);
+      docShares[did] = (docShares[did] ?? []).filter(
+        (s) =>
+          (s as { subject_kind: string }).subject_kind !== match![2] ||
+          (s as { subject_id: number }).subject_id !== Number(match![3]),
+      );
+      return { status: 204, body: null };
+    }
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/threads$/))) {
+      const did = Number(match[1]);
+      if (method === "POST") {
+        const req = body as {
+          content: string;
+          anchor_b64?: string | null;
+          head_b64?: string | null;
+          excerpt?: string | null;
+        };
+        const thread = {
+          id: nextId++,
+          doc_id: did,
+          author: me,
+          anchor_b64: req.anchor_b64 ?? null,
+          head_b64: req.head_b64 ?? null,
+          excerpt: req.excerpt ?? null,
+          resolved: false,
+          created_at: Date.now(),
+          messages: [] as unknown[],
+        };
+        thread.messages.push({
+          id: nextId++,
+          thread_id: thread.id,
+          author: me,
+          content: req.content,
+          created_at: Date.now(),
+        });
+        docThreads[did] = [...(docThreads[did] ?? []), thread];
+        setTimeout(() => emit(`document:${did}`, "document.thread.created", thread), 30);
+        return { status: 200, body: thread };
+      }
+      return { status: 200, body: docThreads[did] ?? [] };
+    }
+    if ((match = m(/^\/api\/v1\/document-threads\/(\d+)\/replies$/)) && method === "POST") {
+      const tid = Number(match[1]);
+      for (const threads of Object.values(docThreads)) {
+        const thread = threads.find((t) => (t as { id: number }).id === tid) as
+          | { id: number; doc_id: number; messages: unknown[] }
+          | undefined;
+        if (thread) {
+          const message = {
+            id: nextId++,
+            thread_id: tid,
+            author: me,
+            content: (body as { content: string }).content,
+            created_at: Date.now(),
+          };
+          thread.messages.push(message);
+          setTimeout(
+            () =>
+              emit(`document:${thread.doc_id}`, "document.thread.replied", {
+                doc_id: thread.doc_id,
+                message,
+              }),
+            30,
+          );
+          return { status: 200, body: message };
+        }
+      }
+      return { status: 404, body: { code: "no_such_thread", message: "preview" } };
+    }
+    if ((match = m(/^\/api\/v1\/document-threads\/(\d+)$/))) {
+      const tid = Number(match[1]);
+      for (const [didStr, threads] of Object.entries(docThreads)) {
+        const thread = threads.find((t) => (t as { id: number }).id === tid) as
+          | { id: number; resolved: boolean }
+          | undefined;
+        if (thread) {
+          const did = Number(didStr);
+          if (method === "PATCH") {
+            thread.resolved = (body as { resolved: boolean }).resolved;
+            setTimeout(() => emit(`document:${did}`, "document.thread.updated", { ...thread }), 30);
+            return { status: 200, body: thread };
+          }
+          docThreads[did] = threads.filter((t) => (t as { id: number }).id !== tid);
+          setTimeout(
+            () =>
+              emit(`document:${did}`, "document.thread.deleted", {
+                doc_id: did,
+                thread_id: tid,
+              }),
+            30,
+          );
+          return { status: 204, body: null };
+        }
+      }
+      return { status: 404, body: { code: "no_such_thread", message: "preview" } };
     }
 
     return { status: 404, body: { code: "mock_unhandled", message: `mock: ${method} ${path}` } };

@@ -166,6 +166,80 @@ pub async fn download(
         }
     }
     if !allowed {
+        // Canvas board images store the attachment id in the element's text;
+        // any member of the board's group may view them.
+        let groups: Vec<(i64,)> = sqlx::query_as(
+            "SELECT DISTINCT b.group_id FROM canvas_elements e
+             JOIN canvas_boards b ON b.id = e.board_id
+             WHERE e.kind = 'image' AND e.text = CAST(? AS TEXT)",
+        )
+        .bind(attachment_id)
+        .fetch_all(&state.pool)
+        .await?;
+        for (group_id,) in groups {
+            if crate::perms::member_role(
+                &state.pool,
+                writform_proto::GroupId(group_id),
+                auth.user_id,
+            )
+            .await?
+            .is_some()
+            {
+                allowed = true;
+                break;
+            }
+        }
+    }
+    if !allowed {
+        // Images embedded in session prompt/submission docs (TipTap JSON holds
+        // `writform-att://attachment/{id}"`): readable by anyone who can read
+        // the session's channel. The trailing quote keeps id 5 from matching 55.
+        let pattern = format!("%writform-att://attachment/{attachment_id}\"%");
+        let channels: Vec<(i64,)> = sqlx::query_as(
+            "SELECT s.channel_id FROM session_prompts p
+             JOIN writing_sessions s ON s.id = p.session_id
+             WHERE p.prompt_doc LIKE ?
+             UNION
+             SELECT s.channel_id FROM session_submissions sub
+             JOIN session_prompts p ON p.id = sub.prompt_id
+             JOIN writing_sessions s ON s.id = p.session_id
+             WHERE sub.doc LIKE ?",
+        )
+        .bind(&pattern)
+        .bind(&pattern)
+        .fetch_all(&state.pool)
+        .await?;
+        for (channel_id,) in channels {
+            if crate::perms::require_channel_access(
+                &state.pool,
+                writform_proto::ChannelId(channel_id),
+                auth.user_id,
+            )
+            .await
+            .is_ok()
+            {
+                allowed = true;
+                break;
+            }
+        }
+    }
+    if !allowed {
+        // Images embedded in a document's latest snapshot: readable by
+        // anyone the document is shared with.
+        let pattern = format!("%writform-att://attachment/{attachment_id}\"%");
+        let docs: Vec<(i64,)> =
+            sqlx::query_as("SELECT id FROM documents WHERE content_json LIKE ?")
+                .bind(&pattern)
+                .fetch_all(&state.pool)
+                .await?;
+        for (doc_id,) in docs {
+            if crate::routes::documents::can_read(&state, doc_id, auth.user_id).await? {
+                allowed = true;
+                break;
+            }
+        }
+    }
+    if !allowed {
         return Err(AppError::new(
             StatusCode::FORBIDDEN,
             "not_allowed",

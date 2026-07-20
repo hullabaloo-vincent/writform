@@ -40,6 +40,9 @@ pub struct CanvasElement {
     pub text: String,
     /// Sticky color key (e.g. "yellow"); empty for other kinds.
     pub color: String,
+    /// Text styling JSON (size/bold/italic/underline/align/list); empty = defaults.
+    #[serde(default)]
+    pub style: String,
     #[ts(type = "number | null")]
     pub from_id: Option<i64>,
     #[ts(type = "number | null")]
@@ -72,6 +75,8 @@ pub struct CreateElementRequest {
     pub h: f64,
     pub text: String,
     pub color: String,
+    #[serde(default)]
+    pub style: String,
     #[ts(type = "number | null")]
     pub from_id: Option<i64>,
     #[ts(type = "number | null")]
@@ -90,4 +95,5 @@ pub struct UpdateElementRequest {
     pub z: Option<i64>,
     pub text: Option<String>,
     pub color: Option<String>,
+    pub style: Option<String>,
 }

@@ -2,6 +2,7 @@ import {
   ImageIcon,
   Mic,
   MicOff,
+  FileText,
   PenLine,
   PhoneOff,
   Plus,
@@ -765,6 +766,45 @@ function SessionJoinCard({ content }: { content: string }) {
   );
 }
 
+/** Card for a document shared with the group. */
+function DocumentShareCard({ content }: { content: string }) {
+  const [error, setError] = useState<string | null>(null);
+  let card: { document_id?: number; title?: string; access?: string } = {};
+  try {
+    card = JSON.parse(content) as typeof card;
+  } catch {
+    // malformed card — render the shell
+  }
+  return (
+    <div className="wf-session-join">
+      <FileText size={16} />
+      <div className="wf-plugin-info">
+        <strong>{card.title ?? "Shared document"}</strong>
+        <span className="wf-session-meta">
+          {error ??
+            (card.access === "write"
+              ? "Shared with this group — everyone can edit"
+              : "Shared with this group — read only")}
+        </span>
+      </div>
+      <button
+        className="wf-primary"
+        onClick={() => {
+          const id = card.document_id;
+          if (id === undefined) return;
+          void import("../documents/store").then(({ openDocumentById }) =>
+            openDocumentById(id).catch(() =>
+              setError("This document is no longer shared with you."),
+            ),
+          );
+        }}
+      >
+        Open document
+      </button>
+    </div>
+  );
+}
+
 function MessageRow({ message, compact }: { message: Message; compact: boolean }) {
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "2-digit",
@@ -796,6 +836,8 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
       )}
       {message.kind === "session" ? (
         <SessionJoinCard content={message.content ?? "{}"} />
+      ) : message.kind === "document" ? (
+        <DocumentShareCard content={message.content ?? "{}"} />
       ) : (
         message.content && (
           <div className="wf-msg-content">

@@ -17,8 +17,17 @@ use crate::error::AppError;
 use crate::perms;
 use crate::routes::AppState;
 
-/// `image` stores an attachment id in `text`; `link` stores a URL in `text`.
-const ELEMENT_KINDS: &[&str] = &["sticky", "text", "frame", "connector", "image", "link"];
+/// `image` stores an attachment id in `text`; `link` stores a URL in
+/// `text`; `document` stores a JSON reference `{document_id, mode, …}`.
+const ELEMENT_KINDS: &[&str] = &[
+    "sticky",
+    "text",
+    "frame",
+    "connector",
+    "image",
+    "link",
+    "document",
+];
 const MAX_TEXT: usize = 4000;
 const MAX_ELEMENTS_PER_BOARD: i64 = 2000;
 
@@ -159,8 +168,23 @@ pub async fn create_board(
 }
 
 fn row_to_element(row: ElementRow) -> CanvasElement {
-    let (id, board_id, kind, x, y, w, h, z, text, color, from_id, to_id, updated_by, updated_at) =
-        row;
+    let (
+        id,
+        board_id,
+        kind,
+        x,
+        y,
+        w,
+        h,
+        z,
+        text,
+        color,
+        style,
+        from_id,
+        to_id,
+        updated_by,
+        updated_at,
+    ) = row;
     CanvasElement {
         id,
         board_id,
@@ -172,6 +196,7 @@ fn row_to_element(row: ElementRow) -> CanvasElement {
         z,
         text,
         color,
+        style,
         from_id,
         to_id,
         updated_by: UserId(updated_by),
@@ -190,13 +215,14 @@ type ElementRow = (
     i64,
     String,
     String,
+    String,
     Option<i64>,
     Option<i64>,
     i64,
     i64,
 );
 
-const ELEMENT_SELECT: &str = "SELECT id, board_id, kind, x, y, w, h, z, text, color,
+const ELEMENT_SELECT: &str = "SELECT id, board_id, kind, x, y, w, h, z, text, color, style,
     from_id, to_id, updated_by, updated_at FROM canvas_elements";
 
 pub async fn board_detail(
@@ -308,8 +334,8 @@ pub async fn create_element(
     .fetch_one(&state.pool)
     .await?;
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO canvas_elements (board_id, kind, x, y, w, h, z, text, color, from_id, to_id, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO canvas_elements (board_id, kind, x, y, w, h, z, text, color, style, from_id, to_id, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(board_id)
     .bind(&req.kind)
@@ -320,6 +346,7 @@ pub async fn create_element(
     .bind(z)
     .bind(&req.text)
     .bind(&req.color)
+    .bind(&req.style)
     .bind(req.from_id)
     .bind(req.to_id)
     .bind(auth.user_id.0)
@@ -338,6 +365,7 @@ pub async fn create_element(
         z,
         text: req.text,
         color: req.color,
+        style: req.style,
         from_id: req.from_id,
         to_id: req.to_id,
         updated_by: auth.user_id,
@@ -385,6 +413,7 @@ pub async fn update_element(
             w = COALESCE(?, w), h = COALESCE(?, h),
             z = COALESCE(?, z),
             text = COALESCE(?, text), color = COALESCE(?, color),
+            style = COALESCE(?, style),
             updated_by = ?, updated_at = ?
          WHERE id = ?",
     )
@@ -395,6 +424,7 @@ pub async fn update_element(
     .bind(req.z)
     .bind(req.text.as_deref())
     .bind(req.color.as_deref())
+    .bind(req.style.as_deref())
     .bind(auth.user_id.0)
     .bind(now)
     .bind(element_id)

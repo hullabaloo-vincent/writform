@@ -3,6 +3,7 @@ mod attachments;
 mod auth;
 mod canvas;
 mod channels;
+pub mod documents;
 mod emotes;
 mod friends;
 mod groups;
@@ -204,6 +205,53 @@ pub fn router(state: AppState) -> Router {
         )
         .route("/api/v1/attachments", post(attachments::upload))
         .route("/api/v1/attachments/{id}", get(attachments::download))
+        .route(
+            "/api/v1/documents",
+            get(documents::list_documents).post(documents::create_document),
+        )
+        .route(
+            "/api/v1/documents/{id}",
+            get(documents::document_detail)
+                .patch(documents::update_document)
+                .delete(documents::delete_document),
+        )
+        .route(
+            "/api/v1/documents/{id}/updates",
+            get(documents::get_updates).post(documents::append_update),
+        )
+        .route(
+            "/api/v1/documents/{id}/awareness",
+            post(documents::awareness),
+        )
+        .route("/api/v1/documents/{id}/snapshot", post(documents::snapshot))
+        .route(
+            "/api/v1/documents/{id}/versions",
+            get(documents::list_versions),
+        )
+        .route(
+            "/api/v1/documents/{id}/versions/{vid}",
+            get(documents::get_version),
+        )
+        .route(
+            "/api/v1/documents/{id}/shares",
+            get(documents::list_shares).put(documents::set_share),
+        )
+        .route(
+            "/api/v1/documents/{id}/shares/{kind}/{sid}",
+            delete(documents::delete_share),
+        )
+        .route(
+            "/api/v1/documents/{id}/threads",
+            get(documents::list_threads).post(documents::create_thread),
+        )
+        .route(
+            "/api/v1/document-threads/{id}",
+            patch(documents::update_thread).delete(documents::delete_thread),
+        )
+        .route(
+            "/api/v1/document-threads/{id}/replies",
+            post(documents::reply_thread),
+        )
         .route(
             "/api/v1/groups/{id}/emotes",
             get(emotes::list_emotes).post(emotes::create_emote),

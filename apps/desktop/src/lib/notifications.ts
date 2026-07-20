@@ -126,6 +126,29 @@ export function installNotifications(): () => void {
       return;
     }
 
+    if (kind === "document.listchanged") {
+      // Only a direct user-share grant notifies (group shares announce
+      // themselves via the chat card).
+      const change = data as {
+        reason?: string;
+        title?: string;
+        by?: { id: number; username: string; display_name: string | null };
+      };
+      if (
+        room === `user:${me.id}` &&
+        change.reason === "shared" &&
+        change.by &&
+        change.by.id !== me.id &&
+        !viewing("writform.documents")
+      ) {
+        void deliver(
+          change.by.display_name ?? change.by.username,
+          `shared the document "${change.title ?? "Untitled"}" with you`,
+        );
+      }
+      return;
+    }
+
     if (kind === "friend.request") {
       const req = data as { from: { username: string; display_name: string | null } };
       void deliver(

@@ -4,6 +4,7 @@ import ReactDOM from "react-dom/client";
 import { canvasApp } from "./apps/canvas";
 import { chatApp } from "./apps/chat";
 import { docsApp } from "./apps/docs";
+import { documentsApp } from "./apps/documents";
 import { friendsApp } from "./apps/friends";
 import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
@@ -19,6 +20,7 @@ import "./styles.css";
 // the plugin runtime (Phase 6) onto the same registry.
 registerApp(chatApp);
 registerApp(sessionsApp);
+registerApp(documentsApp);
 registerApp(canvasApp);
 registerApp(friendsApp);
 registerApp(notesApp);

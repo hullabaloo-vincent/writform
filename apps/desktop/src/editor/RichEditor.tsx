@@ -17,7 +17,7 @@ import {
   Strikethrough,
   Undo2,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { uploadBlob } from "../lib/upload";
 
@@ -72,7 +72,17 @@ export function RichEditor({
   );
 }
 
-function Toolbar({ editor }: { editor: Editor }) {
+export function Toolbar({
+  editor,
+  leading,
+  trailing,
+  richBlocks = true,
+}: {
+  editor: Editor;
+  leading?: ReactNode;
+  trailing?: ReactNode;
+  richBlocks?: boolean;
+}) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   // Re-render on selection/content changes so active states track the cursor.
@@ -121,6 +131,8 @@ function Toolbar({ editor }: { editor: Editor }) {
 
   return (
     <div className="wf-editor-toolbar">
+      {leading}
+      {leading && <span className="wf-toolbar-sep" />}
       {btn("Bold", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
       {btn(
         "Italic",
@@ -128,50 +140,58 @@ function Toolbar({ editor }: { editor: Editor }) {
         () => chain().toggleItalic().run(),
         editor.isActive("italic"),
       )}
-      {btn(
-        "Strikethrough",
-        <Strikethrough size={15} />,
-        () => chain().toggleStrike().run(),
-        editor.isActive("strike"),
+      {richBlocks && (
+        <>
+          {btn(
+            "Strikethrough",
+            <Strikethrough size={15} />,
+            () => chain().toggleStrike().run(),
+            editor.isActive("strike"),
+          )}
+          {btn(
+            "Inline code",
+            <Code size={15} />,
+            () => chain().toggleCode().run(),
+            editor.isActive("code"),
+          )}
+        </>
       )}
-      {btn(
-        "Inline code",
-        <Code size={15} />,
-        () => chain().toggleCode().run(),
-        editor.isActive("code"),
+      {richBlocks && (
+        <>
+          <span className="wf-toolbar-sep" />
+          {btn(
+            "Heading 1",
+            <Heading1 size={15} />,
+            () => chain().toggleHeading({ level: 1 }).run(),
+            editor.isActive("heading", { level: 1 }),
+          )}
+          {btn(
+            "Heading 2",
+            <Heading2 size={15} />,
+            () => chain().toggleHeading({ level: 2 }).run(),
+            editor.isActive("heading", { level: 2 }),
+          )}
+          {btn(
+            "Bullet list",
+            <List size={15} />,
+            () => chain().toggleBulletList().run(),
+            editor.isActive("bulletList"),
+          )}
+          {btn(
+            "Numbered list",
+            <ListOrdered size={15} />,
+            () => chain().toggleOrderedList().run(),
+            editor.isActive("orderedList"),
+          )}
+          {btn(
+            "Quote",
+            <Quote size={15} />,
+            () => chain().toggleBlockquote().run(),
+            editor.isActive("blockquote"),
+          )}
+          {btn("Divider", <Minus size={15} />, () => chain().setHorizontalRule().run())}
+        </>
       )}
-      <span className="wf-toolbar-sep" />
-      {btn(
-        "Heading 1",
-        <Heading1 size={15} />,
-        () => chain().toggleHeading({ level: 1 }).run(),
-        editor.isActive("heading", { level: 1 }),
-      )}
-      {btn(
-        "Heading 2",
-        <Heading2 size={15} />,
-        () => chain().toggleHeading({ level: 2 }).run(),
-        editor.isActive("heading", { level: 2 }),
-      )}
-      {btn(
-        "Bullet list",
-        <List size={15} />,
-        () => chain().toggleBulletList().run(),
-        editor.isActive("bulletList"),
-      )}
-      {btn(
-        "Numbered list",
-        <ListOrdered size={15} />,
-        () => chain().toggleOrderedList().run(),
-        editor.isActive("orderedList"),
-      )}
-      {btn(
-        "Quote",
-        <Quote size={15} />,
-        () => chain().toggleBlockquote().run(),
-        editor.isActive("blockquote"),
-      )}
-      {btn("Divider", <Minus size={15} />, () => chain().setHorizontalRule().run())}
       <span className="wf-toolbar-sep" />
       <input
         ref={fileRef}
@@ -206,6 +226,7 @@ function Toolbar({ editor }: { editor: Editor }) {
         false,
         !editor.can().redo(),
       )}
+      {trailing && <span className="wf-toolbar-tail">{trailing}</span>}
     </div>
   );
 }

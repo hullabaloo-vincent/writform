@@ -283,6 +283,10 @@ async fn room_allowed(state: &AppState, room: &str, user: UserId) -> Result<bool
                 None => Err(()),
             }
         }
+        // Documents: owner, or a read/write share (direct or via a group).
+        "document" => crate::routes::documents::can_read(state, id, user)
+            .await
+            .map_err(|_| ()),
         // Sessions live in a channel; access = channel access (Phase 3).
         "session" => {
             let row: Option<(i64,)> =

@@ -7,6 +7,7 @@
 pub mod api;
 pub mod canvas;
 pub mod chat;
+pub mod documents;
 pub mod friends;
 pub mod ids;
 pub mod sessions;

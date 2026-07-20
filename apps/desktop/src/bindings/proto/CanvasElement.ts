@@ -13,4 +13,8 @@ z: number, text: string,
 /**
  * Sticky color key (e.g. "yellow"); empty for other kinds.
  */
-color: string, from_id: number | null, to_id: number | null, updated_by: UserId, updated_at: number, };
+color: string,
+/**
+ * Text styling JSON (size/bold/italic/underline/align/list); empty = defaults.
+ */
+style: string, from_id: number | null, to_id: number | null, updated_by: UserId, updated_at: number, };

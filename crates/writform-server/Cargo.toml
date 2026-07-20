@@ -30,6 +30,8 @@ rand = { workspace = true }
 sha2 = { workspace = true }
 hex = "0.4"
 infer = "0.16"
+# Server-side Yjs (documents): merges/compacts update logs. v1 encoding only.
+yrs = "0.23"
 # Outbound fetch for canvas link previews (webpki roots: verifies public TLS).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots"] }
 
@@ -39,3 +41,5 @@ http-body-util = "0.1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "json", "multipart"] }
 tempfile = "3"
 tokio-tungstenite = "0.26"
+yrs = "0.23"
+base64 = { workspace = true }

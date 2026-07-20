@@ -1,12 +1,20 @@
 import {
+  AlignCenter,
+  AlignLeft,
+  AlignRight,
+  Bold,
   ExternalLink,
   Frame as FrameIcon,
+  Grid3x3,
+  Italic,
   Link2,
+  List,
   MousePointer2,
   Spline,
   StickyNote,
   Trash2,
   Type,
+  Underline,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -19,6 +27,7 @@ import { uploadBlob } from "../../lib/upload";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useChat } from "../chat/store";
+import { CanvasDocCard } from "../documents/CanvasDocCard";
 import { canvasApi } from "./api";
 import { useCanvas } from "./store";
 
@@ -88,6 +97,41 @@ const STICKY_COLORS: Record<string, string> = {
   green: "#93d3a2",
   purple: "#b7a3ea",
 };
+
+/** Soft translucent frame fills (Freeform-style); "" = plain frame. */
+const FRAME_COLORS: Record<string, { bg: string; border: string }> = {
+  orange: { bg: "rgba(232, 147, 60, 0.28)", border: "rgba(232, 147, 60, 0.75)" },
+  purple: { bg: "rgba(150, 117, 190, 0.28)", border: "rgba(150, 117, 190, 0.75)" },
+  green: { bg: "rgba(139, 190, 120, 0.28)", border: "rgba(139, 190, 120, 0.75)" },
+  yellow: { bg: "rgba(226, 200, 92, 0.28)", border: "rgba(226, 200, 92, 0.75)" },
+  pink: { bg: "rgba(224, 140, 178, 0.28)", border: "rgba(224, 140, 178, 0.75)" },
+  blue: { bg: "rgba(112, 158, 214, 0.28)", border: "rgba(112, 158, 214, 0.75)" },
+};
+
+/** Per-element text styling, stored as JSON in the `style` column. */
+interface TextStyle {
+  size?: number;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  align?: "left" | "center" | "right";
+  list?: "bullet";
+}
+
+function textStyle(raw: string): TextStyle {
+  try {
+    const parsed = JSON.parse(raw) as TextStyle | null;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+const FONT_SIZES = [12, 14, 16, 20, 24, 32, 40, 48];
+const ALIGN_CYCLE: NonNullable<TextStyle["align"]>[] = ["left", "center", "right"];
+
+/** Grid step for snap-to-grid (world units). */
+const GRID = 8;
 
 type Tool = "select" | "sticky" | "text" | "frame" | "connect";
 
@@ -192,9 +236,14 @@ export function BoardRoom() {
   const [editing, setEditing] = useState<number | null>(null);
   const [connectFrom, setConnectFrom] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [snap, setSnap] = useState(() => localStorage.getItem("wf-canvas-snap") !== "off");
 
   const viewRef = useRef(view);
   viewRef.current = view;
+  const snapRef = useRef(snap);
+  snapRef.current = snap;
+  /** Quantize a world coordinate to the grid when snapping is on. */
+  const snapv = (v: number) => (snapRef.current ? Math.round(v / GRID) * GRID : v);
 
   const fail = (e: unknown) => setError(isCmdError(e) ? e.message : String(e));
 
@@ -241,12 +290,13 @@ export function BoardRoom() {
       canvasApi
         .createElement(boardId, {
           kind,
-          x: x - w / 2,
-          y: y - h / 2,
+          x: snapv(x - w / 2),
+          y: snapv(y - h / 2),
           w,
           h,
           text,
           color,
+          style: "",
           from_id: null,
           to_id: null,
         })
@@ -330,12 +380,13 @@ export function BoardRoom() {
     canvasApi
       .createElement(board.id, {
         kind,
-        x: x - defaults.w / 2,
-        y: y - defaults.h / 2,
+        x: snapv(x - defaults.w / 2),
+        y: snapv(y - defaults.h / 2),
         w: defaults.w,
         h: defaults.h,
         text: defaults.text,
         color: defaults.color,
+        style: "",
         from_id: null,
         to_id: null,
       })
@@ -418,6 +469,7 @@ export function BoardRoom() {
             h: 0,
             text: "",
             color: "",
+            style: "",
             from_id: connectFrom,
             to_id: el.id,
           })
@@ -486,7 +538,7 @@ export function BoardRoom() {
       const send = t - lastSent > 120;
       if (send) lastSent = t;
       for (const [id, origin] of origins) {
-        const pos = { x: origin.x + dx, y: origin.y + dy };
+        const pos = { x: snapv(origin.x + dx), y: snapv(origin.y + dy) };
         last.set(id, pos);
         patchLocal(id, pos);
         if (send) canvasApi.updateElement(id, pos).catch(() => {});
@@ -517,8 +569,8 @@ export function BoardRoom() {
     const onMove = (ev: PointerEvent) => {
       const now = toWorld(ev.clientX, ev.clientY);
       last = {
-        w: Math.max(60, origin.w + now.x - startWorld.x),
-        h: Math.max(36, origin.h + now.y - startWorld.y),
+        w: Math.max(60, snapv(origin.w + now.x - startWorld.x)),
+        h: Math.max(36, snapv(origin.h + now.y - startWorld.y)),
       };
       patchLocal(el.id, last);
       const t = Date.now();
@@ -549,7 +601,7 @@ export function BoardRoom() {
   const all = Object.values(elements);
   const frames = all.filter((el) => el.kind === "frame").sort((a, b) => a.z - b.z);
   const bodies = all
-    .filter((el) => ["sticky", "text", "image", "link"].includes(el.kind))
+    .filter((el) => ["sticky", "text", "image", "link", "document"].includes(el.kind))
     .sort((a, b) => a.z - b.z);
   const connectors = all.filter((el) => el.kind === "connector");
     // Single-selection element (color swatches, connector styling, resize).
@@ -603,7 +655,14 @@ export function BoardRoom() {
             <div
               key={el.id}
               className={`wf-el wf-el-frame ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
-              style={{ left: el.x, top: el.y, width: el.w, height: el.h }}
+              style={{
+                left: el.x,
+                top: el.y,
+                width: el.w,
+                height: el.h,
+                background: FRAME_COLORS[el.color]?.bg,
+                borderColor: FRAME_COLORS[el.color]?.border,
+              }}
               onPointerDown={(e) => onElementDown(e, el)}
               onDoubleClick={() => setEditing(el.id)}
             >
@@ -695,7 +754,12 @@ export function BoardRoom() {
                 background: el.kind === "sticky" ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow) : undefined,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
-              onDoubleClick={() => el.kind !== "image" && el.kind !== "link" && setEditing(el.id)}
+              onDoubleClick={() =>
+                el.kind !== "image" &&
+                el.kind !== "link" &&
+                el.kind !== "document" &&
+                setEditing(el.id)
+              }
             >
               {el.kind === "image" ? (
                 <img
@@ -706,6 +770,8 @@ export function BoardRoom() {
                 />
               ) : el.kind === "link" ? (
                 <LinkCard url={el.text} />
+              ) : el.kind === "document" ? (
+                <CanvasDocCard payload={el.text} />
               ) : (
                 <ElementText
                   el={el}
@@ -765,6 +831,17 @@ export function BoardRoom() {
           <button title="Zoom in" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1.2)}>
             <ZoomIn size={17} />
           </button>
+          <button
+            title={snap ? "Snap to grid: on" : "Snap to grid: off"}
+            className={snap ? "active" : ""}
+            onClick={() => {
+              const next = !snap;
+              setSnap(next);
+              localStorage.setItem("wf-canvas-snap", next ? "on" : "off");
+            }}
+          >
+            <Grid3x3 size={17} />
+          </button>
           {selectedEl && selectedEl.kind === "connector" && (
             <ConnectorControls
               connector={selectedEl}
@@ -791,6 +868,41 @@ export function BoardRoom() {
                 />
               ))}
             </>
+          )}
+          {selectedEl && selectedEl.kind === "frame" && (
+            <>
+              <span className="wf-board-toolbar-sep" />
+              <button
+                className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
+                title="No fill"
+                onClick={() => {
+                  patchLocal(selectedEl.id, { color: "" });
+                  canvasApi.updateElement(selectedEl.id, { color: "" }).catch(fail);
+                }}
+              />
+              {Object.entries(FRAME_COLORS).map(([key, css]) => (
+                <button
+                  key={key}
+                  className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
+                  style={{ background: css.border }}
+                  title={key}
+                  onClick={() => {
+                    patchLocal(selectedEl.id, { color: key });
+                    canvasApi.updateElement(selectedEl.id, { color: key }).catch(fail);
+                  }}
+                />
+              ))}
+            </>
+          )}
+          {selectedEl && (selectedEl.kind === "sticky" || selectedEl.kind === "text") && (
+            <TextStyleControls
+              element={selectedEl}
+              onChange={(st) => {
+                const style = JSON.stringify(st);
+                patchLocal(selectedEl.id, { style });
+                canvasApi.updateElement(selectedEl.id, { style }).catch(fail);
+              }}
+            />
           )}
           {selected.size > 0 && (
             <>
@@ -842,6 +954,17 @@ function ToolButton({
   );
 }
 
+/** CSS derived from an element's TextStyle for both display and editing. */
+function textStyleCss(st: TextStyle): React.CSSProperties {
+  return {
+    fontSize: st.size,
+    fontWeight: st.bold ? 700 : undefined,
+    fontStyle: st.italic ? "italic" : undefined,
+    textDecoration: st.underline ? "underline" : undefined,
+    textAlign: st.align,
+  };
+}
+
 function ElementText({
   el,
   editing,
@@ -859,12 +982,36 @@ function ElementText({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editing]);
 
+  const st = textStyle(el.style);
+  const css = textStyleCss(st);
+
   if (!editing) {
-    return <div className={className}>{el.text || <span className="wf-el-placeholder">double-click to write</span>}</div>;
+    if (!el.text) {
+      return (
+        <div className={className} style={css}>
+          <span className="wf-el-placeholder">double-click to write</span>
+        </div>
+      );
+    }
+    if (st.list === "bullet") {
+      return (
+        <ul className={`${className} wf-el-bullets`} style={css}>
+          {el.text.split("\n").map((line, i) => (
+            <li key={i}>{line}</li>
+          ))}
+        </ul>
+      );
+    }
+    return (
+      <div className={className} style={css}>
+        {el.text}
+      </div>
+    );
   }
   return (
     <textarea
       className={`${className} wf-el-edit`}
+      style={css}
       value={draft}
       autoFocus
       onFocus={(e) => e.currentTarget.select()}
@@ -876,6 +1023,77 @@ function ElementText({
       }}
       onPointerDown={(e) => e.stopPropagation()}
     />
+  );
+}
+
+/** B/I/U, font size, alignment, bullet controls for sticky/text elements. */
+function TextStyleControls({
+  element,
+  onChange,
+}: {
+  element: CanvasElement;
+  onChange: (st: TextStyle) => void;
+}) {
+  const st = textStyle(element.style);
+  const size = st.size ?? 14;
+  const align = st.align ?? "left";
+  const stepSize = (dir: 1 | -1) => {
+    const idx = FONT_SIZES.findIndex((s) => s >= size);
+    const at = idx === -1 ? FONT_SIZES.length - 1 : idx;
+    const next = FONT_SIZES[Math.min(FONT_SIZES.length - 1, Math.max(0, at + dir))];
+    onChange({ ...st, size: next });
+  };
+  const AlignIcon = align === "center" ? AlignCenter : align === "right" ? AlignRight : AlignLeft;
+  return (
+    <>
+      <span className="wf-board-toolbar-sep" />
+      <button
+        title="Bold"
+        className={st.bold ? "active" : ""}
+        onClick={() => onChange({ ...st, bold: !st.bold || undefined })}
+      >
+        <Bold size={15} />
+      </button>
+      <button
+        title="Italic"
+        className={st.italic ? "active" : ""}
+        onClick={() => onChange({ ...st, italic: !st.italic || undefined })}
+      >
+        <Italic size={15} />
+      </button>
+      <button
+        title="Underline"
+        className={st.underline ? "active" : ""}
+        onClick={() => onChange({ ...st, underline: !st.underline || undefined })}
+      >
+        <Underline size={15} />
+      </button>
+      <button title="Smaller text" onClick={() => stepSize(-1)}>
+        −
+      </button>
+      <span className="wf-board-fontsize" title="Font size">
+        {size}
+      </span>
+      <button title="Larger text" onClick={() => stepSize(1)}>
+        +
+      </button>
+      <button
+        title={`Align: ${align} (click to change)`}
+        onClick={() => {
+          const next = ALIGN_CYCLE[(ALIGN_CYCLE.indexOf(align) + 1) % ALIGN_CYCLE.length];
+          onChange({ ...st, align: next === "left" ? undefined : next });
+        }}
+      >
+        <AlignIcon size={15} />
+      </button>
+      <button
+        title="Bullet list"
+        className={st.list === "bullet" ? "active" : ""}
+        onClick={() => onChange({ ...st, list: st.list === "bullet" ? undefined : "bullet" })}
+      >
+        <List size={15} />
+      </button>
+    </>
   );
 }
 
