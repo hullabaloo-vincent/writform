@@ -374,35 +374,23 @@ body,
   border-color: var(--wf-accent);
 }
 
+/* Buttons here inherit the global system; only the scale differs, so that
+   they line up with this card's larger 14px inputs. Re-declaring padding /
+   background / hover / variants would fork the system again — the previous
+   version of this block did, and lost `min-height` and `white-space` with it,
+   which is what let the Connect label crowd its own border. */
 .wf-connect-card button {
-  padding: 10px 16px;
   font-size: 14px;
-  border: 1px solid var(--wf-border);
-  border-radius: 8px;
+  padding: 0 16px;
+  min-height: 38px; /* matches the input: 10px + ~17px line + 10px + borders */
+}
+
+/* The card is --wf-bg-raised, and so is the default button fill, so a plain
+   button would melt into it. Neutral buttons drop to the base colour to stay
+   readable; :not() keeps the accent/danger variants' own fills intact (they
+   share specificity with this rule and would otherwise lose to it). */
+.wf-connect-card button:not(.wf-primary):not(.wf-danger) {
   background: var(--wf-bg);
-  color: var(--wf-text);
-  cursor: pointer;
-}
-
-.wf-connect-card button:hover:not(:disabled) {
-  background: var(--wf-bg-hover);
-}
-
-.wf-connect-card button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
-.wf-connect-card button.wf-primary {
-  background: var(--wf-accent);
-  border-color: var(--wf-accent);
-  color: white;
-}
-
-.wf-connect-card button.wf-danger {
-  background: #b13c3c;
-  border-color: #b13c3c;
-  color: white;
 }
 
 .wf-connect-row {
@@ -414,6 +402,12 @@ body,
 
 .wf-connect-row input {
   flex: 1;
+  min-width: 0; /* lets the input absorb the squeeze instead of the button */
+}
+
+/* The button sizes to its label and never shrinks; only the input flexes. */
+.wf-connect-row button {
+  flex: 0 0 auto;
 }
 
 .wf-connect-error {

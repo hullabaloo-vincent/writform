@@ -9,6 +9,26 @@ Every feature is an "app" on an internal platform layer (dock, UI slots, command
 palette), and third-party plugins use the exact same extension points — see
 [docs/plugin-api.md](docs/plugin-api.md).
 
+## Install
+
+Grab a build from [Releases](https://github.com/hullabaloo-vincent/writform/releases).
+
+**macOS:** the app is ad-hoc signed but not notarized (that needs a paid Apple
+Developer account), so a downloaded copy needs one command after you drag it to
+Applications:
+
+```sh
+xattr -dr com.apple.quarantine /Applications/WritForm.app
+```
+
+To skip that entirely, build it locally — apps compiled on your own Mac are
+never quarantined. Double-click **`scripts/Build WritForm (macOS).command`**;
+it checks for Xcode Command Line Tools, Node, and Rust, offers to install
+anything missing, and drops the finished app in Applications.
+
+See the [setup guide](docs-site/docs/setup.md) for connecting to or hosting a
+server.
+
 ## Layout
 
 | Path | What |
@@ -23,17 +43,27 @@ palette), and third-party plugins use the exact same extension points — see
 
 ## Built-in apps
 
-💬 **Chat** — groups (invite codes, roles, kick), channels, messages with image
-attachments, presence. ✍️ **Sessions** — a session holds multiple rich-text
-prompts; each is started/timed/stopped by its creator, everyone writes privately,
-writings reveal when the prompt ends, side chat throughout, full history browsable.
-🎨 **Canvas** — group storyboards: sticky notes, text, frames, connectors, live
-multi-user editing. 🔊 **Voice** — audio channels per group: peer-to-peer WebRTC
-mesh (media never touches the server), mute, speaking indicators. 👥 **Friends**
-— requests, DMs, note sharing. 📝 **Notes** —
-local-first markdown vault (Obsidian-compatible files), wiki-links + backlinks,
-share snapshots to friends. 🧩 **Plugins** — enable third-party plugins with
-per-plugin permissions.
+**Chat** — groups (invite codes, roles, kick), channels, messages with image
+attachments, markdown, custom emotes, @mentions and #channel references,
+presence (online/busy/invisible). **Sessions** — a session holds multiple
+rich-text prompts; each is started/timed/stopped by its creator, everyone
+writes privately, writings reveal when the prompt ends, side chat throughout,
+full history browsable. **Documents** — collaborative writing with live
+multi-user editing (CRDT), writing formats (screenplay, stage play,
+manuscript, poetry), version history, folders, full-text search, anchored
+feedback threads, PDF/DOCX/RTF/Pages/TXT/MD import, and sharing with friends
+or whole groups. **Canvas** — group storyboards: sticky notes, text, frames
+(with color), connectors, pasted images, link cards, live document
+references, live multi-user editing. **Voice** — audio channels per group:
+peer-to-peer WebRTC mesh (media never touches the server), mute, speaking
+indicators, device/gain settings. **Friends** — requests, DMs, note sharing,
+profile cards. **Notes** — local-first markdown vault (Obsidian-compatible
+files), wiki-links + backlinks, share snapshots to friends. **Plugins** —
+enable third-party plugins with per-plugin permissions.
+
+Native notifications for DMs, mentions, new sessions, shared documents/notes,
+and friend requests. Server admins can issue one-time password reset codes
+for locked-out users.
 
 ## Development
 
@@ -66,7 +96,7 @@ they drift from the Rust types.
   shareable addresses in Settings → Server — including one-click UPnP port
   mapping for internet access, with port-forward/Tailscale guidance when the
   router refuses.
-- **Docker:** `docker run -p 7311:7311 -v writform-data:/data ghcr.io/valiquo/writform-server`
+- **Docker:** `docker run -p 7311:7311 -v writform-data:/data ghcr.io/hullabaloo-vincent/writform-server`
 - **Bare metal:** grab `writform-server` from GitHub Releases + `deploy/writform-server.service`
 - Upgrading = pull the new image / binary and restart; SQLite migrations run at startup.
 - Desktop releases are built by CI on tag push and published to GitHub Releases

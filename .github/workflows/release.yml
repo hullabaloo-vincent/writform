@@ -87,4 +87,25 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "WritForm ${{ github.ref_name }}"
           releaseDraft: true
+          # The macOS build is ad-hoc signed but not notarized (that needs a
+          # paid Apple Developer account), so first launch needs one command.
+          releaseBody: |
+            ## Install
+
+            **macOS** — drag WritForm to Applications, then run once:
+
+            ```sh
+            xattr -dr com.apple.quarantine /Applications/WritForm.app
+            ```
+
+            WritForm is signed but not notarized (notarization requires a paid
+            Apple Developer membership). Without this, macOS refuses to open
+            it. You can instead open it once and choose **Open Anyway** in
+            System Settings → Privacy & Security. On macOS 15+ the old
+            Control-click → Open shortcut no longer works.
+
+            **Windows / Linux** — download the installer for your platform below.
+
+            See the [setup guide](https://hullabaloo-vincent.github.io/writform/setup/)
+            for connecting to or hosting a server.
           args: ${{ matrix.args }}

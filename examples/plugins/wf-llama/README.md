@@ -28,7 +28,7 @@ from the app.
 
 ## 3. Configure a group
 
-Open the 🦙 **Llama AI** icon in the dock, pick a group, and set:
+Open the **Llama AI** icon in the dock, pick a group, and set:
 
 - **Llama server URL** — e.g. `http://127.0.0.1:8080` (a LAN address works if
   everyone should share one machine's model)
@@ -46,5 +46,5 @@ In any of that group's chats:
 /ai give me a two-sentence writing prompt about lighthouses
 ```
 
-The reply is posted to the channel as a markdown message (attributed 🤖 with
-the model name), sent by whoever invoked the command.
+The reply is posted to the channel as a markdown message (prefixed with a
+robot emoji and the model name), sent by whoever invoked the command.

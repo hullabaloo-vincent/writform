@@ -7,18 +7,25 @@ files all live on the server you run.
 
 ## What's inside
 
-- ✍️ **Writing sessions** — WYSIWYG prompts (formatting + images), optional
+- **Writing sessions** — WYSIWYG prompts (formatting + images), optional
   timers, live side-chat, everything recorded and browsable forever
-- 💬 **Chat** — Discord-style groups with channels, markdown, custom emotes,
-  image uploads, slash commands
-- 🔊 **Voice** — audio channels; peer-to-peer WebRTC, the server only relays
-  signaling
-- 🎨 **Canvas** — shared storyboards: stickies, frames, connectors, images,
-  link cards
-- 📓 **Notes** — an Obsidian-compatible local vault with `[[wiki-links]]`,
+- **Documents** — live collaborative editing, writing formats (screenplay,
+  stage play, manuscript, poetry), version history, folders, search,
+  anchored feedback threads, file import, sharing with friends or groups
+- **Chat** — Discord-style groups with channels, markdown, custom emotes,
+  @mentions and #channel references, image uploads, slash commands
+- **Voice** — audio channels; peer-to-peer WebRTC, the server only relays
+  signaling; per-device input/output settings
+- **Canvas** — shared storyboards: stickies, colored frames, connectors,
+  images, link cards, live document references
+- **Notes** — an Obsidian-compatible local vault with `[[wiki-links]]`,
   shareable to friends
-- 🧩 **Plugins** — every feature is an app on an internal platform; you can
+- **Plugins** — every feature is an app on an internal platform; you can
   add your own (see [Plugins](plugins.md))
+
+Presence status (online/busy/invisible), profile cards, and native
+notifications for DMs, mentions, sessions, and shares round out the day-to-day
+experience.
 
 ## Security in one paragraph
 

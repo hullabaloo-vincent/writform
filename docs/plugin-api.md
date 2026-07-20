@@ -21,11 +21,13 @@ wf-myplugin/
   "id": "wf-myplugin",            // must equal the folder name
   "name": "My Plugin",
   "version": "0.1.0",
-  "icon": "🧩",                    // dock emoji
   "permissions": ["ui", "commands", "net", "data"],
   "min_api_version": 1
 }
 ```
+
+`icon` (optional): a short glyph shown in the dock, usually a single emoji —
+falls back to a generic icon if omitted.
 
 Users enable plugins in the **Plugins** app; the permission list is shown at
 enable time and changes take effect after a reload.
@@ -50,11 +52,7 @@ Capabilities appear on `writform` **only if declared** in the manifest:
 |------------|---------|
 | `ui` | `ctx.ui.addToSlot(slot, contribution)`, `ctx.ui.registerMainView(render)` — slots: `nav.rail`, `panel.right`, `statusbar`, `settings.section` |
 | `commands` | `ctx.commands.register/execute` (command palette integration) |
-- `chat` → `ctx.chat.registerCommand({ name, description, run(args, cctx) })`
-  registers a `/name` slash command available in every chat composer; `cctx`
-  is `{ channelId, groupId, send(content) }` where `send` posts a markdown
-  message to the invoking channel. `ctx.chat.send(channelId, content)` posts
-  directly. Thrown errors surface inline in the composer.
+| `chat` | `ctx.chat.registerCommand({ name, description, run(args, cctx) })` registers a `/name` slash command available in every chat composer; `cctx` is `{ channelId, groupId, send(content) }` where `send` posts a markdown message to the invoking channel. `ctx.chat.send(channelId, content)` posts directly. Thrown errors surface inline in the composer. |
 | `net` | `writform.net.fetch(method, path, body)` — **only** `/api/v1/` paths on the connected server, over the pinned TLS client |
 | `data` | `writform.data.get/put/list(scope, scopeId, key)` — server-side JSON storage scoped to `user` / `group` / `channel`, membership-checked server-side; updates fan out as `plugin_data.updated` WS events |
 | `events` | `writform.events.onWsEvent(handler)`, `writform.events.sub(rooms)` |

@@ -39,7 +39,7 @@ writform.register({
     ctx.chat.registerCommand({
       name: "roll",
       description: "Roll a d20",
-      run: (args, chat) => chat.send(chat.channelId, `🎲 ${1 + Math.floor(Math.random() * 20)}`),
+      run: (args, chat) => chat.send(chat.channelId, `Rolled: ${1 + Math.floor(Math.random() * 20)}`),
     });
   },
 });

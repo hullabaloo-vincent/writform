@@ -1,6 +1,6 @@
 # WritForm server — self-hosted, single binary.
 # Build:  docker build -t writform-server .
-# Run:    docker run -p 7311:7311 -v writform-data:/data ghcr.io/valiquo/writform-server
+# Run:    docker run -p 7311:7311 -v writform-data:/data ghcr.io/hullabaloo-vincent/writform-server
 
 FROM rust:1.90-bookworm AS build
 WORKDIR /src
