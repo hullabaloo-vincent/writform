@@ -223,6 +223,7 @@ export function FeedbackPanel({
         <h3>Feedback</h3>
         <span className="wf-statusbar-spacer" />
         <button
+          className="wf-icon"
           title={
             capturedSelection
               ? "Comment on the selected text"
@@ -269,7 +270,7 @@ export function FeedbackPanel({
             <button type="submit" disabled={!selectionDraft.content.trim()}>
               Send
             </button>
-            <button type="button" title="Cancel" onClick={() => setSelectionDraft(null)}>
+            <button className="wf-icon" type="button" title="Cancel" onClick={() => setSelectionDraft(null)}>
               <X size={14} />
             </button>
           </form>
@@ -384,6 +385,7 @@ function ThreadCard({
         {canControl && (
           <>
             <button
+              className="wf-icon"
               title={thread.resolved ? "Reopen" : "Resolve"}
               onClick={() =>
                 void act(documentsApi.setThreadResolved(thread.id, !thread.resolved))
@@ -392,6 +394,7 @@ function ThreadCard({
               {thread.resolved ? <RotateCcw size={14} /> : <Check size={14} />}
             </button>
             <button
+              className="wf-icon"
               title="Delete thread"
               onClick={() => void act(documentsApi.deleteThread(thread.id))}
             >

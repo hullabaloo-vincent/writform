@@ -74,7 +74,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
           <option value="write">can edit</option>
         </select>
         {existing && (
-          <button title="Revoke access" onClick={() => void revoke(kind, id)}>
+          <button className="wf-icon" title="Revoke access" onClick={() => void revoke(kind, id)}>
             <Trash2 size={14} />
           </button>
         )}
@@ -88,7 +88,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
         <header className="wf-doc-panel-header">
           <h3>Share document</h3>
           <span className="wf-statusbar-spacer" />
-          <button onClick={onClose}>
+          <button className="wf-icon" onClick={onClose}>
             <X size={15} />
           </button>
         </header>

@@ -312,6 +312,7 @@ export function DocumentsView() {
           {importing ? `Importing ${importing}…` : "Import"}
         </button>
         <button
+          className="wf-icon"
           title="New folder"
           onClick={() => {
             const name = `New folder ${folders.length + 1}`;

@@ -15,6 +15,114 @@
   box-sizing: border-box;
 }
 
+/* ---- buttons: one system everywhere ----
+   Base: a neutral chip with a perfectly centered flex row. Icon-only
+   buttons square off automatically; `.wf-primary` / `.wf-danger` are the
+   only color variants. Component rules below override size where needed. */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: var(--wf-text);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  padding: 0 12px;
+  min-height: 30px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    background 0.12s,
+    border-color 0.12s,
+    color 0.12s;
+}
+
+button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+button svg {
+  display: block;
+  flex-shrink: 0;
+}
+
+/* Icon-only buttons: add `wf-icon` for a centered square. (No :only-child
+   auto-detection — text nodes don't count as children, so icon+label
+   buttons would wrongly match and squeeze to 30px.) */
+button.wf-icon {
+  width: 30px;
+  padding: 0;
+}
+
+button.wf-primary {
+  background: var(--wf-accent);
+  border-color: var(--wf-accent);
+  color: #fff;
+}
+
+button.wf-primary:hover:not(:disabled) {
+  background: #8b7cf4;
+  border-color: #8b7cf4;
+}
+
+button.wf-danger {
+  color: #e08080;
+  border-color: rgba(224, 128, 128, 0.4);
+}
+
+button.wf-danger:hover:not(:disabled) {
+  background: rgba(224, 128, 128, 0.12);
+}
+
+button.active {
+  border-color: var(--wf-accent);
+  color: var(--wf-accent);
+}
+
+/* Count badge pinned to a button's top-right corner. */
+button {
+  position: relative;
+}
+
+.wf-btn-badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  padding: 0 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-align: center;
+  border-radius: 999px;
+  background: var(--wf-accent);
+  color: #fff;
+  pointer-events: none;
+}
+
+/* Selects share the chip look so mixed toolbars read as one system. */
+select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--wf-text);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  min-height: 30px;
+  padding: 0 8px;
+}
+
 html,
 body,
 #root {
@@ -509,6 +617,8 @@ body,
   height: 42px;
   display: grid;
   place-items: center;
+  padding: 0;
+  overflow: hidden;
   border-radius: 12px;
   border: 1px solid var(--wf-border);
   background: var(--wf-bg-raised);
@@ -682,17 +792,10 @@ body,
   border-color: var(--wf-accent);
 }
 
+/* Composer buttons stretch to the textarea row; colors come from the
+   base system (Send carries `.wf-primary`, attach/emote stay neutral). */
 .wf-composer button {
-  padding: 0 16px;
-  border-radius: 8px;
-  border: 1px solid var(--wf-accent);
-  background: var(--wf-accent);
-  color: white;
-  cursor: pointer;
-}
-
-.wf-composer button:disabled {
-  opacity: 0.5;
+  min-height: 40px;
 }
 
 .wf-chat-members {
@@ -883,17 +986,15 @@ body,
   border: none;
   background: transparent;
   color: var(--wf-text-dim);
-  cursor: pointer;
+  min-height: 0;
+  padding: 0 4px;
 }
 
 .wf-composer-attach {
   width: 40px;
-  border-radius: 8px;
-  border: 1px solid var(--wf-border);
-  background: var(--wf-bg-raised);
+  padding: 0;
   color: var(--wf-text-dim);
   font-size: 18px;
-  cursor: pointer;
 }
 
 .wf-composer-attach:hover {
@@ -1946,6 +2047,8 @@ textarea.wf-el-edit {
 .wf-board-swatch {
   width: 22px !important;
   height: 22px !important;
+  min-height: 0;
+  padding: 0;
   border-radius: 50% !important;
 }
 
@@ -2112,8 +2215,6 @@ textarea.wf-el-edit {
 }
 
 .wf-doc-header button {
-  display: grid;
-  place-items: center;
   width: 40px;
   height: 40px;
   padding: 0;
@@ -2164,15 +2265,22 @@ textarea.wf-el-edit {
   color: #e0a03c;
 }
 
+/* Legacy alias — badges are `.wf-btn-badge` (top-right corner pin). */
 .wf-doc-badge {
-  display: inline-block;
-  min-width: 15px;
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
   padding: 0 4px;
-  margin-left: 4px;
   font-size: 10px;
+  font-weight: 600;
+  text-align: center;
   border-radius: 999px;
   background: var(--wf-accent);
   color: #fff;
+  pointer-events: none;
 }
 
 .wf-doc-peers {
@@ -2880,6 +2988,7 @@ textarea.wf-el-edit {
   border: none;
   background: transparent;
   padding: 0 2px;
+  min-height: 0;
 }
 
 .wf-doc-search-note {
@@ -3277,6 +3386,7 @@ textarea.wf-el-edit {
   place-items: center;
   width: 26px;
   height: 26px;
+  min-height: 0;
   border: 1px solid var(--wf-border);
   border-radius: 7px;
   background: var(--wf-bg-raised);
@@ -4024,4 +4134,35 @@ textarea.wf-el-edit {
 
 .wf-mic-meter span.lit {
   background: #4caf7d;
+}
+
+/* ---- button-system compatibility ----
+   Row/list buttons keep left-aligned content under the flex base, and
+   deliberately tiny inline buttons opt out of the 30px minimum. */
+
+.wf-friend-open,
+.wf-docs-nav button,
+.wf-doc-thread-excerpt,
+.wf-chat-channel,
+.wf-voice-channel {
+  justify-content: flex-start;
+}
+
+.wf-user-link,
+.wf-note-link,
+.wf-linklike,
+.wf-emote-remove,
+.wf-session-delete,
+.wf-member-kick {
+  min-height: 0;
+}
+
+.wf-emote-remove {
+  width: 16px;
+  padding: 0;
+}
+
+.wf-session-delete {
+  width: 28px;
+  padding: 0;
 }

@@ -99,7 +99,7 @@ export function SendToCanvasDialog({
         <header className="wf-doc-panel-header">
           <h3>Send to canvas</h3>
           <span className="wf-statusbar-spacer" />
-          <button onClick={onClose}>
+          <button className="wf-icon" onClick={onClose}>
             <X size={15} />
           </button>
         </header>

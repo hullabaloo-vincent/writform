@@ -110,7 +110,7 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
                 maxLength={120}
                 onChange={(e) => setNaming(e.target.value)}
               />
-              <button type="submit" title="Save current text as a draft" disabled={!naming.trim()}>
+              <button className="wf-icon" type="submit" title="Save current text as a draft" disabled={!naming.trim()}>
                 <BookmarkPlus size={15} />
               </button>
             </form>
@@ -135,7 +135,7 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
               </div>
               <span className="wf-statusbar-spacer" />
               {canWrite && <button onClick={() => void restore()}><RotateCcw size={15} /> Restore</button>}
-              <button title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
+              <button className="wf-icon" title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
             </header>
             <div className="wf-doc-version-preview">
               {preview.mode === "draft" ? <RichDoc doc={JSON.parse(preview.json)} /> : <RevisionDiff before={preview.previous} after={preview.json} />}
