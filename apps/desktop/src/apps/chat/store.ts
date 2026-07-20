@@ -6,6 +6,7 @@ import type { Group } from "../../bindings/proto/Group";
 import type { Member } from "../../bindings/proto/Member";
 import type { Message } from "../../bindings/proto/Message";
 import { backend } from "../../lib/backend";
+import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 
 interface ChatState {
@@ -135,6 +136,38 @@ export async function resyncChat(): Promise<void> {
 }
 
 /** Apply WS events to the store. Installed once from the chat app. */
+/**
+ * Re-fetch presence whenever the socket comes up.
+ *
+ * Presence is the one piece of state whose correctness depends on OTHER
+ * users' live sockets, and the snapshot in `selectGroup` is fetched while our
+ * own `sub` may still be in flight — `wsSub` only queues the rooms. Any
+ * `presence.update` broadcast in that window goes to a room we have not
+ * joined yet and is lost for good, leaving that member grey until something
+ * else forces a refetch. `onResync` deliberately skips the very first
+ * connect, so this cannot rely on it.
+ */
+export function installChatPresenceSync(): () => void {
+  return backend.onWsStatus((connected) => {
+    if (!connected) return;
+    const { activeGroupId } = useChat.getState();
+    if (activeGroupId === null) return;
+    void chatApi
+      .presence(activeGroupId)
+      .then((presence) => {
+        // Still the same group after the round-trip?
+        if (useChat.getState().activeGroupId !== activeGroupId) return;
+        useChat.setState({
+          online: new Set(presence.online),
+          busy: new Set(presence.busy ?? []),
+        });
+      })
+      .catch(() => {
+        // Presence is cosmetic; a failed refresh retries on the next connect.
+      });
+  });
+}
+
 export function installChatWsHandler(): () => void {
   return backend.onWsEvent((event) => {
     if (event.ev !== "event") return;
@@ -203,6 +236,38 @@ export function installChatWsHandler(): () => void {
     } else if (kind === "emote.deleted") {
       const { emote_id } = data as { emote_id: number };
       useChat.setState((s) => ({ emotes: s.emotes.filter((e) => e.id !== emote_id) }));
+    } else if (kind === "message.reactions") {
+      // The server sends the full tally for the message, so clients converge
+      // even if they missed an earlier add/remove. `me` is per-viewer and is
+      // derived here from the user id list.
+      const { channel_id, message_id, reactions } = data as {
+        channel_id: number;
+        message_id: number;
+        reactions: { emoji: string; count: number; user_ids: number[]; users: string[] }[];
+      };
+      const meId = useSession.getState().session?.user.id;
+      useChat.setState((s) => {
+        const list = s.messages[channel_id];
+        if (!list) return s;
+        return {
+          messages: {
+            ...s.messages,
+            [channel_id]: list.map((m) =>
+              m.id === message_id
+                ? {
+                    ...m,
+                    reactions: reactions.map((r) => ({
+                      emoji: r.emoji,
+                      count: r.count,
+                      me: meId !== undefined && r.user_ids.includes(meId),
+                      users: r.users,
+                    })),
+                  }
+                : m,
+            ),
+          },
+        };
+      });
     } else if (kind === "presence.update") {
       const { user_id, online, status } = data as {
         user_id: number;

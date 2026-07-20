@@ -29,6 +29,9 @@ export const canvasApi = {
   updateElement: (elementId: number, req: Partial<UpdateElementRequest>) =>
     api<CanvasElement>("PATCH", `/api/v1/elements/${elementId}`, req),
   deleteElement: (elementId: number) => api<null>("DELETE", `/api/v1/elements/${elementId}`),
+  /** Ephemeral cursor broadcast; fire-and-forget, never persisted. */
+  cursor: (boardId: number, x: number, y: number) =>
+    api<null>("POST", `/api/v1/boards/${boardId}/cursor`, { x, y }),
   linkPreview: (url: string) =>
     api<LinkPreview>("GET", `/api/v1/link-preview?url=${encodeURIComponent(url)}`),
 };

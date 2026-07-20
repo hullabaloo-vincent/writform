@@ -71,6 +71,22 @@ impl TestServer {
         res.json().await.unwrap()
     }
 
+    /// POST returning the raw response, for asserting status codes.
+    async fn post_json_raw(
+        &self,
+        token: &str,
+        path: &str,
+        body: serde_json::Value,
+    ) -> reqwest::Response {
+        self.client
+            .post(format!("{}{path}", self.base))
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await
+            .unwrap()
+    }
+
     async fn get_json<T: serde::de::DeserializeOwned>(&self, token: &str, path: &str) -> T {
         let res = self
             .client
@@ -286,4 +302,202 @@ async fn ws_rejects_forbidden_rooms_and_presence_flows() {
         .get_json(&alice.token, &format!("/groups/{}/presence", group.id.0))
         .await;
     assert_eq!(presence.online, vec![alice.user.id]);
+}
+
+/// A member must see OTHER connected members in the presence snapshot, and
+/// receive live `presence.update` events for them. The older presence test
+/// only covered a user seeing themselves, which hid whether cross-user
+/// presence worked at all.
+#[tokio::test]
+async fn presence_reports_other_members() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Writers"}))
+        .await;
+    let invite: Invite = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/invites", group.id.0),
+            json!({"expires_in_seconds": 3600, "max_uses": 5}),
+        )
+        .await;
+    let _: Group = server
+        .post_json(&bob.token, "/invites/redeem", json!({"code": invite.code}))
+        .await;
+
+    // Alice watches the group room; nobody else is connected yet.
+    let mut alice_ws = ws_connect(&server, &alice.token, &[format!("group:{}", group.id.0)]).await;
+    let presence: writform_proto::chat::PresenceSnapshot = server
+        .get_json(&alice.token, &format!("/groups/{}/presence", group.id.0))
+        .await;
+    assert_eq!(presence.online, vec![alice.user.id]);
+    assert!(!presence.online.contains(&bob.user.id));
+
+    // Bob connects: alice must be told, and the snapshot must include him.
+    let _bob_ws = ws_connect(&server, &bob.token, &[]).await;
+    let ev = wait_for_event(&mut alice_ws, "presence.update").await;
+    assert_eq!(ev["user_id"].as_i64().unwrap(), bob.user.id.0);
+    assert_eq!(ev["online"], true);
+    assert_eq!(ev["status"], "online");
+
+    let presence: writform_proto::chat::PresenceSnapshot = server
+        .get_json(&alice.token, &format!("/groups/{}/presence", group.id.0))
+        .await;
+    assert!(
+        presence.online.contains(&bob.user.id),
+        "bob should be online in the snapshot, got {:?}",
+        presence.online
+    );
+
+    // Bob goes busy: alice sees the status change, and the snapshot moves him.
+    let res = server
+        .client
+        .put(format!("{}/auth/status", server.base))
+        .bearer_auth(&bob.token)
+        .json(&json!({"status": "busy"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let ev = wait_for_event(&mut alice_ws, "presence.update").await;
+    assert_eq!(ev["user_id"].as_i64().unwrap(), bob.user.id.0);
+    assert_eq!(ev["status"], "busy");
+
+    let presence: writform_proto::chat::PresenceSnapshot = server
+        .get_json(&alice.token, &format!("/groups/{}/presence", group.id.0))
+        .await;
+    assert!(presence.busy.contains(&bob.user.id), "bob should be busy");
+    assert!(!presence.online.contains(&bob.user.id));
+}
+
+/// Emoji reactions: toggle on/off, tally across users, live fan-out, and the
+/// permission boundary (a non-member cannot react).
+#[tokio::test]
+async fn message_reactions() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let mallory = server.register("mallory").await;
+
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Writers"}))
+        .await;
+    let invite: Invite = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/invites", group.id.0),
+            json!({"expires_in_seconds": 3600, "max_uses": 5}),
+        )
+        .await;
+    let _: Group = server
+        .post_json(&bob.token, "/invites/redeem", json!({"code": invite.code}))
+        .await;
+    let channels: Vec<Channel> = server
+        .get_json(&alice.token, &format!("/groups/{}/channels", group.id.0))
+        .await;
+    let general = channels[0].id;
+
+    let sent: Message = server
+        .post_json(
+            &alice.token,
+            &format!("/channels/{}/messages", general.0),
+            json!({"content": "ship it", "reply_to_id": null, "attachment_ids": []}),
+        )
+        .await;
+    assert!(sent.reactions.is_empty());
+
+    let mut bob_ws = ws_connect(&server, &bob.token, &[format!("channel:{}", general.0)]).await;
+
+    // Alice reacts; bob is told.
+    let res = server
+        .post_json_raw(
+            &alice.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "🎉"}),
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut bob_ws, "message.reactions").await;
+    assert_eq!(ev["message_id"].as_i64().unwrap(), sent.id.0);
+    assert_eq!(ev["reactions"][0]["emoji"], "🎉");
+    assert_eq!(ev["reactions"][0]["count"].as_i64().unwrap(), 1);
+
+    // Re-reacting the same emoji is idempotent, not a double count.
+    server
+        .post_json_raw(
+            &alice.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "🎉"}),
+        )
+        .await;
+    // Bob adds the same emoji: the tally goes to 2 and `me` is per-viewer.
+    server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "🎉"}),
+        )
+        .await;
+    let history: Vec<Message> = server
+        .get_json(&bob.token, &format!("/channels/{}/messages", general.0))
+        .await;
+    let reactions = &history[0].reactions;
+    assert_eq!(reactions.len(), 1);
+    assert_eq!(reactions[0].count, 2, "alice + bob, not a double-count");
+    assert!(reactions[0].me, "bob reacted, so `me` is true for bob");
+
+    let history_for_mallory_view: Vec<Message> = server
+        .get_json(&alice.token, &format!("/channels/{}/messages", general.0))
+        .await;
+    assert!(
+        history_for_mallory_view[0].reactions[0].me,
+        "alice also reacted"
+    );
+
+    // Non-members cannot react.
+    let res = server
+        .post_json_raw(
+            &mallory.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "🎉"}),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    // Non-emoji payloads are rejected.
+    let res = server
+        .post_json_raw(
+            &alice.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "lgtm"}),
+        )
+        .await;
+    assert_eq!(res.status(), 400);
+
+    // Removing only removes your own; bob's stays.
+    let res = server
+        .client
+        .delete(format!(
+            "{}/messages/{}/reactions/{}",
+            server.base,
+            sent.id.0,
+            urlencoding_emoji("🎉")
+        ))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let history: Vec<Message> = server
+        .get_json(&bob.token, &format!("/channels/{}/messages", general.0))
+        .await;
+    assert_eq!(history[0].reactions[0].count, 1);
+    assert!(history[0].reactions[0].me, "bob's own reaction remains");
+}
+
+fn urlencoding_emoji(s: &str) -> String {
+    s.bytes().map(|b| format!("%{b:02X}")).collect()
 }

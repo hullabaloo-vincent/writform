@@ -124,6 +124,41 @@ pub async fn download(
     // emote images are additionally readable by their group's members).
     let mut allowed = uploader_id == auth.user_id.0;
     if !allowed {
+        // Profile avatars are readable by every signed-in user: they appear
+        // next to messages, in member lists, and on profile cards, which
+        // `GET /users/{id}/profile` already exposes to any authenticated user.
+        let is_avatar: Option<(i64,)> =
+            sqlx::query_as("SELECT id FROM users WHERE avatar_attachment_id = ?")
+                .bind(attachment_id)
+                .fetch_optional(&state.pool)
+                .await?;
+        if is_avatar.is_some() {
+            allowed = true;
+        }
+    }
+    if !allowed {
+        // Group icons: readable by that group's members (the icon shows in
+        // the group rail and headers for everyone in the group).
+        let groups: Vec<(i64,)> =
+            sqlx::query_as("SELECT id FROM groups WHERE icon_attachment_id = ?")
+                .bind(attachment_id)
+                .fetch_all(&state.pool)
+                .await?;
+        for (group_id,) in groups {
+            if crate::perms::member_role(
+                &state.pool,
+                writform_proto::GroupId(group_id),
+                auth.user_id,
+            )
+            .await?
+            .is_some()
+            {
+                allowed = true;
+                break;
+            }
+        }
+    }
+    if !allowed {
         let channels: Vec<(i64,)> = sqlx::query_as(
             "SELECT DISTINCT m.channel_id FROM message_attachments ma
              JOIN messages m ON m.id = ma.message_id WHERE ma.attachment_id = ?",

@@ -36,6 +36,10 @@ export const chatApi = {
   createChannel: (groupId: number, name: string) =>
     api<Channel>("POST", `/api/v1/groups/${groupId}/channels`, { name }),
   members: (groupId: number) => api<Member[]>("GET", `/api/v1/groups/${groupId}/members`),
+  react: (messageId: number, emoji: string) =>
+    api<null>("POST", `/api/v1/messages/${messageId}/reactions`, { emoji }),
+  unreact: (messageId: number, emoji: string) =>
+    api<null>("DELETE", `/api/v1/messages/${messageId}/reactions/${encodeURIComponent(emoji)}`),
   presence: (groupId: number) =>
     api<PresenceSnapshot>("GET", `/api/v1/groups/${groupId}/presence`),
   emotes: (groupId: number) => api<Emote[]>("GET", `/api/v1/groups/${groupId}/emotes`),

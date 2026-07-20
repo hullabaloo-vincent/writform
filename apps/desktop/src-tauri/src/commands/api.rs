@@ -171,3 +171,39 @@ pub async fn save_export(
         .map_err(|e| CmdError::new("write_failed", format!("could not write export: {e}")))?;
     Ok(path.display().to_string())
 }
+
+/// Largest file the importer will pull into the webview. Imports are parsed
+/// in JS (mammoth/pdfjs), so this bounds memory in the renderer, not on disk.
+const MAX_IMPORT_BYTES: u64 = 64 * 1024 * 1024;
+
+/// Read a file the user dragged onto the app so the importer can parse it.
+///
+/// Native drag & drop hands us a path, not a `File` — and unlike chat
+/// uploads (which stream straight to the server) document import has to
+/// examine the bytes locally, so they have to come back to the webview.
+#[tauri::command]
+pub async fn read_dropped_file(path: String) -> Result<serde_json::Value, CmdError> {
+    let meta = tokio::fs::metadata(&path)
+        .await
+        .map_err(|e| CmdError::new("no_such_file", format!("cannot read {path}: {e}")))?;
+    if meta.is_dir() {
+        return Err(CmdError::new(
+            "is_directory",
+            "that's a folder — drop a single document file instead",
+        ));
+    }
+    if meta.len() > MAX_IMPORT_BYTES {
+        return Err(CmdError::new(
+            "too_large",
+            "that file is larger than 64 MB — import it in smaller pieces",
+        ));
+    }
+    let bytes = tokio::fs::read(&path)
+        .await
+        .map_err(|e| CmdError::new("read_failed", format!("could not read the file: {e}")))?;
+    let name = std::path::Path::new(&path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| "document".to_string());
+    Ok(serde_json::json!({ "name": name, "data_base64": B64.encode(&bytes) }))
+}

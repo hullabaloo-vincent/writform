@@ -99,6 +99,12 @@ export interface Backend {
   }): Promise<ApiResponse>;
   /** Save an export archive; resolves to a human-readable location. */
   saveExport(fileName: string, dataBase64: string): Promise<string>;
+  /** Read a natively drag-dropped file so the importer can parse its bytes. */
+  readDroppedFile(path: string): Promise<{ name: string; data_base64: string }>;
+  /** Microphone authorization: not_determined | restricted | denied | authorized. */
+  microphoneStatus(): Promise<string>;
+  /** Raise the OS microphone prompt when undecided; resolves to the outcome. */
+  requestMicrophoneAccess(): Promise<string>;
   wsSub(rooms: string[]): Promise<void>;
   wsUnsub(rooms: string[]): Promise<void>;
   /** Subscribe to WS frames; returns an unsubscribe fn. */
@@ -148,6 +154,9 @@ function tauriBackend(): Backend {
         fileName: fileName ?? null,
       }),
     saveExport: (fileName, dataBase64) => invoke("save_export", { fileName, dataBase64 }),
+    readDroppedFile: (path) => invoke("read_dropped_file", { path }),
+    microphoneStatus: () => invoke("microphone_status"),
+    requestMicrophoneAccess: () => invoke("request_microphone_access"),
     wsSub: (rooms) => invoke("ws_sub", { rooms }),
     wsUnsub: (rooms) => invoke("ws_unsub", { rooms }),
     onWsEvent: (handler) => {
@@ -223,6 +232,10 @@ function unavailableBackend(): Backend {
     apiFetch: fail,
     uploadAttachment: fail,
     saveExport: fail,
+    // In a browser the engine prompts on getUserMedia; nothing to pre-authorize.
+    readDroppedFile: fail,
+    microphoneStatus: async () => "authorized",
+    requestMicrophoneAccess: async () => "authorized",
     wsSub: fail,
     wsUnsub: fail,
     onWsEvent: () => () => {},

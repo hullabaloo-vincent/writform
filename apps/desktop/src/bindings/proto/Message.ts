@@ -2,10 +2,15 @@
 import type { AttachmentMeta } from "./AttachmentMeta";
 import type { ChannelId } from "./ChannelId";
 import type { MessageId } from "./MessageId";
+import type { MessageReaction } from "./MessageReaction";
 import type { UserRef } from "./UserRef";
 
 export type Message = { id: MessageId, channel_id: ChannelId, author: UserRef, 
 /**
  * "text" | "shared_note" | "system" | "plugin:<id>:<type>"
  */
-kind: string, content: string | null, reply_to_id: MessageId | null, attachments: Array<AttachmentMeta>, created_at: number, edited_at: number | null, };
+kind: string, content: string | null, reply_to_id: MessageId | null, attachments: Array<AttachmentMeta>, 
+/**
+ * Emoji reactions, grouped by emoji. Empty for most messages.
+ */
+reactions: Array<MessageReaction>, created_at: number, edited_at: number | null, };

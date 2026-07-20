@@ -7054,9 +7054,12 @@ version = "0.1.0"
 dependencies = [
  "axum-server",
  "base64 0.22.1",
+ "block2",
  "futures-util",
  "if-addrs",
  "igd-next",
+ "objc2",
+ "objc2-foundation",
  "rcgen",
  "reqwest 0.12.28",
  "rustls",

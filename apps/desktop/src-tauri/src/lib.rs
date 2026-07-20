@@ -1,6 +1,7 @@
 pub mod att_protocol;
 pub mod commands;
 pub mod host;
+mod media;
 pub mod net;
 pub mod plugins;
 pub mod servers;
@@ -64,6 +65,9 @@ pub fn run() {
             commands::api::api_fetch,
             commands::api::upload_attachment,
             commands::api::save_export,
+            commands::api::read_dropped_file,
+            media::microphone_status,
+            media::request_microphone_access,
             commands::connect::reset_password,
             wsclient::ws_sub,
             wsclient::ws_unsub,

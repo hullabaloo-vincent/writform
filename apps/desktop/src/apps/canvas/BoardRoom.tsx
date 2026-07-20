@@ -5,7 +5,9 @@ import {
   Bold,
   ExternalLink,
   Frame as FrameIcon,
+  ChevronDown,
   Grid3x3,
+  Map as MapIcon,
   Italic,
   Link2,
   List,
@@ -238,6 +240,7 @@ export function BoardRoom() {
   const elements = useCanvas((s) => s.elements);
   const closeBoard = useCanvas((s) => s.closeBoard);
   const hold = useCanvas((s) => s.hold);
+  const cursors = useCanvas((s) => s.cursors);
   const me = useSession((s) => s.session?.user);
   const groups = useChat((s) => s.groups);
 
@@ -260,6 +263,26 @@ export function BoardRoom() {
 
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Must live above the `!board` early return: hooks cannot be conditional.
+  const lastCursorSent = useRef(0);
+
+  // The wheel gesture zooms the board, but React registers `onWheel`
+  // passively, so the event also bubbles to `.wf-main` (overflow: auto) and
+  // scrolls the app shell — which flashes a scrollbar over the canvas while
+  // you work. Claiming it on a non-passive native listener stops that.
+  useEffect(() => {
+    const el = surfaceRef.current;
+    if (!el) return;
+    const swallow = (e: WheelEvent) => e.preventDefault();
+    el.addEventListener("wheel", swallow, { passive: false });
+    return () => el.removeEventListener("wheel", swallow);
+  }, [board?.id]);
+
+  // Peers do not announce leaving, so drop pointers that have gone quiet.
+  useEffect(() => {
+    const timer = setInterval(() => useCanvas.getState().pruneCursors(), 2000);
+    return () => clearInterval(timer);
+  }, []);
   const snapRef = useRef(snap);
   snapRef.current = snap;
   /** Quantize a world coordinate to the grid when snapping is on. */
@@ -315,11 +338,32 @@ export function BoardRoom() {
       refreshHistory((n) => n + 1);
     }
   };
-  const applyRemotePatch = async (logicalId: number, patch: Partial<CanvasElement>) => {
-    const id = resolveId(logicalId);
+  /**
+   * Optimistic edit + authoritative confirm.
+   *
+   * `patchLocal` deliberately leaves `updated_at` alone so the element's own
+   * echo still applies. The cost is that the local copy looks OLDER than it
+   * is, so any other echo arriving before the server confirms this patch wins
+   * the staleness comparison in `applyElement` and silently reverts the edit.
+   * With one person on a board there is no other traffic and it never shows;
+   * with two it reverts constantly. Holding the element for the duration of
+   * the request closes that window, and applying the response makes the local
+   * copy authoritative (correct `updated_at`) the moment it lands.
+   */
+  const commitPatch = async (id: number, patch: Partial<CanvasElement>) => {
     patchLocal(id, patch);
-    const updated = await canvasApi.updateElement(id, patch);
-    useCanvas.getState().applyElement(updated);
+    hold(id, true);
+    try {
+      const updated = await canvasApi.updateElement(id, patch);
+      hold(id, false); // release first: applyElement ignores held elements
+      useCanvas.getState().applyElement(updated);
+    } catch (e) {
+      hold(id, false);
+      throw e;
+    }
+  };
+  const applyRemotePatch = async (logicalId: number, patch: Partial<CanvasElement>) => {
+    await commitPatch(resolveId(logicalId), patch);
   };
   const recordPatch = (logicalId: number, before: Partial<CanvasElement>, after: Partial<CanvasElement>, label: string) => {
     if (JSON.stringify(before) === JSON.stringify(after)) return;
@@ -334,8 +378,7 @@ export function BoardRoom() {
     for (const key of Object.keys(patch) as (keyof CanvasElement)[]) {
       (before as Record<string, unknown>)[key] = el[key];
     }
-    patchLocal(el.id, patch);
-    canvasApi.updateElement(el.id, patch).catch(fail);
+    void commitPatch(el.id, patch).catch(fail);
     recordPatch(el.id, before, patch, label);
   };
   const recordCreate = (el: CanvasElement, label: string) => {
@@ -493,6 +536,29 @@ export function BoardRoom() {
   if (!board) return <div className="wf-sessions-empty">Loading…</div>;
   const group = groups.find((g) => g.id === board.group_id);
   const canDelete = me && (board.creator.id === me.id || group?.my_role === "admin");
+
+  // Broadcast our pointer to peers, throttled. Fire-and-forget: a dropped
+  // frame is corrected by the next move, so failures are ignored.
+  const broadcastCursor = (clientX: number, clientY: number) => {
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const now = Date.now();
+    if (now - lastCursorSent.current < 50) return; // ~20/s
+    lastCursorSent.current = now;
+    const { x, y } = toWorld(clientX, clientY);
+    void canvasApi.cursor(boardId, x, y).catch(() => {});
+  };
+
+  /** Centre the viewport on a world point (used by the minimap). */
+  const jumpTo = (worldX: number, worldY: number) => {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    setView((v) => ({
+      ...v,
+      tx: rect.width / 2 - worldX * v.scale,
+      ty: rect.height / 2 - worldY * v.scale,
+    }));
+  };
 
   const toWorld = (clientX: number, clientY: number) => {
     const rect = surfaceRef.current!.getBoundingClientRect();
@@ -698,10 +764,19 @@ export function BoardRoom() {
       window.removeEventListener("pointerup", onUp);
       for (const [id, pos] of last) {
         const origin = origins.get(id);
+        // The element stays held until the server confirms this final
+        // position, then the response makes the local copy authoritative —
+        // otherwise a concurrent echo can snap it back to where it was.
         canvasApi
           .updateElement(id, pos)
-          .catch(fail)
-          .finally(() => hold(id, false));
+          .then((updated) => {
+            hold(id, false);
+            useCanvas.getState().applyElement(updated);
+          })
+          .catch((e) => {
+            hold(id, false);
+            fail(e);
+          });
         if (origin) recordPatch(id, origin, pos, dragSet.size > 1 ? "Move selection" : "Move element");
       }
     };
@@ -735,8 +810,14 @@ export function BoardRoom() {
       window.removeEventListener("pointerup", onUp);
       canvasApi
         .updateElement(el.id, last)
-        .catch(fail)
-        .finally(() => hold(el.id, false));
+        .then((updated) => {
+          hold(el.id, false);
+          useCanvas.getState().applyElement(updated);
+        })
+        .catch((e) => {
+          hold(el.id, false);
+          fail(e);
+        });
       recordPatch(el.id, origin, last, "Resize element");
     };
     window.addEventListener("pointermove", onMove);
@@ -796,6 +877,7 @@ export function BoardRoom() {
         ref={surfaceRef}
         className={`wf-board wf-board-tool-${tool}`}
         onPointerDown={onSurfaceDown}
+        onPointerMove={(e) => broadcastCursor(e.clientX, e.clientY)}
         onWheel={(e) => zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.08 : 1 / 1.08)}
       >
         <div
@@ -948,7 +1030,29 @@ export function BoardRoom() {
               }}
             />
           )}
+
+          {/* Peers' pointers live in world space so they track the board as
+              you pan and zoom; the counter-scale keeps them a constant size. */}
+          {Object.values(cursors).map((c) => (
+            <div
+              key={c.user.id}
+              className="wf-cursor"
+              style={{
+                left: c.x,
+                top: c.y,
+                transform: `scale(${1 / view.scale})`,
+                color: c.user.accent_color ?? cursorColor(c.user.username),
+              }}
+            >
+              <MousePointer2 size={16} className="wf-cursor-arrow" />
+              <span className="wf-cursor-label">
+                {c.user.display_name ?? c.user.username}
+              </span>
+            </div>
+          ))}
         </div>
+
+        <Minimap elements={elements} view={view} surfaceRef={surfaceRef} onJump={jumpTo} />
 
         <div className="wf-board-toolbar" onPointerDown={(e) => e.stopPropagation()}>
           <ToolButton tool="select" active={tool} set={setTool} title="Select / pan">
@@ -1303,5 +1407,154 @@ function ConnectorControls({
         {CAP_LABEL[cs.end_cap]}
       </button>
     </>
+  );
+}
+
+
+/** Stable per-user cursor colour when they have no accent set. */
+const CURSOR_COLORS = ["#c96f4a", "#5a9e6f", "#5d8fc9", "#a878c9", "#c9a44a", "#c96f9a", "#4aa8a0"];
+function cursorColor(name: string): string {
+  let h = 0;
+  for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+  return CURSOR_COLORS[h % CURSOR_COLORS.length];
+}
+
+/** Bounding box of everything on the board, in world coordinates. */
+function contentBounds(elements: Record<number, CanvasElement>) {
+  const items = Object.values(elements).filter((el) => el.kind !== "connector");
+  if (items.length === 0) return null;
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const el of items) {
+    minX = Math.min(minX, el.x);
+    minY = Math.min(minY, el.y);
+    maxX = Math.max(maxX, el.x + el.w);
+    maxY = Math.max(maxY, el.y + el.h);
+  }
+  return { minX, minY, maxX, maxY };
+}
+
+const MINIMAP_W = 180;
+const MINIMAP_H = 120;
+
+/**
+ * Overview of the board with the current viewport drawn on it. Click or drag
+ * to recentre. Hidden on an empty board, where it would show nothing useful.
+ */
+function Minimap({
+  elements,
+  view,
+  surfaceRef,
+  onJump,
+}: {
+  elements: Record<number, CanvasElement>;
+  view: Viewport;
+  surfaceRef: React.RefObject<HTMLDivElement | null>;
+  onJump: (worldX: number, worldY: number) => void;
+}) {
+  const [collapsed, setCollapsed] = useState(
+    () => localStorage.getItem("wf-canvas-minimap") === "off",
+  );
+  const bounds = contentBounds(elements);
+  if (!bounds) return null;
+
+  const rect = surfaceRef.current?.getBoundingClientRect();
+  // Include the visible viewport in the extent so the indicator stays inside
+  // the minimap even when you pan away from the content.
+  const viewW = (rect?.width ?? 800) / view.scale;
+  const viewH = (rect?.height ?? 600) / view.scale;
+  const viewX = -view.tx / view.scale;
+  const viewY = -view.ty / view.scale;
+  const minX = Math.min(bounds.minX, viewX);
+  const minY = Math.min(bounds.minY, viewY);
+  const maxX = Math.max(bounds.maxX, viewX + viewW);
+  const maxY = Math.max(bounds.maxY, viewY + viewH);
+  const pad = 40;
+  const worldW = maxX - minX + pad * 2;
+  const worldH = maxY - minY + pad * 2;
+  const scale = Math.min(MINIMAP_W / worldW, MINIMAP_H / worldH);
+  const toMini = (x: number, y: number) => ({
+    left: (x - minX + pad) * scale,
+    top: (y - minY + pad) * scale,
+  });
+
+  const jumpFromEvent = (e: React.PointerEvent<HTMLDivElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    const worldX = (e.clientX - box.left) / scale + minX - pad;
+    const worldY = (e.clientY - box.top) / scale + minY - pad;
+    onJump(worldX, worldY);
+  };
+
+  if (collapsed) {
+    return (
+      <button
+        className="wf-minimap-toggle wf-icon"
+        title="Show minimap"
+        // Without this the board's pan handler takes pointer capture and the
+        // click never lands on the button (the expanded minimap stops it on
+        // its wrapper for the same reason).
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={() => {
+          setCollapsed(false);
+          localStorage.setItem("wf-canvas-minimap", "on");
+        }}
+      >
+        <MapIcon size={15} />
+      </button>
+    );
+  }
+
+  return (
+    <div className="wf-minimap" onPointerDown={(e) => e.stopPropagation()}>
+      <div
+        className="wf-minimap-surface"
+        style={{ width: MINIMAP_W, height: MINIMAP_H }}
+        onPointerDown={(e) => {
+          e.currentTarget.setPointerCapture(e.pointerId);
+          jumpFromEvent(e);
+        }}
+        onPointerMove={(e) => {
+          if (e.buttons === 1) jumpFromEvent(e);
+        }}
+      >
+        {Object.values(elements)
+          .filter((el) => el.kind !== "connector")
+          .map((el) => {
+            const pos = toMini(el.x, el.y);
+            return (
+              <span
+                key={el.id}
+                className={`wf-minimap-el ${el.kind === "frame" ? "frame" : ""}`}
+                style={{
+                  ...pos,
+                  width: Math.max(2, el.w * scale),
+                  height: Math.max(2, el.h * scale),
+                  background:
+                    el.kind === "sticky"
+                      ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow)
+                      : undefined,
+                }}
+              />
+            );
+          })}
+        <span
+          className="wf-minimap-view"
+          style={{
+            ...toMini(viewX, viewY),
+            width: Math.max(6, viewW * scale),
+            height: Math.max(6, viewH * scale),
+          }}
+        />
+      </div>
+      <button
+        className="wf-minimap-hide wf-icon"
+        title="Hide minimap"
+        onClick={() => {
+          setCollapsed(true);
+          localStorage.setItem("wf-canvas-minimap", "off");
+        }}
+      >
+        <ChevronDown size={13} />
+      </button>
+    </div>
   );
 }

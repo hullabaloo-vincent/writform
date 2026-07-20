@@ -148,10 +148,32 @@ pub struct Message {
     pub content: Option<String>,
     pub reply_to_id: Option<MessageId>,
     pub attachments: Vec<AttachmentMeta>,
+    /// Emoji reactions, grouped by emoji. Empty for most messages.
+    #[serde(default)]
+    pub reactions: Vec<MessageReaction>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
     #[ts(type = "number | null")]
     pub edited_at: Option<UnixMillis>,
+}
+
+/// One emoji's reaction tally on a message.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MessageReaction {
+    pub emoji: String,
+    #[ts(type = "number")]
+    pub count: i64,
+    /// Whether the requesting user is among the reactors.
+    pub me: bool,
+    /// Display names of reactors, for the hover tooltip (capped server-side).
+    pub users: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ReactRequest {
+    pub emoji: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

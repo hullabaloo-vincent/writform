@@ -133,6 +133,7 @@ pub async fn share_note(
         content: Some(payload),
         reply_to_id: None,
         attachments: vec![],
+        reactions: vec![],
         created_at: now,
         edited_at: None,
     };

@@ -209,6 +209,7 @@ pub async fn create_session(
             content: Some(card_content),
             reply_to_id: None,
             attachments: vec![],
+            reactions: vec![],
             created_at: now,
             edited_at: None,
         })

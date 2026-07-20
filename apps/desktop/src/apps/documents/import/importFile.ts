@@ -57,6 +57,12 @@ export async function importFile(file: File): Promise<Document> {
       break;
     }
     case "pages": {
+      // A .pages bundle is a zip. Pages stores the actual text as compressed
+      // protobuf in Index/*.iwa, which there is no practical way to parse
+      // here, so import relies on the PDF preview Pages *optionally* embeds.
+      // Modern versions only include it when "Include preview in document"
+      // was enabled, so the common case is that there is nothing to read and
+      // the message has to say what to do instead.
       const { default: JSZip } = await import("jszip");
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
       const preview =
@@ -64,10 +70,12 @@ export async function importFile(file: File): Promise<Document> {
         zip.file("preview.pdf") ??
         zip.file(/preview\.pdf$/i)[0];
       if (!preview) {
+        const isModern = zip.file(/^Index\/.*\.iwa$/i).length > 0;
         throw {
           code: "pages_no_preview",
-          message:
-            "This .pages file has no embedded preview. In Pages, use File → Export To → PDF or Word, then import that.",
+          message: isModern
+            ? "Pages stores this document in a format WritForm can't read directly, and this file has no embedded PDF preview. In Pages, choose File → Export To → Word (or PDF) and import that instead."
+            : "This .pages file has no embedded preview to import. In Pages, choose File → Export To → Word (or PDF) and import that instead.",
         };
       }
       const imported = await pdfToDocument(await preview.async("arraybuffer"));

@@ -21,6 +21,7 @@ import {
   type Reachability,
   type SavedServer,
 } from "../../lib/backend";
+import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
 import {
   loadVoiceSettings,
@@ -263,11 +264,7 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
   const startTest = async () => {
     onError(null);
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        audio: settings.inputDeviceId
-          ? { deviceId: { ideal: settings.inputDeviceId } }
-          : true,
-      });
+      const stream = await getMicrophoneStream(settings.inputDeviceId);
       // Labels become available once permission is granted.
       void refreshDevices();
       const ctx = new AudioContext();
@@ -293,9 +290,11 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
       };
       setTesting(true);
     } catch (e) {
+      // MicrophoneError already carries the actionable wording (e.g. how to
+      // re-enable access in System Settings).
       onError(
-        e instanceof DOMException
-          ? "microphone access was denied"
+        e instanceof MicrophoneError
+          ? e.message
           : isCmdError(e)
             ? e.message
             : String(e),

@@ -15,7 +15,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
-import { isCmdError } from "../../lib/backend";
+import { backend, isCmdError } from "../../lib/backend";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { documentsApi } from "./api";
@@ -54,6 +54,7 @@ export function DocumentsView() {
   const [format, setFormat] = useState("none");
   const [importing, setImporting] = useState<string | null>(null);
   const [exporting, setExporting] = useState(false);
+  const [dropping, setDropping] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const [query, setQuery] = useState("");
@@ -99,6 +100,37 @@ export function DocumentsView() {
     };
   }, [menu]);
 
+  // Native drag & drop. Tauri swallows OS file drags before the webview sees
+  // them, so the HTML5 `onDrop` below never fires in the packaged app — the
+  // paths arrive here instead, and the bytes come back through the core.
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (event.payload.type === "over") {
+            setDropping(true);
+          } else if (event.payload.type === "drop") {
+            setDropping(false);
+            void importDroppedPaths(event.payload.paths);
+          } else {
+            setDropping(false);
+          }
+        })
+        .then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
+        }),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   if (activeDocId !== null) return <DocumentEditor />;
 
   const searching = results !== null;
@@ -138,13 +170,38 @@ export function DocumentsView() {
     }
   };
 
-  const onImportFiles = async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    const file = files[0];
+  const importOne = async (file: File) => {
     setImporting(file.name);
     try {
       const { importFile } = await import("./import/importFile");
       const doc = await importFile(file);
+      refresh();
+      await openDocument(doc.id);
+    } catch (e) {
+      fail(e);
+    } finally {
+      setImporting(null);
+    }
+  };
+
+  const onImportFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    await importOne(files[0]);
+  };
+
+  /** Native drop: read the path's bytes back and reuse the normal importer. */
+  const importDroppedPaths = async (paths: string[]) => {
+    const path = paths[0];
+    if (!path) return;
+    const name = path.split(/[/\\]/).pop() ?? "document";
+    setImporting(name);
+    try {
+      const { name: fileName, data_base64 } = await backend.readDroppedFile(path);
+      const binary = atob(data_base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const { importFile } = await import("./import/importFile");
+      const doc = await importFile(new File([bytes], fileName));
       refresh();
       await openDocument(doc.id);
     } catch (e) {
@@ -257,7 +314,7 @@ export function DocumentsView() {
 
   return (
     <div
-      className="wf-documents"
+      className={`wf-documents ${dropping ? "dropping" : ""}`}
       onDragOver={(e) => e.preventDefault()}
       onDrop={(e) => {
         e.preventDefault();

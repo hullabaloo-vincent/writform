@@ -5,6 +5,7 @@ import type { VoiceChannel } from "../../bindings/proto/VoiceChannel";
 import type { VoiceChannelInfo } from "../../bindings/proto/VoiceChannelInfo";
 import type { VoiceJoinResponse } from "../../bindings/proto/VoiceJoinResponse";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
+import { getMicrophoneStream } from "../../lib/microphone";
 import { loadVoiceSettings, onVoiceSettingsChange } from "../../lib/voiceSettings";
 import { useSession } from "../../stores/session";
 
@@ -245,13 +246,9 @@ export const useVoice = create<VoiceState>((set, get) => ({
         for (const id of [...peers.keys()]) closePeer(id);
       }
       const settings = loadVoiceSettings();
-      const stream =
-        localStream ??
-        (await navigator.mediaDevices.getUserMedia({
-          audio: settings.inputDeviceId
-            ? { deviceId: { ideal: settings.inputDeviceId } }
-            : true,
-        }));
+      // Resolves the macOS permission gate first: a WKWebView never raises
+      // the system prompt on its own, so without this the call just fails.
+      const stream = localStream ?? (await getMicrophoneStream(settings.inputDeviceId));
       if (generation !== joinGeneration) {
         // Cancelled while waiting on the mic prompt.
         stream.getTracks().forEach((t) => t.stop());

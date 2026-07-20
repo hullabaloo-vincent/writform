@@ -181,12 +181,37 @@ export function devPreviewBackend(): Backend {
         content: "welcome to the guild! ✍️",
         reply_to_id: null,
         attachments: [],
+        reactions: [],
         created_at: Date.now() - 60_000,
         edited_at: null,
       },
     ],
     2: [],
   };
+  /** message id -> emoji -> reacting user ids. */
+  const previewReactions: Record<number, Record<string, number[]>> = {};
+  const emitReactions = (messageId: number) => {
+    let channelId = 0;
+    for (const [cid, list] of Object.entries(messages)) {
+      if ((list as { id: number }[]).some((mm) => mm.id === messageId)) channelId = Number(cid);
+    }
+    const grouped = Object.entries(previewReactions[messageId] ?? {}).map(([emoji, ids]) => ({
+      emoji,
+      count: ids.length,
+      user_ids: ids,
+      users: ids.map((id) => (id === me.id ? "you" : "Ink Friend")),
+    }));
+    setTimeout(
+      () =>
+        emit(`channel:${channelId}`, "message.reactions", {
+          channel_id: channelId,
+          message_id: messageId,
+          reactions: grouped,
+        }),
+      20,
+    );
+  };
+
   const mockApi = (method: string, path: string, body: unknown): ApiResponse => {
     const m = (re: RegExp) => path.match(re);
     let match: RegExpMatchArray | null;
@@ -957,6 +982,31 @@ export function devPreviewBackend(): Backend {
       return { status: 404, body: { code: "no_such_thread", message: "preview" } };
     }
 
+    // --- reactions ---
+    if ((match = m(/^\/api\/v1\/messages\/(\d+)\/reactions$/)) && method === "POST") {
+      const mid = Number(match[1]);
+      const emoji = (body as { emoji: string }).emoji;
+      const set = previewReactions[mid] ?? (previewReactions[mid] = {});
+      set[emoji] = set[emoji] ?? [];
+      if (!set[emoji].includes(me.id)) set[emoji].push(me.id);
+      emitReactions(mid);
+      return { status: 204, body: null };
+    }
+    if ((match = m(/^\/api\/v1\/messages\/(\d+)\/reactions\/(.+)$/)) && method === "DELETE") {
+      const mid = Number(match[1]);
+      const emoji = decodeURIComponent(match[2]);
+      const set = previewReactions[mid];
+      if (set?.[emoji]) {
+        set[emoji] = set[emoji].filter((u) => u !== me.id);
+        if (set[emoji].length === 0) delete set[emoji];
+      }
+      emitReactions(mid);
+      return { status: 204, body: null };
+    }
+    if (m(/^\/api\/v1\/boards\/(\d+)\/cursor$/) && method === "POST") {
+      return { status: 204, body: null }; // no peers in the preview
+    }
+
     return { status: 404, body: { code: "mock_unhandled", message: `mock: ${method} ${path}` } };
   };
 
@@ -965,6 +1015,13 @@ export function devPreviewBackend(): Backend {
       await delay(120);
       return mockApi(method.toUpperCase(), path, body);
     },
+    // The browser engine prompts on getUserMedia, so there is no native
+    // gate to pre-authorize in the preview.
+    readDroppedFile: async () => {
+      throw { code: "mock", message: "native drag-drop needs the real app" } as CmdError;
+    },
+    microphoneStatus: async () => "authorized",
+    requestMicrophoneAccess: async () => "authorized",
     saveExport: async (fileName, dataBase64) => {
       // Browser preview: a plain download.
       const bin = atob(dataBase64);

@@ -465,3 +465,48 @@ pub async fn delete_element(
     );
     Ok(StatusCode::NO_CONTENT)
 }
+
+/// Live cursor position, relayed and immediately forgotten.
+///
+/// Deliberately not persisted or rate-limited server-side: it is pure
+/// presence, the client throttles it, and a dropped frame self-corrects on
+/// the next pointer move. Mirrors how document awareness works.
+#[derive(serde::Deserialize)]
+pub struct CursorRequest {
+    pub x: f64,
+    pub y: f64,
+}
+
+pub async fn board_cursor(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(board_id): Path<i64>,
+    Json(req): Json<CursorRequest>,
+) -> Result<StatusCode, AppError> {
+    require_board_access(&state, board_id, auth.user_id).await?;
+    if !req.x.is_finite() || !req.y.is_finite() {
+        return Err(AppError::bad_request("bad_cursor", "cursor must be finite"));
+    }
+    let (username, display_name, avatar, accent): (
+        String,
+        Option<String>,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(auth.user_id.0)
+    .fetch_one(&state.pool)
+    .await?;
+    state.ws.broadcast(
+        &format!("canvas:{board_id}"),
+        "canvas.cursor",
+        serde_json::json!({
+            "board_id": board_id,
+            "user": perms::user_ref(auth.user_id, username, display_name, avatar, accent),
+            "x": req.x,
+            "y": req.y,
+        }),
+    );
+    Ok(StatusCode::NO_CONTENT)
+}

@@ -703,24 +703,107 @@ export function MessageActions({
   const group = groups.find((g) => g.id === activeGroupId);
   const canDelete =
     me && (message.author.id === me.id || (!authorOnly && group?.my_role === "admin"));
-  if (!canDelete) return null;
+  const [pickerOpen, setPickerOpen] = useState(false);
+
+  // Session/document cards are UI affordances rather than conversation, so
+  // they get no reaction bar.
+  const canReact = message.kind === "text" || message.kind === "shared_note";
+
   return (
     <span className="wf-msg-actions">
-      <button
-        title="Delete message"
-        onClick={() =>
-          void confirmDialog("Delete this message for everyone?", {
-            title: "Delete message",
-            confirmLabel: "Delete",
-            danger: true,
-          }).then((ok) => {
-            if (ok) void chatApi.deleteMessage(message.id).catch(() => {});
-          })
-        }
-      >
-        <Trash2 size={13} />
-      </button>
+      {canReact && (
+        <span className="wf-react-anchor">
+          <button
+            className="wf-icon"
+            title="Add reaction"
+            onClick={() => setPickerOpen((v) => !v)}
+          >
+            <SmilePlus size={13} />
+          </button>
+          {pickerOpen && (
+            <ReactionPicker
+              onPick={(emoji) => {
+                setPickerOpen(false);
+                void chatApi.react(message.id, emoji).catch(() => {});
+              }}
+              onClose={() => setPickerOpen(false)}
+            />
+          )}
+        </span>
+      )}
+      {canDelete && (
+        <button
+          className="wf-icon"
+          title="Delete message"
+          onClick={() =>
+            void confirmDialog("Delete this message for everyone?", {
+              title: "Delete message",
+              confirmLabel: "Delete",
+              danger: true,
+            }).then((ok) => {
+              if (ok) void chatApi.deleteMessage(message.id).catch(() => {});
+            })
+          }
+        >
+          <Trash2 size={13} />
+        </button>
+      )}
     </span>
+  );
+}
+
+/** A small fixed palette — enough to react quickly without a search UI. */
+const QUICK_REACTIONS = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F389}", "\u{1F440}", "\u{1F525}", "\u{1F62E}", "\u{1F622}"];
+
+function ReactionPicker({
+  onPick,
+  onClose,
+}: {
+  onPick: (emoji: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const close = () => onClose();
+    // Deferred so the click that opened the picker doesn't immediately close it.
+    const timer = setTimeout(() => window.addEventListener("pointerdown", close), 0);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener("pointerdown", close);
+    };
+  }, [onClose]);
+  return (
+    <span className="wf-react-picker" onPointerDown={(e) => e.stopPropagation()}>
+      {QUICK_REACTIONS.map((emoji) => (
+        <button key={emoji} className="wf-react-option" onClick={() => onPick(emoji)}>
+          {emoji}
+        </button>
+      ))}
+    </span>
+  );
+}
+
+/** Reaction pills under a message; clicking toggles your own reaction. */
+function MessageReactions({ message }: { message: Message }) {
+  if (message.reactions.length === 0) return null;
+  return (
+    <div className="wf-reactions">
+      {message.reactions.map((r) => (
+        <button
+          key={r.emoji}
+          className={`wf-reaction ${r.me ? "mine" : ""}`}
+          title={r.users.join(", ")}
+          onClick={() =>
+            void (r.me
+              ? chatApi.unreact(message.id, r.emoji)
+              : chatApi.react(message.id, r.emoji)
+            ).catch(() => {})
+          }
+        >
+          <span className="wf-reaction-emoji">{r.emoji}</span>
+          {r.count}
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -854,6 +937,7 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
         />
       ))}
       {message.edited_at && <span className="wf-msg-edited">(edited)</span>}
+      <MessageReactions message={message} />
     </div>
   );
 }

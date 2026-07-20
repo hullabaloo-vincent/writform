@@ -300,7 +300,7 @@ function PickServer({
                 {host.server_name}{" "}
                 <span className="wf-server-badge">this computer</span>
               </span>
-              <span className="wf-server-addr">
+              <span className="wf-server-status">
                 {host.running ? `running · port ${host.port}` : "stopped — click to start"}
               </span>
             </button>

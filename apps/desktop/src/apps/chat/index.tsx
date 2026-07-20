@@ -2,7 +2,7 @@ import { MessagesSquare } from "lucide-react";
 import { onResync } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { ChatView, GlobalVoiceBar } from "./ChatView";
-import { installChatWsHandler, resyncChat } from "./store";
+import { installChatPresenceSync, installChatWsHandler, resyncChat } from "./store";
 import { installVoiceWsHandler } from "./voice";
 
 export const chatApp: WritformApp = {
@@ -20,6 +20,7 @@ export const chatApp: WritformApp = {
       render: () => <GlobalVoiceBar />,
     });
     installChatWsHandler();
+    installChatPresenceSync();
     installVoiceWsHandler();
     onResync(() => void resyncChat().catch(() => {}));
     onResync(() => {

@@ -199,9 +199,18 @@ pub fn router(state: AppState) -> Router {
             get(canvas::board_detail).delete(canvas::delete_board),
         )
         .route("/api/v1/boards/{id}/elements", post(canvas::create_element))
+        .route("/api/v1/boards/{id}/cursor", post(canvas::board_cursor))
         .route(
             "/api/v1/elements/{id}",
             patch(canvas::update_element).delete(canvas::delete_element),
+        )
+        .route(
+            "/api/v1/messages/{id}/reactions",
+            post(messages::add_reaction),
+        )
+        .route(
+            "/api/v1/messages/{id}/reactions/{emoji}",
+            delete(messages::remove_reaction),
         )
         .route("/api/v1/attachments", post(attachments::upload))
         .route("/api/v1/attachments/{id}", get(attachments::download))
