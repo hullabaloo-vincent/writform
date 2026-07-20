@@ -11,20 +11,14 @@ palette), and third-party plugins use the exact same extension points — see
 
 ## Install
 
-Grab a build from [Releases](https://github.com/hullabaloo-vincent/writform/releases).
+**Windows / Linux:** grab the installer from
+[Releases](https://github.com/hullabaloo-vincent/writform/releases).
 
-**macOS:** the app is ad-hoc signed but not notarized (that needs a paid Apple
-Developer account), so a downloaded copy needs one command after you drag it to
-Applications:
-
-```sh
-xattr -dr com.apple.quarantine /Applications/WritForm.app
-```
-
-To skip that entirely, build it locally — apps compiled on your own Mac are
-never quarantined. Double-click **`scripts/Build WritForm (macOS).command`**;
-it checks for Xcode Command Line Tools, Node, and Rust, offers to install
-anything missing, and drops the finished app in Applications.
+**macOS:** build it locally — notarizing a download needs a paid Apple Developer
+account, but apps compiled on your own Mac are never quarantined, so they just
+open. Double-click **`scripts/Build WritForm (macOS).command`**; it checks for
+Xcode Command Line Tools, Node, and Rust, offers to install anything missing,
+and drops the finished app in Applications.
 
 See the [setup guide](docs-site/docs/setup.md) for connecting to or hosting a
 server.

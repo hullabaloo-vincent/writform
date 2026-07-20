@@ -48,13 +48,14 @@ jobs:
         with:
           files: target/release/writform-server
 
+  # macOS is intentionally absent: those builds ship as source. Users build
+  # locally with scripts/Build WritForm (macOS).command, which avoids the
+  # Gatekeeper quarantine that an unnotarized downloaded .app would hit.
   desktop:
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: "--target universal-apple-darwin"
           - platform: ubuntu-latest
             args: ""
           - platform: windows-latest
@@ -63,8 +64,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
         with:
@@ -87,25 +86,16 @@ jobs:
           tagName: ${{ github.ref_name }}
           releaseName: "WritForm ${{ github.ref_name }}"
           releaseDraft: true
-          # The macOS build is ad-hoc signed but not notarized (that needs a
-          # paid Apple Developer account), so first launch needs one command.
           releaseBody: |
             ## Install
 
-            **macOS** — drag WritForm to Applications, then run once:
-
-            ```sh
-            xattr -dr com.apple.quarantine /Applications/WritForm.app
-            ```
-
-            WritForm is signed but not notarized (notarization requires a paid
-            Apple Developer membership). Without this, macOS refuses to open
-            it. You can instead open it once and choose **Open Anyway** in
-            System Settings → Privacy & Security. On macOS 15+ the old
-            Control-click → Open shortcut no longer works.
-
             **Windows / Linux** — download the installer for your platform below.
 
-            See the [setup guide](https://hullabaloo-vincent.github.io/writform/setup/)
-            for connecting to or hosting a server.
+            **macOS** — build from source (one double-click). Downloading an
+            unnotarized `.app` would trip Gatekeeper; building locally avoids
+            that entirely. Clone the repo and run
+            `scripts/Build WritForm (macOS).command` — it checks for and offers
+            to install everything the build needs. See the
+            [setup guide](https://hullabaloo-vincent.github.io/writform/setup/)
+            for details and for connecting to or hosting a server.
           args: ${{ matrix.args }}
