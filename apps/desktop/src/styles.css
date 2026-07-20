@@ -4438,3 +4438,48 @@ textarea.wf-el-edit {
 .wf-el-img {
   transform-origin: center;
 }
+
+/* ---- floating contextual toolbar (canvas selection) ---- */
+
+/*
+ * Anchored to the selected element in screen space rather than living in the
+ * bottom bar, so the controls sit where you are working and the global bar
+ * keeps a stable width.
+ */
+.wf-selection-toolbar {
+  position: absolute;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  max-width: min(560px, calc(100% - 24px));
+  flex-wrap: wrap;
+  justify-content: center;
+  padding: 5px 7px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  /* Centred on the selection, sitting just above its top edge. */
+  transform: translate(-50%, -100%);
+}
+
+.wf-selection-toolbar.below {
+  transform: translate(-50%, 0);
+}
+
+.wf-selection-toolbar button {
+  min-height: 0;
+  height: 28px;
+}
+
+.wf-selection-toolbar select {
+  min-height: 0;
+  height: 28px;
+  font-size: 12px;
+}
+
+/* Swatches stay circular at the smaller toolbar height. */
+.wf-selection-toolbar .wf-board-swatch {
+  height: 22px !important;
+}

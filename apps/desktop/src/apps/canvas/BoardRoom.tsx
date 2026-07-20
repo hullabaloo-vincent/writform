@@ -683,7 +683,11 @@ export function BoardRoom() {
       return;
     }
     // Pan.
-    setSelected(new Set());
+    // A click that closes an open text editor only leaves edit mode — the
+    // element stays selected so it can be dragged straight away. Clicking
+    // blank canvas again then deselects, so one gesture changes one thing.
+    if (editing === null) setSelected(new Set());
+    setEditing(null);
     setConnectFrom(null);
     const start = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
     const target = e.currentTarget;
@@ -908,6 +912,46 @@ export function BoardRoom() {
     .sort(byId);
   const connectors = all.filter((el) => el.kind === "connector");
     // Single-selection element (color swatches, connector styling, resize).
+  /**
+   * Where to float the contextual toolbar: centred over the selection's top
+   * edge, in SCREEN space (the stage is transformed, so world coords are
+   * converted through the current viewport). Flips below when it would sit
+   * off the top of the board.
+   */
+  const selectionBox = (() => {
+    if (selected.size === 0) return null;
+    const picked = [...selected].map((id) => elements[id]).filter(Boolean);
+    if (picked.length === 0) return null;
+    // Connectors have no meaningful box; anchor to their endpoints instead.
+    const boxes = picked.map((el) => {
+      if (el.kind !== "connector") return el;
+      const from = el.from_id !== null ? elements[el.from_id] : undefined;
+      const to = el.to_id !== null ? elements[el.to_id] : undefined;
+      if (!from || !to) return el;
+      const x = Math.min(from.x, to.x);
+      const y = Math.min(from.y, to.y);
+      return {
+        x,
+        y,
+        w: Math.max(from.x + from.w, to.x + to.w) - x,
+        h: Math.max(from.y + from.h, to.y + to.h) - y,
+      };
+    });
+    const minX = Math.min(...boxes.map((b) => b.x));
+    const minY = Math.min(...boxes.map((b) => b.y));
+    const maxX = Math.max(...boxes.map((b) => b.x + b.w));
+    const centreX = (minX + maxX) / 2;
+    const screenX = centreX * view.scale + view.tx;
+    const screenY = minY * view.scale + view.ty;
+    const GAP = 12;
+    const below = screenY < 64; // not enough headroom above the selection
+    return {
+      left: screenX,
+      top: below ? screenY + (Math.max(...boxes.map((b) => b.y + b.h)) - minY) * view.scale + GAP : screenY - GAP,
+      below,
+    };
+  })();
+
   const soleId = selected.size === 1 ? [...selected][0] : null;
   const selectedEl = soleId !== null ? elements[soleId] : undefined;
 
@@ -1140,6 +1184,93 @@ export function BoardRoom() {
           ))}
         </div>
 
+        {selectionBox && (
+          <div
+            className={`wf-selection-toolbar ${selectionBox.below ? "below" : ""}`}
+            style={{ left: selectionBox.left, top: selectionBox.top }}
+            // Keep the board from panning, and keep focus where it is so
+            // formatting an element mid-edit doesn't close its text editor.
+            onPointerDown={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            {selectedEl && selectedEl.kind === "connector" && (
+              <ConnectorControls
+                connector={selectedEl}
+                onChange={(cs) => {
+                  const text = JSON.stringify(cs);
+                  applyPatchWithHistory(selectedEl, { text }, "Style connector");
+                }}
+              />
+            )}
+            {selectedEl && selectedEl.kind === "sticky" && (
+              <>
+                {Object.entries(STICKY_COLORS).map(([key, css]) => (
+                  <button
+                    key={key}
+                    className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
+                    style={{ background: css }}
+                    title={key}
+                    onClick={() => {
+                      applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color");
+                    }}
+                  />
+                ))}
+              </>
+            )}
+            {selectedEl && selectedEl.kind === "image" && (
+              <ImageControls
+                element={selectedEl}
+                onChange={(st) =>
+                  applyPatchWithHistory(selectedEl, { style: JSON.stringify(st) }, "Transform image")
+                }
+                onFitBox={() => fitImageToContent(selectedEl)}
+              />
+            )}
+            {selectedEl && selectedEl.kind === "frame" && (
+              <>
+                <button
+                  className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
+                  title="No fill"
+                  onClick={() => {
+                    applyPatchWithHistory(selectedEl, { color: "" }, "Change frame fill");
+                  }}
+                />
+                {Object.entries(FRAME_COLORS).map(([key, css]) => (
+                  <button
+                    key={key}
+                    className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
+                    style={{ background: css.border }}
+                    title={key}
+                    onClick={() => {
+                      applyPatchWithHistory(selectedEl, { color: key }, "Change frame fill");
+                    }}
+                  />
+                ))}
+              </>
+            )}
+            {selectedEl && (selectedEl.kind === "sticky" || selectedEl.kind === "text") && (
+              <TextStyleControls
+                element={selectedEl}
+                onChange={(st) => {
+                  const style = JSON.stringify(st);
+                  applyPatchWithHistory(selectedEl, { style }, "Format text");
+                }}
+              />
+            )}
+            {selected.size > 0 && (
+              <>
+                {selectedEl && <span className="wf-board-toolbar-sep" />}
+                <button
+                  title="Delete element"
+                  onClick={() => deleteSelected(selected)}
+                >
+                  <Trash2 size={17} />
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         <Minimap elements={elements} view={view} surfaceRef={surfaceRef} onJump={jumpTo} />
 
         <div className="wf-board-toolbar" onPointerDown={(e) => e.stopPropagation()}>
@@ -1193,83 +1324,6 @@ export function BoardRoom() {
           >
             <Grid3x3 size={17} />
           </button>
-          {selectedEl && selectedEl.kind === "connector" && (
-            <ConnectorControls
-              connector={selectedEl}
-              onChange={(cs) => {
-                const text = JSON.stringify(cs);
-                applyPatchWithHistory(selectedEl, { text }, "Style connector");
-              }}
-            />
-          )}
-          {selectedEl && selectedEl.kind === "sticky" && (
-            <>
-              <span className="wf-board-toolbar-sep" />
-              {Object.entries(STICKY_COLORS).map(([key, css]) => (
-                <button
-                  key={key}
-                  className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
-                  style={{ background: css }}
-                  title={key}
-                  onClick={() => {
-                    applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color");
-                  }}
-                />
-              ))}
-            </>
-          )}
-          {selectedEl && selectedEl.kind === "image" && (
-            <ImageControls
-              element={selectedEl}
-              onChange={(st) =>
-                applyPatchWithHistory(selectedEl, { style: JSON.stringify(st) }, "Transform image")
-              }
-              onFitBox={() => fitImageToContent(selectedEl)}
-            />
-          )}
-          {selectedEl && selectedEl.kind === "frame" && (
-            <>
-              <span className="wf-board-toolbar-sep" />
-              <button
-                className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
-                title="No fill"
-                onClick={() => {
-                  applyPatchWithHistory(selectedEl, { color: "" }, "Change frame fill");
-                }}
-              />
-              {Object.entries(FRAME_COLORS).map(([key, css]) => (
-                <button
-                  key={key}
-                  className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
-                  style={{ background: css.border }}
-                  title={key}
-                  onClick={() => {
-                    applyPatchWithHistory(selectedEl, { color: key }, "Change frame fill");
-                  }}
-                />
-              ))}
-            </>
-          )}
-          {selectedEl && (selectedEl.kind === "sticky" || selectedEl.kind === "text") && (
-            <TextStyleControls
-              element={selectedEl}
-              onChange={(st) => {
-                const style = JSON.stringify(st);
-                applyPatchWithHistory(selectedEl, { style }, "Format text");
-              }}
-            />
-          )}
-          {selected.size > 0 && (
-            <>
-              <span className="wf-board-toolbar-sep" />
-              <button
-                title="Delete element"
-                onClick={() => deleteSelected(selected)}
-              >
-                <Trash2 size={17} />
-              </button>
-            </>
-          )}
         </div>
         {tool === "connect" && (
           <div className="wf-board-hint">
@@ -1344,6 +1398,15 @@ function ElementText({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draft, editing]);
 
+  // Editing can also end from outside (clicking the canvas closes it), and
+  // that path may not fire `blur` — flush whatever was typed since the last
+  // autosave tick so nothing is lost.
+  useEffect(() => {
+    if (!editing || !onDraft) return;
+    return () => onDraft(draftRef.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing]);
+
   const st = textStyle(el.style);
   const css = textStyleCss(st);
 
@@ -1380,7 +1443,9 @@ function ElementText({
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => onCommit(draft)}
       onKeyDown={(e) => {
-        if (e.key === "Escape") onCommit(el.text);
+        // Commits rather than reverts — the draft has been autosaving,
+        // so discarding here would only roll back the last few seconds.
+        if (e.key === "Escape") onCommit(draft);
         if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) onCommit(draft);
       }}
       onPointerDown={(e) => e.stopPropagation()}
@@ -1408,7 +1473,6 @@ function TextStyleControls({
   const AlignIcon = align === "center" ? AlignCenter : align === "right" ? AlignRight : AlignLeft;
   return (
     <>
-      <span className="wf-board-toolbar-sep" />
       <button
         title="Bold"
         className={st.bold ? "active" : ""}
@@ -1472,7 +1536,6 @@ function ConnectorControls({
   const cycleCap = (v: ConnCap) => CAP_CYCLE[(CAP_CYCLE.indexOf(v) + 1) % CAP_CYCLE.length];
   return (
     <>
-      <span className="wf-board-toolbar-sep" />
       <button
         title={`Start decoration: ${cs.start_cap} (click to change)`}
         className="wf-conn-cap"
@@ -1702,7 +1765,6 @@ function ImageControls({
   const turn = (delta: number) => onChange({ ...st, rotate: (((rotate + delta) % 360) + 360) % 360 });
   return (
     <>
-      <span className="wf-board-toolbar-sep" />
       <button className="wf-icon" title="Rotate left" onClick={() => turn(-90)}>
         <RotateCcw size={15} />
       </button>
