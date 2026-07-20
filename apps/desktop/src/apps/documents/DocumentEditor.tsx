@@ -6,6 +6,7 @@ import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   CloudOff,
+  Download,
   History,
   MessageSquare,
   Presentation,
@@ -25,6 +26,7 @@ import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
+import { exportDocument } from "./export";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
 import { activeProvider, useDocuments } from "./store";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
@@ -124,6 +126,7 @@ function EditorInner({
   state: EditorCtx;
 }) {
   const { meta, myAccess, panel, setPanel } = state;
+  const [exportOpen, setExportOpen] = useState(false);
 
   const extensions = useMemo(
     () => [
@@ -216,12 +219,27 @@ function EditorInner({
           )}
         </button>
         <button
-          title="Version history"
+          title="Document history"
           className={panel === "history" ? "active" : ""}
           onClick={() => setPanel(panel === "history" ? "none" : "history")}
         >
           <History size={16} />
         </button>
+        <div className="wf-doc-export-wrap">
+          <button title="Export document" className={exportOpen ? "active" : ""} onClick={() => setExportOpen((open) => !open)}>
+            <Download size={16} />
+          </button>
+          {exportOpen && editor && (
+            <div className="wf-doc-export-menu">
+              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "pdf").catch((e) => state.setError(String(e))); }}>
+                Export PDF
+              </button>
+              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "docx").catch((e) => state.setError(String(e))); }}>
+                Export Word (.docx)
+              </button>
+            </div>
+          )}
+        </div>
         <button title="Send to canvas" onClick={() => state.setCanvasOpen(true)}>
           <Presentation size={16} />
         </button>

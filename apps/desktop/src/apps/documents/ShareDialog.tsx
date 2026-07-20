@@ -17,6 +17,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   const docId = useDocuments((s) => s.activeDocId);
   const shares = useDocuments((s) => s.shares);
   const refreshShares = useDocuments((s) => s.refreshShares);
+  const refreshActivity = useDocuments((s) => s.refreshActivity);
   const groups = useChat((s) => s.groups);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -34,6 +35,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
     try {
       await documentsApi.setShare(docId, { subject_kind: kind, subject_id: id, access });
       await refreshShares();
+      await refreshActivity();
     } catch (e) {
       setError(isCmdError(e) ? e.message : String(e));
     }
@@ -43,6 +45,7 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
     try {
       await documentsApi.deleteShare(docId, kind, id);
       await refreshShares();
+      await refreshActivity();
     } catch (e) {
       setError(isCmdError(e) ? e.message : String(e));
     }

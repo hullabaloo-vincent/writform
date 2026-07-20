@@ -8,7 +8,7 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use writform_proto::api::AuthResponse;
 use writform_proto::documents::{
-    Document, DocumentDetail, DocumentListItem, DocumentThread, DocumentUpdateBatch,
+    Document, DocumentActivity, DocumentDetail, DocumentListItem, DocumentThread, DocumentUpdateBatch,
     DocumentVersion, DocumentVersionMeta,
 };
 use writform_proto::ws::{ClientFrame, ServerFrame};
@@ -716,6 +716,23 @@ async fn snapshots_and_versions() {
     let named = named.expect("named versions always insert");
     assert_eq!(named.kind, "named");
 
+    let second_json = json!({"type": "doc", "content": [{"type": "paragraph", "content": [{"type": "text", "text": "New scene"}]}]}).to_string();
+    let draft: Option<DocumentVersionMeta> = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/snapshot", doc.id),
+            Some(json!({"doc_json": second_json, "name": "First draft", "kind": "draft"})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let draft = draft.expect("draft milestone inserts");
+    assert_eq!(draft.kind, "draft");
+    assert_eq!(draft.changed_blocks, 1);
+    assert!(draft.added_words > 0);
+
     let versions: Vec<DocumentVersionMeta> = server
         .req(
             reqwest::Method::GET,
@@ -727,7 +744,7 @@ async fn snapshots_and_versions() {
         .json()
         .await
         .unwrap();
-    assert_eq!(versions.len(), 2);
+    assert_eq!(versions.len(), 3);
     let full: DocumentVersion = server
         .req(
             reqwest::Method::GET,
@@ -740,6 +757,19 @@ async fn snapshots_and_versions() {
         .await
         .unwrap();
     assert_eq!(full.doc_json, doc_json);
+
+    let activity: Vec<DocumentActivity> = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            &format!("/documents/{}/activity", doc.id),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert!(activity.iter().any(|item| item.kind == "draft_saved"));
 
     // Bad snapshot payloads are rejected.
     let res = server

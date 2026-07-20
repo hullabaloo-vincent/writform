@@ -15,6 +15,8 @@ import {
   Trash2,
   Type,
   Underline,
+  Undo2,
+  Redo2,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
@@ -202,6 +204,19 @@ interface Viewport {
   scale: number;
 }
 
+interface CanvasHistoryAction {
+  label: string;
+  undo: () => Promise<void>;
+  redo: () => Promise<void>;
+}
+
+function createRequest(el: CanvasElement, from_id = el.from_id, to_id = el.to_id) {
+  return {
+    kind: el.kind, x: el.x, y: el.y, w: el.w, h: el.h, text: el.text,
+    color: el.color, style: el.style, from_id, to_id,
+  };
+}
+
 /** Move the local copy of an element without touching updated_at, so the
  *  server echo (same values, newer stamp) still applies cleanly. */
 function patchLocal(id: number, patch: Partial<CanvasElement>) {
@@ -237,6 +252,11 @@ export function BoardRoom() {
   const [connectFrom, setConnectFrom] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [snap, setSnap] = useState(() => localStorage.getItem("wf-canvas-snap") !== "off");
+  const undoStack = useRef<CanvasHistoryAction[]>([]);
+  const redoStack = useRef<CanvasHistoryAction[]>([]);
+  const liveIds = useRef(new Map<number, number>());
+  const historyBusy = useRef(false);
+  const [, refreshHistory] = useState(0);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -247,19 +267,143 @@ export function BoardRoom() {
 
   const fail = (e: unknown) => setError(isCmdError(e) ? e.message : String(e));
 
-  // Delete key removes the selection (unless typing).
+  useEffect(() => {
+    undoStack.current = [];
+    redoStack.current = [];
+    liveIds.current.clear();
+    refreshHistory((n) => n + 1);
+  }, [board?.id]);
+
+  const resolveId = (logicalId: number) => liveIds.current.get(logicalId) ?? logicalId;
+  const pushHistory = (action: CanvasHistoryAction) => {
+    if (historyBusy.current) return;
+    undoStack.current = [...undoStack.current.slice(-14), action];
+    redoStack.current = [];
+    refreshHistory((n) => n + 1);
+  };
+  const undo = async () => {
+    if (historyBusy.current) return;
+    const action = undoStack.current.pop();
+    if (!action) return;
+    historyBusy.current = true;
+    refreshHistory((n) => n + 1);
+    try {
+      await action.undo();
+      redoStack.current.push(action);
+    } catch (e) {
+      undoStack.current.push(action);
+      fail(e);
+    } finally {
+      historyBusy.current = false;
+      refreshHistory((n) => n + 1);
+    }
+  };
+  const redo = async () => {
+    if (historyBusy.current) return;
+    const action = redoStack.current.pop();
+    if (!action) return;
+    historyBusy.current = true;
+    refreshHistory((n) => n + 1);
+    try {
+      await action.redo();
+      undoStack.current.push(action);
+    } catch (e) {
+      redoStack.current.push(action);
+      fail(e);
+    } finally {
+      historyBusy.current = false;
+      refreshHistory((n) => n + 1);
+    }
+  };
+  const applyRemotePatch = async (logicalId: number, patch: Partial<CanvasElement>) => {
+    const id = resolveId(logicalId);
+    patchLocal(id, patch);
+    const updated = await canvasApi.updateElement(id, patch);
+    useCanvas.getState().applyElement(updated);
+  };
+  const recordPatch = (logicalId: number, before: Partial<CanvasElement>, after: Partial<CanvasElement>, label: string) => {
+    if (JSON.stringify(before) === JSON.stringify(after)) return;
+    pushHistory({
+      label,
+      undo: () => applyRemotePatch(logicalId, before),
+      redo: () => applyRemotePatch(logicalId, after),
+    });
+  };
+  const applyPatchWithHistory = (el: CanvasElement, patch: Partial<CanvasElement>, label: string) => {
+    const before: Partial<CanvasElement> = {};
+    for (const key of Object.keys(patch) as (keyof CanvasElement)[]) {
+      (before as Record<string, unknown>)[key] = el[key];
+    }
+    patchLocal(el.id, patch);
+    canvasApi.updateElement(el.id, patch).catch(fail);
+    recordPatch(el.id, before, patch, label);
+  };
+  const recordCreate = (el: CanvasElement, label: string) => {
+    const logicalId = el.id;
+    liveIds.current.set(logicalId, el.id);
+    pushHistory({
+      label,
+      undo: async () => {
+        const id = resolveId(logicalId);
+        await canvasApi.deleteElement(id);
+        useCanvas.getState().removeElement(id);
+      },
+      redo: async () => {
+        const from = el.from_id === null ? null : resolveId(el.from_id);
+        const to = el.to_id === null ? null : resolveId(el.to_id);
+        const created = await canvasApi.createElement(el.board_id, createRequest(el, from, to));
+        liveIds.current.set(logicalId, created.id);
+        useCanvas.getState().applyElement(created);
+      },
+    });
+  };
+
+  const deleteSelected = (ids: Set<number>) => {
+    if (ids.size === 0) return;
+    const current = useCanvas.getState().elements;
+    const logicalIds = new Set(ids);
+    for (const el of Object.values(current)) {
+      if ((el.from_id !== null && ids.has(el.from_id)) || (el.to_id !== null && ids.has(el.to_id))) logicalIds.add(el.id);
+    }
+    const snapshots = [...logicalIds].map((id) => current[id]).filter(Boolean);
+    for (const el of snapshots) liveIds.current.set(el.id, el.id);
+    const remove = async () => {
+      const bodyIds = snapshots.filter((el) => el.kind !== "connector").map((el) => resolveId(el.id));
+      const connectorIds = snapshots.filter((el) => el.kind === "connector").map((el) => resolveId(el.id));
+      for (const id of [...connectorIds, ...bodyIds]) {
+        await canvasApi.deleteElement(id).catch(() => {});
+        useCanvas.getState().removeElement(id);
+      }
+    };
+    const restore = async () => {
+      for (const el of snapshots.filter((item) => item.kind !== "connector")) {
+        const created = await canvasApi.createElement(el.board_id, createRequest(el));
+        liveIds.current.set(el.id, created.id);
+        useCanvas.getState().applyElement(created);
+      }
+      for (const el of snapshots.filter((item) => item.kind === "connector")) {
+        const created = await canvasApi.createElement(el.board_id, createRequest(el, el.from_id === null ? null : resolveId(el.from_id), el.to_id === null ? null : resolveId(el.to_id)));
+        liveIds.current.set(el.id, created.id);
+        useCanvas.getState().applyElement(created);
+      }
+    };
+    void remove().catch(fail);
+    pushHistory({ label: snapshots.length === 1 ? "Delete element" : `Delete ${snapshots.length} elements`, undo: restore, redo: remove });
+    setSelected(new Set());
+  };
+
+  // Keyboard history and deletion (unless typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Delete" && e.key !== "Backspace") return;
       const tag = (document.activeElement?.tagName ?? "").toLowerCase();
       if (tag === "textarea" || tag === "input") return;
-      if (selected.size > 0) {
-        for (const id of selected) {
-          canvasApi.deleteElement(id).catch(fail);
-          useCanvas.getState().removeElement(id);
-        }
-        setSelected(new Set());
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) void redo(); else void undo();
+        return;
       }
+      if (e.key !== "Delete" && e.key !== "Backspace") return;
+      if (selected.size > 0) deleteSelected(selected);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -303,6 +447,7 @@ export function BoardRoom() {
         .then((el) => {
           useCanvas.getState().applyElement(el);
           setSelected(new Set([el.id]));
+          recordCreate(el, `Add ${kind}`);
         })
         .catch(fail);
     };
@@ -394,6 +539,7 @@ export function BoardRoom() {
         useCanvas.getState().applyElement(el);
         setSelected(new Set([el.id]));
         if (kind !== "frame") setEditing(el.id);
+        recordCreate(el, `Add ${kind}`);
       })
       .catch(fail);
     setTool("select");
@@ -473,7 +619,10 @@ export function BoardRoom() {
             from_id: connectFrom,
             to_id: el.id,
           })
-          .then((c) => useCanvas.getState().applyElement(c))
+          .then((c) => {
+            useCanvas.getState().applyElement(c);
+            recordCreate(c, "Add connector");
+          })
           .catch(fail);
         setConnectFrom(null);
         setTool("select");
@@ -548,10 +697,12 @@ export function BoardRoom() {
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       for (const [id, pos] of last) {
+        const origin = origins.get(id);
         canvasApi
           .updateElement(id, pos)
           .catch(fail)
           .finally(() => hold(id, false));
+        if (origin) recordPatch(id, origin, pos, dragSet.size > 1 ? "Move selection" : "Move element");
       }
     };
     window.addEventListener("pointermove", onMove);
@@ -586,6 +737,7 @@ export function BoardRoom() {
         .updateElement(el.id, last)
         .catch(fail)
         .finally(() => hold(el.id, false));
+      recordPatch(el.id, origin, last, "Resize element");
     };
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
@@ -594,8 +746,7 @@ export function BoardRoom() {
   const commitText = (el: CanvasElement, text: string) => {
     setEditing(null);
     if (text === el.text) return;
-    patchLocal(el.id, { text });
-    canvasApi.updateElement(el.id, { text }).catch(fail);
+    applyPatchWithHistory(el, { text }, "Edit text");
   };
 
   const all = Object.values(elements);
@@ -824,6 +975,14 @@ export function BoardRoom() {
             <Spline size={17} />
           </ToolButton>
           <span className="wf-board-toolbar-sep" />
+          <button title={`Undo${undoStack.current.length ? `: ${undoStack.current[undoStack.current.length - 1].label}` : ""}`} disabled={undoStack.current.length === 0 || historyBusy.current} onClick={() => void undo()}>
+            <Undo2 size={17} />
+          </button>
+          <button title={`Redo${redoStack.current.length ? `: ${redoStack.current[redoStack.current.length - 1].label}` : ""}`} disabled={redoStack.current.length === 0 || historyBusy.current} onClick={() => void redo()}>
+            <Redo2 size={17} />
+          </button>
+          <span className="wf-board-history-count" title="Canvas history keeps the last 15 actions">{undoStack.current.length}/15</span>
+          <span className="wf-board-toolbar-sep" />
           <button title="Zoom out" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.2)}>
             <ZoomOut size={17} />
           </button>
@@ -847,8 +1006,7 @@ export function BoardRoom() {
               connector={selectedEl}
               onChange={(cs) => {
                 const text = JSON.stringify(cs);
-                patchLocal(selectedEl.id, { text });
-                canvasApi.updateElement(selectedEl.id, { text }).catch(fail);
+                applyPatchWithHistory(selectedEl, { text }, "Style connector");
               }}
             />
           )}
@@ -862,8 +1020,7 @@ export function BoardRoom() {
                   style={{ background: css }}
                   title={key}
                   onClick={() => {
-                    patchLocal(selectedEl.id, { color: key });
-                    canvasApi.updateElement(selectedEl.id, { color: key }).catch(fail);
+                    applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color");
                   }}
                 />
               ))}
@@ -876,8 +1033,7 @@ export function BoardRoom() {
                 className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
                 title="No fill"
                 onClick={() => {
-                  patchLocal(selectedEl.id, { color: "" });
-                  canvasApi.updateElement(selectedEl.id, { color: "" }).catch(fail);
+                  applyPatchWithHistory(selectedEl, { color: "" }, "Change frame fill");
                 }}
               />
               {Object.entries(FRAME_COLORS).map(([key, css]) => (
@@ -887,8 +1043,7 @@ export function BoardRoom() {
                   style={{ background: css.border }}
                   title={key}
                   onClick={() => {
-                    patchLocal(selectedEl.id, { color: key });
-                    canvasApi.updateElement(selectedEl.id, { color: key }).catch(fail);
+                    applyPatchWithHistory(selectedEl, { color: key }, "Change frame fill");
                   }}
                 />
               ))}
@@ -899,8 +1054,7 @@ export function BoardRoom() {
               element={selectedEl}
               onChange={(st) => {
                 const style = JSON.stringify(st);
-                patchLocal(selectedEl.id, { style });
-                canvasApi.updateElement(selectedEl.id, { style }).catch(fail);
+                applyPatchWithHistory(selectedEl, { style }, "Format text");
               }}
             />
           )}
@@ -909,13 +1063,7 @@ export function BoardRoom() {
               <span className="wf-board-toolbar-sep" />
               <button
                 title="Delete element"
-                onClick={() => {
-                  for (const id of selected) {
-                    canvasApi.deleteElement(id).catch(fail);
-                    useCanvas.getState().removeElement(id);
-                  }
-                  setSelected(new Set());
-                }}
+                onClick={() => deleteSelected(selected)}
               >
                 <Trash2 size={17} />
               </button>

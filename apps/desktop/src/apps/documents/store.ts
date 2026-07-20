@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { Document } from "../../bindings/proto/Document";
+import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import type { DocumentShare } from "../../bindings/proto/DocumentShare";
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
@@ -24,6 +25,7 @@ interface DocumentsState {
   meta: Document | null;
   myAccess: string | null;
   versions: DocumentVersionMeta[];
+  activities: DocumentActivity[];
   shares: DocumentShare[];
   threads: DocumentThread[];
   error: string | null;
@@ -32,6 +34,7 @@ interface DocumentsState {
   openDocument: (id: number) => Promise<void>;
   closeDocument: () => void;
   refreshVersions: () => Promise<void>;
+  refreshActivity: () => Promise<void>;
   refreshShares: () => Promise<void>;
   refreshThreads: () => Promise<void>;
   clearError: () => void;
@@ -44,6 +47,7 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
   meta: null,
   myAccess: null,
   versions: [],
+  activities: [],
   shares: [],
   threads: [],
   error: null,
@@ -57,7 +61,7 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
     get().closeDocument();
     const next = new DocProvider(id);
     provider = next;
-    set({ activeDocId: id, meta: null, myAccess: null, versions: [], shares: [], threads: [] });
+    set({ activeDocId: id, meta: null, myAccess: null, versions: [], activities: [], shares: [], threads: [] });
     try {
       const detail = await next.open();
       // A slow open may have been superseded or closed meanwhile.
@@ -68,6 +72,7 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
       set({ meta: detail.document, myAccess: detail.my_access });
       void get().refreshThreads();
       void get().refreshVersions();
+      void get().refreshActivity();
       if (detail.my_access === "owner") void get().refreshShares();
     } catch (e) {
       if (provider === next) get().closeDocument();
@@ -84,6 +89,7 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
       meta: null,
       myAccess: null,
       versions: [],
+      activities: [],
       shares: [],
       threads: [],
     });
@@ -94,6 +100,13 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
     if (id === null) return;
     const versions = await documentsApi.versions(id).catch(() => []);
     if (get().activeDocId === id) set({ versions });
+  },
+
+  refreshActivity: async () => {
+    const id = get().activeDocId;
+    if (id === null) return;
+    const activities = await documentsApi.activity(id).catch(() => []);
+    if (get().activeDocId === id) set({ activities });
   },
 
   refreshShares: async () => {

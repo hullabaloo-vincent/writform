@@ -13,11 +13,12 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use writform_proto::chat::UserRef;
 use writform_proto::documents::{
     AppendUpdateRequest, AppendUpdateResponse, AwarenessRequest, CreateDocumentRequest,
-    CreateThreadRequest, Document, DocumentDetail, DocumentListItem, DocumentShare, DocumentThread,
-    DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion,
+    CreateThreadRequest, Document, DocumentActivity, DocumentDetail, DocumentListItem,
+    DocumentShare, DocumentThread, DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion,
     DocumentVersionMeta, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
     UpdateDocumentRequest, UpdateThreadRequest,
 };
@@ -412,12 +413,53 @@ pub async fn document_detail(
     .await?;
     let tail: Vec<Vec<u8>> = tail.into_iter().map(|(b,)| b).collect();
     let merged = merge_updates(ydoc_state.as_deref(), &tail);
+    let now = now_millis();
+    let recent_open: Option<(i64,)> = sqlx::query_as(
+        "SELECT created_at FROM document_activity
+         WHERE doc_id = ? AND actor_id = ? AND kind = 'opened'
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(doc_id)
+    .bind(auth.user_id.0)
+    .fetch_optional(&state.pool)
+    .await?;
+    if recent_open.is_none_or(|(at,)| now - at >= 60_000) {
+        insert_activity(&state, doc_id, auth.user_id, "opened", None, None, None, None).await?;
+    }
     Ok(Json(DocumentDetail {
         document: doc,
         my_access: access.as_str().to_string(),
         state_b64: B64.encode(merged),
         seq: last_seq,
     }))
+}
+
+async fn insert_activity(
+    state: &AppState,
+    doc_id: i64,
+    actor: UserId,
+    kind: &str,
+    subject_kind: Option<&str>,
+    subject_id: Option<i64>,
+    subject_name: Option<&str>,
+    detail: Option<&str>,
+) -> Result<(), AppError> {
+    sqlx::query(
+        "INSERT INTO document_activity
+         (doc_id, kind, actor_id, subject_kind, subject_id, subject_name, detail, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+    )
+    .bind(doc_id)
+    .bind(kind)
+    .bind(actor.0)
+    .bind(subject_kind)
+    .bind(subject_id)
+    .bind(subject_name)
+    .bind(detail)
+    .bind(now_millis())
+    .execute(&state.pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn update_document(
@@ -650,7 +692,8 @@ pub async fn awareness(
 
 // ----------------------------------------------------------------- versions
 
-const VERSION_SELECT: &str = "SELECT v.id, v.doc_id, v.kind, v.name, v.created_at,
+const VERSION_SELECT: &str = "SELECT v.id, v.doc_id, v.kind, v.name,
+    v.changed_blocks, v.added_words, v.removed_words, v.created_at,
     u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
     FROM document_versions v JOIN users u ON u.id = v.created_by";
 
@@ -661,6 +704,9 @@ type VersionRow = (
     Option<String>,
     i64,
     i64,
+    i64,
+    i64,
+    i64,
     String,
     Option<String>,
     Option<i64>,
@@ -668,15 +714,118 @@ type VersionRow = (
 );
 
 fn row_to_version(row: VersionRow) -> DocumentVersionMeta {
-    let (id, doc_id, kind, name, created_at, uid, username, display_name, avatar, accent) = row;
+    let (id, doc_id, kind, name, changed_blocks, added_words, removed_words, created_at, uid, username, display_name, avatar, accent) = row;
     DocumentVersionMeta {
         id,
         doc_id,
         kind,
         name,
+        changed_blocks,
+        added_words,
+        removed_words,
         created_by: perms::user_ref(UserId(uid), username, display_name, avatar, accent),
         created_at,
     }
+}
+
+fn node_text(value: &serde_json::Value, out: &mut String) {
+    if let Some(text) = value.get("text").and_then(|v| v.as_str()) {
+        out.push_str(text);
+    }
+    if let Some(children) = value.get("content").and_then(|v| v.as_array()) {
+        for child in children {
+            node_text(child, out);
+        }
+    }
+}
+
+fn snapshot_blocks(raw: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(raw) else { return Vec::new() };
+    value
+        .get("content")
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .map(|node| {
+            let mut text = String::new();
+            node_text(node, &mut text);
+            text
+        })
+        .collect()
+}
+
+fn change_stats(previous: Option<&str>, current: &str) -> (i64, i64, i64) {
+    let old = previous.map(snapshot_blocks).unwrap_or_default();
+    let new = snapshot_blocks(current);
+    let mut old_positions: HashMap<&str, Vec<usize>> = HashMap::new();
+    let mut new_positions: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (index, block) in old.iter().enumerate() {
+        old_positions.entry(block).or_default().push(index);
+    }
+    for (index, block) in new.iter().enumerate() {
+        new_positions.entry(block).or_default().push(index);
+    }
+
+    let mut changed = 0_i64;
+    let mut added = 0_i64;
+    let mut removed = 0_i64;
+    let mut old_index = 0;
+    let mut new_index = 0;
+    while old_index < old.len() && new_index < new.len() {
+        if old[old_index] == new[new_index] {
+            old_index += 1;
+            new_index += 1;
+            continue;
+        }
+
+        let inserted_until = next_position(&new_positions, &old[old_index], new_index + 1);
+        let deleted_until = next_position(&old_positions, &new[new_index], old_index + 1);
+        let prefer_insert = match (inserted_until, deleted_until) {
+            (Some(inserted), Some(deleted)) => inserted - new_index <= deleted - old_index,
+            (Some(_), None) => true,
+            _ => false,
+        };
+
+        if prefer_insert {
+            let inserted_until = inserted_until.expect("insert position exists");
+            for block in &new[new_index..inserted_until] {
+                changed += 1;
+                added += block.split_whitespace().count() as i64;
+            }
+            new_index = inserted_until;
+        } else if let Some(deleted_until) = deleted_until {
+            for block in &old[old_index..deleted_until] {
+                changed += 1;
+                removed += block.split_whitespace().count() as i64;
+            }
+            old_index = deleted_until;
+        } else {
+            changed += 1;
+            added += new[new_index].split_whitespace().count() as i64;
+            removed += old[old_index].split_whitespace().count() as i64;
+            old_index += 1;
+            new_index += 1;
+        }
+    }
+    for block in &old[old_index..] {
+        changed += 1;
+        removed += block.split_whitespace().count() as i64;
+    }
+    for block in &new[new_index..] {
+        changed += 1;
+        added += block.split_whitespace().count() as i64;
+    }
+    (changed, added, removed)
+}
+
+fn next_position(
+    positions: &HashMap<&str, Vec<usize>>,
+    block: &str,
+    from: usize,
+) -> Option<usize> {
+    let matches = positions.get(block)?;
+    let index = matches.partition_point(|position| *position < from);
+    matches.get(index).copied()
 }
 
 pub async fn snapshot(
@@ -708,6 +857,10 @@ pub async fn snapshot(
         }
         None => None,
     };
+    let kind = req.kind.as_deref().unwrap_or(if name.is_some() { "named" } else { "auto" });
+    if !matches!(kind, "auto" | "named" | "draft") || (kind == "draft" && name.is_none()) {
+        return Err(AppError::bad_request("invalid_kind", "snapshot kind must be auto, named, or a named draft"));
+    }
 
     let now = now_millis();
     // The latest snapshot always refreshes the excerpt/list preview.
@@ -719,7 +872,7 @@ pub async fn snapshot(
         .await?;
 
     let hash = hex::encode(Sha256::digest(req.doc_json.as_bytes()));
-    if name.is_none() {
+    if kind == "auto" {
         // Auto snapshots: at most one per interval, skip unchanged content.
         let newest: Option<(String, i64)> = sqlx::query_as(
             "SELECT content_hash, created_at FROM document_versions
@@ -735,16 +888,27 @@ pub async fn snapshot(
         }
     }
 
-    let kind = if name.is_some() { "named" } else { "auto" };
+    let previous: Option<(String,)> = sqlx::query_as(
+        "SELECT doc_json FROM document_versions WHERE doc_id = ? ORDER BY created_at DESC, id DESC LIMIT 1",
+    )
+    .bind(doc_id)
+    .fetch_optional(&state.pool)
+    .await?;
+    let (changed_blocks, added_words, removed_words) =
+        change_stats(previous.as_ref().map(|(json,)| json.as_str()), &req.doc_json);
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO document_versions (doc_id, kind, name, doc_json, content_hash, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO document_versions
+         (doc_id, kind, name, doc_json, content_hash, changed_blocks, added_words, removed_words, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(doc_id)
     .bind(kind)
     .bind(&name)
     .bind(&req.doc_json)
     .bind(&hash)
+    .bind(changed_blocks)
+    .bind(added_words)
+    .bind(removed_words)
     .bind(auth.user_id.0)
     .bind(now)
     .fetch_one(&state.pool)
@@ -754,6 +918,9 @@ pub async fn snapshot(
         .fetch_one(&state.pool)
         .await?;
     let meta = row_to_version(row);
+    if kind == "draft" {
+        insert_activity(&state, doc_id, auth.user_id, "draft_saved", None, None, name.as_deref(), None).await?;
+    }
     state.ws.broadcast(
         &doc_room(doc_id),
         "document.version",
@@ -805,6 +972,47 @@ pub async fn get_version(
         meta: row_to_version(row),
         doc_json,
     }))
+}
+
+const ACTIVITY_SELECT: &str = "SELECT a.id, a.doc_id, a.kind, a.subject_kind,
+    a.subject_id, a.subject_name, a.detail, a.created_at,
+    u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
+    FROM document_activity a JOIN users u ON u.id = a.actor_id";
+
+type ActivityRow = (
+    i64, i64, String, Option<String>, Option<i64>, Option<String>, Option<String>, i64,
+    i64, String, Option<String>, Option<i64>, Option<String>,
+);
+
+fn row_to_activity(row: ActivityRow) -> DocumentActivity {
+    let (id, doc_id, kind, subject_kind, subject_id, subject_name, detail, created_at,
+        uid, username, display_name, avatar, accent) = row;
+    DocumentActivity {
+        id,
+        doc_id,
+        kind,
+        actor: perms::user_ref(UserId(uid), username, display_name, avatar, accent),
+        subject_kind,
+        subject_id,
+        subject_name,
+        detail,
+        created_at,
+    }
+}
+
+pub async fn list_activity(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(doc_id): Path<i64>,
+) -> Result<Json<Vec<DocumentActivity>>, AppError> {
+    require_access(&state, doc_id, auth.user_id, false).await?;
+    let rows: Vec<ActivityRow> = sqlx::query_as(&format!(
+        "{ACTIVITY_SELECT} WHERE a.doc_id = ? ORDER BY a.created_at DESC, a.id DESC LIMIT 250"
+    ))
+    .bind(doc_id)
+    .fetch_all(&state.pool)
+    .await?;
+    Ok(Json(rows.into_iter().map(row_to_activity).collect()))
 }
 
 // ------------------------------------------------------------------- shares
@@ -916,6 +1124,14 @@ pub async fn set_share(
         }
     }
 
+    let previous_access: Option<(String,)> = sqlx::query_as(
+        "SELECT access FROM document_shares WHERE doc_id = ? AND subject_kind = ? AND subject_id = ?",
+    )
+    .bind(doc_id)
+    .bind(&req.subject_kind)
+    .bind(req.subject_id)
+    .fetch_optional(&state.pool)
+    .await?;
     let now = now_millis();
     sqlx::query(
         "INSERT INTO document_shares (doc_id, subject_kind, subject_id, access, granted_by, created_at)
@@ -966,6 +1182,18 @@ pub async fn set_share(
     }
 
     let name = subject_name(&state, &req.subject_kind, req.subject_id).await?;
+    let activity_kind = if previous_access.is_some() { "share_updated" } else { "shared" };
+    insert_activity(
+        &state,
+        doc_id,
+        auth.user_id,
+        activity_kind,
+        Some(&req.subject_kind),
+        Some(req.subject_id),
+        Some(&name),
+        Some(&req.access),
+    )
+    .await?;
     Ok(Json(DocumentShare {
         doc_id,
         subject_kind: req.subject_kind,
@@ -1038,6 +1266,7 @@ pub async fn delete_share(
 ) -> Result<StatusCode, AppError> {
     let (_, access) = require_access(&state, doc_id, auth.user_id, false).await?;
     require_owner(access)?;
+    let name = subject_name(&state, &subject_kind, subject_id).await?;
     sqlx::query(
         "DELETE FROM document_shares WHERE doc_id = ? AND subject_kind = ? AND subject_id = ?",
     )
@@ -1056,6 +1285,17 @@ pub async fn delete_share(
         "document.listchanged",
         serde_json::json!({ "reason": "revoked", "document_id": doc_id }),
     );
+    insert_activity(
+        &state,
+        doc_id,
+        auth.user_id,
+        "unshared",
+        Some(&subject_kind),
+        Some(subject_id),
+        Some(&name),
+        None,
+    )
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1351,4 +1591,38 @@ pub async fn delete_thread(
         serde_json::json!({ "doc_id": thread.doc_id, "thread_id": thread_id }),
     );
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::change_stats;
+    use serde_json::json;
+
+    fn document(lines: &[&str]) -> String {
+        json!({
+            "type": "doc",
+            "content": lines.iter().map(|line| json!({
+                "type": "paragraph",
+                "attrs": { "element": "action" },
+                "content": [{ "type": "text", "text": line }]
+            })).collect::<Vec<_>>()
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn change_stats_treats_a_middle_insertion_as_one_changed_block() {
+        let before = document(&["First line", "Second line", "Third line"]);
+        let after = document(&["First line", "A newly inserted line", "Second line", "Third line"]);
+
+        assert_eq!(change_stats(Some(&before), &after), (1, 4, 0));
+    }
+
+    #[test]
+    fn change_stats_treats_a_middle_deletion_as_one_changed_block() {
+        let before = document(&["First line", "Remove this line", "Second line", "Third line"]);
+        let after = document(&["First line", "Second line", "Third line"]);
+
+        assert_eq!(change_stats(Some(&before), &after), (1, 0, 3));
+    }
 }

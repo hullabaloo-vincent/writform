@@ -1,6 +1,7 @@
 import type { AppendUpdateResponse } from "../../bindings/proto/AppendUpdateResponse";
 import type { CreateThreadRequest } from "../../bindings/proto/CreateThreadRequest";
 import type { Document } from "../../bindings/proto/Document";
+import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import type { DocumentShare } from "../../bindings/proto/DocumentShare";
@@ -41,14 +42,16 @@ export const documentsApi = {
   awareness: (id: number, data_b64: string) =>
     api<null>("POST", `/api/v1/documents/${id}/awareness`, { data_b64 }),
 
-  snapshot: (id: number, doc_json: string, name?: string) =>
+  snapshot: (id: number, doc_json: string, name?: string, kind?: "auto" | "named" | "draft") =>
     api<DocumentVersionMeta | null>("POST", `/api/v1/documents/${id}/snapshot`, {
       doc_json,
       name: name ?? null,
+      kind: kind ?? null,
     }),
   versions: (id: number) => api<DocumentVersionMeta[]>("GET", `/api/v1/documents/${id}/versions`),
   version: (id: number, versionId: number) =>
     api<DocumentVersion>("GET", `/api/v1/documents/${id}/versions/${versionId}`),
+  activity: (id: number) => api<DocumentActivity[]>("GET", `/api/v1/documents/${id}/activity`),
 
   shares: (id: number) => api<DocumentShare[]>("GET", `/api/v1/documents/${id}/shares`),
   setShare: (id: number, req: SetShareRequest) =>

@@ -4,4 +4,4 @@
  * TipTap JSON snapshot for version history. Without `name`, an automatic
  * snapshot (rate-limited and deduplicated); with `name`, always stored.
  */
-export type SnapshotRequest = { doc_json: string, name: string | null, };
+export type SnapshotRequest = { doc_json: string, name: string | null, kind: string | null, };

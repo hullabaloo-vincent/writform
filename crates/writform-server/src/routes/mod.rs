@@ -233,6 +233,10 @@ pub fn router(state: AppState) -> Router {
             get(documents::get_version),
         )
         .route(
+            "/api/v1/documents/{id}/activity",
+            get(documents::list_activity),
+        )
+        .route(
             "/api/v1/documents/{id}/shares",
             get(documents::list_shares).put(documents::set_share),
         )

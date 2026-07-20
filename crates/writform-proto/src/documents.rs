@@ -109,6 +109,9 @@ pub struct SnapshotRequest {
     pub doc_json: String,
     #[serde(default)]
     pub name: Option<String>,
+    /// `auto` | `named` | `draft`. Omitted requests infer auto/named.
+    #[serde(default)]
+    pub kind: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -121,7 +124,31 @@ pub struct DocumentVersionMeta {
     /// `auto` | `named`.
     pub kind: String,
     pub name: Option<String>,
+    #[ts(type = "number")]
+    pub changed_blocks: i64,
+    #[ts(type = "number")]
+    pub added_words: i64,
+    #[ts(type = "number")]
+    pub removed_words: i64,
     pub created_by: UserRef,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DocumentActivity {
+    #[ts(type = "number")]
+    pub id: i64,
+    #[ts(type = "number")]
+    pub doc_id: i64,
+    pub kind: String,
+    pub actor: UserRef,
+    pub subject_kind: Option<String>,
+    #[ts(type = "number | null")]
+    pub subject_id: Option<i64>,
+    pub subject_name: Option<String>,
+    pub detail: Option<String>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
 }
