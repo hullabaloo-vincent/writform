@@ -75,14 +75,78 @@ For an always-on machine, run the bare server instead of the app:
 ```sh
 writform-server --data-dir /var/lib/writform --port 7311
 # or
-docker run -p 7311:7311 -v writform:/data ghcr.io/hullabaloo-vincent/writform-server
+docker run -d --name writform --restart unless-stopped \
+  -p 7311:7311 -v writform:/data ghcr.io/hullabaloo-vincent/writform-server
 ```
 
-A systemd unit ships in the repo under `deploy/`. Upgrading is
-swap-binary-and-restart; database migrations run automatically at startup.
+A systemd unit ships in the repo under `deploy/`. For upgrading either
+flavor, see [Updating a server](#updating-a-server) below.
 
 ## Updates
 
 The desktop app updates itself from GitHub Releases (Settings →
 Application → **Check for updates**); packages are signature-verified before
 installing.
+
+## Updating a server
+
+Everything that makes your server *your* server — the identity key behind
+the fingerprint, the TLS certificate, the account database, and uploaded
+attachments — lives in the **data directory**, not in the binary or the
+container. As long as you keep that directory, you can swap the server
+underneath it freely: the fingerprint stays the same, nobody has to re-pair
+or re-register, and database migrations run automatically the first time
+the new version starts.
+
+### Docker
+
+Containers are disposable; the named volume (`writform` below) is what
+carries your data. An update is: pull the new image, replace the container,
+keep the volume.
+
+```sh
+docker pull ghcr.io/hullabaloo-vincent/writform-server
+```
+
+```sh
+docker stop writform && docker rm writform
+```
+
+```sh
+docker run -d --name writform --restart unless-stopped \
+  -p 7311:7311 -v writform:/data ghcr.io/hullabaloo-vincent/writform-server
+```
+
+(If you started the old container without `--name`, find its generated name
+with `docker ps` first.)
+
+`docker rm` deletes only the container layer — the volume is untouched. The
+only commands that would reset your server's identity are
+`docker volume rm writform` or a `docker run` without the `-v writform:/data`
+mount, which starts from a blank data directory. Neither is ever part of an
+update.
+
+### Bare binary
+
+Replace `writform-server` with the new release's binary and restart it (or
+`systemctl restart writform-server` if you use the shipped unit), keeping
+the same `--data-dir`.
+
+### Verifying
+
+Connect from the app. Connecting cleanly *is* the fingerprint check —
+clients pin the server identity and warn loudly if it changed. Where to
+check versions: the server prints its version at startup, and a client
+that's newer than the server will tell you when it needs something the
+server doesn't have yet ("the server is running an older WritForm
+version…") — that message is the cue to run the update above.
+
+**Permission denied on an old volume:** volumes first created by releases up
+through v0.5.0 are owned by root, so after an update the (unprivileged)
+server can exit with `permission denied (os error 13)`. Fix the ownership
+once and it stays fixed:
+
+```sh
+docker run --rm --user root --entrypoint chown \
+  -v writform:/data ghcr.io/hullabaloo-vincent/writform-server -R writform /data
+```
