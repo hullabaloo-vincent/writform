@@ -179,6 +179,7 @@ pub async fn start_impl(
         bind: "0.0.0.0".to_string(),
         port,
         server_name: server_name.clone(),
+        web_dir: None,
     })
     .await
     .map_err(|e| {

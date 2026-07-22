@@ -78,6 +78,7 @@ export const pluginManagerApp: WritformApp = {
     id: "writform.plugins",
     name: "Plugins",
     icon: <Puzzle size={20} />,
+    web: false,
     permissions: ["ui", "commands"],
   },
   activate(ctx) {

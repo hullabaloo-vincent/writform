@@ -21,4 +21,9 @@ pub struct Config {
     /// Human-readable server name shown to clients during TOFU.
     #[arg(long, env = "WRITFORM_SERVER_NAME", default_value = "WritForm Server")]
     pub server_name: String,
+
+    /// Directory with the built web client (index.html + assets). When set,
+    /// the server serves the browser app at `/` alongside the API.
+    #[arg(long, env = "WRITFORM_WEB_DIR")]
+    pub web_dir: Option<PathBuf>,
 }

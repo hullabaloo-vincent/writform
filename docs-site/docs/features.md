@@ -135,6 +135,14 @@ when you're not already looking at the relevant conversation.
   and Canvas and Sessions show a chip naming the group you're working in —
   share and send-to-canvas pickers preselect it too.
 
+## In the browser
+
+Servers can serve the app at `/` — open the server's address in any
+browser (phones included) for chat, documents, canvas, sessions, and
+voice in a responsive layout. Desktop-only features stay on the desktop:
+the notes vault, on-device documents, the portable profile, hosting, and
+plugins.
+
 ## Working offline
 
 You don't need a server to write. **Work offline** on the connect screen

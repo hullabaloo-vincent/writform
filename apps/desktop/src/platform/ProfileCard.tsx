@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { create } from "zustand";
 
 import type { UserProfile } from "../bindings/proto/UserProfile";
-import { backend, isCmdError, type CmdError } from "../lib/backend";
+import { attachmentUrl, backend, isCmdError, type CmdError } from "../lib/backend";
 import { Avatar } from "./Avatar";
 import { Loading } from "./Loading";
 import { Modal } from "./Modal";
@@ -68,7 +68,7 @@ export function ProfileCardHost() {
             {profile.banner_attachment_id != null && (
               <img
                 className="wf-profile-banner-img"
-                src={`writform-att://attachment/${profile.banner_attachment_id}`}
+                src={attachmentUrl(profile.banner_attachment_id)}
                 alt=""
                 draggable={false}
               />

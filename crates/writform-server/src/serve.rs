@@ -14,6 +14,9 @@ pub struct ServeOptions {
     pub bind: String,
     pub port: u16,
     pub server_name: String,
+    /// Serve the built web client from this directory at `/` (same-origin
+    /// browser access). None = API only.
+    pub web_dir: Option<PathBuf>,
 }
 
 /// A running server plus the identity material a local client needs to pin
@@ -63,7 +66,23 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<StartedServer> {
     routes::sessions::rehydrate_timers(&state)
         .await
         .context("rehydrating prompt timers")?;
-    let app = routes::router(state);
+    let mut app = routes::router(state);
+    // The browser client is same-origin static files with an SPA fallback;
+    // `/api/v1/*` always wins because real routes take precedence.
+    if let Some(dir) = &opts.web_dir {
+        if dir.join("index.html").exists() {
+            tracing::info!("serving web client from {}", dir.display());
+            app = app.fallback_service(
+                tower_http::services::ServeDir::new(dir)
+                    .fallback(tower_http::services::ServeFile::new(dir.join("index.html"))),
+            );
+        } else {
+            tracing::warn!(
+                "web dir {} has no index.html; web client disabled",
+                dir.display()
+            );
+        }
+    }
 
     let addr: SocketAddr = format!("{}:{}", opts.bind, opts.port)
         .parse()

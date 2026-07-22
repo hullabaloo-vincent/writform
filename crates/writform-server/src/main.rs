@@ -28,6 +28,7 @@ async fn run() -> anyhow::Result<()> {
         bind: config.bind,
         port: config.port,
         server_name: config.server_name,
+        web_dir: config.web_dir,
     })
     .await?;
     started.wait().await;

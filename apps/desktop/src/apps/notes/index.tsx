@@ -9,6 +9,7 @@ export const notesApp: WritformApp = {
     icon: <NotebookPen size={20} />,
     permissions: ["ui", "commands", "vault:read", "vault:write", "net"],
     offline: true,
+    web: false,
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <NotesView />);

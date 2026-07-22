@@ -33,7 +33,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
-import { isCmdError } from "../../lib/backend";
+import { attachmentUrl, isCmdError } from "../../lib/backend";
 import { uploadBlob } from "../../lib/upload";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -907,7 +907,7 @@ export function BoardRoom() {
       const h = Math.max(60, Math.round(el.w * ratio));
       applyPatchWithHistory(el, { h }, "Fit image");
     };
-    img.src = `writform-att://attachment/${el.text}`;
+    img.src = attachmentUrl(Number(el.text));
   };
 
   const beginEditing = (el: CanvasElement) => {
@@ -1133,7 +1133,7 @@ export function BoardRoom() {
               {el.kind === "image" ? (
                 <img
                   className="wf-el-img"
-                  src={`writform-att://attachment/${el.text}`}
+                  src={attachmentUrl(Number(el.text))}
                   alt=""
                   draggable={false}
                   style={{

@@ -3,6 +3,8 @@
  * accent color (or a stable color derived from the name).
  */
 
+import { attachmentUrl } from "../lib/backend";
+
 const PALETTE = ["#8ab6e8", "#93d3a2", "#e8d478", "#e89ab0", "#b7a3ea", "#7fd0c9"];
 
 function fallbackColor(name: string): string {
@@ -45,7 +47,7 @@ export function Avatar({
       <img
         className="wf-avatar"
         style={{ ...style, objectFit: "cover" }}
-        src={`writform-att://attachment/${attachmentId}`}
+        src={attachmentUrl(attachmentId)}
         alt={name}
         draggable={false}
       />

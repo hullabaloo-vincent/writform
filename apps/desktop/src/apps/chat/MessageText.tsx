@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import type { Channel } from "../../bindings/proto/Channel";
 import type { Emote } from "../../bindings/proto/Emote";
+import { attachmentUrl } from "../../lib/backend";
 import { useSession } from "../../stores/session";
 import { useChat } from "./store";
 
@@ -14,7 +15,7 @@ import { useChat } from "./store";
  * React nodes only — no HTML injection surface.
  */
 
-const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
+const attSrc = (attachmentId: number) => attachmentUrl(attachmentId);
 
 const INLINE_RE = new RegExp(
   [

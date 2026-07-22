@@ -1,7 +1,7 @@
 import { LogIn, LogOut, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { backend } from "../lib/backend";
+import { backend, isWeb } from "../lib/backend";
 import { useSession } from "../stores/session";
 import { Avatar } from "./Avatar";
 import { CommandPalette } from "./CommandPalette";
@@ -111,9 +111,10 @@ export function AppShell() {
   const leaveOffline = useSession((s) => s.leaveOffline);
 
   // Offline: only apps that work without a server appear in the dock.
-  const dockApps = offline
-    ? mainViewApps.filter((id) => apps[id]?.offline)
-    : mainViewApps;
+  // Browser client: desktop-only apps (notes vault, plugins) are hidden.
+  const dockApps = mainViewApps.filter(
+    (id) => (!offline || apps[id]?.offline) && (!isWeb || apps[id]?.web !== false),
+  );
 
   // Entering offline mode with a server-only app active lands on the first
   // offline-capable one instead of a dead view.

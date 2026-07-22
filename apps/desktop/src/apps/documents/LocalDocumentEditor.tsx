@@ -1,12 +1,11 @@
 import Collaboration from "@tiptap/extension-collaboration";
-import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import { Download, HardDrive, ListTree, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
-import { Toolbar } from "../../editor/RichEditor";
+import { Toolbar, WfImage } from "../../editor/RichEditor";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { DocumentStats, ElementSelect, TitleEditor } from "./DocumentEditor";
@@ -52,7 +51,7 @@ function LocalEditorInner({
   const extensions = useMemo(
     () => [
       StarterKit.configure({ undoRedo: false }),
-      Image.configure({ allowBase64: false }),
+      WfImage,
       Placeholder.configure({ placeholder: "Write…" }),
       DocElement,
       formatKeymap(meta.format),

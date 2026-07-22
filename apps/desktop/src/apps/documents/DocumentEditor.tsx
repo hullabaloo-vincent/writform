@@ -1,6 +1,5 @@
 import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
-import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -21,7 +20,7 @@ import { countWords, readingTime } from "../../lib/wordCount";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
-import { Toolbar } from "../../editor/RichEditor";
+import { Toolbar, WfImage } from "../../editor/RichEditor";
 import { documentsApi } from "./api";
 import type { DocProvider } from "./collab";
 import { DocElement } from "./formats/DocElement";
@@ -147,7 +146,7 @@ function EditorInner({
   const extensions = useMemo(
     () => [
       StarterKit.configure({ undoRedo: false }),
-      Image.configure({ allowBase64: false }),
+      WfImage,
       Placeholder.configure({ placeholder: "Write…" }),
       DocElement,
       formatKeymap(format),

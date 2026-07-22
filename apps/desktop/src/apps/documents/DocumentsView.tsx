@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
-import { backend, isCmdError } from "../../lib/backend";
+import { backend, isCmdError, isWeb } from "../../lib/backend";
 import { confirmDialog, Modal, SkeletonRows, toast } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { documentsApi } from "./api";
@@ -589,7 +589,7 @@ export function DocumentsView() {
           </section>
         )}
 
-        {!searching && folderId === null && (
+        {!searching && folderId === null && !isWeb && (
           <section className="wf-documents-section">
             <h3>
               <HardDrive size={14} /> On this device

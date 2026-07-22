@@ -82,6 +82,22 @@ docker run -d --name writform --restart unless-stopped \
 A systemd unit ships in the repo under `deploy/`. For upgrading either
 flavor, see [Updating a server](#updating-a-server) below.
 
+## Using WritForm in a browser (phones included)
+
+The server can serve the app itself: open `https://your-server:7311/` in
+any browser — including on a phone — log in, and you get the same chat,
+documents, canvas, sessions, and voice, in a mobile-friendly layout. The
+Docker image ships with this enabled. For a bare-metal server, build the
+client once (`npm run build` in `apps/desktop`) and start the server with
+`--web-dir apps/desktop/dist` (or set `WRITFORM_WEB_DIR`).
+
+Notes to know: your browser will warn about the self-signed certificate the
+first time — proceed after checking the fingerprint with the host (the
+desktop app's pinned-identity check doesn't exist in browsers, which is why
+the desktop app remains the most secure way to connect). Desktop-only
+features (the notes vault, on-device documents, the portable profile,
+hosting, plugins) don't appear in the browser.
+
 ## Updates
 
 The desktop app updates itself from GitHub Releases (Settings →

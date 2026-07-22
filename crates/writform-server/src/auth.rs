@@ -27,14 +27,41 @@ impl FromRequestParts<AppState> for AuthUser {
     type Rejection = AppError;
 
     async fn from_request_parts(parts: &mut Parts, state: &AppState) -> Result<Self, AppError> {
-        let token = parts
+        let bearer = parts
             .headers
             .get(axum::http::header::AUTHORIZATION)
             .and_then(|v| v.to_str().ok())
             .and_then(|v| v.strip_prefix("Bearer "))
-            .ok_or_else(|| AppError::unauthorized("missing_token", "missing bearer token"))?;
+            .map(str::to_owned);
+        let token = match bearer {
+            Some(t) => t,
+            None => {
+                // The web client's <img>/<audio> loads can't carry headers;
+                // it sets a `wf_token` cookie instead. Honored ONLY for
+                // attachment GETs — read-only, so a cross-site request could
+                // not mutate anything even without the SameSite guard.
+                let cookie_ok = parts.method == axum::http::Method::GET
+                    && parts.uri.path().starts_with("/api/v1/attachments/");
+                cookie_ok
+                    .then(|| {
+                        parts
+                            .headers
+                            .get(axum::http::header::COOKIE)
+                            .and_then(|v| v.to_str().ok())
+                            .and_then(|c| {
+                                c.split(';').find_map(|kv| {
+                                    kv.trim().strip_prefix("wf_token=").map(str::to_owned)
+                                })
+                            })
+                    })
+                    .flatten()
+                    .ok_or_else(|| {
+                        AppError::unauthorized("missing_token", "missing bearer token")
+                    })?
+            }
+        };
 
-        let token_hash = writform_crypto::token::token_hash(token);
+        let token_hash = writform_crypto::token::token_hash(&token);
         let now = now_millis();
         let row: Option<(i64, i64)> =
             sqlx::query_as("SELECT user_id, expires_at FROM auth_sessions WHERE token_hash = ?")

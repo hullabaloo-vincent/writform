@@ -29,6 +29,8 @@ export interface AppManifest {
   permissions: AppPermission[];
   /** Usable without a server connection (shown in offline mode's dock). */
   offline?: boolean;
+  /** Set false for desktop-only apps (hidden in the browser client). */
+  web?: boolean;
 }
 
 /** Named UI mount points apps can contribute to. */

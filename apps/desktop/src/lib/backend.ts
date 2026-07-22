@@ -275,70 +275,33 @@ function tauriBackend(): Backend {
  *  - Inside the desktop shell: the Tauri commands (pinned TLS in the Rust core).
  *  - Plain browser during development: an in-memory preview implementation,
  *    loaded dynamically so production bundles never contain it.
- *  - Anything else: fail closed.
+ *  - Plain browser in production: the web client served by writform-server
+ *    itself — same-origin fetch + WebSocket (webBackend.ts).
  */
 const inTauri = "__TAURI_INTERNALS__" in window;
-
-function unavailableBackend(): Backend {
-  const fail = () =>
-    Promise.reject({
-      code: "no_backend",
-      message: "WritForm requires the desktop app",
-    } satisfies CmdError);
-  return {
-    probeServer: fail,
-    trustServer: fail,
-    listServers: fail,
-    removeServer: fail,
-    login: fail,
-    register: fail,
-    resetPassword: fail,
-    logout: fail,
-    currentSession: fail,
-    hostStatus: fail,
-    hostStart: fail,
-    hostStop: fail,
-    hostReachability: fail,
-    profileGet: fail,
-    profileSave: fail,
-    profileUpdateFields: fail,
-    profileDelete: fail,
-    localdocList: fail,
-    localdocRead: fail,
-    localdocWrite: fail,
-    localdocDelete: fail,
-    apiFetch: fail,
-    uploadAttachment: fail,
-    saveExport: fail,
-    // In a browser the engine prompts on getUserMedia; nothing to pre-authorize.
-    readDroppedFile: fail,
-    microphoneStatus: async () => "authorized",
-    requestMicrophoneAccess: async () => "authorized",
-    cameraStatus: async () => "authorized",
-    requestCameraAccess: async () => "authorized",
-    wsSub: fail,
-    wsUnsub: fail,
-    onWsEvent: () => () => {},
-    onWsStatus: () => () => {},
-    vaultList: fail,
-    vaultRead: fail,
-    vaultWrite: fail,
-    vaultDelete: fail,
-    vaultRename: fail,
-    vaultSearch: fail,
-    vaultPath: fail,
-    vaultBacklinks: fail,
-    pluginsList: fail,
-    pluginReadEntry: fail,
-    pluginSetEnabled: fail,
-  };
-}
 
 export const backend: Backend = inTauri
   ? tauriBackend()
   : import.meta.env.DEV
     ? (await import("./devPreview")).devPreviewBackend()
-    : unavailableBackend();
+    : (await import("./webBackend")).webBackend();
 
 /** True only in the browser dev preview (never in the desktop app). */
 export const isDevPreview = !inTauri && import.meta.env.DEV;
+
+/** True in the browser web client served by writform-server. */
+export const isWeb = !inTauri && !import.meta.env.DEV;
+
+/** URL for an attachment, valid on the current platform. Desktop rides the
+ *  pinned `writform-att://` protocol; the web client fetches same-origin
+ *  (authenticated by the path-scoped cookie for <img>-style loads). */
+export function attachmentUrl(id: number): string {
+  return inTauri ? `writform-att://attachment/${id}` : `/api/v1/attachments/${id}`;
+}
+
+/** Documents store attachment image URLs written by whichever platform made
+ *  them; re-point either scheme at the current platform's at render time. */
+export function normalizeAttachmentSrc(src: string): string {
+  const m = /^(?:writform-att:\/\/attachment|\/api\/v1\/attachments)\/(\d+)$/.exec(src);
+  return m ? attachmentUrl(Number(m[1])) : src;
+}

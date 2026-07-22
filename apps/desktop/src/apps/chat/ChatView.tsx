@@ -1,6 +1,7 @@
 import {
   ImageIcon,
   LayoutGrid,
+  Menu,
   Mic,
   MicOff,
   FileText,
@@ -21,7 +22,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { Message } from "../../bindings/proto/Message";
-import { isCmdError } from "../../lib/backend";
+import { attachmentUrl, isCmdError } from "../../lib/backend";
 import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
 import {
@@ -41,7 +42,7 @@ import { useChat, type OutboxEntry } from "./store";
 import { VideoStage } from "./VideoStage";
 import { canScreenShare, setUserVolume, useVoice, voiceApi } from "./voice";
 
-const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
+const attSrc = (attachmentId: number) => attachmentUrl(attachmentId);
 
 /** Emote grid popup: insert on click; admins can add and remove emotes. */
 function EmotePicker({
@@ -166,26 +167,44 @@ function EmotePicker({
 export function ChatView() {
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
+  const activeChannelId = useChat((s) => s.activeChannelId);
   const loadGroups = useChat((s) => s.loadGroups);
+  // Mobile-only slide-over holding the group + channel sidebars; on desktop
+  // the wrapper is `display: contents` and changes nothing.
+  const [sideOpen, setSideOpen] = useState(false);
 
   useEffect(() => {
     void loadGroups();
   }, [loadGroups]);
 
+  useEffect(() => setSideOpen(false), [activeChannelId, activeGroupId]);
+
   return (
     <div className="wf-chat">
-      <aside className="wf-chat-groups">
-        <GroupList />
-      </aside>
+      <button
+        className="wf-chat-menu-btn"
+        title="Groups & channels"
+        onClick={() => setSideOpen(true)}
+      >
+        <Menu size={19} />
+      </button>
+      {sideOpen && <div className="wf-chat-side-scrim" onClick={() => setSideOpen(false)} />}
+      <div className={`wf-chat-side ${sideOpen ? "open" : ""}`}>
+        <aside className="wf-chat-groups">
+          <GroupList />
+        </aside>
+        {activeGroupId !== null && (
+          <aside className="wf-chat-channels">
+            <ChannelList />
+          </aside>
+        )}
+      </div>
       {activeGroupId === null ? (
         <div className="wf-chat-empty">
           {groups.length === 0 ? <FirstGroup /> : <p>Select a group</p>}
         </div>
       ) : (
         <>
-          <aside className="wf-chat-channels">
-            <ChannelList />
-          </aside>
           <main className="wf-chat-main">
             <MessagePane />
           </main>
@@ -231,7 +250,7 @@ function GroupList() {
           {g.icon_attachment_id != null ? (
             <img
               className="wf-chat-group-img"
-              src={`writform-att://attachment/${g.icon_attachment_id}`}
+              src={attSrc(g.icon_attachment_id)}
               alt={g.name}
               draggable={false}
             />

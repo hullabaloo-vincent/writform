@@ -5677,3 +5677,181 @@ textarea.wf-el-edit {
 .wf-selection-toolbar .wf-board-swatch {
   height: 22px !important;
 }
+
+/* ================= mobile (phones / the web client) ================= */
+
+/* Desktop: the drawer wrapper is transparent to layout; the toggle and
+   scrim exist only on narrow screens. */
+.wf-chat-side {
+  display: contents;
+}
+
+.wf-chat-side-scrim {
+  display: none;
+}
+
+.wf-chat-menu-btn {
+  display: none;
+  position: absolute;
+  left: 12px;
+  bottom: 16px;
+  z-index: 30;
+  width: 44px;
+  height: 44px;
+  min-height: 44px;
+  border-radius: 50%;
+  background: var(--wf-accent);
+  border-color: var(--wf-accent);
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 767px) {
+  button {
+    min-height: 36px;
+  }
+
+  /* Shell: the app rail becomes a bottom tab bar. */
+  .wf-body {
+    flex-direction: column;
+  }
+  .wf-main {
+    order: 1;
+    min-height: 0;
+  }
+  .wf-panel-right {
+    display: none;
+  }
+  .wf-rail {
+    order: 2;
+    width: 100%;
+    flex-direction: row;
+    justify-content: space-around;
+    gap: 4px;
+    padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+    border-right: none;
+    border-top: 1px solid var(--wf-border);
+  }
+  .wf-rail::before {
+    top: 0;
+    right: 0;
+    bottom: auto;
+    left: 0;
+    width: auto;
+    height: 3px;
+  }
+  .wf-rail-connect {
+    margin-top: 0;
+    margin-left: auto;
+  }
+  .wf-statusbar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .wf-session-addr {
+    display: none;
+  }
+
+  /* Chat: one column; sidebars slide over from the left. */
+  .wf-chat {
+    position: relative;
+  }
+  .wf-chat-menu-btn {
+    display: flex;
+  }
+  .wf-chat-side {
+    display: flex;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(80vw, 320px);
+    z-index: 70;
+    transform: translateX(-102%);
+    transition: transform 160ms ease;
+    background: var(--wf-bg-raised);
+    border-right: 1px solid var(--wf-border);
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+  }
+  .wf-chat-side.open {
+    transform: translateX(0);
+  }
+  .wf-chat-side-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 69;
+    background: var(--wf-scrim);
+  }
+  .wf-chat-side .wf-chat-channels {
+    flex: 1;
+    width: auto;
+    min-width: 0;
+  }
+  .wf-chat-members {
+    display: none;
+  }
+
+  /* Documents: header wraps, search gets its own row, side panels overlay. */
+  .wf-documents-header {
+    flex-wrap: wrap;
+  }
+  .wf-doc-search {
+    order: 5;
+    width: 100%;
+  }
+  .wf-editor-toolbar {
+    flex-wrap: wrap;
+  }
+  .wf-doc-header {
+    flex-wrap: wrap;
+  }
+  .wf-doc-body {
+    position: relative;
+  }
+  .wf-doc-panel {
+    position: absolute;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(85vw, 320px);
+    z-index: 40;
+    background: var(--wf-bg-raised);
+    border-left: 1px solid var(--wf-border);
+  }
+  .wf-page {
+    padding: 18px 14px;
+  }
+
+  /* Settings: tabs become a horizontal scroller above the body. */
+  .wf-settings {
+    flex-direction: column;
+  }
+  .wf-settings-tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    width: 100%;
+    flex-shrink: 0;
+  }
+
+  /* Connect screen fills small viewports. */
+  .wf-connect-card {
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+  }
+
+  /* Friends: the conversation gets the width; the sidebar narrows. */
+  .wf-friends-side {
+    width: 150px;
+    min-width: 150px;
+  }
+
+  /* Sessions / canvas headers wrap instead of overflowing. */
+  .wf-sessions-header,
+  .wf-session-room-header {
+    flex-wrap: wrap;
+  }
+}

@@ -5,6 +5,7 @@ import {
   backend,
   isCmdError,
   isDevPreview,
+  isWeb,
   type HostStatus,
   type ProbeResult,
   type SavedServer,
@@ -44,10 +45,16 @@ export function ConnectScreen() {
     });
 
   useEffect(() => {
+    // The web client is served by its own server — no picking, no TOFU
+    // ceremony; probe the origin and land on the login form.
+    if (isWeb) {
+      void probe(location.host, { defaultMode: "login" });
+      return;
+    }
     void refresh().then(({ list, status }) => {
       setStep(list.length === 0 && !status.configured ? { kind: "welcome" } : { kind: "pick" });
     });
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once; probe is stable
   }, []);
 
   const probe = async (addr: string, opts?: { defaultMode?: "login" | "register"; freshHost?: boolean }) => {
@@ -170,7 +177,7 @@ export function ConnectScreen() {
           />
         )}
 
-        {(step.kind === "welcome" || step.kind === "pick") && (
+        {(step.kind === "welcome" || step.kind === "pick") && !isWeb && (
           <button
             className="wf-connect-offline"
             onClick={() => useSession.getState().goOffline()}

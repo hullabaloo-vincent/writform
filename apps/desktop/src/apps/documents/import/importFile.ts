@@ -6,7 +6,6 @@
  */
 
 import { generateJSON, type JSONContent } from "@tiptap/core";
-import Image from "@tiptap/extension-image";
 import StarterKit from "@tiptap/starter-kit";
 import { prosemirrorJSONToYXmlFragment } from "@tiptap/y-tiptap";
 import { getSchema } from "@tiptap/core";
@@ -20,7 +19,9 @@ import { useLocalDocs } from "../local";
 import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
 import { rtfToText } from "./rtf";
 
-const EXTENSIONS = [StarterKit, Image.configure({ allowBase64: false }), DocElement];
+import { WfImage } from "../../../editor/RichEditor";
+
+const EXTENSIONS = [StarterKit, WfImage, DocElement];
 const SEED_BATCH_JSON_BYTES = 48 * 1024;
 // Leave headroom under the server's 256 KiB decoded-update ceiling.
 const MAX_SEED_UPDATE_BYTES = 240 * 1024;

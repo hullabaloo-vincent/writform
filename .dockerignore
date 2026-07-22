@@ -1,0 +1,6 @@
+.git
+target
+apps/desktop/node_modules
+apps/desktop/dist
+apps/desktop/src-tauri/target
+docs-site/site

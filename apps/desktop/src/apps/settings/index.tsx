@@ -15,8 +15,10 @@ import type { AdminUser } from "../../bindings/proto/AdminUser";
 import type { DeviceSession } from "../../bindings/proto/DeviceSession";
 import type { User } from "../../bindings/proto/User";
 import {
+  attachmentUrl,
   backend,
   isCmdError,
+  isWeb,
   type CmdError,
   type HostStatus,
   type PortableProfile,
@@ -65,7 +67,7 @@ function SettingsView() {
     { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: !offline },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: !offline },
     { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: !offline },
-    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: !offline },
+    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: !offline && !isWeb },
     { id: "admin", label: "Admin", icon: <ShieldCheck size={15} />, show: !!me?.is_server_admin },
   ];
 
@@ -341,7 +343,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
           {bannerId !== null && (
             <img
               className="wf-profile-banner-img"
-              src={`writform-att://attachment/${bannerId}`}
+              src={attachmentUrl(bannerId)}
               alt=""
               draggable={false}
             />
@@ -434,6 +436,8 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
         </div>
       </label>
 
+      {!isWeb && (
+      <>
       <h4>Portable profile</h4>
       <p className="wf-session-meta">
         Keep a copy of this look (name, colors, bio, avatar, banner) on this computer and apply
@@ -515,6 +519,8 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
           Saved {new Date(portable.saved_at).toLocaleString()} — you’ll also be offered it when
           registering on a new server.
         </p>
+      )}
+      </>
       )}
     </section>
   );

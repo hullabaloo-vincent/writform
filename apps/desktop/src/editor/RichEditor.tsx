@@ -19,7 +19,20 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { attachmentUrl, normalizeAttachmentSrc } from "../lib/backend";
 import { uploadBlob } from "../lib/upload";
+
+/** Attachment images with the stored URL re-pointed at whichever platform
+ *  is rendering (desktop protocol vs same-origin web path). */
+export const WfImage = Image.extend({
+  renderHTML({ HTMLAttributes }) {
+    const src = HTMLAttributes.src as string | undefined;
+    return [
+      "img",
+      { ...HTMLAttributes, src: src ? normalizeAttachmentSrc(src) : src },
+    ];
+  },
+}).configure({ allowBase64: false });
 
 /**
  * Shared TipTap editor — used for prompts and submissions (and later by the
@@ -44,7 +57,7 @@ export function RichEditor({
   const editor = useEditor({
     extensions: [
       StarterKit,
-      Image.configure({ allowBase64: false }),
+      WfImage,
       Placeholder.configure({ placeholder: placeholder ?? "Write…" }),
     ],
     content: value ?? undefined,
@@ -103,7 +116,7 @@ export function Toolbar({
     setUploading(true);
     try {
       const meta = await uploadBlob(file, file.name);
-      chain().setImage({ src: `writform-att://attachment/${meta.id}` }).run();
+      chain().setImage({ src: attachmentUrl(meta.id) }).run();
     } catch {
       // upload failed — nothing inserted
     } finally {
