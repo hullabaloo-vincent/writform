@@ -77,6 +77,8 @@ interface VoiceState {
   stageOpen: boolean;
   /** My camera stream, for the local preview tile. */
   localCamera: MediaStream | null;
+  /** My screen-share stream, so I can see what I'm broadcasting. */
+  localScreen: MediaStream | null;
   /** Incoming video, one stream per peer per kind. */
   remoteVideo: Record<number, { camera?: MediaStream; screen?: MediaStream }>;
   /** Peers' self-reported media state. */
@@ -149,6 +151,16 @@ function loadUserVolume(): Record<number, number> {
   }
 }
 
+/** Route an element's playback to the chosen output device, if possible. */
+function applySink(el: HTMLAudioElement) {
+  const { outputDeviceId } = loadVoiceSettings();
+  const sinkable = el as HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> };
+  if (!sinkable.setSinkId) return;
+  void sinkable.setSinkId(outputDeviceId ?? "").catch(() => {
+    // device unplugged or id stale — playback falls back to the default
+  });
+}
+
 function effectiveVolume(peerId: number): number {
   // el.volume clamps at 1; the >1 headroom mostly matters relative to a
   // lowered master. Good enough without another gain graph per peer.
@@ -205,6 +217,9 @@ onVoiceSettingsChange((settings) => {
   lastSettings = settings;
   if (inputGainNode) inputGainNode.gain.value = settings.inputGain;
   for (const [peerId, el] of audioEls) el.volume = effectiveVolume(peerId);
+  if (settings.outputDeviceId !== prev.outputDeviceId) {
+    for (const el of audioEls.values()) applySink(el);
+  }
 
   const { connectedChannelId, cameraOn } = useVoice.getState();
   if (connectedChannelId === null) return;
@@ -337,6 +352,7 @@ function attachAudio(peerId: number, stream: MediaStream) {
     audioEls.set(peerId, el);
   }
   el.volume = effectiveVolume(peerId);
+  applySink(el);
   el.srcObject = stream;
   void el.play().catch(() => {});
   watchSpeaking(peerId, stream);
@@ -515,6 +531,7 @@ function teardown() {
     screenOn: false,
     stageOpen: false,
     localCamera: null,
+    localScreen: null,
     remoteVideo: {},
     remoteMedia: {},
   });
@@ -569,6 +586,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   screenOn: false,
   stageOpen: false,
   localCamera: null,
+  localScreen: null,
   remoteVideo: {},
   remoteMedia: {},
   userVolumes: {},
@@ -708,7 +726,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
       }
       screenStream?.getTracks().forEach((t) => t.stop());
       screenStream = null;
-      set({ screenOn: false });
+      set({ screenOn: false, localScreen: null });
       sendMediaState();
       return;
     }
@@ -735,7 +753,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
       void screen.replaceTrack(track).catch(() => {});
       applyVideoParams(screen, "screen");
     }
-    set({ screenOn: true });
+    set({ screenOn: true, localScreen: stream });
     sendMediaState();
   },
 

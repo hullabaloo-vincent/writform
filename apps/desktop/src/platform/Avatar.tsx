@@ -24,12 +24,15 @@ export function Avatar({
   attachmentId,
   accentColor,
   size = 24,
+  singleInitial = false,
 }: {
   /** Display name or username — used for initials + fallback color. */
   name: string;
   attachmentId?: number | null;
   accentColor?: string | null;
   size?: number;
+  /** One letter instead of two — reads better in large call tiles. */
+  singleInitial?: boolean;
 }) {
   const style: React.CSSProperties = {
     width: size,
@@ -63,7 +66,7 @@ export function Avatar({
       }}
       aria-hidden
     >
-      {initials(name)}
+      {singleInitial ? initials(name).slice(0, 1) : initials(name)}
     </span>
   );
 }

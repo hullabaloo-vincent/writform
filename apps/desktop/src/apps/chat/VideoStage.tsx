@@ -80,6 +80,8 @@ interface Tile {
   key: string;
   userId: number;
   name: string;
+  /** Name without the "(you)" suffix — what the avatar initial comes from. */
+  rawName: string;
   avatarAttachmentId: number | null;
   accentColor: string | null;
   stream: MediaStream | null;
@@ -95,6 +97,7 @@ export function VideoStage() {
   const toggleStage = useVoice((s) => s.toggleStage);
   const occupants = useVoice((s) => s.occupants);
   const localCamera = useVoice((s) => s.localCamera);
+  const localScreen = useVoice((s) => s.localScreen);
   const remoteVideo = useVoice((s) => s.remoteVideo);
   const remoteMedia = useVoice((s) => s.remoteMedia);
   const muted = useVoice((s) => s.muted);
@@ -129,6 +132,7 @@ export function VideoStage() {
     const base = {
       userId: u.id,
       name: isMe ? `${name} (you)` : name,
+      rawName: name,
       avatarAttachmentId: u.avatar_attachment_id,
       accentColor: u.accent_color,
       micMuted: isMe ? muted : (media?.micMuted ?? false),
@@ -141,15 +145,23 @@ export function VideoStage() {
       mirrored: isMe,
       stream: isMe ? localCamera : ((media?.camera && remoteVideo[u.id]?.camera) || null),
     });
-    // Screen tiles only exist while a share is live; my own screen has no
-    // self-preview (sharing this window would hall-of-mirrors).
-    if (!isMe && media?.screen && remoteVideo[u.id]?.screen) {
+    // Screen tiles while a share is live — including my own, so I can see
+    // exactly what's going out. (Sharing the WritForm window itself will
+    // mirror-tunnel; that's inherent to self-preview.)
+    const screenStream = isMe
+      ? screenOn
+        ? localScreen
+        : null
+      : media?.screen
+        ? (remoteVideo[u.id]?.screen ?? null)
+        : null;
+    if (screenStream) {
       tiles.push({
         ...base,
         key: `${u.id}:screen`,
         kind: "screen",
         mirrored: false,
-        stream: remoteVideo[u.id]?.screen ?? null,
+        stream: screenStream,
       });
     }
   }
@@ -196,10 +208,11 @@ export function VideoStage() {
       ) : (
         <div className="wf-stage-avatar">
           <Avatar
-            name={t.name}
+            name={t.rawName}
             attachmentId={t.avatarAttachmentId}
             accentColor={t.accentColor}
             size={large ? 72 : 44}
+            singleInitial
           />
         </div>
       )}

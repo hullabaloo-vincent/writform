@@ -25,6 +25,7 @@ import {
 import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
+import { canPickAudioOutput } from "../../lib/voiceSettings";
 import { loadNotifPrefs, saveNotifPrefs, type NotifPrefs } from "../../lib/notifPrefs";
 import { discoverPublicIp } from "../../lib/publicIp";
 import {
@@ -57,7 +58,7 @@ function SettingsView() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
-    { id: "voice", label: "Voice", icon: <Mic size={15} />, show: true },
+    { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: true },
     { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: true },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: true },
     { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: true },
@@ -237,6 +238,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
 function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
   const [settings, setSettings] = useState<VoiceSettings>(() => loadVoiceSettings());
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [outputs, setOutputs] = useState<MediaDeviceInfo[]>([]);
   const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [testing, setTesting] = useState(false);
   const [level, setLevel] = useState(0);
@@ -256,6 +258,7 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setInputs(devices.filter((d) => d.kind === "audioinput"));
+      setOutputs(devices.filter((d) => d.kind === "audiooutput"));
       setCameras(devices.filter((d) => d.kind === "videoinput"));
     } catch {
       // devices stay unknown until permission is granted
@@ -382,6 +385,22 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         />
         <span className="wf-session-meta">{Math.round(settings.inputGain * 100)}%</span>
       </label>
+      {canPickAudioOutput() && (
+        <label className="wf-settings-field">
+          Output device (speakers / headphones)
+          <select
+            value={settings.outputDeviceId ?? ""}
+            onChange={(e) => apply({ outputDeviceId: e.target.value || null })}
+          >
+            <option value="">System default</option>
+            {outputs.map((d) => (
+              <option key={d.deviceId} value={d.deviceId}>
+                {d.label || `Output ${d.deviceId.slice(0, 6)}`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <label className="wf-settings-field wf-field-row">
         Speaker volume
         <input

@@ -8,6 +8,8 @@ export type VideoQuality = "360p" | "720p";
 export interface VoiceSettings {
   /** Preferred microphone deviceId; null = system default. */
   inputDeviceId: string | null;
+  /** Preferred speaker/headphones deviceId; null = system default. */
+  outputDeviceId: string | null;
   /** Microphone gain multiplier, 0..2 (1 = unchanged). */
   inputGain: number;
   /** Playback volume for other participants, 0..1. */
@@ -23,6 +25,7 @@ export interface VoiceSettings {
 const KEY = "wf-voice-settings";
 const DEFAULTS: VoiceSettings = {
   inputDeviceId: null,
+  outputDeviceId: null,
   inputGain: 1,
   outputVolume: 1,
   videoInputDeviceId: null,
@@ -39,6 +42,7 @@ export function loadVoiceSettings(): VoiceSettings {
     const parsed = JSON.parse(raw) as Partial<VoiceSettings>;
     return {
       inputDeviceId: typeof parsed.inputDeviceId === "string" ? parsed.inputDeviceId : null,
+      outputDeviceId: typeof parsed.outputDeviceId === "string" ? parsed.outputDeviceId : null,
       inputGain: clamp(parsed.inputGain, 0, 2, 1),
       outputVolume: clamp(parsed.outputVolume, 0, 1, 1),
       videoInputDeviceId:
@@ -70,4 +74,13 @@ export function onVoiceSettingsChange(cb: (s: VoiceSettings) => void): () => voi
 
 function clamp(v: unknown, lo: number, hi: number, fallback: number): number {
   return typeof v === "number" && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback;
+}
+
+/**
+ * Routing playback to a chosen device needs `setSinkId`, which WebView2 and
+ * WebKitGTK have but macOS's WKWebView does not — there, output follows the
+ * system default and the picker is hidden.
+ */
+export function canPickAudioOutput(): boolean {
+  return "setSinkId" in HTMLMediaElement.prototype;
 }
