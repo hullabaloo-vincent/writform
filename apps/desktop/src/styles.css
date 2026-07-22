@@ -5750,6 +5750,14 @@ textarea.wf-el-edit {
     flex-wrap: wrap;
     row-gap: 2px;
   }
+  /* Keep the statusbar slim: the coarse-pointer button bump is for content,
+     and connecting already has the accent icon in the tab bar. */
+  .wf-statusbar button {
+    min-height: 0;
+  }
+  .wf-offline-connect {
+    display: none;
+  }
   .wf-session-addr {
     display: none;
   }

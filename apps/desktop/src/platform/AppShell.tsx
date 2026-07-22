@@ -35,7 +35,7 @@ function OfflineStatus() {
       <span className="wf-offline-label">
         Working Offline <WifiOff size={13} />
       </span>
-      <button className="wf-primary" onClick={leaveOffline}>
+      <button className="wf-primary wf-offline-connect" onClick={leaveOffline}>
         <LogIn size={13} /> Connect to a server
       </button>
     </span>
