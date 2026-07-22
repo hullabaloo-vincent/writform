@@ -20,7 +20,10 @@ interface PlatformState {
   /** Chat slash commands by name (no leading slash). */
   chatCommands: Record<string, ChatCommand>;
   activeAppId: string | null;
+  /** Dock-rail badge counts per app id (0/absent = no badge). */
+  badges: Record<string, number>;
   setActiveApp: (appId: string) => void;
+  setAppBadge: (appId: string, count: number) => void;
 }
 
 export const usePlatform = create<PlatformState>((set) => ({
@@ -31,7 +34,12 @@ export const usePlatform = create<PlatformState>((set) => ({
   commands: {},
   chatCommands: {},
   activeAppId: null,
+  badges: {},
   setActiveApp: (appId) => set({ activeAppId: appId }),
+  setAppBadge: (appId, count) =>
+    set((s) =>
+      (s.badges[appId] ?? 0) === count ? s : { badges: { ...s.badges, [appId]: count } },
+    ),
 }));
 
 function addSlotContribution(slot: SlotName, contribution: SlotContribution): () => void {

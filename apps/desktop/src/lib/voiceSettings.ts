@@ -14,8 +14,10 @@ export interface VoiceSettings {
   outputVolume: number;
   /** Preferred camera deviceId; null = system default. */
   videoInputDeviceId: string | null;
-  /** Camera capture quality; applies the next time the camera starts. */
+  /** Camera capture quality; applies live when the camera is on. */
   videoQuality: VideoQuality;
+  /** Short blips when someone joins/leaves your voice room. */
+  sounds: boolean;
 }
 
 const KEY = "wf-voice-settings";
@@ -25,6 +27,7 @@ const DEFAULTS: VoiceSettings = {
   outputVolume: 1,
   videoInputDeviceId: null,
   videoQuality: "360p",
+  sounds: true,
 };
 
 const listeners = new Set<(s: VoiceSettings) => void>();
@@ -41,6 +44,7 @@ export function loadVoiceSettings(): VoiceSettings {
       videoInputDeviceId:
         typeof parsed.videoInputDeviceId === "string" ? parsed.videoInputDeviceId : null,
       videoQuality: parsed.videoQuality === "720p" ? "720p" : "360p",
+      sounds: parsed.sounds !== false,
     };
   } catch {
     return { ...DEFAULTS };

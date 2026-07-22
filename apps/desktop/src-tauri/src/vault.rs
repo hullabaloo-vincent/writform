@@ -103,6 +103,88 @@ pub fn vault_delete(app: tauri::AppHandle, name: String) -> Result<(), CmdError>
     std::fs::remove_file(note_path(&app, &name)?).map_err(io_err)
 }
 
+/// Absolute path of the vault folder, for reveal-in-file-manager.
+#[tauri::command]
+pub fn vault_path(app: tauri::AppHandle) -> Result<String, CmdError> {
+    Ok(vault_dir(&app)?.to_string_lossy().into_owned())
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchHit {
+    pub name: String,
+    /// Text around the first content match; empty for name-only matches.
+    pub snippet: String,
+    pub modified_at: i64,
+}
+
+/// Case-insensitive substring search over note names AND contents. Name
+/// matches rank first; results cap at 50.
+#[tauri::command]
+pub fn vault_search(app: tauri::AppHandle, query: String) -> Result<Vec<SearchHit>, CmdError> {
+    let needle = query.trim().to_lowercase();
+    if needle.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut name_hits = Vec::new();
+    let mut content_hits = Vec::new();
+    for note in vault_list(app.clone())? {
+        if name_hits.len() + content_hits.len() >= 50 {
+            break;
+        }
+        if note.name.to_lowercase().contains(&needle) {
+            name_hits.push(SearchHit {
+                name: note.name,
+                snippet: String::new(),
+                modified_at: note.modified_at,
+            });
+            continue;
+        }
+        let Ok(content) = std::fs::read_to_string(note_path(&app, &note.name)?) else {
+            continue;
+        };
+        if let Some(snippet) = snippet_around(&content, &needle) {
+            content_hits.push(SearchHit {
+                name: note.name,
+                snippet,
+                modified_at: note.modified_at,
+            });
+        }
+    }
+    name_hits.extend(content_hits);
+    Ok(name_hits)
+}
+
+/// ~40 chars of context either side of the first case-insensitive match,
+/// clamped to char boundaries and flattened to one line.
+fn snippet_around(content: &str, needle_lower: &str) -> Option<String> {
+    let lower = content.to_lowercase();
+    let pos = lower.find(needle_lower)?;
+    // Byte offsets in `lower` can differ from `content` under non-ASCII
+    // case folding; clamp to the nearest boundaries in the original.
+    let mut start = pos.saturating_sub(40);
+    while start > 0 && !content.is_char_boundary(start) {
+        start -= 1;
+    }
+    let mut end = (pos + needle_lower.len() + 40).min(content.len());
+    while end < content.len() && !content.is_char_boundary(end) {
+        end += 1;
+    }
+    if start > content.len() || start >= end {
+        return Some(String::new());
+    }
+    let mut s = content[start..end]
+        .replace(['\n', '\r'], " ")
+        .trim()
+        .to_string();
+    if start > 0 {
+        s = format!("…{s}");
+    }
+    if end < content.len() {
+        s.push('…');
+    }
+    Some(s)
+}
+
 /// Renames a note and repoints every `[[old]]` link in the vault at the new
 /// name, so the backlink graph survives the rename. Returns the trimmed name
 /// actually used.
@@ -260,5 +342,33 @@ mod tests {
             rewrite_wiki_links(content, "Alpha", "Beta"),
             "Broken [[ and [[Beta]] after it",
         );
+    }
+
+    #[test]
+    fn snippet_finds_case_insensitive_match_with_context() {
+        let content = "Alpha beta GAMMA delta epsilon";
+        let s = snippet_around(content, "gamma").unwrap();
+        assert!(s.contains("GAMMA"), "{s}");
+        assert!(s.contains("beta") && s.contains("delta"));
+    }
+
+    #[test]
+    fn snippet_flattens_newlines_and_marks_truncation() {
+        let long = format!("{}needle{}", "x".repeat(100), "y\ny".repeat(60));
+        let s = snippet_around(&long, "needle").unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…'), "{s}");
+        assert!(!s.contains('\n'));
+    }
+
+    #[test]
+    fn snippet_survives_multibyte_boundaries() {
+        let content = format!("{}né needle {}", "é".repeat(30), "ü".repeat(30));
+        let s = snippet_around(&content, "needle").unwrap();
+        assert!(s.contains("needle"));
+    }
+
+    #[test]
+    fn snippet_none_without_match() {
+        assert!(snippet_around("nothing here", "absent").is_none());
     }
 }

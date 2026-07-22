@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { Avatar } from "../../platform";
 import { useSession } from "../../stores/session";
-import { useVoice } from "./voice";
+import { setUserVolume, useVoice } from "./voice";
 
 /**
  * Floating video stage: a draggable, resizable tile panel for the connected
@@ -100,6 +100,7 @@ export function VideoStage() {
   const muted = useVoice((s) => s.muted);
   const screenOn = useVoice((s) => s.screenOn);
   const speaking = useVoice((s) => s.speaking);
+  const userVolumes = useVoice((s) => s.userVolumes);
   const channels = useVoice((s) => s.channels);
   const me = useSession((s) => s.session?.user);
 
@@ -207,6 +208,20 @@ export function VideoStage() {
         {t.sharingScreen && t.kind === "camera" && <MonitorUp size={11} />}
         {t.kind === "screen" ? `${t.name} — screen` : t.name}
       </span>
+      {t.userId !== me.id && t.kind === "camera" && (
+        <input
+          className="wf-stage-volume"
+          type="range"
+          min={0}
+          max={1.5}
+          step={0.05}
+          title="Volume for this person"
+          value={userVolumes[t.userId] ?? 1}
+          onClick={(e) => e.stopPropagation()}
+          onPointerDown={(e) => e.stopPropagation()}
+          onChange={(e) => setUserVolume(t.userId, Number(e.target.value))}
+        />
+      )}
     </div>
   );
 

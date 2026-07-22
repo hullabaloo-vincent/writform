@@ -96,7 +96,7 @@ export function CanvasDocCard({ payload }: { payload: string }) {
       if (timer) clearTimeout(timer);
       releaseReplica(docId);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, [docId, ref?.mode, ref?.anchor_b64, ref?.head_b64]);
 
   if (!ref) {

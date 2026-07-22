@@ -8,6 +8,7 @@ import {
   CloudOff,
   Download,
   History,
+  ListTree,
   MessageSquare,
   Presentation,
   Share2,
@@ -16,6 +17,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isCmdError } from "../../lib/backend";
+import { countWords, readingTime } from "../../lib/wordCount";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
@@ -27,6 +29,8 @@ import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
 import { exportDocument } from "./export";
+import { FindBar } from "./FindBar";
+import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
 import { activeProvider, useDocuments } from "./store";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
@@ -50,7 +54,7 @@ function caretColor(name: string): string {
 
 const AUTO_SNAPSHOT_MS = 60_000;
 
-type Panel = "none" | "history" | "feedback";
+type Panel = "none" | "history" | "feedback" | "outline";
 
 export function DocumentEditor() {
   const meta = useDocuments((s) => s.meta);
@@ -138,6 +142,7 @@ function EditorInner({
 }) {
   const { meta, myAccess, panel, setPanel } = state;
   const [exportOpen, setExportOpen] = useState(false);
+  const [finding, setFinding] = useState(false);
 
   const extensions = useMemo(
     () => [
@@ -175,6 +180,18 @@ function EditorInner({
 
   useAutoSnapshot(editor, meta.id, readonly);
   useFeedbackDecorations(editor, provider, state.threads, panel === "feedback");
+
+  // Cmd/Ctrl+F opens find-in-document while the editor view is up.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
+        e.preventDefault();
+        setFinding(true);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div className="wf-doc-room">
@@ -235,6 +252,13 @@ function EditorInner({
           onClick={() => setPanel(panel === "history" ? "none" : "history")}
         >
           <History size={16} />
+        </button>
+        <button
+          title="Outline"
+          className={panel === "outline" ? "active" : ""}
+          onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
+        >
+          <ListTree size={16} />
         </button>
         <div className="wf-doc-export-wrap">
           <button title="Export document" className={exportOpen ? "active" : ""} onClick={() => setExportOpen((open) => !open)}>
@@ -307,6 +331,8 @@ function EditorInner({
         </div>
       )}
 
+      {finding && editor && <FindBar editor={editor} onClose={() => setFinding(false)} />}
+
       <div className="wf-doc-body">
         <div className="wf-doc-scroll">
           <div className={`wf-page wf-fmt-${format}`}>
@@ -315,6 +341,7 @@ function EditorInner({
         </div>
         {panel === "history" && <VersionHistoryPanel editor={editor} />}
         {panel === "feedback" && <FeedbackPanel editor={editor} provider={provider} />}
+        {panel === "outline" && <OutlinePanel editor={editor} />}
       </div>
 
       {state.shareOpen && <ShareDialog onClose={() => state.setShareOpen(false)} />}
@@ -404,12 +431,12 @@ function DocumentStats({ editor, format }: { editor: Editor; format: string }) {
     };
   }, [editor]);
 
-  const text = editor.getText().trim();
-  const words = text ? text.split(/\s+/).length : 0;
+  const words = countWords(editor.getText());
   const blocks = editor.state.doc.childCount;
   return (
     <span className="wf-doc-stats">
       {words.toLocaleString()} {words === 1 ? "word" : "words"}
+      {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
       {format === "screenplay" && ` · ${blocks} elements`}
     </span>
   );

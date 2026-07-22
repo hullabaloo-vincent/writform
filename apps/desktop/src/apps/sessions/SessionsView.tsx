@@ -6,7 +6,9 @@ import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { RichDoc, RichEditor } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { notifyNow } from "../../lib/notifications";
+import { countWordsInDocJson } from "../../lib/wordCount";
+import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "../chat/api";
 import { MessageText } from "../chat/MessageText";
@@ -70,6 +72,12 @@ function SessionList({ channels }: { channels: number[] }) {
         </select>
       </header>
       {error && <p className="wf-connect-error">{error}</p>}
+      {sessions.length === 0 && (
+        <p className="wf-app-empty-hint">
+          Sessions are timed group writing sprints: someone posts a prompt, everyone
+          writes against the clock, and the pieces reveal together when time is up.
+        </p>
+      )}
       <div className="wf-sessions-grid">
         {sessions.map((s) => (
           <SessionCard key={s.id} session={s} onOpen={() => void openSession(s.id)} />
@@ -236,13 +244,20 @@ function SessionRoom() {
   );
 }
 
-function Countdown({ endsAt }: { endsAt: number }) {
+function Countdown({ endsAt, onEnd }: { endsAt: number; onEnd?: () => void }) {
   const [, tick] = useState(0);
+  const fired = useRef(false);
   useEffect(() => {
     const t = setInterval(() => tick((n) => n + 1), 500);
     return () => clearInterval(t);
   }, []);
   const remaining = Math.max(0, endsAt - Date.now());
+  useEffect(() => {
+    if (remaining === 0 && !fired.current) {
+      fired.current = true;
+      onEnd?.();
+    }
+  }, [remaining, onEnd]);
   const m = Math.floor(remaining / 60000);
   const s = Math.floor((remaining % 60000) / 1000);
   return (
@@ -292,7 +307,15 @@ function PromptCard({
         {prompt.state === "running" && (
           <>
             <span className="wf-prompt-chip running">writing…</span>
-            {prompt.ends_at != null && <Countdown endsAt={prompt.ends_at} />}
+            {prompt.ends_at != null && (
+              <Countdown
+                endsAt={prompt.ends_at}
+                onEnd={() => {
+                  toast("Time's up — the prompt has ended.", "info");
+                  void notifyNow("Time's up", "The writing prompt timer just ended.");
+                }}
+              />
+            )}
             {canControl && (
               <button onClick={() => void sessionApi.stopPrompt(prompt.id)}>Stop</button>
             )}
@@ -332,6 +355,7 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
   const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const latest = useRef<JSONContent | null>(null);
+  const [words, setWords] = useState(() => countWordsInDocJson(mine?.doc ?? null));
 
   const flush = async () => {
     if (!latest.current) return;
@@ -359,6 +383,8 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
       <div className="wf-writing-bar">
         <span>Your writing</span>
         <span className="wf-session-meta">
+          {words.toLocaleString()} {words === 1 ? "word" : "words"}
+          {" · "}
           {status === "saving" ? "saving…" : status === "saved" ? "saved ✓" : "autosaves"}
         </span>
       </div>
@@ -369,6 +395,7 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
         toolbar
         onChange={(doc) => {
           latest.current = doc;
+          setWords(countWordsInDocJson(doc));
           setStatus("idle");
           if (timer.current) clearTimeout(timer.current);
           timer.current = setTimeout(() => void flush(), 1500);

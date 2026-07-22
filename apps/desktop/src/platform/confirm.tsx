@@ -1,5 +1,6 @@
-import { useEffect } from "react";
 import { create } from "zustand";
+
+import { Modal } from "./Modal";
 
 /**
  * In-app confirmation dialog. The webview does not implement native
@@ -43,34 +44,22 @@ function answer(ok: boolean) {
 /** Mounted once at the root; renders the active confirmation, if any. */
 export function ConfirmHost() {
   const pending = useConfirmStore((s) => s.pending);
-
-  useEffect(() => {
-    if (!pending) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") answer(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [pending]);
-
   if (!pending) return null;
 
   return (
-    <div className="wf-modal-backdrop" onClick={() => answer(false)}>
-      <div className="wf-modal wf-confirm" onClick={(e) => e.stopPropagation()}>
-        {pending.title && <h3>{pending.title}</h3>}
-        <p className="wf-confirm-message">{pending.message}</p>
-        <div className="wf-connect-row wf-confirm-actions">
-          <button onClick={() => answer(false)}>Cancel</button>
-          <button
-            className={pending.danger ? "wf-danger" : "wf-primary"}
-            autoFocus
-            onClick={() => answer(true)}
-          >
-            {pending.confirmLabel ?? "Confirm"}
-          </button>
-        </div>
+    <Modal className="wf-confirm" onClose={() => answer(false)}>
+      {pending.title && <h3>{pending.title}</h3>}
+      <p className="wf-confirm-message">{pending.message}</p>
+      <div className="wf-connect-row wf-confirm-actions">
+        <button onClick={() => answer(false)}>Cancel</button>
+        <button
+          className={pending.danger ? "wf-danger-solid" : "wf-primary"}
+          autoFocus
+          onClick={() => answer(true)}
+        >
+          {pending.confirmLabel ?? "Confirm"}
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }

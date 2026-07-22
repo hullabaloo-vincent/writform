@@ -44,7 +44,7 @@ export function ConnectScreen() {
     void refresh().then(({ list, status }) => {
       setStep(list.length === 0 && !status.configured ? { kind: "welcome" } : { kind: "pick" });
     });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   const probe = async (addr: string, opts?: { defaultMode?: "login" | "register"; freshHost?: boolean }) => {

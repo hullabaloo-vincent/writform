@@ -1,5 +1,5 @@
 import { LogOut } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { backend } from "../lib/backend";
 import { useSession } from "../stores/session";
@@ -7,6 +7,19 @@ import { Avatar } from "./Avatar";
 import { CommandPalette } from "./CommandPalette";
 import { usePlatform } from "./registry";
 import { Slot } from "./Slot";
+
+/** Slim banner while the server socket is down; resync clears it on its own. */
+function ReconnectBanner() {
+  const [down, setDown] = useState(false);
+  useEffect(() => backend.onWsStatus((connected) => setDown(!connected)), []);
+  if (!down) return null;
+  return (
+    <div className="wf-reconnect-banner">
+      <span className="wf-spinner sm" aria-hidden />
+      Connection to the server lost — reconnecting…
+    </div>
+  );
+}
 
 const STATUS_OPTIONS = [
   { value: "online", label: "Online", dot: "" },
@@ -78,16 +91,19 @@ export function AppShell() {
   const mainViews = usePlatform((s) => s.mainViews);
   const activeAppId = usePlatform((s) => s.activeAppId);
   const setActiveApp = usePlatform((s) => s.setActiveApp);
+  const badges = usePlatform((s) => s.badges);
 
   const activeView = activeAppId ? mainViews[activeAppId] : undefined;
 
   return (
     <div className="wf-shell">
+      <ReconnectBanner />
       <div className="wf-body">
         <nav className="wf-rail">
           {mainViewApps.map((appId) => {
             const manifest = apps[appId];
             if (!manifest) return null;
+            const badge = badges[appId] ?? 0;
             return (
               <button
                 key={appId}
@@ -96,6 +112,7 @@ export function AppShell() {
                 onClick={() => setActiveApp(appId)}
               >
                 <span aria-hidden>{manifest.icon}</span>
+                {badge > 0 && <span className="wf-btn-badge">{badge > 99 ? "99+" : badge}</span>}
               </button>
             );
           })}

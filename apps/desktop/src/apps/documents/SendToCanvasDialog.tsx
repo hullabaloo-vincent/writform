@@ -6,6 +6,7 @@ import * as Y from "yjs";
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
 import { isCmdError } from "../../lib/backend";
+import { Modal } from "../../platform";
 import { canvasApi } from "../canvas/api";
 import { useChat } from "../chat/store";
 import { b64encode } from "./collab";
@@ -94,63 +95,61 @@ export function SendToCanvasDialog({
   };
 
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="wf-doc-panel-header">
-          <h3>Send to canvas</h3>
-          <span className="wf-statusbar-spacer" />
-          <button className="wf-icon" onClick={onClose}>
-            <X size={15} />
-          </button>
-        </header>
-        {error && (
-          <p className="wf-connect-error" onClick={() => setError(null)}>
-            {error}
-          </p>
-        )}
-        <p className="wf-doc-share-note">
-          Members of the board's group need the document shared with them to see its content.
+    <Modal onClose={onClose}>
+      <header className="wf-doc-panel-header">
+        <h3>Send to canvas</h3>
+        <span className="wf-statusbar-spacer" />
+        <button className="wf-icon" onClick={onClose}>
+          <X size={15} />
+        </button>
+      </header>
+      {error && (
+        <p className="wf-connect-error" onClick={() => setError(null)}>
+          {error}
         </p>
-        <div className="wf-doc-panel-row">
-          <select
-            value={groupId ?? ""}
-            onChange={(e) => setGroupId(Number(e.target.value))}
-          >
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
-              </option>
-            ))}
-          </select>
-          <select
-            value={boardId ?? ""}
-            onChange={(e) => setBoardId(Number(e.target.value))}
-            disabled={boards.length === 0}
-          >
-            {boards.map((b) => (
-              <option key={b.id} value={b.id}>
-                {b.name}
-              </option>
-            ))}
-            {boards.length === 0 && <option value="">No boards in this group</option>}
-          </select>
-        </div>
-        <label className="wf-doc-share-note">
-          <input
-            type="checkbox"
-            checked={selectionOnly && hasSelection}
-            disabled={!hasSelection}
-            onChange={(e) => setSelectionOnly(e.target.checked)}
-          />{" "}
-          Only the selected text {!hasSelection && "(select text first)"}
-        </label>
-        <div className="wf-doc-panel-row">
-          <span className="wf-statusbar-spacer" />
-          <button className="wf-primary" disabled={boardId === null || done} onClick={() => void send()}>
-            {done ? "Added to board ✓" : "Add to board"}
-          </button>
-        </div>
+      )}
+      <p className="wf-doc-share-note">
+        Members of the board's group need the document shared with them to see its content.
+      </p>
+      <div className="wf-doc-panel-row">
+        <select
+          value={groupId ?? ""}
+          onChange={(e) => setGroupId(Number(e.target.value))}
+        >
+          {groups.map((g) => (
+            <option key={g.id} value={g.id}>
+              {g.name}
+            </option>
+          ))}
+        </select>
+        <select
+          value={boardId ?? ""}
+          onChange={(e) => setBoardId(Number(e.target.value))}
+          disabled={boards.length === 0}
+        >
+          {boards.map((b) => (
+            <option key={b.id} value={b.id}>
+              {b.name}
+            </option>
+          ))}
+          {boards.length === 0 && <option value="">No boards in this group</option>}
+        </select>
       </div>
-    </div>
+      <label className="wf-doc-share-note">
+        <input
+          type="checkbox"
+          checked={selectionOnly && hasSelection}
+          disabled={!hasSelection}
+          onChange={(e) => setSelectionOnly(e.target.checked)}
+        />{" "}
+        Only the selected text {!hasSelection && "(select text first)"}
+      </label>
+      <div className="wf-doc-panel-row">
+        <span className="wf-statusbar-spacer" />
+        <button className="wf-primary" disabled={boardId === null || done} onClick={() => void send()}>
+          {done ? "Added to board ✓" : "Add to board"}
+        </button>
+      </div>
+    </Modal>
   );
 }

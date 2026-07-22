@@ -81,10 +81,44 @@ function style(id: string, name: string, left: number, right: number, bold = fal
   return `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/><w:pPr><w:ind w:left="${left}" w:right="${right}"/>${align ? `<w:jc w:val="${align}"/>` : ""}</w:pPr><w:rPr>${bold ? "<w:b/>" : ""}${size ? `<w:sz w:val="${size}"/>` : ""}</w:rPr></w:style>`;
 }
 
-function ascii(value: string): string {
-  return value.normalize("NFKD").replace(/[^\x20-\x7E]/g, "?");
+/**
+ * cp1252's 0x80–0x9F block — the characters writers actually type (smart
+ * quotes, em dashes, ellipses). Everything 0xA0–0xFF passes through as
+ * Latin-1. The old exporter flattened ALL of these to "?".
+ */
+const CP1252_HIGH: Record<string, number> = {
+  "€": 128, "‚": 130, "ƒ": 131, "„": 132, "…": 133,
+  "†": 134, "‡": 135, "ˆ": 136, "‰": 137, "Š": 138,
+  "‹": 139, "Œ": 140, "Ž": 142, "‘": 145, "’": 146,
+  "“": 147, "”": 148, "•": 149, "–": 150, "—": 151,
+  "˜": 152, "™": 153, "š": 154, "›": 155, "œ": 156,
+  "ž": 158, "Ÿ": 159,
+};
+
+/** Map to WinAnsi (cp1252); only genuinely unrepresentable chars become "?". */
+function winAnsi(value: string): string {
+  let out = "";
+  // NFC composes é rather than decomposing it (NFKD left "e" + a combining
+  // mark the map couldn't represent).
+  for (const ch of value.normalize("NFC")) {
+    const code = ch.codePointAt(0) ?? 0;
+    if ((code >= 0x20 && code <= 0x7e) || (code >= 0xa0 && code <= 0xff)) out += ch;
+    else if (ch in CP1252_HIGH) out += String.fromCharCode(CP1252_HIGH[ch]);
+    else if (ch === "−") out += "-";
+    else if (ch === "\n" || ch === "\t") out += ch;
+    else out += "?";
+  }
+  return out;
 }
-const pdfEscape = (value: string) => ascii(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+const pdfEscape = (value: string) => winAnsi(value).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
+
+/** The PDF string is pure Latin-1 by construction; encode it byte-for-byte
+ * (TextEncoder would emit UTF-8 and corrupt every /Length). */
+function latin1Bytes(value: string): Uint8Array {
+  const out = new Uint8Array(value.length);
+  for (let i = 0; i < value.length; i += 1) out[i] = value.charCodeAt(i) & 0xff;
+  return out;
+}
 
 function wrap(text: string, maxChars: number): string[] {
   if (!text) return [""];
@@ -146,8 +180,8 @@ export function buildPdf(doc: JSONContent, title: string, format: string): Uint8
   const objects: string[] = [];
   objects[0] = `<< /Type /Catalog /Pages 2 0 R >>`;
   objects[1] = "";
-  objects[2] = `<< /Type /Font /Subtype /Type1 /BaseFont /Courier >>`;
-  objects[3] = `<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold >>`;
+  objects[2] = `<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>`;
+  objects[3] = `<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>`;
   const kids: string[] = [];
   for (const content of pages) {
     const pageNo = objects.length + 1;
@@ -164,5 +198,5 @@ export function buildPdf(doc: JSONContent, title: string, format: string): Uint8
   pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
   for (let i = 1; i <= objects.length; i += 1) pdf += `${String(offsets[i]).padStart(10, "0")} 00000 n \n`;
   pdf += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
-  return new TextEncoder().encode(pdf);
+  return latin1Bytes(pdf);
 }

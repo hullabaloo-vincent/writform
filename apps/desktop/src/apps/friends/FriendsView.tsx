@@ -4,12 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
+import type { Message } from "../../bindings/proto/Message";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
-import { Avatar, confirmDialog, onResync, showProfile } from "../../platform";
+import {
+  Avatar,
+  confirmDialog,
+  onResync,
+  showProfile,
+  SkeletonRows,
+  toastError,
+} from "../../platform";
 import { chatApi } from "../chat/api";
-import { MessageActions } from "../chat/ChatView";
-import { MessageText } from "../chat/MessageText";
+import { MessageRow } from "../chat/ChatView";
 import { useChat } from "../chat/store";
+import { useFriends } from "./store";
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await backend.apiFetch(method, path, body);
@@ -66,12 +74,18 @@ function SharedNoteCard({ content }: { content: string }) {
 export function FriendsView() {
   const [friends, setFriends] = useState<Friend[]>([]);
   const [requests, setRequests] = useState<FriendRequests>({ incoming: [], outgoing: [] });
+  const [loaded, setLoaded] = useState(false);
   const [dm, setDm] = useState<DmChannel | null>(null);
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const dmUnread = useFriends((s) => s.dmUnread);
 
   const refresh = () => {
-    void friendsApi.friends().then(setFriends).catch(() => {});
+    void friendsApi
+      .friends()
+      .then(setFriends)
+      .catch(() => {})
+      .finally(() => setLoaded(true));
     void friendsApi.requests().then(setRequests).catch(() => {});
   };
   useEffect(refresh, []);
@@ -158,6 +172,7 @@ export function FriendsView() {
         )}
 
         <h3>All friends — {friends.length}</h3>
+        {!loaded && <SkeletonRows rows={4} avatar />}
         <ul className="wf-friend-list">
           {friends.map((f) => (
             <li key={f.user.id} className={dm?.peer.id === f.user.id ? "active" : ""}>
@@ -184,6 +199,11 @@ export function FriendsView() {
                 }
               >
                 {f.user.display_name ?? f.user.username}
+                {(dmUnread[f.user.id] ?? 0) > 0 && (
+                  <span className="wf-unread-pill">
+                    {dmUnread[f.user.id] > 99 ? "99+" : dmUnread[f.user.id]}
+                  </span>
+                )}
               </button>
               <button
                 title="Remove friend"
@@ -203,7 +223,9 @@ export function FriendsView() {
               </button>
             </li>
           ))}
-          {friends.length === 0 && <li className="wf-friend-dim">No friends yet — add one above.</li>}
+          {loaded && friends.length === 0 && (
+            <li className="wf-friend-dim">No friends yet — add one above.</li>
+          )}
         </ul>
       </div>
       <div className="wf-friends-dm">
@@ -220,7 +242,11 @@ export function FriendsView() {
 function DmPane({ dm }: { dm: DmChannel }) {
   const messagesMap = useChat((s) => s.messages);
   const messages = messagesMap[dm.channel_id] ?? [];
-  const [draft, setDraft] = useState("");
+  // Drafts share the chat store's per-channel map (DM channel ids live in
+  // the same id space), so they survive switching conversations and apps.
+  const draft = useChat((s) => s.drafts[dm.channel_id] ?? "");
+  const setDraft = useChat((s) => s.setDraft);
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -230,58 +256,77 @@ function DmPane({ dm }: { dm: DmChannel }) {
     });
   }, [dm.channel_id]);
 
+  // Viewing this conversation clears (and suppresses) its unread count.
+  useEffect(() => {
+    useFriends.getState().setActiveDmPeer(dm.peer.id);
+    return () => useFriends.getState().setActiveDmPeer(null);
+  }, [dm.peer.id]);
+
+  useEffect(() => {
+    setReplyTo(null);
+  }, [dm.channel_id]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages.length]);
+
+  const submit = () => {
+    const content = draft.trim();
+    if (!content) return;
+    const replyToId = replyTo?.id ?? null;
+    setDraft(dm.channel_id, "");
+    setReplyTo(null);
+    void chatApi.sendMessage(dm.channel_id, content, [], replyToId).catch(() => {
+      // Put the text back so nothing is lost.
+      setDraft(dm.channel_id, content);
+      toastError("Message didn't send — your text is back in the box.");
+    });
+  };
 
   return (
     <>
       <header className="wf-chat-main-header">@ {dm.peer.display_name ?? dm.peer.username}</header>
       <div className="wf-chat-messages" data-msg-scroll>
         {messages.map((m, i) => (
-          <div key={m.id} className={`wf-msg ${messages[i - 1]?.author.id === m.author.id ? "compact" : ""}`}>
-            <MessageActions message={m} authorOnly />
-            {messages[i - 1]?.author.id !== m.author.id && (
-              <div className="wf-msg-meta">
-                <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
-                <span className="wf-msg-time">
-                  {new Date(m.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                </span>
-              </div>
-            )}
-            {m.kind === "shared_note" ? (
-              <SharedNoteCard content={m.content ?? "{}"} />
-            ) : (
-              m.content && (
-                <div className="wf-msg-content">
-                  <MessageText text={m.content} />
-                </div>
-              )
-            )}
-          </div>
+          <MessageRow
+            key={m.id}
+            message={m}
+            compact={messages[i - 1]?.author.id === m.author.id}
+            authorOnly
+            onReply={setReplyTo}
+            sharedNoteCard={(content) => <SharedNoteCard content={content} />}
+          />
         ))}
         <div ref={bottomRef} />
       </div>
+      {replyTo && (
+        <div className="wf-reply-chip">
+          Replying to{" "}
+          <strong>{replyTo.author.display_name ?? replyTo.author.username}</strong>
+          <span className="wf-reply-chip-text">{(replyTo.content ?? "").slice(0, 80)}</span>
+          <button className="wf-icon" title="Cancel reply" onClick={() => setReplyTo(null)}>
+            ×
+          </button>
+        </div>
+      )}
       <form
         className="wf-composer"
         onSubmit={(e) => {
           e.preventDefault();
-          const content = draft.trim();
-          if (!content) return;
-          setDraft("");
-          void chatApi.sendMessage(dm.channel_id, content);
+          submit();
         }}
       >
         <textarea
           rows={1}
           placeholder={`Message @${dm.peer.username}`}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => setDraft(dm.channel_id, e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               e.currentTarget.form?.requestSubmit();
             }
+            if (e.key === "Escape" && replyTo) setReplyTo(null);
           }}
         />
         <button className="wf-primary" type="submit" disabled={!draft.trim()}>

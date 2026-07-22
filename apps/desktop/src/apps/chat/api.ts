@@ -58,12 +58,19 @@ export const chatApi = {
   /** Catch-up after a socket outage: only messages newer than `after`. */
   messagesAfter: (channelId: number, after: number) =>
     api<Message[]>("GET", `/api/v1/channels/${channelId}/messages?after=${after}`),
-  sendMessage: (channelId: number, content: string, attachmentIds: number[] = []) =>
+  sendMessage: (
+    channelId: number,
+    content: string,
+    attachmentIds: number[] = [],
+    replyToId: number | null = null,
+  ) =>
     api<Message>("POST", `/api/v1/channels/${channelId}/messages`, {
       content,
-      reply_to_id: null,
+      reply_to_id: replyToId,
       attachment_ids: attachmentIds,
     }),
+  editMessage: (messageId: number, content: string) =>
+    api<Message>("PATCH", `/api/v1/messages/${messageId}`, { content }),
   kick: (groupId: number, userId: number) =>
     api<null>("DELETE", `/api/v1/groups/${groupId}/members/${userId}`),
   deleteMessage: (messageId: number) => api<null>("DELETE", `/api/v1/messages/${messageId}`),

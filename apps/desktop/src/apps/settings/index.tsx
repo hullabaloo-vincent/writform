@@ -1,5 +1,6 @@
 import {
   ArrowDownToLine,
+  Bell,
   Fingerprint,
   Mic,
   MonitorSmartphone,
@@ -24,6 +25,7 @@ import {
 import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
+import { loadNotifPrefs, saveNotifPrefs, type NotifPrefs } from "../../lib/notifPrefs";
 import {
   loadVoiceSettings,
   saveVoiceSettings,
@@ -45,7 +47,7 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.body as T;
 }
 
-type Tab = "profile" | "voice" | "devices" | "server" | "app" | "admin";
+type Tab = "profile" | "voice" | "notifications" | "devices" | "server" | "app" | "admin";
 
 function SettingsView() {
   const me = useSession((s) => s.session?.user);
@@ -55,6 +57,7 @@ function SettingsView() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
     { id: "voice", label: "Voice", icon: <Mic size={15} />, show: true },
+    { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: true },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: true },
     { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: true },
     { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: true },
@@ -83,6 +86,7 @@ function SettingsView() {
         {error && <p className="wf-connect-error">{error}</p>}
         {tab === "profile" && <ProfileTab onError={setError} />}
         {tab === "voice" && <VoiceTab onError={setError} />}
+        {tab === "notifications" && <NotificationsTab />}
         {tab === "devices" && <DevicesTab onError={setError} />}
         {tab === "server" && <ServerTab onError={setError} />}
         {tab === "app" && <AppTab onError={setError} />}
@@ -402,9 +406,17 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         </div>
         <span className="wf-session-meta">
           Speak — the meter shows your level after the input-volume setting.
-          Device changes apply the next time you join a voice channel.
+          Device changes apply immediately, even mid-call.
         </span>
       </div>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={settings.sounds}
+          onChange={(e) => apply({ sounds: e.target.checked })}
+        />
+        Play a short sound when someone joins or leaves your voice channel
+      </label>
 
       <h3>Video</h3>
       <label className="wf-settings-field">
@@ -448,9 +460,53 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         {cameraTesting && <video ref={previewRef} autoPlay playsInline muted className="wf-camera-preview" />}
         <span className="wf-session-meta">
           The preview is mirrored, like a mirror — others see you unmirrored.
-          Device and quality changes apply the next time your camera starts.
+          Device and quality changes apply immediately, even while your camera is on.
         </span>
       </div>
+    </section>
+  );
+}
+
+function NotificationsTab() {
+  const [prefs, setPrefs] = useState<NotifPrefs>(() => loadNotifPrefs());
+  const apply = (patch: Partial<NotifPrefs>) => {
+    const next = { ...prefs, ...patch };
+    setPrefs(next);
+    saveNotifPrefs(next);
+  };
+  const rows: { key: keyof Omit<NotifPrefs, "enabled">; label: string }[] = [
+    { key: "dms", label: "Direct messages" },
+    { key: "mentions", label: "@mentions in group chat" },
+    { key: "sessions", label: "Writing sessions (created, prompt started, timer ended)" },
+    { key: "shares", label: "Notes and documents shared with you" },
+    { key: "friends", label: "Friend requests" },
+  ];
+  return (
+    <section>
+      <h3>Notifications</h3>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={prefs.enabled}
+          onChange={(e) => apply({ enabled: e.target.checked })}
+        />
+        Enable system notifications
+      </label>
+      {rows.map((r) => (
+        <label key={r.key} className="wf-settings-field wf-field-row">
+          <input
+            type="checkbox"
+            checked={prefs[r.key]}
+            disabled={!prefs.enabled}
+            onChange={(e) => apply({ [r.key]: e.target.checked })}
+          />
+          {r.label}
+        </label>
+      ))}
+      <p className="wf-session-meta">
+        Notifications for a conversation you're actively viewing are always suppressed.
+        Voice join/leave sounds live in the Voice tab.
+      </p>
     </section>
   );
 }

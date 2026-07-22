@@ -1,8 +1,15 @@
 import { MessagesSquare } from "lucide-react";
-import { onResync } from "../../platform";
+import { onResync, usePlatform } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { useFriends } from "../friends/store";
 import { ChatView, GlobalVoiceBar } from "./ChatView";
-import { installChatPresenceSync, installChatWsHandler, resyncChat } from "./store";
+import {
+  installChatPresenceSync,
+  installChatWsHandler,
+  installUnreadFocusSync,
+  resyncChat,
+  useChat,
+} from "./store";
 import { installVoiceWsHandler } from "./voice";
 
 export const chatApp: WritformApp = {
@@ -21,7 +28,17 @@ export const chatApp: WritformApp = {
     });
     installChatWsHandler();
     installChatPresenceSync();
+    installUnreadFocusSync();
     installVoiceWsHandler();
+    // Dock badges: total group-channel unread on Chat, DM unread on Friends.
+    useChat.subscribe((s) => {
+      const total = Object.values(s.unread).reduce((n, c) => n + c, 0);
+      usePlatform.getState().setAppBadge("writform.chat", total);
+    });
+    useFriends.subscribe((s) => {
+      const total = Object.values(s.dmUnread).reduce((n, c) => n + c, 0);
+      usePlatform.getState().setAppBadge("writform.friends", total);
+    });
     onResync(() => void resyncChat().catch(() => {}));
     onResync(() => {
       // Voice occupancy may have changed while offline.

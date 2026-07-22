@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import { backend, isCmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, Modal, SkeletonRows } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { documentsApi } from "./api";
 import { DocumentEditor } from "./DocumentEditor";
@@ -484,6 +484,7 @@ export function DocumentsView() {
         {(searching || folderId === null) && (
           <Section title="Shared with me" items={shared} onOpen={openDocument} onMenu={docMenu} />
         )}
+        {!loaded && <SkeletonRows rows={4} />}
         {loaded && items.length === 0 && !searching && (
           <p className="wf-documents-empty">
             No documents yet. Create one, or drop a PDF, DOCX, RTF, Pages, TXT, or Markdown
@@ -623,38 +624,36 @@ function MoveDialog({
     documentsApi.moveDocument(item.document.id, folderId).then(onDone).catch(onError);
   };
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="wf-doc-panel-header">
-          <h3>Move “{item.document.title}”</h3>
-        </header>
-        <ul className="wf-doc-share-list">
-          <li>
+    <Modal onClose={onClose}>
+      <header className="wf-doc-panel-header">
+        <h3>Move “{item.document.title}”</h3>
+      </header>
+      <ul className="wf-doc-share-list">
+        <li>
+          <button
+            className="wf-doc-move-target"
+            disabled={item.document.folder_id === null}
+            onClick={() => move(null)}
+          >
+            <FileText size={14} /> No folder
+          </button>
+        </li>
+        {folders.map((f) => (
+          <li key={f.id}>
             <button
               className="wf-doc-move-target"
-              disabled={item.document.folder_id === null}
-              onClick={() => move(null)}
+              disabled={item.document.folder_id === f.id}
+              onClick={() => move(f.id)}
             >
-              <FileText size={14} /> No folder
+              <Folder size={14} /> {f.name}
             </button>
           </li>
-          {folders.map((f) => (
-            <li key={f.id}>
-              <button
-                className="wf-doc-move-target"
-                disabled={item.document.folder_id === f.id}
-                onClick={() => move(f.id)}
-              >
-                <Folder size={14} /> {f.name}
-              </button>
-            </li>
-          ))}
-          {folders.length === 0 && (
-            <li className="wf-friend-dim">No folders yet — create one from the toolbar.</li>
-          )}
-        </ul>
-      </div>
-    </div>
+        ))}
+        {folders.length === 0 && (
+          <li className="wf-friend-dim">No folders yet — create one from the toolbar.</li>
+        )}
+      </ul>
+    </Modal>
   );
 }
 
@@ -671,33 +670,31 @@ function RenameFolderDialog({
 }) {
   const [name, setName] = useState(folder.name);
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="wf-doc-panel-header">
-          <h3>Rename folder</h3>
-        </header>
-        <form
-          className="wf-doc-panel-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const n = name.trim();
-            if (!n) return;
-            documentsApi.renameFolder(folder.id, n).then(onDone).catch(onError);
-          }}
-        >
-          <input
-            autoFocus
-            value={name}
-            maxLength={80}
-            onChange={(e) => setName(e.target.value)}
-            onFocus={(e) => e.currentTarget.select()}
-          />
-          <button type="submit" className="wf-primary" disabled={!name.trim()}>
-            Rename
-          </button>
-        </form>
-      </div>
-    </div>
+    <Modal onClose={onClose}>
+      <header className="wf-doc-panel-header">
+        <h3>Rename folder</h3>
+      </header>
+      <form
+        className="wf-doc-panel-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = name.trim();
+          if (!n) return;
+          documentsApi.renameFolder(folder.id, n).then(onDone).catch(onError);
+        }}
+      >
+        <input
+          autoFocus
+          value={name}
+          maxLength={80}
+          onChange={(e) => setName(e.target.value)}
+          onFocus={(e) => e.currentTarget.select()}
+        />
+        <button type="submit" className="wf-primary" disabled={!name.trim()}>
+          Rename
+        </button>
+      </form>
+    </Modal>
   );
 }
 
@@ -712,47 +709,45 @@ function ListShareDialog({
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal wf-doc-share-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="wf-doc-panel-header">
-          <h3>
-            Share {target.kind === "folder" ? "folder" : ""} “{target.name}”
-          </h3>
-        </header>
-        {error && (
-          <p className="wf-connect-error" onClick={() => setError(null)}>
-            {error}
-          </p>
-        )}
-        {done && <p className="wf-doc-share-note">{done}</p>}
-        <SharePicker
-          onShare={async (subject_kind, subject_id, access) => {
-            try {
-              if (target.kind === "folder") {
-                const shares = await documentsApi.shareFolder(target.id, {
-                  subject_kind,
-                  subject_id,
-                  access,
-                });
-                setDone(`Shared ${shares.length} document${shares.length === 1 ? "" : "s"}.`);
-              } else {
-                await documentsApi.setShare(target.id, { subject_kind, subject_id, access });
-                setDone("Shared.");
-              }
-              setError(null);
-            } catch (e) {
-              setError(isCmdError(e) ? e.message : String(e));
+    <Modal onClose={onClose} className="wf-doc-share-modal">
+      <header className="wf-doc-panel-header">
+        <h3>
+          Share {target.kind === "folder" ? "folder" : ""} “{target.name}”
+        </h3>
+      </header>
+      {error && (
+        <p className="wf-connect-error" onClick={() => setError(null)}>
+          {error}
+        </p>
+      )}
+      {done && <p className="wf-doc-share-note">{done}</p>}
+      <SharePicker
+        onShare={async (subject_kind, subject_id, access) => {
+          try {
+            if (target.kind === "folder") {
+              const shares = await documentsApi.shareFolder(target.id, {
+                subject_kind,
+                subject_id,
+                access,
+              });
+              setDone(`Shared ${shares.length} document${shares.length === 1 ? "" : "s"}.`);
+            } else {
+              await documentsApi.setShare(target.id, { subject_kind, subject_id, access });
+              setDone("Shared.");
             }
-          }}
-        />
-        {target.kind === "folder" && (
-          <p className="wf-doc-share-note">
-            Applies to the documents currently in the folder. Documents added later are not
-            shared automatically.
-          </p>
-        )}
-      </div>
-    </div>
+            setError(null);
+          } catch (e) {
+            setError(isCmdError(e) ? e.message : String(e));
+          }
+        }}
+      />
+      {target.kind === "folder" && (
+        <p className="wf-doc-share-note">
+          Applies to the documents currently in the folder. Documents added later are not
+          shared automatically.
+        </p>
+      )}
+    </Modal>
   );
 }
 

@@ -8,6 +8,7 @@ import {
   PenLine,
   PhoneOff,
   Plus,
+  Reply,
   Settings as SettingsIcon,
   SmilePlus,
   Trash2,
@@ -18,16 +19,27 @@ import {
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
+import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { Message } from "../../bindings/proto/Message";
 import { isCmdError } from "../../lib/backend";
+import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
-import { Avatar, confirmDialog, showProfile, usePlatform } from "../../platform";
+import {
+  Avatar,
+  confirmDialog,
+  Modal,
+  showLightbox,
+  showProfile,
+  SkeletonRows,
+  toastError,
+  usePlatform,
+} from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 import { MessageText } from "./MessageText";
-import { useChat } from "./store";
+import { useChat, type OutboxEntry } from "./store";
 import { VideoStage } from "./VideoStage";
-import { canScreenShare, useVoice, voiceApi } from "./voice";
+import { canScreenShare, setUserVolume, useVoice, voiceApi } from "./voice";
 
 const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
 
@@ -99,7 +111,7 @@ function EmotePicker({
                     confirmLabel: "Remove",
                     danger: true,
                   }).then((ok) => {
-                    if (ok) void chatApi.deleteEmote(group.id, e.id).catch(() => {});
+                    if (ok) void chatApi.deleteEmote(group.id, e.id).catch(() => toastError("Couldn't remove the emote."));
                   })
                 }
               >
@@ -190,11 +202,21 @@ function GroupList() {
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
   const selectGroup = useChat((s) => s.selectGroup);
+  const unread = useChat((s) => s.unread);
+  const channelGroup = useChat((s) => s.channelGroup);
   const [adding, setAdding] = useState(false);
+
+  const groupUnread = (groupId: number) =>
+    Object.entries(unread).reduce(
+      (n, [cid, count]) => (channelGroup[Number(cid)] === groupId ? n + count : n),
+      0,
+    );
 
   return (
     <>
-      {groups.map((g) => (
+      {groups.map((g) => {
+        const count = groupUnread(g.id);
+        return (
         <button
           key={g.id}
           className={`wf-chat-group-icon ${g.id === activeGroupId ? "active" : ""}`}
@@ -220,8 +242,10 @@ function GroupList() {
               .map((w) => w[0]?.toUpperCase())
               .join("")
           )}
+          {count > 0 && <span className="wf-btn-badge">{count > 99 ? "99+" : count}</span>}
         </button>
-      ))}
+        );
+      })}
       <button className="wf-chat-group-icon wf-chat-group-add" title="Create or join a group"
         onClick={() => setAdding(true)}>
         +
@@ -265,37 +289,35 @@ function AddGroupDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Create a group</h3>
-        {error && <p className="wf-connect-error">{error}</p>}
-        <div className="wf-connect-row">
-          <input
-            placeholder="group name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            autoFocus
-          />
-          <button
-            className="wf-primary"
-            disabled={!name.trim()}
-            onClick={() => void run(() => chatApi.createGroup(name.trim()))}
-          >
-            Create
-          </button>
-        </div>
-        <h3>…or join with an invite code</h3>
-        <div className="wf-connect-row">
-          <input placeholder="invite code" value={code} onChange={(e) => setCode(e.target.value)} />
-          <button
-            disabled={!code.trim()}
-            onClick={() => void run(() => chatApi.redeemInvite(code.trim()))}
-          >
-            Join
-          </button>
-        </div>
+    <Modal onClose={onClose}>
+      <h3>Create a group</h3>
+      {error && <p className="wf-connect-error">{error}</p>}
+      <div className="wf-connect-row">
+        <input
+          placeholder="group name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          autoFocus
+        />
+        <button
+          className="wf-primary"
+          disabled={!name.trim()}
+          onClick={() => void run(() => chatApi.createGroup(name.trim()))}
+        >
+          Create
+        </button>
       </div>
-    </div>
+      <h3>…or join with an invite code</h3>
+      <div className="wf-connect-row">
+        <input placeholder="invite code" value={code} onChange={(e) => setCode(e.target.value)} />
+        <button
+          disabled={!code.trim()}
+          onClick={() => void run(() => chatApi.redeemInvite(code.trim()))}
+        >
+          Join
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -335,69 +357,67 @@ function GroupSettingsDialog({
   };
 
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Group settings</h3>
-        {error && <p className="wf-connect-error">{error}</p>}
-        <label className="wf-field">
-          Name
-          <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
-        </label>
-        <div className="wf-field">
-          Icon
-          <div className="wf-connect-row" style={{ alignItems: "center" }}>
-            {iconId !== null ? (
-              <img className="wf-group-icon-preview" src={attSrc(iconId)} alt="group icon" />
-            ) : (
-              <span className="wf-session-meta">initials</span>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) {
-                  setBusy(true);
-                  uploadBlob(file, file.name)
-                    .then((meta) => setIconId(meta.id))
-                    .catch((err) => setError(isCmdError(err) ? err.message : String(err)))
-                    .finally(() => setBusy(false));
-                }
-                e.target.value = "";
-              }}
-            />
-            <button disabled={busy} onClick={() => fileRef.current?.click()}>
-              Upload image
-            </button>
-            {iconId !== null && <button onClick={() => setIconId(null)}>Remove</button>}
-          </div>
-        </div>
-        <label className="wf-field wf-field-row">
+    <Modal onClose={onClose}>
+      <h3>Group settings</h3>
+      {error && <p className="wf-connect-error">{error}</p>}
+      <label className="wf-field">
+        Name
+        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} />
+      </label>
+      <div className="wf-field">
+        Icon
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          {iconId !== null ? (
+            <img className="wf-group-icon-preview" src={attSrc(iconId)} alt="group icon" />
+          ) : (
+            <span className="wf-session-meta">initials</span>
+          )}
           <input
-            type="checkbox"
-            checked={useColor}
-            onChange={(e) => setUseColor(e.target.checked)}
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setBusy(true);
+                uploadBlob(file, file.name)
+                  .then((meta) => setIconId(meta.id))
+                  .catch((err) => setError(isCmdError(err) ? err.message : String(err)))
+                  .finally(() => setBusy(false));
+              }
+              e.target.value = "";
+            }}
           />
-          Accent color
-          <input
-            type="color"
-            value={color}
-            disabled={!useColor}
-            onChange={(e) => setColor(e.target.value)}
-          />
-        </label>
-        <div className="wf-connect-row">
-          <button onClick={onClose} disabled={busy}>
-            Cancel
+          <button disabled={busy} onClick={() => fileRef.current?.click()}>
+            Upload image
           </button>
-          <button className="wf-primary" onClick={save} disabled={busy || !name.trim()}>
-            {busy ? "…" : "Save"}
-          </button>
+          {iconId !== null && <button onClick={() => setIconId(null)}>Remove</button>}
         </div>
       </div>
-    </div>
+      <label className="wf-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={useColor}
+          onChange={(e) => setUseColor(e.target.checked)}
+        />
+        Accent color
+        <input
+          type="color"
+          value={color}
+          disabled={!useColor}
+          onChange={(e) => setColor(e.target.value)}
+        />
+      </label>
+      <div className="wf-connect-row">
+        <button onClick={onClose} disabled={busy}>
+          Cancel
+        </button>
+        <button className="wf-primary" onClick={save} disabled={busy || !name.trim()}>
+          {busy ? "…" : "Save"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -405,6 +425,7 @@ function ChannelList() {
   const channels = useChat((s) => s.channels);
   const activeChannelId = useChat((s) => s.activeChannelId);
   const selectChannel = useChat((s) => s.selectChannel);
+  const unread = useChat((s) => s.unread);
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
   const group = groups.find((g) => g.id === activeGroupId);
@@ -449,15 +470,23 @@ function ChannelList() {
       <nav>
         {channels
           .filter((c) => c.kind === "text")
-          .map((c) => (
-            <button
-              key={c.id}
-              className={`wf-chat-channel ${c.id === activeChannelId ? "active" : ""}`}
-              onClick={() => void selectChannel(c.id)}
-            >
-              # {c.name}
-            </button>
-          ))}
+          .map((c) => {
+            const count = unread[c.id] ?? 0;
+            return (
+              <button
+                key={c.id}
+                className={`wf-chat-channel ${c.id === activeChannelId ? "active" : ""} ${
+                  count > 0 ? "unread" : ""
+                }`}
+                onClick={() => void selectChannel(c.id)}
+              >
+                # {c.name}
+                {count > 0 && (
+                  <span className="wf-unread-pill">{count > 99 ? "99+" : count}</span>
+                )}
+              </button>
+            );
+          })}
         {isAdmin && !newChannel && (
           <button className="wf-chat-channel wf-chat-channel-add" onClick={() => setNewChannel(true)}>
             + new channel
@@ -498,6 +527,7 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
   const remoteMedia = useVoice((s) => s.remoteMedia);
   const cameraOn = useVoice((s) => s.cameraOn);
   const screenOn = useVoice((s) => s.screenOn);
+  const userVolumes = useVoice((s) => s.userVolumes);
   const join = useVoice((s) => s.join);
   const loadChannels = useVoice((s) => s.loadChannels);
   const error = useVoice((s) => s.error);
@@ -544,6 +574,18 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
                     {u.display_name ?? u.username}
                     {hasCamera && <Video size={12} className="wf-voice-media-badge" />}
                     {hasScreen && <MonitorUp size={12} className="wf-voice-media-badge" />}
+                    {inMyRoom && !isMe && (
+                      <input
+                        className="wf-occupant-volume"
+                        type="range"
+                        min={0}
+                        max={1.5}
+                        step={0.05}
+                        title={`Volume for ${u.display_name ?? u.username}`}
+                        value={userVolumes[u.id] ?? 1}
+                        onChange={(e) => setUserVolume(u.id, Number(e.target.value))}
+                      />
+                    )}
                   </li>
                 );
               })}
@@ -721,48 +763,156 @@ function MemberList() {
 }
 
 const NO_MESSAGES: Message[] = [];
+const NO_OUTBOX: OutboxEntry[] = [];
 
 function MessagePane() {
   const activeChannelId = useChat((s) => s.activeChannelId);
   const messagesMap = useChat((s) => s.messages);
-  const messages = (activeChannelId !== null && messagesMap[activeChannelId]) || NO_MESSAGES;
+  // No map entry = history still fetching; an empty array is a real empty
+  // channel. Revisited channels have cached entries, so no skeleton flash.
+  const loaded = activeChannelId !== null && activeChannelId in messagesMap;
+  const messages = (loaded && messagesMap[activeChannelId]) || NO_MESSAGES;
+  const outboxAll = useChat((s) => s.outbox);
+  const outbox = activeChannelId
+    ? outboxAll.filter((o) => o.channelId === activeChannelId)
+    : NO_OUTBOX;
+  const historyDone = useChat((s) => s.historyDone);
+  const loadOlder = useChat((s) => s.loadOlder);
+  const markRead = useChat((s) => s.markRead);
+  const setReplyTo = useChat((s) => s.setReplyTo);
   const channels = useChat((s) => s.channels);
   const channel = channels.find((c) => c.id === activeChannelId);
+  const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  /** Whether the user is (visually) at the bottom of the list. */
+  const atBottom = useRef(true);
+  /** Set before a prepend so the next layout pass restores the position. */
+  const restore = useRef<{ height: number; top: number } | null>(null);
+  const [showJump, setShowJump] = useState(false);
 
   useEffect(() => {
+    atBottom.current = true;
+    setShowJump(false);
+  }, [activeChannelId]);
+
+  // Runs after every list change: follow the bottom, restore after a
+  // prepend, or surface the "new messages" pill — never yank mid-read.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (restore.current) {
+      el.scrollTop = el.scrollHeight - restore.current.height + restore.current.top;
+      restore.current = null;
+      return;
+    }
+    if (atBottom.current) {
+      bottomRef.current?.scrollIntoView({ behavior: "instant" });
+    } else if (messages.length > 0) {
+      setShowJump(true);
+    }
+  }, [messages.length, outbox.length, activeChannelId]);
+
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el || activeChannelId === null) return;
+    const bottomed = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    atBottom.current = bottomed;
+    if (bottomed) {
+      setShowJump(false);
+      markRead(activeChannelId);
+    }
+    if (el.scrollTop < 60 && loaded && messages.length > 0 && !historyDone[activeChannelId]) {
+      // Capture geometry first: the prepend re-render must not move the view.
+      restore.current = { height: el.scrollHeight, top: el.scrollTop };
+      void loadOlder(activeChannelId).then((added) => {
+        if (added === 0) restore.current = null;
+      });
+    }
+  };
+
+  const jumpToLatest = () => {
+    atBottom.current = true;
+    setShowJump(false);
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
-  }, [messages.length, activeChannelId]);
+    if (activeChannelId !== null) markRead(activeChannelId);
+  };
 
   return (
     <>
       <header className="wf-chat-main-header"># {channel?.name}</header>
-      <div className="wf-chat-messages" data-msg-scroll>
-        {messages.map((m, i) => (
-          <MessageRow key={m.id} message={m} compact={messages[i - 1]?.author.id === m.author.id} />
+      <div className="wf-chat-messages" data-msg-scroll ref={scrollRef} onScroll={onScroll}>
+        {loaded && messages.length > 0 && historyDone[activeChannelId] && (
+          <p className="wf-chat-history-start">This is the beginning of #{channel?.name}.</p>
+        )}
+        {!loaded ? (
+          <SkeletonRows rows={7} avatar />
+        ) : (
+          messages.map((m, i) => (
+            <MessageRow
+              key={m.id}
+              message={m}
+              compact={messages[i - 1]?.author.id === m.author.id}
+              onReply={setReplyTo}
+            />
+          ))
+        )}
+        {outbox.map((o) => (
+          <PendingRow key={o.key} entry={o} />
         ))}
         <div ref={bottomRef} />
       </div>
+      {showJump && (
+        <button className="wf-jump-latest" onClick={jumpToLatest}>
+          New messages ↓
+        </button>
+      )}
       <Composer />
     </>
   );
 }
 
-/** Hover-revealed delete control; shown to the author or a group admin. */
+/** An optimistic (or failed) send, shown after the confirmed history. */
+function PendingRow({ entry }: { entry: OutboxEntry }) {
+  const retrySend = useChat((s) => s.retrySend);
+  const discardSend = useChat((s) => s.discardSend);
+  return (
+    <div className={`wf-msg wf-msg-pending ${entry.state}`}>
+      <div className="wf-msg-content">
+        <MessageText text={entry.content} />
+      </div>
+      {entry.state === "sending" ? (
+        <span className="wf-msg-pending-note">sending…</span>
+      ) : (
+        <span className="wf-msg-pending-note failed">
+          couldn't send
+          <button onClick={() => void retrySend(entry.key)}>Retry</button>
+          <button onClick={() => discardSend(entry.key)}>Discard</button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+/** Hover-revealed message controls: react, reply, edit, delete. */
 export function MessageActions({
   message,
   authorOnly = false,
+  onReply,
 }: {
   message: Message;
   /** DMs have no group admin — only the author may delete. */
   authorOnly?: boolean;
+  /** When set, a reply button appears and hands back the message. */
+  onReply?: (message: Message) => void;
 }) {
   const me = useSession((s) => s.session?.user);
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
+  const setEditing = useChat((s) => s.setEditing);
   const group = groups.find((g) => g.id === activeGroupId);
   const canDelete =
     me && (message.author.id === me.id || (!authorOnly && group?.my_role === "admin"));
+  const canEdit = me?.id === message.author.id && message.kind === "text";
   const [pickerOpen, setPickerOpen] = useState(false);
 
   // Session/document cards are UI affordances rather than conversation, so
@@ -774,6 +924,16 @@ export function MessageActions({
     // only shown on `.wf-msg:hover`, and the picker sits above the row, so
     // reaching for an emoji left the row and closed the drawer.
     <span className={`wf-msg-actions ${pickerOpen ? "open" : ""}`}>
+      {onReply && message.kind === "text" && (
+        <button className="wf-icon" title="Reply" onClick={() => onReply(message)}>
+          <Reply size={13} />
+        </button>
+      )}
+      {canEdit && (
+        <button className="wf-icon" title="Edit message" onClick={() => setEditing(message.id)}>
+          <PenLine size={13} />
+        </button>
+      )}
       {canReact && (
         <span className="wf-react-anchor">
           <button
@@ -787,7 +947,7 @@ export function MessageActions({
             <ReactionPicker
               onPick={(emoji) => {
                 setPickerOpen(false);
-                void chatApi.react(message.id, emoji).catch(() => {});
+                void chatApi.react(message.id, emoji).catch(() => toastError("Reaction didn't go through."));
               }}
               onClose={() => setPickerOpen(false)}
             />
@@ -804,7 +964,7 @@ export function MessageActions({
               confirmLabel: "Delete",
               danger: true,
             }).then((ok) => {
-              if (ok) void chatApi.deleteMessage(message.id).catch(() => {});
+              if (ok) void chatApi.deleteMessage(message.id).catch(() => toastError("Couldn't delete the message."));
             })
           }
         >
@@ -879,7 +1039,7 @@ function MessageReactions({ message }: { message: Message }) {
             void (r.me
               ? chatApi.unreact(message.id, r.emoji)
               : chatApi.react(message.id, r.emoji)
-            ).catch(() => {})
+            ).catch(() => toastError("Reaction didn't go through."))
           }
         >
           <span className="wf-reaction-emoji">{r.emoji}</span>
@@ -971,14 +1131,124 @@ function DocumentShareCard({ content }: { content: string }) {
   );
 }
 
-function MessageRow({ message, compact }: { message: Message; compact: boolean }) {
+/** Quoted parent above a reply; clicking scrolls to the original. */
+function ReplyQuote({ message }: { message: Message }) {
+  const parent = useChat((s) =>
+    message.reply_to_id !== null
+      ? s.messages[message.channel_id]?.find((m) => m.id === message.reply_to_id)
+      : undefined,
+  );
+  if (message.reply_to_id === null) return null;
+  const jump = () => {
+    document
+      .getElementById(`wf-msg-${message.reply_to_id}`)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  return (
+    <button className="wf-msg-quote" onClick={jump} title="Jump to the original message">
+      <Reply size={11} />
+      {parent ? (
+        <>
+          <span className="wf-msg-quote-author">
+            {parent.author.display_name ?? parent.author.username}
+          </span>
+          <span className="wf-msg-quote-text">{(parent.content ?? "").slice(0, 120)}</span>
+        </>
+      ) : (
+        <span className="wf-msg-quote-text">original message unavailable</span>
+      )}
+    </button>
+  );
+}
+
+/** Inline editor swapped in for a message's content while editing. */
+function InlineEdit({ message }: { message: Message }) {
+  const setEditing = useChat((s) => s.setEditing);
+  const [text, setText] = useState(message.content ?? "");
+  const commit = () => {
+    const content = text.trim();
+    setEditing(null);
+    if (!content || content === message.content) return;
+    void chatApi
+      .editMessage(message.id, content)
+      .catch(() => toastError("Couldn't save the edit."));
+  };
+  return (
+    <div className="wf-msg-edit">
+      <textarea
+        autoFocus
+        rows={Math.min(6, text.split("\n").length)}
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            commit();
+          }
+          if (e.key === "Escape") setEditing(null);
+        }}
+      />
+      <span className="wf-msg-edit-hint">Enter to save · Escape to cancel</span>
+    </div>
+  );
+}
+
+/** Server-fetched preview card for the first link in a message. */
+function MsgLinkPreview({ url }: { url: string }) {
+  const [preview, setPreview] = useState<LinkPreview | null>(null);
+  useEffect(() => {
+    let live = true;
+    fetchLinkPreview(url)
+      .then((p) => live && setPreview(p))
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [url]);
+  if (!preview || (!preview.title && !preview.description)) return null;
+  let domain = url;
+  try {
+    domain = new URL(url).host;
+  } catch {
+    // keep raw url
+  }
+  return (
+    <a className="wf-msg-linkcard" href={url} target="_blank" rel="noreferrer">
+      {preview.image_url && <img src={preview.image_url} alt="" />}
+      <span className="wf-msg-linkcard-body">
+        <span className="wf-msg-linkcard-title">{preview.title ?? domain}</span>
+        {preview.description && (
+          <span className="wf-msg-linkcard-desc">{preview.description}</span>
+        )}
+        <span className="wf-msg-linkcard-domain">{domain}</span>
+      </span>
+    </a>
+  );
+}
+
+export function MessageRow({
+  message,
+  compact,
+  authorOnly = false,
+  onReply,
+  sharedNoteCard,
+}: {
+  message: Message;
+  compact: boolean;
+  authorOnly?: boolean;
+  onReply?: (message: Message) => void;
+  /** DM-only renderer for `shared_note` messages (the card lives in Friends). */
+  sharedNoteCard?: (content: string) => React.ReactNode;
+}) {
+  const editing = useChat((s) => s.editingMessageId === message.id);
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
+  const url = message.kind === "text" && message.content ? firstUrl(message.content) : null;
   return (
-    <div className={`wf-msg ${compact ? "compact" : ""}`}>
-      <MessageActions message={message} />
+    <div className={`wf-msg ${compact ? "compact" : ""}`} id={`wf-msg-${message.id}`}>
+      <MessageActions message={message} authorOnly={authorOnly} onReply={onReply} />
       {!compact && (
         <div className="wf-msg-meta">
           <button className="wf-user-link" onClick={() => showProfile(message.author.id)}>
@@ -1000,10 +1270,15 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
           <span className="wf-msg-time">{time}</span>
         </div>
       )}
+      <ReplyQuote message={message} />
       {message.kind === "session" ? (
         <SessionJoinCard content={message.content ?? "{}"} />
       ) : message.kind === "document" ? (
         <DocumentShareCard content={message.content ?? "{}"} />
+      ) : message.kind === "shared_note" && sharedNoteCard ? (
+        sharedNoteCard(message.content ?? "{}")
+      ) : editing ? (
+        <InlineEdit message={message} />
       ) : (
         message.content && (
           <div className="wf-msg-content">
@@ -1017,9 +1292,11 @@ function MessageRow({ message, compact }: { message: Message; compact: boolean }
           className="wf-msg-image"
           src={attSrc(a.id)}
           alt={a.original_name ?? "attachment"}
+          onClick={() => showLightbox({ src: attSrc(a.id), name: a.original_name })}
         />
       ))}
-      {message.edited_at && <span className="wf-msg-edited">(edited)</span>}
+      {message.edited_at && !editing && <span className="wf-msg-edited">(edited)</span>}
+      {url && !editing && <MsgLinkPreview url={url} />}
       <MessageReactions message={message} />
     </div>
   );
@@ -1031,7 +1308,22 @@ interface PendingUpload {
 }
 
 function Composer() {
-  const [draft, setDraft] = useState("");
+  const activeChannelId = useChat((s) => s.activeChannelId);
+  // Drafts live in the store, keyed by channel — surviving channel switches,
+  // app switches, and never bleeding into another conversation.
+  const draft = useChat((s) =>
+    s.activeChannelId !== null ? (s.drafts[s.activeChannelId] ?? "") : "",
+  );
+  const setDraftStore = useChat((s) => s.setDraft);
+  const setDraft = (next: string | ((d: string) => string)) => {
+    const id = useChat.getState().activeChannelId;
+    if (id === null) return;
+    const cur = useChat.getState().drafts[id] ?? "";
+    setDraftStore(id, typeof next === "function" ? next(cur) : next);
+  };
+  const replyTo = useChat((s) => s.replyTo);
+  const setReplyTo = useChat((s) => s.setReplyTo);
+  const setEditing = useChat((s) => s.setEditing);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploading, setUploading] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -1040,7 +1332,6 @@ function Composer() {
   const draftRef = useRef<HTMLTextAreaElement>(null);
   const send = useChat((s) => s.send);
   const channels = useChat((s) => s.channels);
-  const activeChannelId = useChat((s) => s.activeChannelId);
   const channel = channels.find((c) => c.id === activeChannelId);
 
   const addUpload = async (upload: Promise<UploadedAttachment>, fallbackName: string) => {
@@ -1083,7 +1374,7 @@ function Composer() {
       cancelled = true;
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+     
   }, []);
 
   // @mention / #channel autocomplete on the draft's trailing token.
@@ -1239,6 +1530,17 @@ function Composer() {
           ))}
         </div>
       )}
+      {replyTo && (
+        <div className="wf-reply-chip">
+          <Reply size={12} />
+          Replying to{" "}
+          <strong>{replyTo.author.display_name ?? replyTo.author.username}</strong>
+          <span className="wf-reply-chip-text">{(replyTo.content ?? "").slice(0, 80)}</span>
+          <button className="wf-icon" title="Cancel reply" onClick={() => setReplyTo(null)}>
+            ×
+          </button>
+        </div>
+      )}
       <div className="wf-composer">
         <input
           ref={fileRef}
@@ -1296,6 +1598,21 @@ function Composer() {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               submit();
+            }
+            if (e.key === "Escape" && replyTo) {
+              setReplyTo(null);
+            }
+            // Empty composer + ArrowUp = edit my last message (chat idiom).
+            if (e.key === "ArrowUp" && draft === "" && activeChannelId !== null) {
+              const meId = useSession.getState().session?.user.id;
+              const myMessages = (useChat.getState().messages[activeChannelId] ?? []).filter(
+                (m) => m.author.id === meId && m.kind === "text",
+              );
+              const mine = myMessages[myMessages.length - 1];
+              if (mine) {
+                e.preventDefault();
+                setEditing(mine.id);
+              }
             }
           }}
         />

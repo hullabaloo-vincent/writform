@@ -123,6 +123,10 @@ export interface Backend {
   /** Renames a note and repoints `[[old]]` links vault-wide; returns the name used. */
   vaultRename(name: string, newName: string): Promise<string>;
   vaultBacklinks(name: string): Promise<string[]>;
+  /** Case-insensitive name+content search; name matches first, cap 50. */
+  vaultSearch(query: string): Promise<{ name: string; snippet: string; modified_at: number }[]>;
+  /** Absolute path of the vault folder (for reveal-in-Finder). */
+  vaultPath(): Promise<string>;
 
   pluginsList(): Promise<
     { manifest: { id: string; name: string; version: string; icon: string; permissions: string[]; min_api_version: number }; enabled: boolean }[]
@@ -202,6 +206,8 @@ function tauriBackend(): Backend {
     vaultWrite: (name, content) => invoke("vault_write", { name, content }),
     vaultDelete: (name) => invoke("vault_delete", { name }),
     vaultRename: (name, newName) => invoke("vault_rename", { name, newName }),
+    vaultSearch: (query) => invoke("vault_search", { query }),
+    vaultPath: () => invoke("vault_path"),
     vaultBacklinks: (name) => invoke("vault_backlinks", { name }),
     pluginsList: () => invoke("plugins_list"),
     pluginReadEntry: (id) => invoke("plugin_read_entry", { id }),
@@ -256,6 +262,8 @@ function unavailableBackend(): Backend {
     vaultWrite: fail,
     vaultDelete: fail,
     vaultRename: fail,
+    vaultSearch: fail,
+    vaultPath: fail,
     vaultBacklinks: fail,
     pluginsList: fail,
     pluginReadEntry: fail,

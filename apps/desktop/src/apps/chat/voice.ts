@@ -81,6 +81,8 @@ interface VoiceState {
   remoteVideo: Record<number, { camera?: MediaStream; screen?: MediaStream }>;
   /** Peers' self-reported media state. */
   remoteMedia: Record<number, PeerMediaState>;
+  /** Per-peer volume multipliers (mirror of the persisted map, for UI). */
+  userVolumes: Record<number, number>;
 
   loadChannels: (groupId: number) => Promise<void>;
   join: (channel: VoiceChannel) => Promise<void>;
@@ -122,11 +124,169 @@ const SLOT_AUDIO = 0;
 const SLOT_CAMERA = 1;
 const SLOT_SCREEN = 2;
 
-// Gain/volume changes apply live; the input device applies on the next join.
+/** Per-peer playback multipliers (0..1.5), persisted per server. */
+let userVolume: Record<number, number> = {};
+
+function userVolumeKey(): string | null {
+  const session = useSession.getState().session;
+  return session ? `wf-user-volume:${session.addr}` : null;
+}
+
+function loadUserVolume(): Record<number, number> {
+  const key = userVolumeKey();
+  if (!key) return {};
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "{}") as Record<string, unknown>;
+    const out: Record<number, number> = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (typeof v === "number" && Number.isFinite(v)) {
+        out[Number(k)] = Math.min(1.5, Math.max(0, v));
+      }
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+function effectiveVolume(peerId: number): number {
+  // el.volume clamps at 1; the >1 headroom mostly matters relative to a
+  // lowered master. Good enough without another gain graph per peer.
+  return Math.min(1, loadVoiceSettings().outputVolume * (userVolume[peerId] ?? 1));
+}
+
+export function setUserVolume(peerId: number, volume: number): void {
+  userVolume[peerId] = Math.min(1.5, Math.max(0, volume));
+  const key = userVolumeKey();
+  if (key) {
+    try {
+      localStorage.setItem(key, JSON.stringify(userVolume));
+    } catch {
+      // persistence is best-effort
+    }
+  }
+  const el = audioEls.get(peerId);
+  if (el) el.volume = effectiveVolume(peerId);
+  // Bump store state so sliders re-render.
+  useVoice.setState((s) => ({ userVolumes: { ...s.userVolumes, [peerId]: userVolume[peerId] } }));
+}
+
+/** Short two-tone blip — up for join, down for leave. No audio assets. */
+function playBlip(direction: "join" | "leave") {
+  if (!loadVoiceSettings().sounds) return;
+  try {
+    audioCtx ??= new AudioContext();
+    if (audioCtx.state === "suspended") void audioCtx.resume();
+    const now = audioCtx.currentTime;
+    const gain = audioCtx.createGain();
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.24);
+    gain.connect(audioCtx.destination);
+    const osc = audioCtx.createOscillator();
+    osc.type = "sine";
+    const [a, b] = direction === "join" ? [440, 587] : [587, 440];
+    osc.frequency.setValueAtTime(a, now);
+    osc.frequency.setValueAtTime(b, now + 0.12);
+    osc.connect(gain);
+    osc.start(now);
+    osc.stop(now + 0.24);
+  } catch {
+    // sounds are cosmetic
+  }
+}
+
+/**
+ * Settings changes apply LIVE: gain and volumes instantly; a changed mic or
+ * camera device (or quality) re-acquires and replaceTracks mid-call.
+ */
+let lastSettings = loadVoiceSettings();
 onVoiceSettingsChange((settings) => {
+  const prev = lastSettings;
+  lastSettings = settings;
   if (inputGainNode) inputGainNode.gain.value = settings.inputGain;
-  for (const el of audioEls.values()) el.volume = settings.outputVolume;
+  for (const [peerId, el] of audioEls) el.volume = effectiveVolume(peerId);
+
+  const { connectedChannelId, cameraOn } = useVoice.getState();
+  if (connectedChannelId === null) return;
+  if (settings.inputDeviceId !== prev.inputDeviceId) {
+    void swapMicrophone(settings.inputDeviceId);
+  }
+  if (
+    cameraOn &&
+    (settings.videoInputDeviceId !== prev.videoInputDeviceId ||
+      settings.videoQuality !== prev.videoQuality)
+  ) {
+    void swapCamera(settings.videoInputDeviceId, settings.videoQuality);
+  }
 });
+
+/** Mid-call mic change: rebuild the gain chain, replaceTrack on every peer. */
+async function swapMicrophone(deviceId: string | null): Promise<void> {
+  const generation = joinGeneration;
+  try {
+    const stream = await getMicrophoneStream(deviceId);
+    if (generation !== joinGeneration) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const old = localStream;
+    localStream = stream;
+    try {
+      audioCtx ??= new AudioContext();
+      if (audioCtx.state === "suspended") void audioCtx.resume();
+      const source = audioCtx.createMediaStreamSource(stream);
+      inputGainNode = audioCtx.createGain();
+      inputGainNode.gain.value = loadVoiceSettings().inputGain;
+      const destination = audioCtx.createMediaStreamDestination();
+      source.connect(inputGainNode);
+      inputGainNode.connect(destination);
+      sendStream = destination.stream;
+    } catch {
+      sendStream = stream;
+    }
+    const track = (sendStream ?? stream).getAudioTracks()[0];
+    const { muted } = useVoice.getState();
+    stream.getAudioTracks().forEach((t) => {
+      t.enabled = !muted;
+    });
+    for (const pc of peers.values()) {
+      const audio = pc.getTransceivers()[SLOT_AUDIO];
+      if (audio && track) void audio.sender.replaceTrack(track).catch(() => {});
+    }
+    const me = myId();
+    if (me !== null && sendStream) watchSpeaking(me, sendStream);
+    old?.getTracks().forEach((t) => t.stop());
+  } catch {
+    // keep the old mic on failure
+  }
+}
+
+/** Mid-call camera device/quality change. */
+async function swapCamera(
+  deviceId: string | null,
+  quality: ReturnType<typeof loadVoiceSettings>["videoQuality"],
+): Promise<void> {
+  const generation = joinGeneration;
+  try {
+    const stream = await getCameraStream(deviceId, quality);
+    if (generation !== joinGeneration || !useVoice.getState().cameraOn) {
+      stream.getTracks().forEach((t) => t.stop());
+      return;
+    }
+    const old = cameraStream;
+    cameraStream = stream;
+    const track = stream.getVideoTracks()[0];
+    track.contentHint = "motion";
+    for (const { camera } of videoSenders.values()) {
+      void camera.replaceTrack(track).catch(() => {});
+      applyVideoParams(camera, "camera");
+    }
+    useVoice.setState({ localCamera: stream });
+    old?.getTracks().forEach((t) => t.stop());
+  } catch {
+    // keep the old camera on failure
+  }
+}
 
 function myId(): number | null {
   return useSession.getState().session?.user.id ?? null;
@@ -176,7 +336,7 @@ function attachAudio(peerId: number, stream: MediaStream) {
     el.autoplay = true;
     audioEls.set(peerId, el);
   }
-  el.volume = loadVoiceSettings().outputVolume;
+  el.volume = effectiveVolume(peerId);
   el.srcObject = stream;
   void el.play().catch(() => {});
   watchSpeaking(peerId, stream);
@@ -411,6 +571,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
   localCamera: null,
   remoteVideo: {},
   remoteMedia: {},
+  userVolumes: {},
 
   loadChannels: async (groupId) => {
     const info = await voiceApi.list(groupId);
@@ -432,6 +593,8 @@ export const useVoice = create<VoiceState>((set, get) => ({
         stageAutoOpened = false;
       }
       const settings = loadVoiceSettings();
+      userVolume = loadUserVolume();
+      set({ userVolumes: { ...userVolume } });
       // Resolves the macOS permission gate first: a WKWebView never raises
       // the system prompt on its own, so without this the call just fails.
       const stream = localStream ?? (await getMicrophoneStream(settings.inputDeviceId));
@@ -588,6 +751,7 @@ export function installVoiceWsHandler(): () => void {
 
     if (kind === "voice.joined") {
       const { channel_id, user } = data as { channel_id: number; user: UserRef };
+      if (channel_id === state.connectedChannelId && user.id !== myId()) playBlip("join");
       useVoice.setState((s) => {
         const room = s.occupants[channel_id] ?? [];
         if (room.some((u) => u.id === user.id)) return s;
@@ -596,6 +760,7 @@ export function installVoiceWsHandler(): () => void {
       // Existing members wait for the joiner's offer — nothing else to do.
     } else if (kind === "voice.left") {
       const { channel_id, user_id } = data as { channel_id: number; user_id: number };
+      if (channel_id === state.connectedChannelId && user_id !== myId()) playBlip("leave");
       useVoice.setState((s) => ({
         occupants: {
           ...s.occupants,

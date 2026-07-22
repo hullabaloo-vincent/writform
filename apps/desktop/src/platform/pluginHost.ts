@@ -96,7 +96,7 @@ function buildHostApi(manifest: PluginManifest, register: (r: PluginRegistration
 
 /** Load and activate every enabled plugin. Called once at startup. */
 export async function loadEnabledPlugins(): Promise<void> {
-  let plugins: InstalledPlugin[] = [];
+  let plugins: InstalledPlugin[];
   try {
     plugins = await backend.pluginsList();
   } catch {

@@ -44,6 +44,13 @@ function BoardList({ groupId }: { groupId: number }) {
         <h2>Canvas boards</h2>
       </header>
       {error && <p className="wf-connect-error">{error}</p>}
+      {boards.length === 0 && (
+        <p className="wf-app-empty-hint">
+          Boards are shared visual spaces for your group — sticky notes, images, frames,
+          connectors, and live document excerpts, all synced in real time. Create one to
+          start storyboarding together.
+        </p>
+      )}
       <div className="wf-sessions-grid">
         {boards.map((b) => (
           <BoardCard key={b.id} board={b} onOpen={() => void openBoard(b.id)} />

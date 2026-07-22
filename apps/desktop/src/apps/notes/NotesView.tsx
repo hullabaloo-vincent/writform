@@ -7,6 +7,7 @@ import {
   Code,
   Columns2,
   Eye,
+  FolderOpen,
   Heading,
   Italic,
   Link2,
@@ -20,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Friend } from "../../bindings/proto/Friend";
 import { backend, isCmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, Modal } from "../../platform";
 import { friendsApi } from "../friends/FriendsView";
 import { renderMarkdown } from "./markdown";
 
@@ -38,10 +39,28 @@ function loadViewMode(): ViewMode {
   return v === "edit" || v === "split" || v === "read" ? v : "split";
 }
 
+/** Reveal the vault folder in Finder/Explorer; a no-op in the dev preview. */
+async function revealVault() {
+  try {
+    const dir = await backend.vaultPath();
+    const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+    await revealItemInDir(dir);
+  } catch {
+    // browser preview or plugin unavailable
+  }
+}
+
+interface SearchHit {
+  name: string;
+  snippet: string;
+  modified_at: number;
+}
+
 export function NotesView() {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
   const [active, setActive] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
+  const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(loadViewMode);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -58,6 +77,23 @@ export function NotesView() {
     localStorage.setItem(VIEW_KEY, view);
   }, [view]);
 
+  // Content search kicks in from 2 chars, debounced; the name filter below
+  // stays instant either way.
+  useEffect(() => {
+    const query = filter.trim();
+    if (query.length < 2) {
+      setHits(null);
+      return;
+    }
+    const timer = setTimeout(() => {
+      void backend
+        .vaultSearch(query)
+        .then(setHits)
+        .catch(() => setHits(null));
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [filter]);
+
   const createNote = async () => {
     const base = "Untitled";
     let name = base;
@@ -72,6 +108,12 @@ export function NotesView() {
   const visible = notes.filter((n) => n.name.toLowerCase().includes(filter.toLowerCase()));
   const noteNames = useMemo(() => notes.map((n) => n.name), [notes]);
 
+  // With ≥2 chars, server-side content search replaces the name filter.
+  const searchResults = hits !== null;
+  const listed: SearchHit[] = searchResults
+    ? hits
+    : visible.map((n) => ({ name: n.name, snippet: "", modified_at: n.modified_at }));
+
   return (
     <div className="wf-notes">
       <aside className="wf-notes-side">
@@ -84,20 +126,28 @@ export function NotesView() {
           <button className="wf-icon" title="New note" onClick={() => void createNote()}>
             +
           </button>
+          <button
+            className="wf-icon"
+            title="Show the vault folder in your file manager"
+            onClick={() => void revealVault()}
+          >
+            <FolderOpen size={14} />
+          </button>
         </div>
         {error && <p className="wf-connect-error">{error}</p>}
         <ul>
-          {visible.map((n) => (
+          {listed.map((n) => (
             <li key={n.name}>
               <button
                 className={`wf-note-item ${n.name === active ? "active" : ""}`}
                 onClick={() => setActive(n.name)}
               >
                 {n.name}
+                {n.snippet && <span className="wf-note-snippet">{n.snippet}</span>}
               </button>
             </li>
           ))}
-          {visible.length === 0 && (
+          {listed.length === 0 && (
             <li className="wf-friend-dim">{filter ? "No matches." : "No notes."}</li>
           )}
         </ul>
@@ -497,30 +547,28 @@ const CHEATSHEET: { syntax: string; what: string }[] = [
 
 function MarkdownHelp({ onClose }: { onClose: () => void }) {
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal wf-notes-help" onClick={(e) => e.stopPropagation()}>
-        <h3>Formatting</h3>
-        <p className="wf-friend-dim">
-          Notes are Obsidian-compatible markdown. The vault is a folder of plain{" "}
-          <code>.md</code> files on this computer.
-        </p>
-        <dl className="wf-cheatsheet">
-          {CHEATSHEET.map((row) => (
-            <div key={row.syntax}>
-              <dt>
-                <code>{row.syntax}</code>
-              </dt>
-              <dd>{row.what}</dd>
-            </div>
-          ))}
-        </dl>
-        <div className="wf-notes-help-actions">
-          <button className="wf-primary" onClick={onClose}>
-            <Check size={14} /> Done
-          </button>
-        </div>
+    <Modal onClose={onClose} className="wf-notes-help">
+      <h3>Formatting</h3>
+      <p className="wf-friend-dim">
+        Notes are Obsidian-compatible markdown. The vault is a folder of plain{" "}
+        <code>.md</code> files on this computer.
+      </p>
+      <dl className="wf-cheatsheet">
+        {CHEATSHEET.map((row) => (
+          <div key={row.syntax}>
+            <dt>
+              <code>{row.syntax}</code>
+            </dt>
+            <dd>{row.what}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="wf-notes-help-actions">
+        <button className="wf-primary" onClick={onClose}>
+          <Check size={14} /> Done
+        </button>
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -537,20 +585,18 @@ function ShareDialog({
   }, []);
 
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal" onClick={(e) => e.stopPropagation()}>
-        <h3>Share this note with…</h3>
-        <ul className="wf-friend-list">
-          {friends.map((f) => (
-            <li key={f.user.id}>
-              <button className="wf-friend-open" onClick={() => onShare(f)}>
-                {f.user.display_name ?? f.user.username}
-              </button>
-            </li>
-          ))}
-          {friends.length === 0 && <li className="wf-friend-dim">No friends to share with yet.</li>}
-        </ul>
-      </div>
-    </div>
+    <Modal onClose={onClose}>
+      <h3>Share this note with…</h3>
+      <ul className="wf-friend-list">
+        {friends.map((f) => (
+          <li key={f.user.id}>
+            <button className="wf-friend-open" onClick={() => onShare(f)}>
+              {f.user.display_name ?? f.user.username}
+            </button>
+          </li>
+        ))}
+        {friends.length === 0 && <li className="wf-friend-dim">No friends to share with yet.</li>}
+      </ul>
+    </Modal>
   );
 }

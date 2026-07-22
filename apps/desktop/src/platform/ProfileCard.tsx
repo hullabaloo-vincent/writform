@@ -4,6 +4,8 @@ import { create } from "zustand";
 import type { UserProfile } from "../bindings/proto/UserProfile";
 import { backend, isCmdError, type CmdError } from "../lib/backend";
 import { Avatar } from "./Avatar";
+import { Loading } from "./Loading";
+import { Modal } from "./Modal";
 
 /**
  * Profile card: click any user (member list, message author, friend) to see
@@ -50,60 +52,56 @@ export function ProfileCardHost() {
   const name = profile?.display_name ?? profile?.username ?? "";
 
   return (
-    <div className="wf-modal-backdrop" onClick={close}>
-      <div className="wf-profile-card" onClick={(e) => e.stopPropagation()}>
-        {error ? (
-          <p className="wf-connect-error" style={{ margin: 16 }}>
-            {error}
-          </p>
-        ) : !profile ? (
-          <p className="wf-session-meta" style={{ margin: 16 }}>
-            Loading…
-          </p>
-        ) : (
-          <>
-            <div
-              className="wf-profile-banner"
-              style={{ background: profile.accent_color ?? "var(--wf-accent)" }}
+    <Modal boxClass="wf-profile-card" onClose={close}>
+      {error ? (
+        <p className="wf-connect-error" style={{ margin: 16 }}>
+          {error}
+        </p>
+      ) : !profile ? (
+        <Loading />
+      ) : (
+        <>
+          <div
+            className="wf-profile-banner"
+            style={{ background: profile.accent_color ?? "var(--wf-accent)" }}
+          />
+          <div className="wf-profile-avatar">
+            <Avatar
+              name={name}
+              attachmentId={profile.avatar_attachment_id}
+              accentColor={profile.accent_color}
+              size={72}
             />
-            <div className="wf-profile-avatar">
-              <Avatar
-                name={name}
-                attachmentId={profile.avatar_attachment_id}
-                accentColor={profile.accent_color}
-                size={72}
+          </div>
+          <div className="wf-profile-body">
+            <h3>
+              {name}
+              <span
+                className={`wf-presence-dot ${
+                  profile.status === "busy" ? "busy" : profile.status ? "" : "off"
+                }`}
+                title={profile.status ? STATUS_LABEL[profile.status] : "Offline"}
               />
-            </div>
-            <div className="wf-profile-body">
-              <h3>
-                {name}
-                <span
-                  className={`wf-presence-dot ${
-                    profile.status === "busy" ? "busy" : profile.status ? "" : "off"
-                  }`}
-                  title={profile.status ? STATUS_LABEL[profile.status] : "Offline"}
-                />
-              </h3>
-              <p className="wf-profile-username">
-                @{profile.username}
-                <span className="wf-session-meta">
-                  {" · "}
-                  {profile.status ? STATUS_LABEL[profile.status] : "Offline"}
-                </span>
-              </p>
-              {profile.bio && <p className="wf-profile-bio">{profile.bio}</p>}
-              <p className="wf-profile-since">
-                Member since{" "}
-                {new Date(profile.created_at).toLocaleDateString(undefined, {
-                  year: "numeric",
-                  month: "short",
-                  day: "numeric",
-                })}
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-    </div>
+            </h3>
+            <p className="wf-profile-username">
+              @{profile.username}
+              <span className="wf-session-meta">
+                {" · "}
+                {profile.status ? STATUS_LABEL[profile.status] : "Offline"}
+              </span>
+            </p>
+            {profile.bio && <p className="wf-profile-bio">{profile.bio}</p>}
+            <p className="wf-profile-since">
+              Member since{" "}
+              {new Date(profile.created_at).toLocaleDateString(undefined, {
+                year: "numeric",
+                month: "short",
+                day: "numeric",
+              })}
+            </p>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }

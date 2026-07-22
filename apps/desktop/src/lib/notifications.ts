@@ -11,7 +11,13 @@ import { backend } from "./backend";
  * you're offline (no third-party push infra on a self-hosted server).
  */
 
+import { notifAllowed } from "./notifPrefs";
+import { useFriends } from "../apps/friends/store";
+
 const inTauri = "__TAURI_INTERNALS__" in window;
+
+/** Fire an OS notification directly (e.g. a timer the client itself owns). */
+export const notifyNow = (title: string, body: string): Promise<void> => deliver(title, body);
 
 async function deliver(title: string, body: string): Promise<void> {
   try {
@@ -72,8 +78,16 @@ export function installNotifications(): () => void {
       const author = msg.author.display_name ?? msg.author.username;
 
       if (room === `user:${me.id}`) {
-        // Direct message (or a note shared over DM).
-        if (viewing("writform.friends")) return;
+        // Direct message (or a note shared over DM). Suppress only when THAT
+        // conversation is on screen — merely having Friends open used to
+        // swallow pings from everyone else.
+        if (!notifAllowed(msg.kind === "shared_note" ? "shares" : "dms")) return;
+        if (
+          viewing("writform.friends") &&
+          useFriends.getState().activeDmPeerId === msg.author.id
+        ) {
+          return;
+        }
         if (msg.kind === "shared_note") {
           let title = "a note";
           try {
@@ -89,6 +103,7 @@ export function installNotifications(): () => void {
       }
 
       // Group chat: only @mentions notify (everything else would be noise).
+      if (!notifAllowed("mentions")) return;
       if (msg.content && mentionsUser(msg.content, me.username)) {
         void import("../apps/chat/store").then(({ useChat }) => {
           const chat = useChat.getState();
@@ -109,6 +124,7 @@ export function installNotifications(): () => void {
     }
 
     if (kind === "session.created") {
+      if (!notifAllowed("sessions")) return;
       const session = data as {
         title: string;
         creator: { id: number; username: string; display_name: string | null };
@@ -121,12 +137,14 @@ export function installNotifications(): () => void {
 
     if (kind === "prompt.started") {
       // Only reaches subscribers of the open session; useful when tabbed away.
+      if (!notifAllowed("sessions")) return;
       if (document.hasFocus()) return;
       void deliver("Writing started", "A prompt is running in your session.");
       return;
     }
 
     if (kind === "document.listchanged") {
+      if (!notifAllowed("shares")) return;
       // Only a direct user-share grant notifies (group shares announce
       // themselves via the chat card).
       const change = data as {
@@ -150,6 +168,7 @@ export function installNotifications(): () => void {
     }
 
     if (kind === "friend.request") {
+      if (!notifAllowed("friends")) return;
       const req = data as { from: { username: string; display_name: string | null } };
       void deliver(
         "Friend request",
@@ -159,6 +178,7 @@ export function installNotifications(): () => void {
     }
 
     if (kind === "friend.accepted") {
+      if (!notifAllowed("friends")) return;
       const req = data as {
         from: { id: number; username: string; display_name: string | null };
         to: { id: number; username: string; display_name: string | null };

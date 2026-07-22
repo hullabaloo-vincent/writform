@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 
 import type { Friend } from "../../bindings/proto/Friend";
 import { isCmdError } from "../../lib/backend";
+import { Modal } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useChat } from "../chat/store";
 import { friendsApi } from "../friends/FriendsView";
@@ -83,58 +84,56 @@ export function ShareDialog({ onClose }: { onClose: () => void }) {
   };
 
   return (
-    <div className="wf-modal-backdrop" onClick={onClose}>
-      <div className="wf-modal wf-doc-share-modal" onClick={(e) => e.stopPropagation()}>
-        <header className="wf-doc-panel-header">
-          <h3>Share document</h3>
-          <span className="wf-statusbar-spacer" />
-          <button className="wf-icon" onClick={onClose}>
-            <X size={15} />
-          </button>
-        </header>
-        {error && (
-          <p className="wf-connect-error" onClick={() => setError(null)}>
-            {error}
-          </p>
-        )}
-        <h4>Friends</h4>
-        <ul className="wf-doc-share-list">
-          {friends.map((f) =>
-            row(
-              "user",
-              f.user.id,
-              <span className="wf-doc-share-name">
-                <Avatar
-                  name={f.user.display_name ?? f.user.username}
-                  attachmentId={f.user.avatar_attachment_id}
-                  accentColor={f.user.accent_color}
-                  size={20}
-                />
-                {f.user.display_name ?? f.user.username}
-              </span>,
-            ),
-          )}
-          {friends.length === 0 && (
-            <li className="wf-friend-dim">No friends to share with yet.</li>
-          )}
-        </ul>
-        <h4>Groups</h4>
-        <ul className="wf-doc-share-list">
-          {groups.map((g) =>
-            row(
-              "group",
-              g.id,
-              <span className="wf-doc-share-name">
-                <Users size={16} /> {g.name}
-              </span>,
-            ),
-          )}
-          {groups.length === 0 && <li className="wf-friend-dim">You're not in any groups.</li>}
-        </ul>
-        <p className="wf-doc-share-note">
-          Sharing with a group posts a card in its chat so members can open the document.
+    <Modal onClose={onClose} className="wf-doc-share-modal">
+      <header className="wf-doc-panel-header">
+        <h3>Share document</h3>
+        <span className="wf-statusbar-spacer" />
+        <button className="wf-icon" onClick={onClose}>
+          <X size={15} />
+        </button>
+      </header>
+      {error && (
+        <p className="wf-connect-error" onClick={() => setError(null)}>
+          {error}
         </p>
-      </div>
-    </div>
+      )}
+      <h4>Friends</h4>
+      <ul className="wf-doc-share-list">
+        {friends.map((f) =>
+          row(
+            "user",
+            f.user.id,
+            <span className="wf-doc-share-name">
+              <Avatar
+                name={f.user.display_name ?? f.user.username}
+                attachmentId={f.user.avatar_attachment_id}
+                accentColor={f.user.accent_color}
+                size={20}
+              />
+              {f.user.display_name ?? f.user.username}
+            </span>,
+          ),
+        )}
+        {friends.length === 0 && (
+          <li className="wf-friend-dim">No friends to share with yet.</li>
+        )}
+      </ul>
+      <h4>Groups</h4>
+      <ul className="wf-doc-share-list">
+        {groups.map((g) =>
+          row(
+            "group",
+            g.id,
+            <span className="wf-doc-share-name">
+              <Users size={16} /> {g.name}
+            </span>,
+          ),
+        )}
+        {groups.length === 0 && <li className="wf-friend-dim">You're not in any groups.</li>}
+      </ul>
+      <p className="wf-doc-share-note">
+        Sharing with a group posts a card in its chat so members can open the document.
+      </p>
+    </Modal>
   );
 }

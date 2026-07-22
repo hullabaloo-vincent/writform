@@ -7,7 +7,7 @@ import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
 import { RichDoc } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, Modal } from "../../platform";
 import { documentsApi } from "./api";
 import { useDocuments } from "./store";
 
@@ -126,22 +126,20 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
       {tab === "activity" && <ActivityList items={activities} />}
 
       {preview && (
-        <div className="wf-modal-backdrop" onClick={() => setPreview(null)}>
-          <div className="wf-modal wf-doc-version-modal" onClick={(e) => e.stopPropagation()}>
-            <header className="wf-doc-panel-header">
-              <div>
-                <h3>{preview.meta.name ?? new Date(preview.meta.created_at).toLocaleString()}</h3>
-                {preview.mode === "change" && <span className="wf-doc-version-meta">Only changes from the previous save are shown</span>}
-              </div>
-              <span className="wf-statusbar-spacer" />
-              {canWrite && <button onClick={() => void restore()}><RotateCcw size={15} /> Restore</button>}
-              <button className="wf-icon" title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
-            </header>
-            <div className="wf-doc-version-preview">
-              {preview.mode === "draft" ? <RichDoc doc={JSON.parse(preview.json)} /> : <RevisionDiff before={preview.previous} after={preview.json} />}
+        <Modal onClose={() => setPreview(null)} className="wf-doc-version-modal">
+          <header className="wf-doc-panel-header">
+            <div>
+              <h3>{preview.meta.name ?? new Date(preview.meta.created_at).toLocaleString()}</h3>
+              {preview.mode === "change" && <span className="wf-doc-version-meta">Only changes from the previous save are shown</span>}
             </div>
+            <span className="wf-statusbar-spacer" />
+            {canWrite && <button onClick={() => void restore()}><RotateCcw size={15} /> Restore</button>}
+            <button className="wf-icon" title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
+          </header>
+          <div className="wf-doc-version-preview">
+            {preview.mode === "draft" ? <RichDoc doc={JSON.parse(preview.json)} /> : <RevisionDiff before={preview.previous} after={preview.json} />}
           </div>
-        </div>
+        </Modal>
       )}
     </aside>
   );

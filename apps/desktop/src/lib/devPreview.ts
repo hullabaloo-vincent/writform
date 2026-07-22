@@ -1063,6 +1063,35 @@ export function devPreviewBackend(): Backend {
     async vaultDelete(name) {
       delete vault[name];
     },
+    async vaultSearch(query) {
+      const needle = query.trim().toLowerCase();
+      if (!needle) return [];
+      const nameHits: { name: string; snippet: string; modified_at: number }[] = [];
+      const contentHits: typeof nameHits = [];
+      for (const [name, v] of Object.entries(vault)) {
+        if (name.toLowerCase().includes(needle)) {
+          nameHits.push({ name, snippet: "", modified_at: v.mtime });
+        } else {
+          const pos = v.content.toLowerCase().indexOf(needle);
+          if (pos >= 0) {
+            const start = Math.max(0, pos - 40);
+            const end = Math.min(v.content.length, pos + needle.length + 40);
+            contentHits.push({
+              name,
+              snippet: `${start > 0 ? "…" : ""}${v.content
+                .slice(start, end)
+                .replace(/\s+/g, " ")
+                .trim()}${end < v.content.length ? "…" : ""}`,
+              modified_at: v.mtime,
+            });
+          }
+        }
+      }
+      return [...nameHits, ...contentHits].slice(0, 50);
+    },
+    async vaultPath() {
+      return "/preview/vault";
+    },
     async vaultRename(name, newName) {
       const old = name.trim();
       const next = newName.trim();
