@@ -33,6 +33,20 @@ run `xattr -dr com.apple.quarantine` on the folder, or start it from Terminal:
 ./scripts/"Build WritForm (macOS).command"
 ```
 
+### Microphone or camera prompt never appears
+
+macOS records permission decisions per app identity. If a previous build was
+ever denied (or a stale record exists), the built app is refused instantly
+with no prompt — and locally built apps sometimes don't even appear in
+System Settings → Privacy & Security. Clear the stale records and relaunch:
+
+```sh
+tccutil reset Microphone com.writform.desktop
+tccutil reset Camera com.writform.desktop
+```
+
+The next time WritForm asks, the real system prompt appears.
+
 ## Host on this computer (easiest)
 
 1. Install WritForm and open it.

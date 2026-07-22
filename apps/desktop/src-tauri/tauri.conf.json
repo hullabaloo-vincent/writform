@@ -44,7 +44,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "10.15",
-      "signingIdentity": "-"
+      "signingIdentity": "-",
+      "entitlements": "Entitlements.plist"
     }
   },
   "mainBinaryName": "writform-desktop"
