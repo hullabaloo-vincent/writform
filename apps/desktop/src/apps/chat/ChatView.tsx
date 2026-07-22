@@ -483,9 +483,10 @@ function ChannelList() {
                     const next = renameDraft.trim();
                     setRenamingId(null);
                     if (!next || next === c.name) return;
-                    void chatApi
-                      .updateChannel(c.id, next)
-                      .catch(() => toastError("Couldn't rename the channel."));
+                    void chatApi.updateChannel(c.id, next).catch((e: unknown) => {
+                      const m = (e as { message?: string }).message;
+                      toastError(m ? `Couldn't rename the channel: ${m}` : "Couldn't rename the channel.");
+                    });
                   }}
                 >
                   <input
@@ -533,9 +534,10 @@ function ChannelList() {
                           { title: "Delete channel", confirmLabel: "Delete", danger: true },
                         ).then((ok) => {
                           if (ok) {
-                            void chatApi
-                              .deleteChannel(c.id)
-                              .catch(() => toastError("Couldn't delete the channel."));
+                            void chatApi.deleteChannel(c.id).catch((e: unknown) => {
+                              const m = (e as { message?: string }).message;
+                              toastError(m ? `Couldn't delete the channel: ${m}` : "Couldn't delete the channel.");
+                            });
                           }
                         })
                       }

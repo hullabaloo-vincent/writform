@@ -11,6 +11,14 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   const res = await backend.apiFetch(method, path, body);
   if (res.status >= 400) {
     const err = (res.body ?? {}) as Partial<CmdError>;
+    // A bodyless 405 means the route isn't in the running server's router:
+    // this client is newer than the (manually updated) self-hosted server.
+    if (res.status === 405 && !err.message) {
+      throw {
+        code: "server_outdated",
+        message: "the server is running an older WritForm version that doesn't support this yet — ask the host to update writform-server",
+      } satisfies CmdError;
+    }
     throw {
       code: err.code ?? `http_${res.status}`,
       message: err.message ?? `request failed (${res.status})`,

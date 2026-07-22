@@ -1,6 +1,12 @@
-# Release pipeline (runs on tag push, e.g. `git tag v0.1.0 && git push --tags`):
-# - Server: Docker image → GHCR (GitHub Packages) + bare Linux binary on the Release
-# - Desktop: signed Tauri bundles + updater manifest → GitHub Releases
+# Release pipeline — manual, one button:
+#   GitHub → Actions → Release → "Run workflow" → pick patch/minor/major
+#   (or type an exact version). The bump job writes the new version into
+#   every manifest + lockfile, commits to main, tags v<version>, and the
+#   build jobs check out that tag — so the tag and the version the app
+#   reports can no longer disagree.
+#
+# After the run: publish the draft on the Releases page (as a full release,
+# not pre-release) so `releases/latest` — and the in-app updater — see it.
 #
 # Desktop auto-update: the public key + GitHub Releases endpoint are configured
 # in apps/desktop/src-tauri/tauri.conf.json. The matching PRIVATE key lives at
@@ -11,35 +17,98 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump"
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+      version:
+        description: "Exact version instead (e.g. 0.6.0). Same as the current version = no bump commit, just release main as-is."
+        required: false
+        default: ""
 
 permissions:
   contents: write
   packages: write
 
+# One release at a time — a second click queues instead of interleaving.
+concurrency:
+  group: release
+
 jobs:
   # The updater compares APP versions, not git tags — a tag that doesn't
   # match tauri.conf.json ships an app that reports "up to date" forever
-  # (this happened through v0.4: every build called itself 0.1.0). Fail
-  # fast instead. Tags are `v<version>`, e.g. version 0.5.0 → tag v0.5.0.
-  version-guard:
+  # (through v0.4 every build called itself 0.1.0). This job makes the two
+  # agree by construction: it computes the version, writes it everywhere,
+  # commits to main, and pushes the tag the build jobs check out.
+  bump:
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+      tag: v${{ steps.next.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-      - run: |
-          app_version=$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)
-          if [ "v${app_version}" != "${GITHUB_REF_NAME}" ]; then
-            echo "::error::Tag ${GITHUB_REF_NAME} does not match the app version ${app_version}."
-            echo "::error::Bump 'version' in apps/desktop/src-tauri/tauri.conf.json (and package.json + workspace Cargo.toml), or retag as v${app_version}."
+        with:
+          ref: main
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Compute next version
+        id: next
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_BUMP: ${{ inputs.bump }}
+        run: |
+          current="$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)"
+          next="$INPUT_VERSION"
+          if [ -z "$next" ]; then
+            IFS=. read -r maj min pat <<<"$current"
+            case "$INPUT_BUMP" in
+              major) next="$((maj + 1)).0.0" ;;
+              minor) next="${maj}.$((min + 1)).0" ;;
+              *) next="${maj}.${min}.$((pat + 1))" ;;
+            esac
+          fi
+          echo "$next" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' || {
+            echo "::error::'${next}' is not a three-part version like 0.6.0"
+            exit 1
+          }
+          if git ls-remote --exit-code origin "refs/tags/v${next}" >/dev/null 2>&1; then
+            echo "::error::Tag v${next} already exists — pick a different version."
             exit 1
           fi
+          echo "Releasing ${current} -> ${next}"
+          echo "current=${current}" >>"$GITHUB_OUTPUT"
+          echo "version=${next}" >>"$GITHUB_OUTPUT"
+      - name: Write version into manifests
+        if: steps.next.outputs.version != steps.next.outputs.current
+        run: |
+          current="${{ steps.next.outputs.current }}"
+          next="${{ steps.next.outputs.version }}"
+          sed -i "s/^version = \"${current}\"/version = \"${next}\"/" Cargo.toml
+          sed -i "s/\"version\": \"${current}\"/\"version\": \"${next}\"/" apps/desktop/src-tauri/tauri.conf.json
+          (cd apps/desktop && npm version "${next}" --no-git-tag-version)
+          cargo update --workspace
+          # A silent sed no-op would resurrect the old tag/version bug.
+          grep -q "^version = \"${next}\"" Cargo.toml
+          grep -q "\"version\": \"${next}\"" apps/desktop/src-tauri/tauri.conf.json
+      - name: Commit, tag, push
+        run: |
+          next="${{ steps.next.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "[RELEASE] v${next}: version bump"
+          git tag "v${next}"
+          git push origin HEAD:main "v${next}"
 
   server-docker:
-    needs: version-guard
+    needs: bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
       - uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -50,27 +119,31 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository_owner }}/writform-server:${{ github.ref_name }}
+            ghcr.io/${{ github.repository_owner }}/writform-server:${{ needs.bump.outputs.tag }}
             ghcr.io/${{ github.repository_owner }}/writform-server:latest
 
   server-binary:
-    needs: version-guard
+    needs: bump
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p writform-server
       - name: Attach binary to release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.bump.outputs.tag }}
+          draft: true
           files: target/release/writform-server
 
   # macOS is intentionally absent: those builds ship as source. Users build
   # locally with scripts/Build WritForm (macOS).command, which avoids the
   # Gatekeeper quarantine that an unnotarized downloaded .app would hit.
   desktop:
-    needs: version-guard
+    needs: bump
     strategy:
       fail-fast: false
       matrix:
@@ -82,6 +155,8 @@ jobs:
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - uses: actions/setup-node@v4
@@ -102,8 +177,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
           projectPath: apps/desktop
-          tagName: ${{ github.ref_name }}
-          releaseName: "WritForm ${{ github.ref_name }}"
+          tagName: ${{ needs.bump.outputs.tag }}
+          releaseName: "WritForm ${{ needs.bump.outputs.tag }}"
           releaseDraft: true
           releaseBody: |
             ## Install

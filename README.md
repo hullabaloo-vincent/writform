@@ -93,9 +93,10 @@ they drift from the Rust types.
 - **Docker:** `docker run -p 7311:7311 -v writform-data:/data ghcr.io/hullabaloo-vincent/writform-server`
 - **Bare metal:** grab `writform-server` from GitHub Releases + `deploy/writform-server.service`
 - Upgrading = pull the new image / binary and restart; SQLite migrations run at startup.
-- Desktop releases are built by CI on tag push and published to GitHub Releases
-  (auto-update via the Tauri updater once signing keys are configured — see
-  `.github/workflows/release.yml` for the one-time setup).
+- Releases are one button: Actions → Release → "Run workflow" picks the version
+  bump, commits it, tags, and publishes installers + the server image to GitHub
+  Releases/GHCR (auto-update via the Tauri updater once signing keys are
+  configured — see `.github/workflows/release.yml` for the one-time setup).
 
 ## Security model (short version)
 
