@@ -19,7 +19,24 @@ permissions:
   packages: write
 
 jobs:
+  # The updater compares APP versions, not git tags — a tag that doesn't
+  # match tauri.conf.json ships an app that reports "up to date" forever
+  # (this happened through v0.4: every build called itself 0.1.0). Fail
+  # fast instead. Tags are `v<version>`, e.g. version 0.5.0 → tag v0.5.0.
+  version-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          app_version=$(jq -r .version apps/desktop/src-tauri/tauri.conf.json)
+          if [ "v${app_version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match the app version ${app_version}."
+            echo "::error::Bump 'version' in apps/desktop/src-tauri/tauri.conf.json (and package.json + workspace Cargo.toml), or retag as v${app_version}."
+            exit 1
+          fi
+
   server-docker:
+    needs: version-guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,6 +54,7 @@ jobs:
             ghcr.io/${{ github.repository_owner }}/writform-server:latest
 
   server-binary:
+    needs: version-guard
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -52,6 +70,7 @@ jobs:
   # locally with scripts/Build WritForm (macOS).command, which avoids the
   # Gatekeeper quarantine that an unnotarized downloaded .app would hit.
   desktop:
+    needs: version-guard
     strategy:
       fail-fast: false
       matrix:
