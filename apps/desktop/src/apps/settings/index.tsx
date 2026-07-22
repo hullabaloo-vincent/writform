@@ -26,6 +26,7 @@ import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
 import { loadNotifPrefs, saveNotifPrefs, type NotifPrefs } from "../../lib/notifPrefs";
+import { discoverPublicIp } from "../../lib/publicIp";
 import {
   loadVoiceSettings,
   saveVoiceSettings,
@@ -616,13 +617,38 @@ function CopyableAddr({ addr, note }: { addr: string; note: string }) {
   );
 }
 
+/** LAN addresses aren't all equal — flag ranges that are usually virtual. */
+function lanNote(addr: string): string {
+  const [a, b] = addr.split(":")[0].split(".").map(Number);
+  if (a === 172 && b >= 16 && b <= 31) {
+    return "same network — likely a virtual adapter (WSL / VM), usually not the one to share";
+  }
+  if (a === 100 && b >= 64 && b <= 127) {
+    return "carrier-grade NAT range — probably not shareable";
+  }
+  return "same network (home / office Wi-Fi)";
+}
+
 function HostingSection({ onError }: { onError: (e: string | null) => void }) {
   const [host, setHost] = useState<HostStatus | null>(null);
   const [reach, setReach] = useState<Reachability | null>(null);
   const [testing, setTesting] = useState(false);
+  const [publicIp, setPublicIp] = useState<string | null>(null);
 
   const refresh = () => void backend.hostStatus().then(setHost).catch(() => {});
   useEffect(refresh, []);
+
+  const running = host?.running ?? false;
+  useEffect(() => {
+    if (!running) return;
+    let live = true;
+    void discoverPublicIp().then((ip) => {
+      if (live) setPublicIp(ip);
+    });
+    return () => {
+      live = false;
+    };
+  }, [running]);
 
   if (!host?.configured) return null;
 
@@ -649,11 +675,16 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
           <p className="wf-session-meta">Share an address with friends — they add it via “Add a server”:</p>
           <ul className="wf-device-list">
             {host.lan_addrs.map((a) => (
-              <CopyableAddr key={a} addr={a} note="same network (home / office Wi-Fi)" />
+              <CopyableAddr key={a} addr={a} note={lanNote(a)} />
             ))}
-            {reach?.upnp.status === "mapped" && (
+            {reach?.upnp.status === "mapped" ? (
               <CopyableAddr addr={reach.upnp.external_addr} note="internet (router port mapped via UPnP)" />
-            )}
+            ) : publicIp ? (
+              <CopyableAddr
+                addr={`${publicIp}:${host.port}`}
+                note={`over the internet — works once TCP port ${host.port} is forwarded to this computer`}
+              />
+            ) : null}
           </ul>
           <p className="wf-session-meta">
             When a friend connects for the first time, they are shown the server fingerprint above
@@ -683,10 +714,15 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
           </div>
           {reach?.upnp.status === "failed" && (
             <p className="wf-session-meta">
-              Couldn’t map the port automatically ({reach.upnp.message}). To let friends connect
-              over the internet, either forward TCP port {host.port} to this computer in your
-              router settings, or put everyone on a shared VPN like Tailscale and share your
-              Tailscale address instead — no router changes needed.
+              Couldn’t map the port automatically ({reach.upnp.message}). This only means the
+              automatic method failed — if you’ve already forwarded TCP port {host.port} to
+              this computer in your router, you’re done: friends use the “over the internet”
+              address listed above. Otherwise, add that forward in your router settings, or
+              put everyone on a shared VPN like Tailscale and share your Tailscale address
+              instead — no router changes needed. To confirm it worked, keep hosting running
+              and test port {host.port} from a port-checking website (from outside your own
+              network). If it still fails with the forward in place, your ISP may put you
+              behind carrier-grade NAT — Tailscale is the way around that.
             </p>
           )}
         </>

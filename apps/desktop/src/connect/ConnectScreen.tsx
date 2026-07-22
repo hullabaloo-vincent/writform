@@ -9,6 +9,7 @@ import {
   type ProbeResult,
   type SavedServer,
 } from "../lib/backend";
+import { discoverPublicIp } from "../lib/publicIp";
 import { useSession } from "../stores/session";
 
 type Step =
@@ -65,7 +66,21 @@ export function ConnectScreen() {
         setStep({ kind: "trust", probe: result });
       }
     } catch (e) {
-      setError(isCmdError(e) ? e.message : String(e));
+      let message = isCmdError(e) ? e.message : String(e);
+      // Dialing your OWN public IP from inside the same network needs router
+      // hairpinning, which many ISP boxes don't do — the classic way people
+      // "test" a fresh port forward and wrongly conclude it's broken.
+      const host = addr.split(":")[0];
+      const ownIp = await discoverPublicIp().catch(() => null);
+      if (ownIp !== null && host === ownIp) {
+        message +=
+          " — this is your own network's public address, and testing it from inside " +
+          "the same network often fails (router hairpinning) even when the port " +
+          "forward is correct. On this network use the LAN address instead; check " +
+          "internet reachability from outside (a port-check website, or a phone on " +
+          "cellular data).";
+      }
+      setError(message);
       setStep({ kind: "pick" });
     }
   };

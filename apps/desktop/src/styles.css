@@ -901,14 +901,25 @@ body,
 
 .wf-chat-channels-header {
   display: flex;
-  justify-content: space-between;
   align-items: center;
+  gap: 6px;
   padding: 12px;
   border-bottom: 1px solid var(--wf-border);
   font-weight: 600;
 }
 
+/* The name yields; long group names ellipsize instead of shoving the
+   gear/Invite buttons out of the 200px sidebar. */
+.wf-chat-group-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .wf-chat-channels-header button {
+  flex-shrink: 0;
   border: none;
   background: transparent;
   color: var(--wf-text-dim);
