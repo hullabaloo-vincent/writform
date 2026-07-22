@@ -1,6 +1,7 @@
 import { MessagesSquare } from "lucide-react";
 import { onResync, usePlatform } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { useSession } from "../../stores/session";
 import { useFriends } from "../friends/store";
 import { ChatView, GlobalVoiceBar } from "./ChatView";
 import {
@@ -39,6 +40,20 @@ export const chatApp: WritformApp = {
       const total = Object.values(s.dmUnread).reduce((n, c) => n + c, 0);
       usePlatform.getState().setAppBadge("writform.friends", total);
     });
+    // Mirror the active group's accent into a CSS variable so platform
+    // chrome (the app-rail stripe) can show it without importing app code.
+    const syncGroupAccent = () => {
+      const s = useChat.getState();
+      const accent =
+        useSession.getState().phase === "connected"
+          ? (s.groups.find((g) => g.id === s.activeGroupId)?.accent_color ?? null)
+          : null;
+      if (accent) document.documentElement.style.setProperty("--wf-group-accent", accent);
+      else document.documentElement.style.removeProperty("--wf-group-accent");
+    };
+    useChat.subscribe(syncGroupAccent);
+    useSession.subscribe(syncGroupAccent);
+    syncGroupAccent();
     onResync(() => void resyncChat().catch(() => {}));
     onResync(() => {
       // Voice occupancy may have changed while offline.

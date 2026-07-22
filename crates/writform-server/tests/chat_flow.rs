@@ -582,3 +582,181 @@ async fn channel_rename_and_delete_are_admin_only() {
         .await;
     assert!(remaining.iter().all(|c| c.id != channel.id));
 }
+
+/// Deleting a group is admin-only, fans out `group.deleted`, and cascades
+/// everything — including a writing session whose side-chat channel has a
+/// no-action FK back to channels (SQLite verifies FKs at statement end, so
+/// the single DELETE must still succeed).
+#[tokio::test]
+async fn group_delete_is_admin_only_and_cascades() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Doomed"}))
+        .await;
+    let invite: Invite = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/invites", group.id.0),
+            json!({"expires_in_seconds": null, "max_uses": null}),
+        )
+        .await;
+    let _: Group = server
+        .post_json(&bob.token, "/invites/redeem", json!({"code": invite.code}))
+        .await;
+
+    // Content that must cascade: a channel with a message, and a session
+    // (which owns a side-chat channel referenced without a cascade action).
+    let channels: Vec<Channel> = server
+        .get_json(&alice.token, &format!("/groups/{}/channels", group.id.0))
+        .await;
+    let general = channels.iter().find(|c| c.name.is_some()).unwrap();
+    let _: Message = server
+        .post_json(
+            &alice.token,
+            &format!("/channels/{}/messages", general.id.0),
+            json!({"content": "soon gone", "reply_to_id": null, "attachment_ids": []}),
+        )
+        .await;
+    let _: serde_json::Value = server
+        .post_json(
+            &alice.token,
+            "/sessions",
+            json!({"channel_id": general.id.0, "title": "Last sprint"}),
+        )
+        .await;
+
+    let mut bob_ws = ws_connect(&server, &bob.token, &[format!("group:{}", group.id.0)]).await;
+
+    // Member (non-admin) cannot delete.
+    let res = server
+        .client
+        .delete(format!("{}/groups/{}", server.base, group.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+
+    // Admin deletes; everyone in the room hears about it.
+    let res = server
+        .client
+        .delete(format!("{}/groups/{}", server.base, group.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let data = wait_for_event(&mut bob_ws, "group.deleted").await;
+    assert_eq!(data["group_id"], group.id.0);
+
+    // Gone for everyone: list empty, channels unreachable.
+    let groups: Vec<Group> = server.get_json(&alice.token, "/groups").await;
+    assert!(groups.is_empty());
+    let res = server
+        .client
+        .get(format!("{}/groups/{}/channels", server.base, group.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+}
+
+/// Permanent join codes: admin-set, normalized, unique, case-insensitive to
+/// redeem, revocable, and admin-eyes-only on the group payload.
+#[tokio::test]
+async fn permanent_join_code_flow() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let carol = server.register("carol").await;
+
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Writers"}))
+        .await;
+
+    // Normalized like channel names: "Writers Club" → writers-club.
+    let res = server
+        .client
+        .put(format!("{}/groups/{}/join-code", server.base, group.id.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"code": "Writers Club"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "writers-club");
+
+    // Too short and non-admin both rejected.
+    let res = server
+        .client
+        .put(format!("{}/groups/{}/join-code", server.base, group.id.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"code": "ab"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+    let res = server
+        .client
+        .put(format!("{}/groups/{}/join-code", server.base, group.id.0))
+        .bearer_auth(&bob.token)
+        .json(&json!({"code": "bobs-code"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+
+    // Bob joins with the code, case-insensitively; the code never shows on
+    // a member's group payload, only on the admin's.
+    let joined: Group = server
+        .post_json(
+            &bob.token,
+            "/invites/redeem",
+            json!({"code": "WRITERS-CLUB"}),
+        )
+        .await;
+    assert_eq!(joined.id.0, group.id.0);
+    assert_eq!(joined.join_code, None);
+    let mine: Vec<Group> = server.get_json(&alice.token, "/groups").await;
+    assert_eq!(mine[0].join_code.as_deref(), Some("writers-club"));
+    let bobs: Vec<Group> = server.get_json(&bob.token, "/groups").await;
+    assert_eq!(bobs[0].join_code, None);
+
+    // Codes are unique across groups.
+    let other: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Poets"}))
+        .await;
+    let res = server
+        .client
+        .put(format!("{}/groups/{}/join-code", server.base, other.id.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"code": "writers-club"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 409);
+
+    // Clearing revokes it: carol's redeem now fails.
+    let res = server
+        .client
+        .put(format!("{}/groups/{}/join-code", server.base, group.id.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"code": null}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+    let res = server
+        .post_json_raw(
+            &carol.token,
+            "/invites/redeem",
+            json!({"code": "writers-club"}),
+        )
+        .await;
+    assert_eq!(res.status(), 400);
+}

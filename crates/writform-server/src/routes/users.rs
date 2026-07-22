@@ -20,18 +20,19 @@ pub async fn profile(
         String,
         Option<String>,
         Option<i64>,
+        Option<i64>,
         Option<String>,
         Option<String>,
         i64,
     );
     let row: Option<Row> = sqlx::query_as(
-        "SELECT id, username, display_name, avatar_attachment_id, accent_color, bio, created_at
-         FROM users WHERE id = ?",
+        "SELECT id, username, display_name, avatar_attachment_id, banner_attachment_id,
+         accent_color, bio, created_at FROM users WHERE id = ?",
     )
     .bind(user_id)
     .fetch_optional(&state.pool)
     .await?;
-    let Some((id, username, display_name, avatar, accent, bio, created_at)) = row else {
+    let Some((id, username, display_name, avatar, banner, accent, bio, created_at)) = row else {
         return Err(AppError::new(
             StatusCode::NOT_FOUND,
             "no_such_user",
@@ -43,6 +44,7 @@ pub async fn profile(
         username,
         display_name,
         avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
+        banner_attachment_id: banner.map(writform_proto::AttachmentId),
         accent_color: accent,
         bio,
         status: crate::ws::effective_status(&state, UserId(id)).await,

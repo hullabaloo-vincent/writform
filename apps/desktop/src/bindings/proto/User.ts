@@ -2,7 +2,11 @@
 import type { AttachmentId } from "./AttachmentId";
 import type { UserId } from "./UserId";
 
-export type User = { id: UserId, username: string, display_name: string | null, is_server_admin: boolean, avatar_attachment_id: AttachmentId | null, accent_color: string | null, 
+export type User = { id: UserId, username: string, display_name: string | null, is_server_admin: boolean, avatar_attachment_id: AttachmentId | null, 
+/**
+ * Profile-card banner image; the accent color fills in when absent.
+ */
+banner_attachment_id: AttachmentId | null, accent_color: string | null, 
 /**
  * "online" | "busy" | "hidden" — the user's chosen presence.
  */

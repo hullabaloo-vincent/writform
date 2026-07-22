@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
 import { isCmdError } from "../../lib/backend";
+import { GroupChip } from "../chat/GroupChip";
 import { useChat } from "../chat/store";
 import { canvasApi } from "./api";
 import { BoardRoom } from "./BoardRoom";
@@ -42,6 +43,7 @@ function BoardList({ groupId }: { groupId: number }) {
     <div className="wf-sessions">
       <header className="wf-sessions-header">
         <h2>Canvas boards</h2>
+        <GroupChip />
       </header>
       {error && <p className="wf-connect-error">{error}</p>}
       {boards.length === 0 && (

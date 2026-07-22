@@ -22,6 +22,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Friend } from "../../bindings/proto/Friend";
 import { backend, isCmdError } from "../../lib/backend";
 import { confirmDialog, Modal } from "../../platform";
+import { useSession } from "../../stores/session";
 import { friendsApi } from "../friends/FriendsView";
 import { renderMarkdown } from "./markdown";
 
@@ -380,7 +381,9 @@ function NoteEditor({
         <button className="wf-icon" title="Formatting guide" onClick={onHelp}>
           <CircleQuestionMark size={14} />
         </button>
-        <button onClick={() => setSharing(true)}>Share</button>
+        {useSession.getState().phase !== "offline" && (
+          <button onClick={() => setSharing(true)}>Share</button>
+        )}
         <button
           className="wf-danger"
           onClick={() =>

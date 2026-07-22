@@ -333,9 +333,27 @@ function GroupSettingsDialog({
   const [iconId, setIconId] = useState<number | null>(group.icon_attachment_id);
   const [color, setColor] = useState(group.accent_color ?? "#8ab6e8");
   const [useColor, setUseColor] = useState(group.accent_color !== null);
+  const [joinCode, setJoinCode] = useState(group.join_code ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const applyJoinCode = (code: string | null) => {
+    setError(null);
+    setBusy(true);
+    chatApi
+      .setJoinCode(group.id, code)
+      .then(({ code: normalized }) => {
+        useChat.setState((s) => ({
+          groups: s.groups.map((g) =>
+            g.id === group.id ? { ...g, join_code: normalized } : g,
+          ),
+        }));
+        setJoinCode(normalized ?? "");
+      })
+      .catch((e) => setError(isCmdError(e) ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
 
   const save = () => {
     setError(null);
@@ -409,7 +427,59 @@ function GroupSettingsDialog({
           onChange={(e) => setColor(e.target.value)}
         />
       </label>
+      <div className="wf-field">
+        Join code
+        <p className="wf-session-meta">
+          A permanent code anyone can enter on the join screen — like an invite that never
+          expires. Clear it to stop new joins.
+        </p>
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          <input
+            value={joinCode}
+            placeholder="e.g. writers-club"
+            maxLength={32}
+            onChange={(e) => setJoinCode(e.target.value)}
+          />
+          <button
+            disabled={busy || !joinCode.trim() || joinCode.trim() === group.join_code}
+            onClick={() => applyJoinCode(joinCode)}
+          >
+            Set
+          </button>
+          {group.join_code && (
+            <button disabled={busy} onClick={() => applyJoinCode(null)}>
+              Clear
+            </button>
+          )}
+        </div>
+        {group.join_code && (
+          <p className="wf-session-meta">
+            Active: <code>{group.join_code}</code> — share it anywhere.
+          </p>
+        )}
+      </div>
       <div className="wf-connect-row">
+        <button
+          className="wf-danger"
+          disabled={busy}
+          onClick={() =>
+            void confirmDialog(
+              `Delete "${group.name}" for every member? All of its channels, messages, sessions, boards, and emotes are erased. This cannot be undone.`,
+              { title: "Delete group", confirmLabel: "Delete group", danger: true },
+            ).then((ok) => {
+              if (!ok) return;
+              setBusy(true);
+              chatApi
+                .deleteGroup(group.id)
+                .then(onClose)
+                .catch((e) => setError(isCmdError(e) ? e.message : String(e)))
+                .finally(() => setBusy(false));
+            })
+          }
+        >
+          Delete group…
+        </button>
+        <span className="wf-statusbar-spacer" />
         <button onClick={onClose} disabled={busy}>
           Cancel
         </button>

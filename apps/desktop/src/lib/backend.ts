@@ -39,6 +39,16 @@ export interface CmdError {
   message: string;
 }
 
+/** Locally saved presentation, applied to servers on explicit request. */
+export interface PortableProfile {
+  display_name: string | null;
+  accent_color: string | null;
+  bio: string | null;
+  avatar_path: string | null;
+  banner_path: string | null;
+  saved_at: number;
+}
+
 export function isCmdError(e: unknown): e is CmdError {
   return typeof e === "object" && e !== null && "code" in e && "message" in e;
 }
@@ -91,6 +101,31 @@ export interface Backend {
   hostStart(port: number, serverName: string): Promise<HostStatus>;
   hostStop(): Promise<HostStatus>;
   hostReachability(): Promise<Reachability>;
+
+  /** Locally saved portable profile, or null when none is saved. */
+  profileGet(): Promise<PortableProfile | null>;
+  /** Snapshot fields + the current avatar/banner attachments locally. */
+  profileSave(fields: {
+    displayName: string | null;
+    accentColor: string | null;
+    bio: string | null;
+    avatarAttachmentId: number | null;
+    bannerAttachmentId: number | null;
+  }): Promise<PortableProfile>;
+  /** Update text fields only, keeping stored images (offline editing). */
+  profileUpdateFields(fields: {
+    displayName: string | null;
+    accentColor: string | null;
+    bio: string | null;
+  }): Promise<PortableProfile>;
+  profileDelete(): Promise<void>;
+
+  /** Documents stored on this device (meta only; state stays on disk). */
+  localdocList(): Promise<{ id: string; title: string; format: string; updated_at: number }[]>;
+  /** Raw JSON payload of one local document (schema owned by the client). */
+  localdocRead(id: string): Promise<string>;
+  localdocWrite(id: string, content: string): Promise<void>;
+  localdocDelete(id: string): Promise<void>;
   apiFetch(method: string, path: string, body?: unknown): Promise<ApiResponse>;
   uploadAttachment(opts: {
     dataBase64?: string;
@@ -156,6 +191,26 @@ function tauriBackend(): Backend {
     hostStart: (port, serverName) => invoke("host_start", { port, serverName }),
     hostStop: () => invoke("host_stop"),
     hostReachability: () => invoke("host_reachability"),
+    profileGet: () => invoke("profile_get"),
+    profileSave: (f) =>
+      invoke("profile_save", {
+        displayName: f.displayName,
+        accentColor: f.accentColor,
+        bio: f.bio,
+        avatarAttachmentId: f.avatarAttachmentId,
+        bannerAttachmentId: f.bannerAttachmentId,
+      }),
+    profileUpdateFields: (f) =>
+      invoke("profile_update_fields", {
+        displayName: f.displayName,
+        accentColor: f.accentColor,
+        bio: f.bio,
+      }),
+    profileDelete: () => invoke("profile_delete"),
+    localdocList: () => invoke("localdoc_list"),
+    localdocRead: (id) => invoke("localdoc_read", { id }),
+    localdocWrite: (id, content) => invoke("localdoc_write", { id, content }),
+    localdocDelete: (id) => invoke("localdoc_delete", { id }),
     apiFetch: (method, path, body) => invoke("api_fetch", { method, path, body: body ?? null }),
     uploadAttachment: ({ dataBase64, filePath, fileName }) =>
       invoke("upload_attachment", {
@@ -244,6 +299,14 @@ function unavailableBackend(): Backend {
     hostStart: fail,
     hostStop: fail,
     hostReachability: fail,
+    profileGet: fail,
+    profileSave: fail,
+    profileUpdateFields: fail,
+    profileDelete: fail,
+    localdocList: fail,
+    localdocRead: fail,
+    localdocWrite: fail,
+    localdocDelete: fail,
     apiFetch: fail,
     uploadAttachment: fail,
     saveExport: fail,

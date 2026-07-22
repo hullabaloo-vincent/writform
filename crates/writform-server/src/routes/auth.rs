@@ -64,23 +64,35 @@ type UserRow = (
     bool,
     i64,
     Option<i64>,
+    Option<i64>,
     Option<String>,
     String,
     Option<String>,
 );
 
 const USER_SELECT: &str = "SELECT id, username, display_name, is_server_admin, created_at,
-    avatar_attachment_id, accent_color, status, bio FROM users WHERE id = ?";
+    avatar_attachment_id, banner_attachment_id, accent_color, status, bio FROM users WHERE id = ?";
 
 fn user_row_to_api(row: UserRow) -> User {
-    let (id, username, display_name, is_server_admin, created_at, avatar, accent, status, bio) =
-        row;
+    let (
+        id,
+        username,
+        display_name,
+        is_server_admin,
+        created_at,
+        avatar,
+        banner,
+        accent,
+        status,
+        bio,
+    ) = row;
     User {
         id: UserId(id),
         username,
         display_name,
         is_server_admin,
         avatar_attachment_id: avatar.map(writform_proto::AttachmentId),
+        banner_attachment_id: banner.map(writform_proto::AttachmentId),
         accent_color: accent,
         status,
         bio,
@@ -139,6 +151,7 @@ pub async fn register(
             None,
             is_first,
             now,
+            None,
             None,
             None,
             "online".into(),
@@ -245,21 +258,9 @@ pub async fn update_profile(
             ));
         }
     }
-    if let Some(att) = req.avatar_attachment_id {
-        // The avatar must be the caller's own upload.
-        let owned: Option<(i64,)> =
-            sqlx::query_as("SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ?")
-                .bind(att.0)
-                .bind(auth.user_id.0)
-                .fetch_optional(&state.pool)
-                .await?;
-        if owned.is_none() {
-            return Err(AppError::bad_request(
-                "bad_attachment",
-                "avatar attachment not found",
-            ));
-        }
-    }
+    // Avatar and banner must each be the caller's own upload.
+    assert_own_upload(&state, req.avatar_attachment_id, auth.user_id, "avatar").await?;
+    assert_own_upload(&state, req.banner_attachment_id, auth.user_id, "banner").await?;
     let bio = req
         .bio
         .map(|b| b.trim().to_string())
@@ -271,17 +272,41 @@ pub async fn update_profile(
         ));
     }
     sqlx::query(
-        "UPDATE users SET display_name = ?, avatar_attachment_id = ?, accent_color = ?, bio = ?
-         WHERE id = ?",
+        "UPDATE users SET display_name = ?, avatar_attachment_id = ?, banner_attachment_id = ?,
+         accent_color = ?, bio = ? WHERE id = ?",
     )
     .bind(&display_name)
     .bind(req.avatar_attachment_id.map(|a| a.0))
+    .bind(req.banner_attachment_id.map(|a| a.0))
     .bind(&accent)
     .bind(&bio)
     .bind(auth.user_id.0)
     .execute(&state.pool)
     .await?;
     me(State(state), auth).await
+}
+
+/// Reject a profile-image attachment that isn't the caller's own upload.
+async fn assert_own_upload(
+    state: &AppState,
+    att: Option<writform_proto::AttachmentId>,
+    user_id: writform_proto::UserId,
+    what: &str,
+) -> Result<(), AppError> {
+    let Some(att) = att else { return Ok(()) };
+    let owned: Option<(i64,)> =
+        sqlx::query_as("SELECT 1 FROM attachments WHERE id = ? AND uploader_id = ?")
+            .bind(att.0)
+            .bind(user_id.0)
+            .fetch_optional(&state.pool)
+            .await?;
+    if owned.is_none() {
+        return Err(AppError::bad_request(
+            "bad_attachment",
+            format!("{what} attachment not found"),
+        ));
+    }
+    Ok(())
 }
 
 /// `PUT /api/v1/auth/status` — set presence: online | busy | hidden.

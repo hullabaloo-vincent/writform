@@ -502,6 +502,42 @@ export function installChatWsHandler(): () => void {
           g.id === group_id ? { ...g, name, icon_attachment_id, accent_color } : g,
         ),
       }));
+    } else if (kind === "group.deleted") {
+      const { group_id } = data as { group_id: number };
+      useChat.setState((s) => {
+        // Purge every cached trace of the group's channels.
+        const channelGroup: Record<number, number> = {};
+        const messages = { ...s.messages };
+        const unread = { ...s.unread };
+        const drafts = { ...s.drafts };
+        for (const [cidStr, gid] of Object.entries(s.channelGroup)) {
+          const cid = Number(cidStr);
+          if (gid === group_id) {
+            delete messages[cid];
+            delete unread[cid];
+            delete drafts[cid];
+          } else {
+            channelGroup[cid] = gid;
+          }
+        }
+        return {
+          groups: s.groups.filter((g) => g.id !== group_id),
+          channelGroup,
+          messages,
+          unread,
+          drafts,
+          ...(s.activeGroupId === group_id
+            ? { channels: [], activeChannelId: null, members: [], emotes: [] }
+            : {}),
+        };
+      });
+      // If we were looking at it, land on the next group (or the empty state).
+      const after = useChat.getState();
+      if (after.activeGroupId === group_id) {
+        const next = after.groups[0];
+        if (next) void after.selectGroup(next.id);
+        else useChat.setState({ activeGroupId: null });
+      }
     } else if (kind === "emote.created") {
       const emote = data as Emote;
       if (emote.group_id === state.activeGroupId) {

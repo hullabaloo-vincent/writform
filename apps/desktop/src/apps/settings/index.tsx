@@ -19,9 +19,11 @@ import {
   isCmdError,
   type CmdError,
   type HostStatus,
+  type PortableProfile,
   type Reachability,
   type SavedServer,
 } from "../../lib/backend";
+import { applyPortableProfile } from "../../lib/portableProfile";
 import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
@@ -33,7 +35,7 @@ import {
   saveVoiceSettings,
   type VoiceSettings,
 } from "../../lib/voiceSettings";
-import { Avatar, confirmDialog } from "../../platform";
+import { Avatar, confirmDialog, toast } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { useSession } from "../../stores/session";
 
@@ -53,16 +55,17 @@ type Tab = "profile" | "voice" | "notifications" | "devices" | "server" | "app" 
 
 function SettingsView() {
   const me = useSession((s) => s.session?.user);
+  const offline = useSession((s) => s.phase === "offline");
   const [tab, setTab] = useState<Tab>("profile");
   const [error, setError] = useState<string | null>(null);
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
-    { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: true },
-    { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: true },
-    { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: true },
-    { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: true },
-    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: true },
+    { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: !offline },
+    { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: !offline },
+    { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: !offline },
+    { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: !offline },
+    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: !offline },
     { id: "admin", label: "Admin", icon: <ShieldCheck size={15} />, show: !!me?.is_server_admin },
   ];
 
@@ -86,7 +89,8 @@ function SettingsView() {
       </nav>
       <div className="wf-settings-body">
         {error && <p className="wf-connect-error">{error}</p>}
-        {tab === "profile" && <ProfileTab onError={setError} />}
+        {tab === "profile" &&
+          (offline ? <OfflineProfileTab onError={setError} /> : <ProfileTab onError={setError} />)}
         {tab === "voice" && <VoiceTab onError={setError} />}
         {tab === "notifications" && <NotificationsTab />}
         {tab === "devices" && <DevicesTab onError={setError} />}
@@ -98,6 +102,142 @@ function SettingsView() {
   );
 }
 
+/** Offline: view and edit the portable profile's text fields (stored images
+ *  stay untouched — they can only be refreshed from a connected server). */
+function OfflineProfileTab({ onError }: { onError: (e: string | null) => void }) {
+  const [portable, setPortable] = useState<PortableProfile | null>(null);
+  const [loaded, setLoaded] = useState(false);
+  const [displayName, setDisplayName] = useState("");
+  const [bio, setBio] = useState("");
+  const [useColor, setUseColor] = useState(false);
+  const [color, setColor] = useState("#8ab6e8");
+  const [busy, setBusy] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    void backend
+      .profileGet()
+      .then((p) => {
+        setPortable(p);
+        setDisplayName(p?.display_name ?? "");
+        setBio(p?.bio ?? "");
+        setUseColor(!!p?.accent_color);
+        if (p?.accent_color) setColor(p.accent_color);
+      })
+      .catch(() => {})
+      .finally(() => setLoaded(true));
+  }, []);
+
+  if (!loaded) return null;
+
+  const save = () => {
+    onError(null);
+    setBusy(true);
+    backend
+      .profileUpdateFields({
+        displayName: displayName.trim() || null,
+        accentColor: useColor ? color : null,
+        bio: bio.trim() || null,
+      })
+      .then((p) => {
+        setPortable(p);
+        setSaved(true);
+      })
+      .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
+      .finally(() => setBusy(false));
+  };
+
+  return (
+    <section>
+      <h3>Portable profile</h3>
+      <p className="wf-session-meta">
+        This is the profile saved on this computer. When you join a server, you can apply it
+        there in one step. {portable === null && "Nothing is saved yet — fill it in below."}
+      </p>
+      <label className="wf-settings-field">
+        Display name
+        <input
+          value={displayName}
+          placeholder="(none)"
+          onChange={(e) => {
+            setDisplayName(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </label>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={useColor}
+          onChange={(e) => {
+            setUseColor(e.target.checked);
+            setSaved(false);
+          }}
+        />
+        Accent color
+        <input
+          type="color"
+          value={color}
+          disabled={!useColor}
+          onChange={(e) => {
+            setColor(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </label>
+      <label className="wf-settings-field">
+        About me
+        <textarea
+          className="wf-bio-input"
+          rows={3}
+          maxLength={300}
+          placeholder="Say something about yourself…"
+          value={bio}
+          onChange={(e) => {
+            setBio(e.target.value);
+            setSaved(false);
+          }}
+        />
+      </label>
+      <p className="wf-session-meta">
+        Avatar image: {portable?.avatar_path ? "saved ✓" : "none"} · Banner image:{" "}
+        {portable?.banner_path ? "saved ✓" : "none"} — images update from your profile on a
+        connected server (Settings → Profile → “Save current as portable”).
+      </p>
+      <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
+        <button className="wf-primary" disabled={busy} onClick={save}>
+          {saved ? "Saved ✓" : "Save"}
+        </button>
+        {portable && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              void confirmDialog(
+                "Delete the portable profile saved on this computer? Server profiles are not affected.",
+                { title: "Delete portable profile", confirmLabel: "Delete", danger: true },
+              ).then((ok) => {
+                if (!ok) return;
+                backend
+                  .profileDelete()
+                  .then(() => {
+                    setPortable(null);
+                    setDisplayName("");
+                    setBio("");
+                    setUseColor(false);
+                    setSaved(false);
+                  })
+                  .catch((e) => onError(isCmdError(e) ? e.message : String(e)));
+              })
+            }
+          >
+            Delete
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
   const session = useSession((s) => s.session);
   const setConnected = useSession((s) => s.setConnected);
@@ -106,11 +246,21 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
   const [avatarId, setAvatarId] = useState<number | null>(
     session?.user.avatar_attachment_id ?? null,
   );
+  const [bannerId, setBannerId] = useState<number | null>(
+    session?.user.banner_attachment_id ?? null,
+  );
   const [useColor, setUseColor] = useState(!!session?.user.accent_color);
   const [color, setColor] = useState(session?.user.accent_color ?? "#8ab6e8");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [portable, setPortable] = useState<PortableProfile | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void backend.profileGet().then(setPortable).catch(() => {});
+  }, []);
+
   if (!session) return null;
 
   const save = () => {
@@ -119,6 +269,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
     api<User>("PATCH", "/api/v1/auth/me", {
       display_name: displayName.trim() || null,
       avatar_attachment_id: avatarId,
+      banner_attachment_id: bannerId,
       accent_color: useColor ? color : null,
       bio: bio.trim() || null,
     })
@@ -181,6 +332,57 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
           )}
         </div>
       </div>
+      <div className="wf-settings-field">
+        Banner (behind your avatar on the profile card)
+        <div
+          className="wf-banner-preview"
+          style={{ background: useColor ? color : "var(--wf-accent)" }}
+        >
+          {bannerId !== null && (
+            <img
+              className="wf-profile-banner-img"
+              src={`writform-att://attachment/${bannerId}`}
+              alt=""
+              draggable={false}
+            />
+          )}
+        </div>
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          <input
+            ref={bannerRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) {
+                setBusy(true);
+                uploadBlob(file, file.name)
+                  .then((meta) => {
+                    setBannerId(meta.id);
+                    setSaved(false);
+                  })
+                  .catch((err) => onError(isCmdError(err) ? err.message : String(err)))
+                  .finally(() => setBusy(false));
+              }
+              e.target.value = "";
+            }}
+          />
+          <button disabled={busy} onClick={() => bannerRef.current?.click()}>
+            Upload image
+          </button>
+          {bannerId !== null && (
+            <button
+              onClick={() => {
+                setBannerId(null);
+                setSaved(false);
+              }}
+            >
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
       <label className="wf-settings-field wf-field-row">
         <input
           type="checkbox"
@@ -231,6 +433,89 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
           </button>
         </div>
       </label>
+
+      <h4>Portable profile</h4>
+      <p className="wf-session-meta">
+        Keep a copy of this look (name, colors, bio, avatar, banner) on this computer and apply
+        it to any server you join — profiles are otherwise per-server. Usernames stay
+        per-server and are not included.
+      </p>
+      <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
+        <button
+          disabled={busy}
+          onClick={() => {
+            onError(null);
+            setBusy(true);
+            backend
+              .profileSave({
+                displayName: displayName.trim() || null,
+                accentColor: useColor ? color : null,
+                bio: bio.trim() || null,
+                avatarAttachmentId: avatarId,
+                bannerAttachmentId: bannerId,
+              })
+              .then((p) => {
+                setPortable(p);
+                toast("Portable profile saved on this computer.", "success");
+              })
+              .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
+              .finally(() => setBusy(false));
+          }}
+        >
+          Save current as portable
+        </button>
+        {portable && (
+          <button
+            disabled={busy}
+            onClick={() => {
+              onError(null);
+              setBusy(true);
+              applyPortableProfile()
+                .then((user) => {
+                  if (!user) return;
+                  setConnected({ ...session, user });
+                  setDisplayName(user.display_name ?? "");
+                  setBio(user.bio ?? "");
+                  setAvatarId(user.avatar_attachment_id ?? null);
+                  setBannerId(user.banner_attachment_id ?? null);
+                  setUseColor(!!user.accent_color);
+                  if (user.accent_color) setColor(user.accent_color);
+                  setSaved(true);
+                  toast("Portable profile applied to this server.", "success");
+                })
+                .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
+                .finally(() => setBusy(false));
+            }}
+          >
+            Apply to this server
+          </button>
+        )}
+        {portable && (
+          <button
+            disabled={busy}
+            onClick={() =>
+              void confirmDialog(
+                "Delete the portable profile saved on this computer? Server profiles are not affected.",
+                { title: "Delete portable profile", confirmLabel: "Delete", danger: true },
+              ).then((ok) => {
+                if (!ok) return;
+                backend
+                  .profileDelete()
+                  .then(() => setPortable(null))
+                  .catch((e) => onError(isCmdError(e) ? e.message : String(e)));
+              })
+            }
+          >
+            Delete
+          </button>
+        )}
+      </div>
+      {portable && (
+        <p className="wf-session-meta">
+          Saved {new Date(portable.saved_at).toLocaleString()} — you’ll also be offered it when
+          registering on a new server.
+        </p>
+      )}
     </section>
   );
 }
@@ -760,6 +1045,7 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
           </button>
         </div>
       )}
+
     </>
   );
 }
@@ -971,6 +1257,7 @@ export const settingsApp: WritformApp = {
     name: "Settings",
     icon: <SettingsIcon size={20} />,
     permissions: ["ui", "commands", "net"],
+    offline: true,
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <SettingsView />);

@@ -27,6 +27,8 @@ export interface AppManifest {
    *  (third-party plugins declare emoji in manifest.json). */
   icon: ReactNode;
   permissions: AppPermission[];
+  /** Usable without a server connection (shown in offline mode's dock). */
+  offline?: boolean;
 }
 
 /** Named UI mount points apps can contribute to. */

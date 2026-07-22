@@ -8,6 +8,7 @@ import type {
   Backend,
   CmdError,
   HostStatus,
+  PortableProfile,
   SavedServer,
   SessionInfo,
   WsEvent,
@@ -24,6 +25,9 @@ function extractWikiLinks(content: string): string[] {
 export function devPreviewBackend(): Backend {
   let servers: SavedServer[] = [];
   let session: SessionInfo | null = null;
+  let portable: PortableProfile | null = null;
+  const localdocs = new Map<string, string>();
+  const localdocTimes = new Map<string, number>();
   let pending: SavedServer | null = null;
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1179,6 +1183,7 @@ export function devPreviewBackend(): Backend {
           display_name: null,
           is_server_admin: true,
           avatar_attachment_id: null,
+          banner_attachment_id: null,
           accent_color: null,
           status: "online",
           bio: null,
@@ -1233,6 +1238,61 @@ export function devPreviewBackend(): Backend {
         lan_addrs: host.lan_addrs,
         upnp: { status: "failed", message: "no UPnP router found (search timed out)" },
       };
+    },
+    async profileGet() {
+      return portable;
+    },
+    async profileSave(f) {
+      await delay(300);
+      portable = {
+        display_name: f.displayName,
+        accent_color: f.accentColor,
+        bio: f.bio,
+        avatar_path: f.avatarAttachmentId !== null ? "/dev-preview/profile/avatar.png" : null,
+        banner_path: f.bannerAttachmentId !== null ? "/dev-preview/profile/banner.png" : null,
+        saved_at: Date.now(),
+      };
+      return portable;
+    },
+    async profileUpdateFields(f) {
+      portable = {
+        display_name: f.displayName,
+        accent_color: f.accentColor,
+        bio: f.bio,
+        avatar_path: portable?.avatar_path ?? null,
+        banner_path: portable?.banner_path ?? null,
+        saved_at: Date.now(),
+      };
+      return portable;
+    },
+    async profileDelete() {
+      portable = null;
+    },
+    async localdocList() {
+      return [...localdocs.entries()]
+        .map(([id, raw]) => {
+          const parsed = JSON.parse(raw) as { title?: string; format?: string };
+          return {
+            id,
+            title: parsed.title ?? "Untitled",
+            format: parsed.format ?? "default",
+            updated_at: localdocTimes.get(id) ?? 0,
+          };
+        })
+        .sort((a, b) => b.updated_at - a.updated_at);
+    },
+    async localdocRead(id) {
+      const raw = localdocs.get(id);
+      if (raw === undefined) throw { code: "io", message: "no such local document" };
+      return raw;
+    },
+    async localdocWrite(id, content) {
+      localdocs.set(id, content);
+      localdocTimes.set(id, Date.now());
+    },
+    async localdocDelete(id) {
+      localdocs.delete(id);
+      localdocTimes.delete(id);
     },
   };
 }

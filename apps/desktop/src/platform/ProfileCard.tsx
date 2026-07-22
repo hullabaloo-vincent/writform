@@ -64,7 +64,16 @@ export function ProfileCardHost() {
           <div
             className="wf-profile-banner"
             style={{ background: profile.accent_color ?? "var(--wf-accent)" }}
-          />
+          >
+            {profile.banner_attachment_id != null && (
+              <img
+                className="wf-profile-banner-img"
+                src={`writform-att://attachment/${profile.banner_attachment_id}`}
+                alt=""
+                draggable={false}
+              />
+            )}
+          </div>
           <div className="wf-profile-avatar">
             <Avatar
               name={name}

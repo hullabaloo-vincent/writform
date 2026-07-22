@@ -41,10 +41,26 @@ Google-Docs-style collaborative writing, separate from timed sessions.
   group's chat) or shares an entire folder at once.
 - **Canvas references**: send a whole document or just a selection to a
   canvas board as a live-updating excerpt card.
+- **Documents on this device**: the "On this device" section holds
+  single-user documents stored on your computer, never on the server — same
+  editor, formats, outline, find, word count, and PDF/DOCX export. **Share
+  to server** publishes a copy (optionally shared with a friend or group in
+  one step); the local original stays yours and does not live-sync to the
+  published copy. While offline, **Import** (PDF, DOCX, RTF, Pages, TXT,
+  Markdown) creates documents here too. The reverse works as well:
+  right-click any server document → **Save to this device** copies it into
+  this section (owners are then offered the option of deleting the server
+  copy, turning it into a move). Images aren't supported in local documents
+  yet, and "Export all" covers server documents only.
 
 ## Chat
 
 Groups work like small Discord servers: channels, invites, roles.
+
+- **Invites two ways**: admins generate expiring invite codes, or set a
+  permanent **join code** (gear next to the group name) — a memorable code
+  like `writers-club` that works in the normal join box until an admin
+  clears it.
 
 - **Markdown**: `**bold**`, `*italic*`, `~~strike~~`, `` `code` ``,
   fenced ``` blocks, links.
@@ -57,7 +73,9 @@ Groups work like small Discord servers: channels, invites, roles.
 - **Profile cards**: click anyone's name or avatar for their bio, accent
   color, and status.
 - **Moderation**: authors and group admins can delete messages; admins can
-  kick members and manage channels.
+  kick members, rename and delete channels, and delete the whole group
+  (gear next to the group name → Delete group — erases its channels,
+  messages, sessions, boards, and emotes for every member, irreversibly).
 - **Slash commands**: type `/` to see commands contributed by plugins.
 
 ## Voice & video
@@ -104,10 +122,29 @@ when you're not already looking at the relevant conversation.
 
 ## Customization
 
-- **Profile**: avatar, accent color, bio, and status (Settings → Profile).
-  Your accent tints your name in chat.
+- **Profile**: avatar, banner image, accent color, bio, and status
+  (Settings → Profile). Your accent tints your name in chat and fills the
+  profile-card banner when no banner image is set.
+- **Portable profile**: save your look (display name, colors, bio, avatar,
+  banner) on your computer and apply it to any server you join — profiles
+  are otherwise per-server. It's offered once when you register on a new
+  server and available any time from Settings → Profile; it is never
+  applied without asking. Usernames are per-server and aren't included.
 - **Groups**: admins set a group icon and accent color (gear next to the
-  group name).
+  group name). The active group's accent shows as a stripe on the app rail,
+  and Canvas and Sessions show a chip naming the group you're working in —
+  share and send-to-canvas pickers preselect it too.
+
+## Working offline
+
+You don't need a server to write. **Work offline** on the connect screen
+opens the app with Notes, your on-device documents, the documentation
+viewer, and your portable profile — no account, no connection. Everything
+you write is on your computer; when you later join a server, local
+documents can be shared to it and your portable profile applied. While
+offline, the portable profile's text fields are editable (its images update
+from a connected server), and server features — chat, shared documents,
+canvas, sessions — appear once you connect.
 
 ## Account recovery
 

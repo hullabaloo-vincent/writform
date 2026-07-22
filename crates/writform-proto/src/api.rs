@@ -78,6 +78,9 @@ pub struct User {
     pub is_server_admin: bool,
     #[serde(default)]
     pub avatar_attachment_id: Option<AttachmentId>,
+    /// Profile-card banner image; the accent color fills in when absent.
+    #[serde(default)]
+    pub banner_attachment_id: Option<AttachmentId>,
     #[serde(default)]
     pub accent_color: Option<String>,
     /// "online" | "busy" | "hidden" — the user's chosen presence.
@@ -108,6 +111,8 @@ pub struct UserProfile {
     pub username: String,
     pub display_name: Option<String>,
     pub avatar_attachment_id: Option<AttachmentId>,
+    /// Banner image for the card; accent color is the fallback fill.
+    pub banner_attachment_id: Option<AttachmentId>,
     pub accent_color: Option<String>,
     pub bio: Option<String>,
     /// "online" | "busy" when reachable, None when offline (or hidden).
@@ -124,6 +129,9 @@ pub struct UpdateProfileRequest {
     /// None clears the avatar; the attachment must be the caller's upload.
     #[serde(default)]
     pub avatar_attachment_id: Option<AttachmentId>,
+    /// None clears the banner; the attachment must be the caller's upload.
+    #[serde(default)]
+    pub banner_attachment_id: Option<AttachmentId>,
     /// `#rrggbb`, or None for the default look.
     #[serde(default)]
     pub accent_color: Option<String>,

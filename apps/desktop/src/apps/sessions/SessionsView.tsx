@@ -11,6 +11,7 @@ import { countWordsInDocJson } from "../../lib/wordCount";
 import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "../chat/api";
+import { GroupChip } from "../chat/GroupChip";
 import { MessageText } from "../chat/MessageText";
 import { useChat } from "../chat/store";
 import { sessionApi } from "./api";
@@ -60,6 +61,7 @@ function SessionList({ channels }: { channels: number[] }) {
     <div className="wf-sessions">
       <header className="wf-sessions-header">
         <h2>Writing sessions</h2>
+        <GroupChip />
         <select
           value={channelId ?? ""}
           onChange={(e) => setChannelId(Number(e.target.value))}

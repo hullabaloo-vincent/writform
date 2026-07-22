@@ -40,6 +40,9 @@ export const chatApi = {
     groupId: number,
     req: { name: string | null; icon_attachment_id: number | null; accent_color: string | null },
   ) => api<Group>("PATCH", `/api/v1/groups/${groupId}`, req),
+  deleteGroup: (groupId: number) => api<null>("DELETE", `/api/v1/groups/${groupId}`),
+  setJoinCode: (groupId: number, code: string | null) =>
+    api<{ code: string | null }>("PUT", `/api/v1/groups/${groupId}/join-code`, { code }),
   channels: (groupId: number) => api<Channel[]>("GET", `/api/v1/groups/${groupId}/channels`),
   createChannel: (groupId: number, name: string) =>
     api<Channel>("POST", `/api/v1/groups/${groupId}/channels`, { name }),

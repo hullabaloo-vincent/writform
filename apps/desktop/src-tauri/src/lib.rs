@@ -1,9 +1,11 @@
 pub mod att_protocol;
 pub mod commands;
 pub mod host;
+pub mod localdocs;
 mod media;
 pub mod net;
 pub mod plugins;
+pub mod profile;
 pub mod servers;
 pub mod vault;
 pub mod wsclient;
@@ -81,6 +83,14 @@ pub fn run() {
             vault::vault_backlinks,
             vault::vault_search,
             vault::vault_path,
+            profile::profile_get,
+            profile::profile_save,
+            profile::profile_update_fields,
+            profile::profile_delete,
+            localdocs::localdoc_list,
+            localdocs::localdoc_read,
+            localdocs::localdoc_write,
+            localdocs::localdoc_delete,
             plugins::plugins_list,
             plugins::plugin_read_entry,
             plugins::plugin_set_enabled,

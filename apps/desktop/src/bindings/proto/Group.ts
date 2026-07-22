@@ -4,4 +4,8 @@ import type { GroupId } from "./GroupId";
 import type { GroupRole } from "./GroupRole";
 import type { UserId } from "./UserId";
 
-export type Group = { id: GroupId, name: string, owner_id: UserId, my_role: GroupRole, icon_attachment_id: AttachmentId | null, accent_color: string | null, created_at: number, };
+export type Group = { id: GroupId, name: string, owner_id: UserId, my_role: GroupRole, icon_attachment_id: AttachmentId | null, accent_color: string | null, 
+/**
+ * Permanent shareable join code — populated only for group admins.
+ */
+join_code: string | null, created_at: number, };

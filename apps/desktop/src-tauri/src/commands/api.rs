@@ -18,7 +18,7 @@ pub struct ApiResponse {
     pub body: serde_json::Value,
 }
 
-fn active_client(
+pub(crate) fn active_client(
     manager: &ConnectionManager,
 ) -> Result<(reqwest::Client, String, String), CmdError> {
     let active = manager.active.lock().expect("poisoned");

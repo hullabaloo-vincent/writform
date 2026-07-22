@@ -16,6 +16,7 @@ import type { Document } from "../../../bindings/proto/Document";
 import { documentsApi } from "../api";
 import { b64encode } from "../collab";
 import { DocElement } from "../formats/DocElement";
+import { useLocalDocs } from "../local";
 import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
 import { rtfToText } from "./rtf";
 
@@ -24,7 +25,14 @@ const SEED_BATCH_JSON_BYTES = 48 * 1024;
 // Leave headroom under the server's 256 KiB decoded-update ceiling.
 const MAX_SEED_UPDATE_BYTES = 240 * 1024;
 
-export async function importFile(file: File): Promise<Document> {
+interface ConvertedFile {
+  stem: string;
+  content: JSONContent;
+  suggestedFormat: string;
+}
+
+/** Client-side conversion shared by server import and import-to-device. */
+async function convertFile(file: File): Promise<ConvertedFile> {
   const name = file.name;
   const stem = name.replace(/\.[^.]+$/, "") || "Imported document";
   const ext = (name.split(".").pop() ?? "").toLowerCase();
@@ -94,6 +102,12 @@ export async function importFile(file: File): Promise<Document> {
     content = { type: "doc", content: [{ type: "paragraph" }] };
   }
 
+  return { stem, content, suggestedFormat };
+}
+
+export async function importFile(file: File): Promise<Document> {
+  const { stem, content, suggestedFormat } = await convertFile(file);
+
   // Build before creating the server row so an unexpectedly huge individual
   // block cannot leave an empty document behind.
   const updates = buildImportSeedUpdates(content);
@@ -105,7 +119,7 @@ export async function importFile(file: File): Promise<Document> {
     await documentsApi.snapshot(
       doc.id,
       JSON.stringify(content),
-      `Imported from ${name}`.slice(0, 120),
+      `Imported from ${file.name}`.slice(0, 120),
     );
     return doc;
   } catch (error) {
@@ -114,6 +128,20 @@ export async function importFile(file: File): Promise<Document> {
     await documentsApi.remove(doc.id).catch(() => {});
     throw error;
   }
+}
+
+/** Import a file as a document on this device — no server involved.
+ *  Resolves to the new local document's id. */
+export async function importFileToLocal(file: File): Promise<string> {
+  const { stem, content, suggestedFormat } = await convertFile(file);
+  // One-shot conversion: local docs have no per-update size ceiling.
+  const ydoc = new Y.Doc();
+  const schema = getSchema(EXTENSIONS);
+  ydoc.transact(() => {
+    prosemirrorJSONToYXmlFragment(schema, content, ydoc.get("default", Y.XmlFragment));
+  });
+  const state_b64 = b64encode(Y.encodeStateAsUpdate(ydoc));
+  return useLocalDocs.getState().create(stem.slice(0, 200), suggestedFormat, state_b64);
 }
 
 /**

@@ -230,6 +230,7 @@ body,
 }
 
 .wf-rail {
+  position: relative;
   width: 56px;
   flex-shrink: 0;
   display: flex;
@@ -239,6 +240,19 @@ body,
   padding: 10px 0;
   background: var(--wf-bg-raised);
   border-right: 1px solid var(--wf-border);
+}
+
+/* Active group's accent, mirrored via --wf-group-accent (chat/index.tsx). */
+.wf-rail::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  background: var(--wf-group-accent, transparent);
+  transition: background 150ms;
+  pointer-events: none;
 }
 
 .wf-rail-item {
@@ -837,12 +851,21 @@ body,
   gap: 8px;
 }
 
-.wf-session-status button {
+.wf-session-status button:not(.wf-primary) {
   border: none;
   background: transparent;
   color: var(--wf-text-dim);
   font-size: 12px;
   padding: 0 2px;
+}
+
+/* Offline statusbar identity: text first, icon right, never wraps. */
+.wf-offline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  color: var(--wf-text-dim);
 }
 
 
@@ -4945,8 +4968,8 @@ textarea.wf-el-edit {
   fill: var(--wf-text-dim);
 }
 
-.wf-link.selected + .wf-cap,
-.wf-board-links .selected .wf-cap {
+/* Caps are siblings rendered after the visible line (up to two of them). */
+.wf-link.selected ~ .wf-cap {
   fill: var(--wf-accent);
 }
 
@@ -5210,6 +5233,86 @@ textarea.wf-el-edit {
 
 .wf-profile-banner {
   height: 90px;
+  overflow: hidden;
+}
+
+.wf-profile-banner-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Offline mode: the way back to the connect screen, pinned to the dock foot. */
+.wf-rail-connect {
+  margin-top: auto;
+  color: var(--wf-accent);
+}
+
+/* Connect screen: quiet "work offline" escape hatch under the server list. */
+.wf-connect-offline {
+  margin-top: 10px;
+  width: 100%;
+  justify-content: center;
+  background: none;
+  border: 1px dashed var(--wf-border);
+  color: var(--wf-text-dim);
+  white-space: normal;
+}
+
+.wf-connect-offline:hover {
+  color: var(--wf-text);
+}
+
+/* Local documents: "on this device" chip + dashed create card. */
+.wf-doc-local-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--wf-radius-pill);
+  border: 1px solid var(--wf-border);
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.wf-doc-card-new {
+  border-style: dashed;
+  color: var(--wf-text-dim);
+}
+
+/* "Current group" chip in app headers outside Chat. */
+.wf-group-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-pill);
+  background: var(--wf-bg-raised);
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.wf-group-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Settings: wide banner preview strip above the upload controls. */
+.wf-banner-preview {
+  height: 56px;
+  max-width: 360px;
+  border-radius: var(--wf-radius-md);
+  overflow: hidden;
+  margin: 6px 0;
 }
 
 .wf-profile-avatar {

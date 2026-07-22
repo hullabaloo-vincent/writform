@@ -109,10 +109,14 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/groups",
             post(groups::create_group).get(groups::my_groups),
         )
-        .route("/api/v1/groups/{id}", patch(groups::update_group))
+        .route(
+            "/api/v1/groups/{id}",
+            patch(groups::update_group).delete(groups::delete_group),
+        )
         .route("/api/v1/groups/{id}/members", get(groups::members))
         .route("/api/v1/groups/{id}/presence", get(groups::presence))
         .route("/api/v1/groups/{id}/invites", post(groups::create_invite))
+        .route("/api/v1/groups/{id}/join-code", put(groups::set_join_code))
         .route("/api/v1/groups/{id}/leave", post(groups::leave_group))
         .route(
             "/api/v1/groups/{group_id}/members/{user_id}",

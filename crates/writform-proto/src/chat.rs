@@ -24,8 +24,19 @@ pub struct Group {
     pub icon_attachment_id: Option<AttachmentId>,
     #[serde(default)]
     pub accent_color: Option<String>,
+    /// Permanent shareable join code — populated only for group admins.
+    #[serde(default)]
+    pub join_code: Option<String>,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
+}
+
+/// `PUT /api/v1/groups/{id}/join-code` — set (Some) or clear (None) the
+/// permanent join code. Normalized like channel names; unique server-wide.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SetJoinCodeRequest {
+    pub code: Option<String>,
 }
 
 /// `PATCH /api/v1/groups/{id}` (admin only). Icon/color are full replacement

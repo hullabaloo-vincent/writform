@@ -11,6 +11,7 @@ export const documentsApp: WritformApp = {
     name: "Writing",
     icon: <FileText size={20} />,
     permissions: ["ui", "commands", "net", "events", "editor"],
+    offline: true,
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <DocumentsView />);

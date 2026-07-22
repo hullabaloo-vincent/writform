@@ -77,11 +77,14 @@ export function Toolbar({
   leading,
   trailing,
   richBlocks = true,
+  allowImages = true,
 }: {
   editor: Editor;
   leading?: ReactNode;
   trailing?: ReactNode;
   richBlocks?: boolean;
+  /** Off for local documents — image refs are server attachments. */
+  allowImages?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -192,24 +195,28 @@ export function Toolbar({
           {btn("Divider", <Minus size={15} />, () => chain().setHorizontalRule().run())}
         </>
       )}
-      <span className="wf-toolbar-sep" />
-      <input
-        ref={fileRef}
-        type="file"
-        accept="image/*"
-        hidden
-        onChange={(e) => {
-          const file = e.target.files?.[0];
-          if (file) void insertImage(file);
-          e.target.value = "";
-        }}
-      />
-      {btn(
-        uploading ? "Uploading…" : "Insert image",
-        <ImagePlus size={15} />,
-        () => fileRef.current?.click(),
-        false,
-        uploading,
+      {allowImages && (
+        <>
+          <span className="wf-toolbar-sep" />
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void insertImage(file);
+              e.target.value = "";
+            }}
+          />
+          {btn(
+            uploading ? "Uploading…" : "Insert image",
+            <ImagePlus size={15} />,
+            () => fileRef.current?.click(),
+            false,
+            uploading,
+          )}
+        </>
       )}
       <span className="wf-toolbar-sep" />
       {btn(

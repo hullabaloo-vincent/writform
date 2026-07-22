@@ -81,6 +81,7 @@ export const docsApp: WritformApp = {
     name: "Docs",
     icon: <BookOpen size={20} />,
     permissions: ["ui", "commands"],
+    offline: true,
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <DocsView />);

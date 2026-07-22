@@ -11,6 +11,10 @@ display_name: string | null,
  */
 avatar_attachment_id: AttachmentId | null, 
 /**
+ * None clears the banner; the attachment must be the caller's upload.
+ */
+banner_attachment_id: AttachmentId | null, 
+/**
  * `#rrggbb`, or None for the default look.
  */
 accent_color: string | null, 

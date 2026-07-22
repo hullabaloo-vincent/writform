@@ -150,3 +150,31 @@ once and it stays fixed:
 docker run --rm --user root --entrypoint chown \
   -v writform:/data ghcr.io/hullabaloo-vincent/writform-server -R writform /data
 ```
+
+## Deleting a server
+
+Deleting a server erases everything on it for every member — accounts,
+groups, messages, documents, uploads — and retires its identity, so the
+fingerprint can never be reused. There is no undo. If you might want the
+server back later, take a copy of its data directory first (that copy *is*
+the server: restore it and the same fingerprint comes back).
+
+- **Hosted in the app** — stop hosting, then delete the `server/` folder
+  inside the app's data directory (that folder is the entire server:
+  identity, database, attachments).
+- **Docker** — remove the container, then the volume (this is the step that
+  actually destroys the data):
+
+```sh
+docker stop writform && docker rm writform
+```
+
+```sh
+docker volume rm writform
+```
+
+- **Bare binary** — stop the process (`systemctl disable --now
+  writform-server` if you use the unit) and delete its `--data-dir`.
+
+Friends who had the server saved can tidy it off their connect screen with
+the **Forget this server** button on its card.

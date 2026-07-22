@@ -352,7 +352,7 @@ function EditorInner({
   );
 }
 
-function TitleEditor({
+export function TitleEditor({
   title,
   canEdit,
   onRename,
@@ -387,7 +387,7 @@ function TitleEditor({
 }
 
 /** Current paragraph's element type; changing it updates the paragraph. */
-function ElementSelect({ editor, format }: { editor: Editor; format: string }) {
+export function ElementSelect({ editor, format }: { editor: Editor; format: string }) {
   const spec = FORMAT_SPECS[format];
   const [, bump] = useState(0);
   useEffect(() => {
@@ -421,7 +421,7 @@ function ElementSelect({ editor, format }: { editor: Editor; format: string }) {
   );
 }
 
-function DocumentStats({ editor, format }: { editor: Editor; format: string }) {
+export function DocumentStats({ editor, format }: { editor: Editor; format: string }) {
   const [, bump] = useState(0);
   useEffect(() => {
     const update = () => bump((n) => n + 1);

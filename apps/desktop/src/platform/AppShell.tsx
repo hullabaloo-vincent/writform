@@ -1,4 +1,4 @@
-import { LogOut } from "lucide-react";
+import { LogIn, LogOut, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { backend } from "../lib/backend";
@@ -26,6 +26,21 @@ const STATUS_OPTIONS = [
   { value: "busy", label: "Busy", dot: "busy" },
   { value: "hidden", label: "Invisible", dot: "off" },
 ] as const;
+
+/** Statusbar identity while working without a server. */
+function OfflineStatus() {
+  const leaveOffline = useSession((s) => s.leaveOffline);
+  return (
+    <span className="wf-session-status">
+      <span className="wf-offline-label">
+        Working Offline <WifiOff size={13} />
+      </span>
+      <button className="wf-primary" onClick={leaveOffline}>
+        <LogIn size={13} /> Connect to a server
+      </button>
+    </span>
+  );
+}
 
 function SessionStatus() {
   const session = useSession((s) => s.session);
@@ -92,15 +107,31 @@ export function AppShell() {
   const activeAppId = usePlatform((s) => s.activeAppId);
   const setActiveApp = usePlatform((s) => s.setActiveApp);
   const badges = usePlatform((s) => s.badges);
+  const offline = useSession((s) => s.phase === "offline");
+  const leaveOffline = useSession((s) => s.leaveOffline);
+
+  // Offline: only apps that work without a server appear in the dock.
+  const dockApps = offline
+    ? mainViewApps.filter((id) => apps[id]?.offline)
+    : mainViewApps;
+
+  // Entering offline mode with a server-only app active lands on the first
+  // offline-capable one instead of a dead view.
+  useEffect(() => {
+    if (offline && activeAppId && !apps[activeAppId]?.offline) {
+      const first = mainViewApps.find((id) => apps[id]?.offline);
+      if (first) setActiveApp(first);
+    }
+  }, [offline, activeAppId, apps, mainViewApps, setActiveApp]);
 
   const activeView = activeAppId ? mainViews[activeAppId] : undefined;
 
   return (
     <div className="wf-shell">
-      <ReconnectBanner />
+      {!offline && <ReconnectBanner />}
       <div className="wf-body">
         <nav className="wf-rail">
-          {mainViewApps.map((appId) => {
+          {dockApps.map((appId) => {
             const manifest = apps[appId];
             if (!manifest) return null;
             const badge = badges[appId] ?? 0;
@@ -117,6 +148,15 @@ export function AppShell() {
             );
           })}
           <Slot name="nav.rail" />
+          {offline && (
+            <button
+              className="wf-rail-item wf-rail-connect"
+              title="Connect to a server — your local work stays on this device"
+              onClick={leaveOffline}
+            >
+              <LogIn size={20} />
+            </button>
+          )}
         </nav>
         <main className="wf-main">
           {activeView ? activeView() : <div className="wf-main-empty">No app selected</div>}
@@ -128,7 +168,7 @@ export function AppShell() {
       <footer className="wf-statusbar">
         <Slot name="statusbar" />
         <span className="wf-statusbar-spacer" />
-        <SessionStatus />
+        {offline ? <OfflineStatus /> : <SessionStatus />}
       </footer>
       <CommandPalette />
     </div>

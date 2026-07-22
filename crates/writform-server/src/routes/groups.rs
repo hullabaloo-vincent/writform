@@ -3,7 +3,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use writform_proto::chat::{
     CreateGroupRequest, CreateInviteRequest, Group, GroupRole, Invite, Member, PresenceSnapshot,
-    RedeemInviteRequest, SetRoleRequest,
+    RedeemInviteRequest, SetJoinCodeRequest, SetRoleRequest,
 };
 use writform_proto::{GroupId, UserId};
 
@@ -73,14 +73,15 @@ pub async fn update_group(
     .execute(&state.pool)
     .await?;
 
-    let (name, owner_id, created_at, icon, accent): (
+    let (name, owner_id, created_at, icon, accent, join_code): (
         String,
         i64,
         i64,
         Option<i64>,
         Option<String>,
+        Option<String>,
     ) = sqlx::query_as(
-        "SELECT name, owner_id, created_at, icon_attachment_id, accent_color
+        "SELECT name, owner_id, created_at, icon_attachment_id, accent_color, join_code
          FROM groups WHERE id = ?",
     )
     .bind(group_id)
@@ -105,8 +106,49 @@ pub async fn update_group(
         my_role: GroupRole::Admin,
         icon_attachment_id: icon.map(writform_proto::AttachmentId),
         accent_color: accent,
+        join_code,
         created_at,
     }))
+}
+
+/// `DELETE /api/v1/groups/{id}` — admin-only, erases the group and
+/// everything in it for every member. FK cascades take channels (and their
+/// messages/reactions/sessions), invites, memberships, emotes, boards, and
+/// voice channels; in-memory voice occupancy is cleared and announced first
+/// so clients in a call tear their meshes down.
+pub async fn delete_group(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(group_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let group = GroupId(group_id);
+    perms::require_admin(&state.pool, group, auth.user_id).await?;
+
+    let voice_ids: Vec<(i64,)> = sqlx::query_as("SELECT id FROM voice_channels WHERE group_id = ?")
+        .bind(group.0)
+        .fetch_all(&state.pool)
+        .await?;
+    for (channel_id,) in voice_ids {
+        for user in state.voice.occupants(channel_id) {
+            state.voice.set(user, None);
+        }
+        state.ws.broadcast(
+            &format!("group:{group_id}"),
+            "voice.channel.deleted",
+            serde_json::json!({ "group_id": group, "channel_id": channel_id }),
+        );
+    }
+
+    sqlx::query("DELETE FROM groups WHERE id = ?")
+        .bind(group.0)
+        .execute(&state.pool)
+        .await?;
+    state.ws.broadcast(
+        &format!("group:{group_id}"),
+        "group.deleted",
+        serde_json::json!({ "group_id": group }),
+    );
+    Ok(StatusCode::NO_CONTENT)
 }
 
 fn role_str(role: GroupRole) -> &'static str {
@@ -161,6 +203,7 @@ pub async fn create_group(
         my_role: GroupRole::Admin,
         icon_attachment_id: None,
         accent_color: None,
+        join_code: None,
         created_at: now,
     }))
 }
@@ -169,10 +212,19 @@ pub async fn my_groups(
     State(state): State<AppState>,
     auth: AuthUser,
 ) -> Result<Json<Vec<Group>>, AppError> {
-    type Row = (i64, String, i64, i64, String, Option<i64>, Option<String>);
+    type Row = (
+        i64,
+        String,
+        i64,
+        i64,
+        String,
+        Option<i64>,
+        Option<String>,
+        Option<String>,
+    );
     let rows: Vec<Row> = sqlx::query_as(
         "SELECT g.id, g.name, g.owner_id, g.created_at, m.role,
-                g.icon_attachment_id, g.accent_color
+                g.icon_attachment_id, g.accent_color, g.join_code
          FROM groups g JOIN group_members m ON m.group_id = g.id
          WHERE m.user_id = ? ORDER BY g.created_at",
     )
@@ -182,18 +234,23 @@ pub async fn my_groups(
     Ok(Json(
         rows.into_iter()
             .map(
-                |(id, name, owner_id, created_at, role, icon, accent)| Group {
-                    id: GroupId(id),
-                    name,
-                    owner_id: UserId(owner_id),
-                    my_role: if role == "admin" {
-                        GroupRole::Admin
-                    } else {
-                        GroupRole::Member
-                    },
-                    icon_attachment_id: icon.map(writform_proto::AttachmentId),
-                    accent_color: accent,
-                    created_at,
+                |(id, name, owner_id, created_at, role, icon, accent, join_code)| {
+                    let admin = role == "admin";
+                    Group {
+                        id: GroupId(id),
+                        name,
+                        owner_id: UserId(owner_id),
+                        my_role: if admin {
+                            GroupRole::Admin
+                        } else {
+                            GroupRole::Member
+                        },
+                        icon_attachment_id: icon.map(writform_proto::AttachmentId),
+                        accent_color: accent,
+                        // The code lets anyone join; only admins get to see it.
+                        join_code: if admin { join_code } else { None },
+                        created_at,
+                    }
                 },
             )
             .collect(),
@@ -313,6 +370,56 @@ pub async fn create_invite(
     }))
 }
 
+/// `PUT /api/v1/groups/{id}/join-code` — admin sets (or clears with None) a
+/// permanent, human-chosen code anyone can use in the normal invite box.
+/// Normalized like channel names; unique across the server.
+pub async fn set_join_code(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(group_id): Path<i64>,
+    Json(req): Json<SetJoinCodeRequest>,
+) -> Result<Json<SetJoinCodeRequest>, AppError> {
+    let group = GroupId(group_id);
+    perms::require_admin(&state.pool, group, auth.user_id).await?;
+
+    let code = match req.code {
+        None => None,
+        Some(raw) => {
+            let code = raw.trim().to_lowercase().replace(' ', "-");
+            if code.len() < 4
+                || code.len() > 32
+                || !code
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+            {
+                return Err(AppError::bad_request(
+                    "invalid_join_code",
+                    "join codes are 4-32 characters: letters, digits, and dashes",
+                ));
+            }
+            Some(code)
+        }
+    };
+
+    let result = sqlx::query("UPDATE groups SET join_code = ? WHERE id = ?")
+        .bind(&code)
+        .bind(group.0)
+        .execute(&state.pool)
+        .await;
+    if let Err(e) = &result {
+        let unique = matches!(e, sqlx::Error::Database(db) if db.is_unique_violation());
+        if unique {
+            return Err(AppError::new(
+                StatusCode::CONFLICT,
+                "code_taken",
+                "another group already uses that join code",
+            ));
+        }
+    }
+    result?;
+    Ok(Json(SetJoinCodeRequest { code }))
+}
+
 pub async fn redeem_invite(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -327,21 +434,36 @@ pub async fn redeem_invite(
     .bind(req.code.trim())
     .fetch_optional(&state.pool)
     .await?;
-    let Some((invite_id, group_id, expires_at, max_uses, use_count, revoked)) = row else {
-        return Err(AppError::bad_request(
-            "invalid_invite",
-            "unknown invite code",
-        ));
+    // One redeem box for both kinds of code: ephemeral invites first, then
+    // the group's permanent join code (case-insensitive, never expires).
+    let (invite_id, group_id) = match row {
+        Some((invite_id, group_id, expires_at, max_uses, use_count, revoked)) => {
+            if revoked != 0
+                || expires_at.is_some_and(|e| e < now)
+                || max_uses.is_some_and(|m| use_count >= m)
+            {
+                return Err(AppError::bad_request(
+                    "invalid_invite",
+                    "this invite is no longer valid",
+                ));
+            }
+            (Some(invite_id), group_id)
+        }
+        None => {
+            let by_join: Option<(i64,)> =
+                sqlx::query_as("SELECT id FROM groups WHERE join_code = ?")
+                    .bind(req.code.trim().to_lowercase())
+                    .fetch_optional(&state.pool)
+                    .await?;
+            let Some((group_id,)) = by_join else {
+                return Err(AppError::bad_request(
+                    "invalid_invite",
+                    "unknown invite code",
+                ));
+            };
+            (None, group_id)
+        }
     };
-    if revoked != 0
-        || expires_at.is_some_and(|e| e < now)
-        || max_uses.is_some_and(|m| use_count >= m)
-    {
-        return Err(AppError::bad_request(
-            "invalid_invite",
-            "this invite is no longer valid",
-        ));
-    }
     if perms::member_role(&state.pool, GroupId(group_id), auth.user_id)
         .await?
         .is_some()
@@ -361,10 +483,12 @@ pub async fn redeem_invite(
     .bind(now)
     .execute(&mut *tx)
     .await?;
-    sqlx::query("UPDATE invites SET use_count = use_count + 1 WHERE id = ?")
-        .bind(invite_id)
-        .execute(&mut *tx)
-        .await?;
+    if let Some(invite_id) = invite_id {
+        sqlx::query("UPDATE invites SET use_count = use_count + 1 WHERE id = ?")
+            .bind(invite_id)
+            .execute(&mut *tx)
+            .await?;
+    }
     let (name, owner_id, created_at, icon, accent): (
         String,
         i64,
@@ -394,6 +518,7 @@ pub async fn redeem_invite(
         my_role: GroupRole::Member,
         icon_attachment_id: icon.map(writform_proto::AttachmentId),
         accent_color: accent,
+        join_code: None,
         created_at,
     }))
 }

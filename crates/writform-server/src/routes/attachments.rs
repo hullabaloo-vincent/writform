@@ -124,15 +124,18 @@ pub async fn download(
     // emote images are additionally readable by their group's members).
     let mut allowed = uploader_id == auth.user_id.0;
     if !allowed {
-        // Profile avatars are readable by every signed-in user: they appear
-        // next to messages, in member lists, and on profile cards, which
-        // `GET /users/{id}/profile` already exposes to any authenticated user.
-        let is_avatar: Option<(i64,)> =
-            sqlx::query_as("SELECT id FROM users WHERE avatar_attachment_id = ?")
-                .bind(attachment_id)
-                .fetch_optional(&state.pool)
-                .await?;
-        if is_avatar.is_some() {
+        // Profile avatars and banners are readable by every signed-in user:
+        // they appear next to messages, in member lists, and on profile
+        // cards, which `GET /users/{id}/profile` already exposes to any
+        // authenticated user.
+        let is_profile_image: Option<(i64,)> = sqlx::query_as(
+            "SELECT id FROM users WHERE avatar_attachment_id = ? OR banner_attachment_id = ?",
+        )
+        .bind(attachment_id)
+        .bind(attachment_id)
+        .fetch_optional(&state.pool)
+        .await?;
+        if is_profile_image.is_some() {
             allowed = true;
         }
     }

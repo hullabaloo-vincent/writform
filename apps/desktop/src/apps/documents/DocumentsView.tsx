@@ -5,6 +5,7 @@ import {
   FileText,
   Folder,
   FolderPlus,
+  HardDrive,
   History,
   MoreHorizontal,
   Search,
@@ -16,12 +17,17 @@ import { useEffect, useRef, useState } from "react";
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import { backend, isCmdError } from "../../lib/backend";
-import { confirmDialog, Modal, SkeletonRows } from "../../platform";
+import { confirmDialog, Modal, SkeletonRows, toast } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { documentsApi } from "./api";
 import { DocumentEditor } from "./DocumentEditor";
 import { FORMAT_LABELS } from "./formats/elements";
+import { LocalDocumentEditor } from "./LocalDocumentEditor";
+import { useLocalDocs } from "./local";
+import { ShareLocalDialog } from "./ShareLocalDialog";
+import { SharePicker } from "./SharePicker";
 import { useDocuments } from "./store";
+import { useSession } from "../../stores/session";
 
 type SortKey = "modified" | "created" | "name";
 
@@ -67,16 +73,27 @@ export function DocumentsView() {
     { kind: "document"; id: number; name: string } | { kind: "folder"; id: number; name: string } | null
   >(null);
   const [renaming, setRenaming] = useState<DocumentFolder | null>(null);
+  const [shareLocal, setShareLocal] = useState<{ id: string; title: string; format: string } | null>(
+    null,
+  );
+
+  const localDocs = useLocalDocs((s) => s.items);
+  const localLoaded = useLocalDocs((s) => s.loaded);
+  const activeLocalId = useLocalDocs((s) => s.activeLocalId);
+  const offline = useSession((s) => s.phase === "offline");
 
   useEffect(() => {
-    if (!loaded) void load().catch(() => {});
-    void loadFolders().catch(() => {});
-  }, [loaded, load, loadFolders]);
+    if (!offline) {
+      if (!loaded) void load().catch(() => {});
+      void loadFolders().catch(() => {});
+    }
+    if (!localLoaded) void useLocalDocs.getState().load().catch(() => {});
+  }, [loaded, load, loadFolders, localLoaded, offline]);
 
   // Debounced server-side search (title + content).
   useEffect(() => {
     const q = query.trim();
-    if (!q) {
+    if (!q || offline) {
       setResults(null);
       return;
     }
@@ -87,7 +104,7 @@ export function DocumentsView() {
         .catch(() => setResults([]));
     }, 250);
     return () => clearTimeout(timer);
-  }, [query]);
+  }, [query, offline]);
 
   useEffect(() => {
     if (!menu) return;
@@ -131,6 +148,7 @@ export function DocumentsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (activeLocalId !== null) return <LocalDocumentEditor />;
   if (activeDocId !== null) return <DocumentEditor />;
 
   const searching = results !== null;
@@ -170,13 +188,20 @@ export function DocumentsView() {
     }
   };
 
+  /** Offline imports land on this device; connected imports go to the server. */
   const importOne = async (file: File) => {
     setImporting(file.name);
     try {
-      const { importFile } = await import("./import/importFile");
-      const doc = await importFile(file);
-      refresh();
-      await openDocument(doc.id);
+      const mod = await import("./import/importFile");
+      if (offline) {
+        const id = await mod.importFileToLocal(file);
+        await useLocalDocs.getState().load();
+        await useLocalDocs.getState().open(id);
+      } else {
+        const doc = await mod.importFile(file);
+        refresh();
+        await openDocument(doc.id);
+      }
     } catch (e) {
       fail(e);
     } finally {
@@ -200,10 +225,7 @@ export function DocumentsView() {
       const binary = atob(data_base64);
       const bytes = new Uint8Array(binary.length);
       for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-      const { importFile } = await import("./import/importFile");
-      const doc = await importFile(new File([bytes], fileName));
-      refresh();
-      await openDocument(doc.id);
+      await importOne(new File([bytes], fileName));
     } catch (e) {
       fail(e);
     } finally {
@@ -244,6 +266,11 @@ export function DocumentsView() {
         icon: <History size={14} />,
         onClick: () => openWithHistory(item.document.id),
       },
+      {
+        label: "Save to this device",
+        icon: <HardDrive size={14} />,
+        onClick: () => void saveToDevice(item),
+      },
     ];
     if (isOwner) {
       items.push(
@@ -274,6 +301,78 @@ export function DocumentsView() {
       );
     }
     setMenu({ x: e.clientX, y: e.clientY, items });
+  };
+
+  /** Copy a server document onto this device; owners may then turn the copy
+   *  into a true move by deleting the server original. The full Yjs state
+   *  from `detail` is exactly what a local doc file stores. */
+  const saveToDevice = async (item: DocumentListItem) => {
+    try {
+      const detail = await documentsApi.detail(item.document.id);
+      await useLocalDocs
+        .getState()
+        .create(item.document.title, item.document.format, detail.state_b64);
+      if (item.my_access === "owner") {
+        const del = await confirmDialog(
+          `Saved on this device ✓. Keep the server copy of "${item.document.title}", or delete it? Deleting removes it — with its shares, feedback, and version history — for everyone.`,
+          { title: "Saved to this device", confirmLabel: "Delete server copy", danger: true },
+        );
+        if (del) {
+          await documentsApi.remove(item.document.id);
+          refresh();
+        }
+      } else {
+        toast("Saved on this device.", "success");
+      }
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const createLocal = async () => {
+    try {
+      const id = await useLocalDocs.getState().create("Untitled", "none");
+      await useLocalDocs.getState().open(id);
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const localMenu = (e: React.MouseEvent, d: { id: string; title: string; format: string }) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      items: [
+        {
+          label: "Open",
+          icon: <FileText size={14} />,
+          onClick: () => void useLocalDocs.getState().open(d.id).catch(fail),
+        },
+        ...(offline
+          ? []
+          : [
+              {
+                label: "Share to server…",
+                icon: <Share2 size={14} />,
+                onClick: () => setShareLocal(d),
+              },
+            ]),
+        {
+          label: "Delete",
+          icon: <Trash2 size={14} />,
+          danger: true,
+          onClick: () =>
+            void confirmDialog(
+              `Delete "${d.title}" from this device? It exists nowhere else.`,
+              { title: "Delete local document", confirmLabel: "Delete", danger: true },
+            ).then((ok) => {
+              if (ok) void useLocalDocs.getState().remove(d.id).catch(fail);
+            }),
+        },
+      ],
+    });
   };
 
   const folderMenu = (e: React.MouseEvent, folder: DocumentFolder) => {
@@ -325,6 +424,13 @@ export function DocumentsView() {
         <h2>
           <FileText size={18} /> Documents
         </h2>
+        {offline && (
+          <span className="wf-doc-local-chip" title="Server documents appear when you connect">
+            <HardDrive size={13} /> offline — this device only
+          </span>
+        )}
+        {!offline && (
+        <>
         <div className="wf-doc-search">
           <Search size={14} />
           <input
@@ -348,16 +454,6 @@ export function DocumentsView() {
           <option value="name">Name</option>
         </select>
         <span className="wf-statusbar-spacer" />
-        <input
-          ref={fileRef}
-          type="file"
-          hidden
-          accept=".pdf,.docx,.rtf,.pages,.txt,.md,.markdown"
-          onChange={(e) => {
-            void onImportFiles(e.target.files);
-            e.target.value = "";
-          }}
-        />
         <button
           title="Export every document as Markdown + JSON"
           onClick={() => void exportAll()}
@@ -387,6 +483,30 @@ export function DocumentsView() {
         <button className="wf-primary" onClick={() => setCreating((c) => !c)}>
           <FilePlus2 size={15} /> New document
         </button>
+        </>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          accept=".pdf,.docx,.rtf,.pages,.txt,.md,.markdown"
+          onChange={(e) => {
+            void onImportFiles(e.target.files);
+            e.target.value = "";
+          }}
+        />
+        {offline && (
+          <>
+            <span className="wf-statusbar-spacer" />
+            <button
+              title="Import a file as a document on this device"
+              onClick={() => fileRef.current?.click()}
+              disabled={importing !== null}
+            >
+              {importing ? `Importing ${importing}…` : "Import"}
+            </button>
+          </>
+        )}
       </header>
 
       {error && (
@@ -469,6 +589,48 @@ export function DocumentsView() {
           </section>
         )}
 
+        {!searching && folderId === null && (
+          <section className="wf-documents-section">
+            <h3>
+              <HardDrive size={14} /> On this device
+            </h3>
+            <div className="wf-documents-grid">
+              {localDocs.map((d) => (
+                <button
+                  key={d.id}
+                  className="wf-doc-card"
+                  onClick={() => void useLocalDocs.getState().open(d.id).catch(fail)}
+                  onContextMenu={(e) => localMenu(e, d)}
+                >
+                  <span className="wf-doc-card-title">
+                    <HardDrive size={15} /> {d.title}
+                  </span>
+                  <span className="wf-doc-card-meta">
+                    {FORMAT_LABELS[d.format] ?? d.format} ·{" "}
+                    {new Date(d.updated_at).toLocaleDateString()}
+                  </span>
+                  <span
+                    className="wf-doc-card-kebab"
+                    role="button"
+                    tabIndex={0}
+                    title="Local document options"
+                    onClick={(e) => localMenu(e, d)}
+                    onPointerDown={(e) => e.stopPropagation()}
+                  >
+                    <MoreHorizontal size={15} />
+                  </span>
+                </button>
+              ))}
+              <button className="wf-doc-card wf-doc-card-new" onClick={() => void createLocal()}>
+                <span className="wf-doc-card-title">
+                  <FilePlus2 size={15} /> New local document
+                </span>
+                <span className="wf-doc-card-meta">Stored on this computer</span>
+              </button>
+            </div>
+          </section>
+        )}
+
         <Section
           title={
             searching
@@ -484,11 +646,16 @@ export function DocumentsView() {
         {(searching || folderId === null) && (
           <Section title="Shared with me" items={shared} onOpen={openDocument} onMenu={docMenu} />
         )}
-        {!loaded && <SkeletonRows rows={4} />}
-        {loaded && items.length === 0 && !searching && (
+        {!offline && !loaded && <SkeletonRows rows={4} />}
+        {!offline && loaded && items.length === 0 && !searching && (
           <p className="wf-documents-empty">
             No documents yet. Create one, or drop a PDF, DOCX, RTF, Pages, TXT, or Markdown
             file here to import it.
+          </p>
+        )}
+        {offline && (
+          <p className="wf-documents-empty">
+            You’re working offline — server documents (and sharing) appear when you connect.
           </p>
         )}
       </div>
@@ -540,6 +707,7 @@ export function DocumentsView() {
       {shareTarget && (
         <ListShareDialog target={shareTarget} onClose={() => setShareTarget(null)} />
       )}
+      {shareLocal && <ShareLocalDialog meta={shareLocal} onClose={() => setShareLocal(null)} />}
     </div>
   );
 }
@@ -751,73 +919,3 @@ function ListShareDialog({
   );
 }
 
-/** Friend/group picker + access level used by the list share dialog. */
-function SharePicker({
-  onShare,
-}: {
-  onShare: (subjectKind: string, subjectId: number, access: string) => Promise<void>;
-}) {
-  const [friends, setFriends] = useState<{ id: number; label: string }[]>([]);
-  const [groups, setGroups] = useState<{ id: number; label: string }[]>([]);
-  const [subject, setSubject] = useState("");
-  const [access, setAccess] = useState("read");
-
-  useEffect(() => {
-    void import("../friends/FriendsView").then(({ friendsApi }) =>
-      friendsApi
-        .friends()
-        .then((fs) =>
-          setFriends(
-            fs.map((f) => ({ id: f.user.id, label: f.user.display_name ?? f.user.username })),
-          ),
-        )
-        .catch(() => {}),
-    );
-    void import("../chat/store").then(({ useChat }) =>
-      setGroups(useChat.getState().groups.map((g) => ({ id: g.id, label: g.name }))),
-    );
-  }, []);
-
-  return (
-    <form
-      className="wf-doc-panel-row"
-      onSubmit={(e) => {
-        e.preventDefault();
-        if (!subject) return;
-        const [kind, id] = subject.split(":");
-        void onShare(kind, Number(id), access);
-      }}
-    >
-      <select value={subject} onChange={(e) => setSubject(e.target.value)}>
-        <option value="" disabled>
-          Share with…
-        </option>
-        {friends.length > 0 && (
-          <optgroup label="Friends">
-            {friends.map((f) => (
-              <option key={`user:${f.id}`} value={`user:${f.id}`}>
-                {f.label}
-              </option>
-            ))}
-          </optgroup>
-        )}
-        {groups.length > 0 && (
-          <optgroup label="Groups">
-            {groups.map((g) => (
-              <option key={`group:${g.id}`} value={`group:${g.id}`}>
-                {g.label}
-              </option>
-            ))}
-          </optgroup>
-        )}
-      </select>
-      <select value={access} onChange={(e) => setAccess(e.target.value)}>
-        <option value="read">can read</option>
-        <option value="write">can edit</option>
-      </select>
-      <button type="submit" className="wf-primary" disabled={!subject}>
-        Share
-      </button>
-    </form>
-  );
-}

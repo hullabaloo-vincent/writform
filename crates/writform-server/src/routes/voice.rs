@@ -29,7 +29,7 @@ pub struct VoiceRegistry {
 }
 
 impl VoiceRegistry {
-    fn occupants(&self, channel_id: i64) -> Vec<i64> {
+    pub(crate) fn occupants(&self, channel_id: i64) -> Vec<i64> {
         self.by_user
             .lock()
             .expect("poisoned")
@@ -43,7 +43,7 @@ impl VoiceRegistry {
         self.by_user.lock().expect("poisoned").get(&user).copied()
     }
 
-    fn set(&self, user: i64, channel: Option<i64>) -> Option<i64> {
+    pub(crate) fn set(&self, user: i64, channel: Option<i64>) -> Option<i64> {
         let mut map = self.by_user.lock().expect("poisoned");
         match channel {
             Some(c) => map.insert(user, c),

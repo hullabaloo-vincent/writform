@@ -21,7 +21,7 @@ export function Root() {
   }
   return (
     <>
-      {phase === "connected" ? <AppShell /> : <ConnectScreen />}
+      {phase === "connected" || phase === "offline" ? <AppShell /> : <ConnectScreen />}
       <ConfirmHost />
       <ProfileCardHost />
       <LightboxHost />

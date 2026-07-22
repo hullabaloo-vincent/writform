@@ -233,6 +233,34 @@ function clipToRect(el: CanvasElement, toward: { x: number; y: number }): { x: n
   return { x: cx + dx * t, y: cy + dy * t };
 }
 
+/** Cap shapes drawn as ordinary siblings of the connector line. SVG
+ *  <marker> refs are deliberately avoided: WKWebView doesn't repaint a
+ *  marker-start/end changed in place on an already-painted line, so caps
+ *  set during a live session stayed invisible until the board remounted. */
+function ConnectorCap({
+  kind,
+  at,
+  angleDeg,
+}: {
+  kind: ConnCap;
+  at: { x: number; y: number };
+  angleDeg: number;
+}) {
+  if (kind === "arrow") {
+    return (
+      <path
+        className="wf-cap"
+        d="M0,0 L-14,7 L-14,-7 Z"
+        transform={`translate(${at.x}, ${at.y}) rotate(${angleDeg})`}
+      />
+    );
+  }
+  if (kind === "dot") {
+    return <circle className="wf-cap" cx={at.x} cy={at.y} r={5} />;
+  }
+  return null;
+}
+
 const CAP_CYCLE: ConnCap[] = ["none", "arrow", "dot"];
 const CAP_LABEL: Record<ConnCap, string> = { none: "—", arrow: "▶", dot: "●" };
 
@@ -1033,22 +1061,6 @@ export function BoardRoom() {
           ))}
 
           <svg className="wf-board-links" style={{ zIndex: Z_BAND_CONNECTOR }}>
-            <defs>
-              <marker
-                id="wf-cap-arrow"
-                viewBox="0 0 10 10"
-                refX="9"
-                refY="5"
-                markerWidth="7"
-                markerHeight="7"
-                orient="auto-start-reverse"
-              >
-                <path d="M0,0 L10,5 L0,10 z" className="wf-cap" />
-              </marker>
-              <marker id="wf-cap-dot" viewBox="0 0 10 10" refX="5" refY="5" markerWidth="6" markerHeight="6">
-                <circle cx="5" cy="5" r="4" className="wf-cap" />
-              </marker>
-            </defs>
             {connectors.map((c) => {
               const from = c.from_id !== null ? elements[c.from_id] : undefined;
               const to = c.to_id !== null ? elements[c.to_id] : undefined;
@@ -1066,8 +1078,8 @@ export function BoardRoom() {
                 cs.to_anchor === "auto"
                   ? clipToRect(to, fromCenter)
                   : anchorPoint(to, cs.to_anchor);
-              const cap = (v: ConnCap) =>
-                v === "arrow" ? "url(#wf-cap-arrow)" : v === "dot" ? "url(#wf-cap-dot)" : undefined;
+              const angleDeg = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
+              const capped = Math.hypot(p2.x - p1.x, p2.y - p1.y) >= 1;
               return (
                 <g key={c.id}>
                   <line
@@ -1088,9 +1100,11 @@ export function BoardRoom() {
                     x2={p2.x}
                     y2={p2.y}
                     strokeDasharray={cs.dash ? "7 5" : undefined}
-                    markerStart={cap(cs.start_cap)}
-                    markerEnd={cap(cs.end_cap)}
                   />
+                  {capped && (
+                    <ConnectorCap kind={cs.start_cap} at={p1} angleDeg={angleDeg + 180} />
+                  )}
+                  {capped && <ConnectorCap kind={cs.end_cap} at={p2} angleDeg={angleDeg} />}
                 </g>
               );
             })}

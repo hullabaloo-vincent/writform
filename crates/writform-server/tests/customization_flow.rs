@@ -249,3 +249,84 @@ async fn status_and_profile() {
         .unwrap();
     assert_eq!(res.status(), 401);
 }
+
+#[tokio::test]
+async fn banner_flow() {
+    let (base, client) = boot().await;
+    let alice = register(&base, &client, "alice").await;
+    let bob = register(&base, &client, "bob").await;
+
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10, 1, 1])
+            .file_name("banner.png"),
+    );
+    let att: serde_json::Value = client
+        .post(format!("{base}/attachments"))
+        .bearer_auth(&alice.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let banner_id = att["id"].as_i64().unwrap();
+
+    // Set the banner; it round-trips on the PATCH response…
+    let me: User = client
+        .patch(format!("{base}/auth/me"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"display_name": "Alice", "banner_attachment_id": banner_id}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me.banner_attachment_id.map(|a| a.0), Some(banner_id));
+
+    // …and on the public profile card.
+    let profile: serde_json::Value = client
+        .get(format!("{base}/users/{}/profile", alice.user.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(profile["banner_attachment_id"], banner_id);
+
+    // Bob can't claim Alice's upload as HIS banner…
+    let res = client
+        .patch(format!("{base}/auth/me"))
+        .bearer_auth(&bob.token)
+        .json(&json!({"display_name": null, "banner_attachment_id": banner_id}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+
+    // …but he CAN download it (profile images are readable by any member).
+    let res = client
+        .get(format!("{base}/attachments/{banner_id}"))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 200);
+
+    // Omitting the field clears the banner (whole-object PATCH semantics).
+    let me: User = client
+        .patch(format!("{base}/auth/me"))
+        .bearer_auth(&alice.token)
+        .json(&json!({"display_name": "Alice"}))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(me.banner_attachment_id, None);
+}

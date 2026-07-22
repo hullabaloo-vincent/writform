@@ -26,7 +26,9 @@ export function SendToCanvasDialog({
 }) {
   const docId = useDocuments((s) => s.activeDocId);
   const groups = useChat((s) => s.groups);
-  const [groupId, setGroupId] = useState<number | null>(groups[0]?.id ?? null);
+  const [groupId, setGroupId] = useState<number | null>(
+    useChat.getState().activeGroupId ?? groups[0]?.id ?? null,
+  );
   const [boards, setBoards] = useState<CanvasBoard[]>([]);
   const [boardId, setBoardId] = useState<number | null>(null);
   const [selectionOnly, setSelectionOnly] = useState(false);

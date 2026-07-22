@@ -5,7 +5,11 @@ import type { UserId } from "./UserId";
 /**
  * `GET /api/v1/users/{id}/profile` — the public profile card.
  */
-export type UserProfile = { id: UserId, username: string, display_name: string | null, avatar_attachment_id: AttachmentId | null, accent_color: string | null, bio: string | null, 
+export type UserProfile = { id: UserId, username: string, display_name: string | null, avatar_attachment_id: AttachmentId | null, 
+/**
+ * Banner image for the card; accent color is the fallback fill.
+ */
+banner_attachment_id: AttachmentId | null, accent_color: string | null, bio: string | null, 
 /**
  * "online" | "busy" when reachable, None when offline (or hidden).
  */

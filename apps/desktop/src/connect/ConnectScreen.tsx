@@ -9,7 +9,9 @@ import {
   type ProbeResult,
   type SavedServer,
 } from "../lib/backend";
+import { applyPortableProfile } from "../lib/portableProfile";
 import { discoverPublicIp } from "../lib/publicIp";
+import { confirmDialog, toastError } from "../platform";
 import { useSession } from "../stores/session";
 
 type Step =
@@ -166,6 +168,15 @@ export function ConnectScreen() {
               void backend.removeServer(addr).then(refresh);
             }}
           />
+        )}
+
+        {(step.kind === "welcome" || step.kind === "pick") && (
+          <button
+            className="wf-connect-offline"
+            onClick={() => useSession.getState().goOffline()}
+          >
+            Work offline — notes, local documents, and your portable profile, no server needed
+          </button>
         )}
 
         {step.kind === "host-setup" && (
@@ -457,6 +468,30 @@ function AuthForm({
             ? await backend.login(probe.addr, username, password)
             : await backend.register(probe.addr, username, password);
         setConnected(session);
+        if (mode === "register") {
+          // A brand-new account starts blank; offer the saved portable
+          // profile (explicit ask — never applied silently). Failures are
+          // non-fatal: the account stands either way.
+          try {
+            const portable = await backend.profileGet();
+            if (portable) {
+              const ok = await confirmDialog(
+                "Apply your saved portable profile (name, colors, images) to this server?",
+                { title: "Portable profile", confirmLabel: "Apply" },
+              );
+              if (ok) {
+                const user = await applyPortableProfile();
+                if (user) setConnected({ ...session, user });
+              }
+            }
+          } catch (e) {
+            toastError(
+              isCmdError(e)
+                ? `Couldn't apply the portable profile: ${e.message}`
+                : "Couldn't apply the portable profile.",
+            );
+          }
+        }
       }
     } catch (e) {
       onError(isCmdError(e) ? e.message : String(e));
