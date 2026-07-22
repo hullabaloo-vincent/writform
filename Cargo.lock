@@ -7050,7 +7050,7 @@ checksum = "1ffae5123b2d3fc086436f8834ae3ab053a283cfac8fe0a0b8eaae044768a4c4"
 
 [[package]]
 name = "writform-crypto"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "base64 0.22.1",
  "hmac",
@@ -7064,7 +7064,7 @@ dependencies = [
 
 [[package]]
 name = "writform-desktop"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "axum-server",
  "base64 0.22.1",
@@ -7099,7 +7099,7 @@ dependencies = [
 
 [[package]]
 name = "writform-proto"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -7108,7 +7108,7 @@ dependencies = [
 
 [[package]]
 name = "writform-server"
-version = "0.5.6"
+version = "0.6.0"
 dependencies = [
  "anyhow",
  "axum",
