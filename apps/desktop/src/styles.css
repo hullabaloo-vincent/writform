@@ -1039,6 +1039,41 @@ body,
   color: var(--wf-text-dim);
 }
 
+/* Channel row: the channel button plus hover-revealed admin tools. */
+.wf-chat-channel-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.wf-chat-channel-row .wf-chat-channel {
+  flex: 1;
+  min-width: 0;
+}
+
+.wf-chat-channel-tools {
+  display: none;
+  flex-shrink: 0;
+  gap: 2px;
+}
+
+.wf-chat-channel-row:hover .wf-chat-channel-tools {
+  display: inline-flex;
+}
+
+.wf-chat-channel-tools button {
+  min-height: 22px;
+  width: 22px;
+  border: none;
+  background: none;
+  color: var(--wf-text-dim);
+}
+
+.wf-chat-channel-tools button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+
 /* ---- unread indicators ---- */
 
 .wf-chat-channel.unread {

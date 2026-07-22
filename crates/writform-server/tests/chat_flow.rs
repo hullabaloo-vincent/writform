@@ -501,3 +501,84 @@ async fn message_reactions() {
 fn urlencoding_emoji(s: &str) -> String {
     s.bytes().map(|b| format!("%{b:02X}")).collect()
 }
+
+#[tokio::test]
+async fn channel_rename_and_delete_are_admin_only() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Guild"}))
+        .await;
+    let invite: Invite = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/invites", group.id.0),
+            json!({"expires_in_seconds": 3600, "max_uses": 5}),
+        )
+        .await;
+    let _: Group = server
+        .post_json(&bob.token, "/invites/redeem", json!({"code": invite.code}))
+        .await;
+    let channel: Channel = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/channels", group.id.0),
+            json!({"name": "drafts"}),
+        )
+        .await;
+
+    // Member (non-admin) can neither rename nor delete.
+    let res = server
+        .client
+        .patch(format!("{}/channels/{}", server.base, channel.id.0))
+        .bearer_auth(&bob.token)
+        .json(&json!({"name": "sneaky"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+    let res = server
+        .client
+        .delete(format!("{}/channels/{}", server.base, channel.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+
+    // Admin rename normalizes like create and fans out channel.updated.
+    let mut bob_ws = ws_connect(&server, &bob.token, &[format!("group:{}", group.id.0)]).await;
+    let renamed: Channel = {
+        let res = server
+            .client
+            .patch(format!("{}/channels/{}", server.base, channel.id.0))
+            .bearer_auth(&alice.token)
+            .json(&json!({"name": "Final Drafts"}))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 200);
+        res.json().await.unwrap()
+    };
+    assert_eq!(renamed.name.as_deref(), Some("final-drafts"));
+    let ev = wait_for_event(&mut bob_ws, "channel.updated").await;
+    assert_eq!(ev["name"], "final-drafts");
+
+    // Admin delete works and fans out channel.deleted.
+    let res = server
+        .client
+        .delete(format!("{}/channels/{}", server.base, channel.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut bob_ws, "channel.deleted").await;
+    assert_eq!(ev["channel_id"], channel.id.0);
+    let remaining: Vec<Channel> = server
+        .get_json(&alice.token, &format!("/groups/{}/channels", group.id.0))
+        .await;
+    assert!(remaining.iter().all(|c| c.id != channel.id));
+}

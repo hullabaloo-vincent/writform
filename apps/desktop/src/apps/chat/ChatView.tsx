@@ -434,6 +434,8 @@ function ChannelList() {
   const [newChannel, setNewChannel] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [name, setName] = useState("");
+  const [renamingId, setRenamingId] = useState<number | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
 
   return (
     <>
@@ -472,19 +474,77 @@ function ChannelList() {
           .filter((c) => c.kind === "text")
           .map((c) => {
             const count = unread[c.id] ?? 0;
+            if (renamingId === c.id) {
+              return (
+                <form
+                  key={c.id}
+                  onSubmit={(e) => {
+                    e.preventDefault();
+                    const next = renameDraft.trim();
+                    setRenamingId(null);
+                    if (!next || next === c.name) return;
+                    void chatApi
+                      .updateChannel(c.id, next)
+                      .catch(() => toastError("Couldn't rename the channel."));
+                  }}
+                >
+                  <input
+                    className="wf-chat-channel-input"
+                    value={renameDraft}
+                    autoFocus
+                    onChange={(e) => setRenameDraft(e.target.value)}
+                    onBlur={() => setRenamingId(null)}
+                    onKeyDown={(e) => e.key === "Escape" && setRenamingId(null)}
+                  />
+                </form>
+              );
+            }
             return (
-              <button
-                key={c.id}
-                className={`wf-chat-channel ${c.id === activeChannelId ? "active" : ""} ${
-                  count > 0 ? "unread" : ""
-                }`}
-                onClick={() => void selectChannel(c.id)}
-              >
-                # {c.name}
-                {count > 0 && (
-                  <span className="wf-unread-pill">{count > 99 ? "99+" : count}</span>
+              <div key={c.id} className="wf-chat-channel-row">
+                <button
+                  className={`wf-chat-channel ${c.id === activeChannelId ? "active" : ""} ${
+                    count > 0 ? "unread" : ""
+                  }`}
+                  onClick={() => void selectChannel(c.id)}
+                >
+                  # {c.name}
+                  {count > 0 && (
+                    <span className="wf-unread-pill">{count > 99 ? "99+" : count}</span>
+                  )}
+                </button>
+                {isAdmin && (
+                  <span className="wf-chat-channel-tools">
+                    <button
+                      className="wf-icon"
+                      title="Rename channel"
+                      onClick={() => {
+                        setRenameDraft(c.name ?? "");
+                        setRenamingId(c.id);
+                      }}
+                    >
+                      <PenLine size={12} />
+                    </button>
+                    <button
+                      className="wf-icon"
+                      title="Delete channel"
+                      onClick={() =>
+                        void confirmDialog(
+                          `Delete #${c.name} and all its messages for everyone? This cannot be undone.`,
+                          { title: "Delete channel", confirmLabel: "Delete", danger: true },
+                        ).then((ok) => {
+                          if (ok) {
+                            void chatApi
+                              .deleteChannel(c.id)
+                              .catch(() => toastError("Couldn't delete the channel."));
+                          }
+                        })
+                      }
+                    >
+                      <Trash2 size={12} />
+                    </button>
+                  </span>
                 )}
-              </button>
+              </div>
             );
           })}
         {isAdmin && !newChannel && (

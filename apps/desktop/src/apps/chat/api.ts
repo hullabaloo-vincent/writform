@@ -35,6 +35,9 @@ export const chatApi = {
   channels: (groupId: number) => api<Channel[]>("GET", `/api/v1/groups/${groupId}/channels`),
   createChannel: (groupId: number, name: string) =>
     api<Channel>("POST", `/api/v1/groups/${groupId}/channels`, { name }),
+  updateChannel: (channelId: number, name: string) =>
+    api<Channel>("PATCH", `/api/v1/channels/${channelId}`, { name }),
+  deleteChannel: (channelId: number) => api<null>("DELETE", `/api/v1/channels/${channelId}`),
   members: (groupId: number) => api<Member[]>("GET", `/api/v1/groups/${groupId}/members`),
   react: (messageId: number, emoji: string) =>
     api<null>("POST", `/api/v1/messages/${messageId}/reactions`, { emoji }),

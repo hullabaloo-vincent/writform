@@ -127,7 +127,10 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/groups/{id}/channels",
             get(channels::list_channels).post(channels::create_channel),
         )
-        .route("/api/v1/channels/{id}", delete(channels::delete_channel))
+        .route(
+            "/api/v1/channels/{id}",
+            patch(channels::update_channel).delete(channels::delete_channel),
+        )
         .route(
             "/api/v1/channels/{id}/messages",
             get(messages::list_messages).post(messages::send_message),

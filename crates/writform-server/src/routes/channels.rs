@@ -1,7 +1,7 @@
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
-use writform_proto::chat::{Channel, ChannelKind, CreateChannelRequest};
+use writform_proto::chat::{Channel, ChannelKind, CreateChannelRequest, UpdateChannelRequest};
 use writform_proto::{ChannelId, GroupId};
 
 use crate::auth::AuthUser;
@@ -89,6 +89,61 @@ pub async fn create_channel(
         serde_json::to_value(&channel).expect("serializable"),
     );
     Ok(Json(channel))
+}
+
+/// Rename a text channel (admin). Same normalization as create, so renamed
+/// channels keep the `#lower-kebab` convention.
+pub async fn update_channel(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(channel_id): Path<i64>,
+    Json(req): Json<UpdateChannelRequest>,
+) -> Result<Json<Channel>, AppError> {
+    let channel = ChannelId(channel_id);
+    let Some(group) = perms::require_channel_access(&state.pool, channel, auth.user_id).await?
+    else {
+        return Err(AppError::bad_request(
+            "not_renamable",
+            "DM conversations cannot be renamed",
+        ));
+    };
+    perms::require_admin(&state.pool, group, auth.user_id).await?;
+    let (kind, position): (String, i64) =
+        sqlx::query_as("SELECT kind, position FROM channels WHERE id = ?")
+            .bind(channel.0)
+            .fetch_one(&state.pool)
+            .await?;
+    if kind != "text" {
+        return Err(AppError::bad_request(
+            "not_renamable",
+            "session channels are named by their session",
+        ));
+    }
+    let name = req.name.trim().to_lowercase().replace(' ', "-");
+    if name.is_empty() || name.len() > 48 {
+        return Err(AppError::bad_request(
+            "invalid_name",
+            "channel name must be 1-48 characters",
+        ));
+    }
+    sqlx::query("UPDATE channels SET name = ? WHERE id = ?")
+        .bind(&name)
+        .bind(channel.0)
+        .execute(&state.pool)
+        .await?;
+    let updated = Channel {
+        id: channel,
+        group_id: Some(group),
+        kind: ChannelKind::Text,
+        name: Some(name),
+        position,
+    };
+    state.ws.broadcast(
+        &format!("group:{}", group.0),
+        "channel.updated",
+        serde_json::to_value(&updated).expect("serializable"),
+    );
+    Ok(Json(updated))
 }
 
 pub async fn delete_channel(

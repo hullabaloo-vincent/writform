@@ -459,13 +459,37 @@ export function installChatWsHandler(): () => void {
         }));
         void backend.wsSub([`channel:${channel.id}`]);
       }
+    } else if (kind === "channel.updated") {
+      const channel = data as Channel;
+      useChat.setState((s) => ({
+        channels: s.channels.map((c) => (c.id === channel.id ? channel : c)),
+      }));
     } else if (kind === "channel.deleted") {
       const { channel_id } = data as { channel_id: number };
       useChat.setState((s) => {
         const channelGroup = { ...s.channelGroup };
         delete channelGroup[channel_id];
-        return { channels: s.channels.filter((c) => c.id !== channel_id), channelGroup };
+        const messages = { ...s.messages };
+        delete messages[channel_id];
+        const unread = { ...s.unread };
+        delete unread[channel_id];
+        const drafts = { ...s.drafts };
+        delete drafts[channel_id];
+        return {
+          channels: s.channels.filter((c) => c.id !== channel_id),
+          channelGroup,
+          messages,
+          unread,
+          drafts,
+        };
       });
+      // If the open channel just vanished, land on the next text channel.
+      const after = useChat.getState();
+      if (after.activeChannelId === channel_id) {
+        const next = after.channels.find((c) => c.kind === "text");
+        if (next) void after.selectChannel(next.id);
+        else useChat.setState({ activeChannelId: null });
+      }
     } else if (kind === "group.updated") {
       const { group_id, name, icon_attachment_id, accent_color } = data as {
         group_id: number;

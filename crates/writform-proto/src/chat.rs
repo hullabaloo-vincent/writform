@@ -129,6 +129,12 @@ pub struct CreateChannelRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
+pub struct UpdateChannelRequest {
+    pub name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
 pub struct AttachmentMeta {
     pub id: AttachmentId,
     pub mime: String,
