@@ -3,6 +3,8 @@
  * voice mesh (input gain, output volume) or on the next join (input device).
  */
 
+export type VideoQuality = "360p" | "720p";
+
 export interface VoiceSettings {
   /** Preferred microphone deviceId; null = system default. */
   inputDeviceId: string | null;
@@ -10,10 +12,20 @@ export interface VoiceSettings {
   inputGain: number;
   /** Playback volume for other participants, 0..1. */
   outputVolume: number;
+  /** Preferred camera deviceId; null = system default. */
+  videoInputDeviceId: string | null;
+  /** Camera capture quality; applies the next time the camera starts. */
+  videoQuality: VideoQuality;
 }
 
 const KEY = "wf-voice-settings";
-const DEFAULTS: VoiceSettings = { inputDeviceId: null, inputGain: 1, outputVolume: 1 };
+const DEFAULTS: VoiceSettings = {
+  inputDeviceId: null,
+  inputGain: 1,
+  outputVolume: 1,
+  videoInputDeviceId: null,
+  videoQuality: "360p",
+};
 
 const listeners = new Set<(s: VoiceSettings) => void>();
 
@@ -26,6 +38,9 @@ export function loadVoiceSettings(): VoiceSettings {
       inputDeviceId: typeof parsed.inputDeviceId === "string" ? parsed.inputDeviceId : null,
       inputGain: clamp(parsed.inputGain, 0, 2, 1),
       outputVolume: clamp(parsed.outputVolume, 0, 1, 1),
+      videoInputDeviceId:
+        typeof parsed.videoInputDeviceId === "string" ? parsed.videoInputDeviceId : null,
+      videoQuality: parsed.videoQuality === "720p" ? "720p" : "360p",
     };
   } catch {
     return { ...DEFAULTS };

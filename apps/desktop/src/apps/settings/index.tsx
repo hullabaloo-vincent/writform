@@ -21,6 +21,7 @@ import {
   type Reachability,
   type SavedServer,
 } from "../../lib/backend";
+import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
 import {
@@ -231,9 +232,14 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
 function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
   const [settings, setSettings] = useState<VoiceSettings>(() => loadVoiceSettings());
   const [inputs, setInputs] = useState<MediaDeviceInfo[]>([]);
+  const [cameras, setCameras] = useState<MediaDeviceInfo[]>([]);
   const [testing, setTesting] = useState(false);
   const [level, setLevel] = useState(0);
+  const [cameraTesting, setCameraTesting] = useState(false);
   const testStop = useRef<(() => void) | null>(null);
+  const cameraStop = useRef<(() => void) | null>(null);
+  const cameraPreview = useRef<MediaStream | null>(null);
+  const previewRef = useRef<HTMLVideoElement>(null);
 
   const apply = (patch: Partial<VoiceSettings>) => {
     const next = { ...settings, ...patch };
@@ -245,13 +251,17 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
       setInputs(devices.filter((d) => d.kind === "audioinput"));
+      setCameras(devices.filter((d) => d.kind === "videoinput"));
     } catch {
       // devices stay unknown until permission is granted
     }
   };
   useEffect(() => {
     void refreshDevices();
-    return () => testStop.current?.();
+    return () => {
+      testStop.current?.();
+      cameraStop.current?.();
+    };
   }, []);
 
   const stopTest = () => {
@@ -301,6 +311,37 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
       );
     }
   };
+
+  const stopCameraTest = () => {
+    cameraStop.current?.();
+    cameraStop.current = null;
+    setCameraTesting(false);
+  };
+
+  const startCameraTest = async () => {
+    onError(null);
+    try {
+      const stream = await getCameraStream(settings.videoInputDeviceId, settings.videoQuality);
+      // Labels become available once permission is granted.
+      void refreshDevices();
+      cameraPreview.current = stream;
+      cameraStop.current = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        cameraPreview.current = null;
+      };
+      setCameraTesting(true);
+    } catch (e) {
+      onError(e instanceof CameraError ? e.message : isCmdError(e) ? e.message : String(e));
+    }
+  };
+
+  // The preview <video> mounts only after cameraTesting flips, so the stream
+  // attaches here rather than inside startCameraTest.
+  useEffect(() => {
+    if (cameraTesting && previewRef.current && cameraPreview.current) {
+      previewRef.current.srcObject = cameraPreview.current;
+    }
+  }, [cameraTesting]);
 
   return (
     <section>
@@ -362,6 +403,52 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         <span className="wf-session-meta">
           Speak — the meter shows your level after the input-volume setting.
           Device changes apply the next time you join a voice channel.
+        </span>
+      </div>
+
+      <h3>Video</h3>
+      <label className="wf-settings-field">
+        Camera
+        <select
+          value={settings.videoInputDeviceId ?? ""}
+          onChange={(e) => apply({ videoInputDeviceId: e.target.value || null })}
+        >
+          <option value="">System default</option>
+          {cameras.map((d) => (
+            <option key={d.deviceId} value={d.deviceId}>
+              {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
+            </option>
+          ))}
+        </select>
+        {cameras.every((d) => !d.label) && (
+          <span className="wf-session-meta">
+            Run a camera test once to grant access and see device names.
+          </span>
+        )}
+      </label>
+      <label className="wf-settings-field">
+        Quality
+        <select
+          value={settings.videoQuality}
+          onChange={(e) => apply({ videoQuality: e.target.value === "720p" ? "720p" : "360p" })}
+        >
+          <option value="360p">360p — easier on bandwidth (recommended)</option>
+          <option value="720p">720p — sharper, several times the bandwidth</option>
+        </select>
+      </label>
+      <div className="wf-settings-field">
+        <div className="wf-connect-row" style={{ alignItems: "center", justifyContent: "flex-start" }}>
+          <button
+            className={cameraTesting ? "" : "wf-primary"}
+            onClick={() => (cameraTesting ? stopCameraTest() : void startCameraTest())}
+          >
+            {cameraTesting ? "Stop test" : "Camera test"}
+          </button>
+        </div>
+        {cameraTesting && <video ref={previewRef} autoPlay playsInline muted className="wf-camera-preview" />}
+        <span className="wf-session-meta">
+          The preview is mirrored, like a mirror — others see you unmirrored.
+          Device and quality changes apply the next time your camera starts.
         </span>
       </div>
     </section>

@@ -60,14 +60,24 @@ Groups work like small Discord servers: channels, invites, roles.
   kick members and manage channels.
 - **Slash commands**: type `/` to see commands contributed by plugins.
 
-## Voice
+## Voice & video
 
-Voice channels sit under a group's text channels. Audio is a direct
+Voice channels sit under a group's text channels. Media is a direct
 peer-to-peer mesh between members (DTLS-SRTP); the server only relays
 connection setup. Mute, speaking indicators, and a persistent voice bar in
-the status bar — the call follows you around the app. Settings → Voice lets
-you pick an input device, adjust input gain and output volume, and test your
-mic before joining.
+the status bar — the call follows you around the app.
+
+Turn on your **camera** or **share your screen** from the voice bar. Video
+appears in a floating panel you can drag, resize, and keep open while you
+work in Canvas or Documents; click a tile to enlarge it. Peers' tiles show
+mute and screen-share badges. Screen sharing is available on Windows and
+Linux; macOS can watch shares but not send them (its webview has no screen
+capture), and camera video works everywhere.
+
+Settings → Voice lets you pick input devices, adjust input gain and output
+volume, test your mic and camera, and choose video quality (360p default —
+the mesh sends a copy to every peer, so higher quality multiplies upload
+bandwidth).
 
 ## Canvas
 

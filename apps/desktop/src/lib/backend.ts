@@ -103,6 +103,10 @@ export interface Backend {
   readDroppedFile(path: string): Promise<{ name: string; data_base64: string }>;
   /** Microphone authorization: not_determined | restricted | denied | authorized. */
   microphoneStatus(): Promise<string>;
+  /** Camera authorization state (`authorized` off-macOS). */
+  cameraStatus(): Promise<string>;
+  /** Prompt for camera access if undecided; resolves to the final state. */
+  requestCameraAccess(): Promise<string>;
   /** Raise the OS microphone prompt when undecided; resolves to the outcome. */
   requestMicrophoneAccess(): Promise<string>;
   wsSub(rooms: string[]): Promise<void>;
@@ -159,6 +163,8 @@ function tauriBackend(): Backend {
     readDroppedFile: (path) => invoke("read_dropped_file", { path }),
     microphoneStatus: () => invoke("microphone_status"),
     requestMicrophoneAccess: () => invoke("request_microphone_access"),
+    cameraStatus: () => invoke("camera_status"),
+    requestCameraAccess: () => invoke("request_camera_access"),
     wsSub: (rooms) => invoke("ws_sub", { rooms }),
     wsUnsub: (rooms) => invoke("ws_unsub", { rooms }),
     onWsEvent: (handler) => {
@@ -239,6 +245,8 @@ function unavailableBackend(): Backend {
     readDroppedFile: fail,
     microphoneStatus: async () => "authorized",
     requestMicrophoneAccess: async () => "authorized",
+    cameraStatus: async () => "authorized",
+    requestCameraAccess: async () => "authorized",
     wsSub: fail,
     wsUnsub: fail,
     onWsEvent: () => () => {},

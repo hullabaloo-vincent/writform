@@ -1,8 +1,10 @@
 import {
   ImageIcon,
+  LayoutGrid,
   Mic,
   MicOff,
   FileText,
+  MonitorUp,
   PenLine,
   PhoneOff,
   Plus,
@@ -10,6 +12,8 @@ import {
   SmilePlus,
   Trash2,
   UserPlus,
+  Video,
+  VideoOff,
   Volume2,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
@@ -22,7 +26,8 @@ import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
 import { MessageText } from "./MessageText";
 import { useChat } from "./store";
-import { useVoice, voiceApi } from "./voice";
+import { VideoStage } from "./VideoStage";
+import { canScreenShare, useVoice, voiceApi } from "./voice";
 
 const attSrc = (attachmentId: number) => `writform-att://attachment/${attachmentId}`;
 
@@ -490,9 +495,13 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
   const occupants = useVoice((s) => s.occupants);
   const connectedChannelId = useVoice((s) => s.connectedChannelId);
   const speaking = useVoice((s) => s.speaking);
+  const remoteMedia = useVoice((s) => s.remoteMedia);
+  const cameraOn = useVoice((s) => s.cameraOn);
+  const screenOn = useVoice((s) => s.screenOn);
   const join = useVoice((s) => s.join);
   const loadChannels = useVoice((s) => s.loadChannels);
   const error = useVoice((s) => s.error);
+  const me = useSession((s) => s.session?.user);
   const [adding, setAdding] = useState(false);
   const [name, setName] = useState("");
 
@@ -515,18 +524,29 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
           </button>
           {(occupants[c.id] ?? []).length > 0 && (
             <ul className="wf-voice-occupants">
-              {(occupants[c.id] ?? []).map((u) => (
-                <li key={u.id} className={speaking.has(u.id) ? "speaking" : ""}>
-                  <span className="wf-voice-dot" />
-                  <Avatar
-                    name={u.display_name ?? u.username}
-                    attachmentId={u.avatar_attachment_id}
-                    accentColor={u.accent_color}
-                    size={16}
-                  />
-                  {u.display_name ?? u.username}
-                </li>
-              ))}
+              {(occupants[c.id] ?? []).map((u) => {
+                // Media state is only known for the room I'm in (it travels
+                // peer-to-peer), so badges appear there alone.
+                const inMyRoom = c.id === connectedChannelId;
+                const isMe = u.id === me?.id;
+                const media = remoteMedia[u.id];
+                const hasCamera = inMyRoom && (isMe ? cameraOn : (media?.camera ?? false));
+                const hasScreen = inMyRoom && (isMe ? screenOn : (media?.screen ?? false));
+                return (
+                  <li key={u.id} className={speaking.has(u.id) ? "speaking" : ""}>
+                    <span className="wf-voice-dot" />
+                    <Avatar
+                      name={u.display_name ?? u.username}
+                      attachmentId={u.avatar_attachment_id}
+                      accentColor={u.accent_color}
+                      size={16}
+                    />
+                    {u.display_name ?? u.username}
+                    {hasCamera && <Video size={12} className="wf-voice-media-badge" />}
+                    {hasScreen && <MonitorUp size={12} className="wf-voice-media-badge" />}
+                  </li>
+                );
+              })}
             </ul>
           )}
         </div>
@@ -572,10 +592,17 @@ export function GlobalVoiceBar() {
   const connectedChannelId = useVoice((s) => s.connectedChannelId);
   const joining = useVoice((s) => s.joining);
   const muted = useVoice((s) => s.muted);
+  const cameraOn = useVoice((s) => s.cameraOn);
+  const screenOn = useVoice((s) => s.screenOn);
+  const stageOpen = useVoice((s) => s.stageOpen);
+  const remoteMedia = useVoice((s) => s.remoteMedia);
   const channels = useVoice((s) => s.channels);
   const speaking = useVoice((s) => s.speaking);
   const leave = useVoice((s) => s.leave);
   const toggleMute = useVoice((s) => s.toggleMute);
+  const toggleCamera = useVoice((s) => s.toggleCamera);
+  const toggleScreenShare = useVoice((s) => s.toggleScreenShare);
+  const toggleStage = useVoice((s) => s.toggleStage);
   const me = useSession((s) => s.session?.user);
 
   if (joining) {
@@ -591,18 +618,51 @@ export function GlobalVoiceBar() {
   if (connectedChannelId === null) return null;
   const channel = channels.find((c) => c.id === connectedChannelId);
   const talking = me !== undefined && speaking.has(me.id) && !muted;
+  // Live videos I could be watching (peers' cameras and screens, plus mine).
+  const videoCount =
+    Object.values(remoteMedia).reduce(
+      (n, m) => n + (m.camera ? 1 : 0) + (m.screen ? 1 : 0),
+      0,
+    ) + (cameraOn ? 1 : 0);
 
   return (
-    <span className={`wf-voice-bar ${talking ? "talking" : ""}`}>
-      <Volume2 size={13} />
-      <span className="wf-voice-bar-name">{channel?.name ?? "voice"}</span>
-      <button title={muted ? "Unmute" : "Mute"} onClick={toggleMute}>
-        {muted ? <MicOff size={13} /> : <Mic size={13} />}
-      </button>
-      <button title="Leave voice" onClick={() => void leave()}>
-        <PhoneOff size={13} />
-      </button>
-    </span>
+    <>
+      <span className={`wf-voice-bar ${talking ? "talking" : ""}`}>
+        <Volume2 size={13} />
+        <span className="wf-voice-bar-name">{channel?.name ?? "voice"}</span>
+        <button title={muted ? "Unmute" : "Mute"} onClick={toggleMute}>
+          {muted ? <MicOff size={13} /> : <Mic size={13} />}
+        </button>
+        <button
+          className={cameraOn ? "active" : ""}
+          title={cameraOn ? "Turn camera off" : "Turn camera on"}
+          onClick={() => void toggleCamera()}
+        >
+          {cameraOn ? <Video size={13} /> : <VideoOff size={13} />}
+        </button>
+        {canScreenShare() && (
+          <button
+            className={screenOn ? "active" : ""}
+            title={screenOn ? "Stop sharing your screen" : "Share your screen"}
+            onClick={() => void toggleScreenShare()}
+          >
+            <MonitorUp size={13} />
+          </button>
+        )}
+        <button
+          className={stageOpen ? "active" : ""}
+          title={stageOpen ? "Hide video panel" : "Show video panel"}
+          onClick={toggleStage}
+        >
+          <LayoutGrid size={13} />
+          {!stageOpen && videoCount > 0 && <span className="wf-btn-badge">{videoCount}</span>}
+        </button>
+        <button title="Leave voice" onClick={() => void leave()}>
+          <PhoneOff size={13} />
+        </button>
+      </span>
+      <VideoStage />
+    </>
   );
 }
 

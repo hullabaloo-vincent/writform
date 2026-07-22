@@ -3889,6 +3889,153 @@ textarea.wf-el-edit {
   border-color: var(--wf-accent);
 }
 
+.wf-voice-bar button.active {
+  color: var(--wf-accent);
+}
+
+/* Camera/screen chips on occupants of the room you're in. */
+.wf-voice-media-badge {
+  flex-shrink: 0;
+  color: var(--wf-accent);
+}
+
+/* ---- video stage (floating tile panel) ---- */
+
+.wf-stage {
+  position: fixed;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 12px;
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.55);
+  overflow: hidden;
+}
+
+.wf-stage-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 12px;
+  border-bottom: 1px solid var(--wf-border);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.wf-stage-header:active {
+  cursor: grabbing;
+}
+
+.wf-stage-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wf-text-dim);
+}
+
+.wf-stage-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  overflow-y: auto;
+}
+
+.wf-stage-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 6px;
+}
+
+/* With a focused tile, the rest shrink into a thumbnail strip. */
+.wf-stage-grid.strip {
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+}
+
+.wf-stage-tile {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--wf-bg);
+  border: 2px solid transparent;
+  cursor: pointer;
+}
+
+.wf-stage-tile.speaking {
+  border-color: #4caf7d;
+}
+
+.wf-stage-tile.focused {
+  flex-shrink: 0;
+  cursor: zoom-out;
+}
+
+/* A shared screen is the thing being talked about — let it dominate. */
+.wf-stage-grid:not(.strip) .wf-stage-tile.screen {
+  grid-column: 1 / -1;
+}
+
+.wf-stage-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  background: #000;
+}
+
+/* Screens crop badly — letterbox them instead. */
+.wf-stage-tile.screen .wf-stage-video {
+  object-fit: contain;
+}
+
+.wf-stage-avatar {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.wf-stage-name {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: calc(100% - 12px);
+  padding: 2px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.wf-stage-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 16px;
+  height: 16px;
+  cursor: nwse-resize;
+  /* visible grip: two diagonal notches */
+  background:
+    linear-gradient(135deg, transparent 50%, var(--wf-border) 50%, var(--wf-border) 60%, transparent 60%),
+    linear-gradient(135deg, transparent 70%, var(--wf-border) 70%, var(--wf-border) 80%, transparent 80%);
+}
+
 /* ---- message hover actions ---- */
 
 .wf-msg {
@@ -4674,6 +4821,19 @@ textarea.wf-el-edit {
 
 .wf-mic-meter span.lit {
   background: #4caf7d;
+}
+
+/* Settings camera test: a mirrored self-view. */
+.wf-camera-preview {
+  display: block;
+  width: 280px;
+  aspect-ratio: 16 / 9;
+  margin-top: 8px;
+  border-radius: 10px;
+  border: 1px solid var(--wf-border);
+  background: #000;
+  object-fit: cover;
+  transform: scaleX(-1);
 }
 
 /* ---- button-system compatibility ----

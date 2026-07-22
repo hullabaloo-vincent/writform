@@ -4,5 +4,7 @@
 <dict>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>WritForm uses your microphone for voice channels.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>WritForm uses your camera for video in voice channels.</string>
 </dict>
 </plist>

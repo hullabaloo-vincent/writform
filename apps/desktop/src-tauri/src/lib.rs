@@ -68,6 +68,8 @@ pub fn run() {
             commands::api::read_dropped_file,
             media::microphone_status,
             media::request_microphone_access,
+            media::camera_status,
+            media::request_camera_access,
             commands::connect::reset_password,
             wsclient::ws_sub,
             wsclient::ws_unsub,

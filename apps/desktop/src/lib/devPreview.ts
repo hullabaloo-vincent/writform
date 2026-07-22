@@ -1022,6 +1022,8 @@ export function devPreviewBackend(): Backend {
     },
     microphoneStatus: async () => "authorized",
     requestMicrophoneAccess: async () => "authorized",
+    cameraStatus: async () => "authorized",
+    requestCameraAccess: async () => "authorized",
     saveExport: async (fileName, dataBase64) => {
       // Browser preview: a plain download.
       const bin = atob(dataBase64);

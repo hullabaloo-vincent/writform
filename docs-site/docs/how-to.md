@@ -38,6 +38,14 @@ Click a channel under **VOICE** in the chat sidebar; grant microphone
 access. Mute and leave from the pill in the status bar — it stays with you
 in every app.
 
+## Turn on your camera or share your screen
+
+While in a voice channel, use the camera button in the status-bar pill
+(grant camera access the first time). The video panel opens when someone's
+video appears — drag it anywhere, resize from the corner, and it stays up
+while you work in other apps. The screen-share button appears on platforms
+that support capture (Windows/Linux); everyone, including macOS, can watch.
+
 ## Share a note
 
 Notes → open the note → **Share** → pick a friend. They get a card in your

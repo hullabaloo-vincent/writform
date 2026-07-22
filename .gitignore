@@ -21,3 +21,4 @@ crates/writform-proto/bindings/
 # OS
 .DS_Store
 docs-site/site/
+/.claude
