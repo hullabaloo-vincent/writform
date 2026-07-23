@@ -663,7 +663,10 @@ export function DocumentsView() {
       {menu && (
         <div
           className="wf-context-menu"
-          style={{ left: menu.x, top: menu.y }}
+          style={{
+            left: Math.max(8, Math.min(menu.x, window.innerWidth - 208)),
+            top: Math.max(8, Math.min(menu.y, window.innerHeight - (menu.items.length * 42 + 16))),
+          }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           {menu.items.map((item, i) => (

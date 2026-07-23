@@ -4082,6 +4082,7 @@ textarea.wf-el-edit {
   position: fixed;
   z-index: 60;
   min-width: 180px;
+  max-width: calc(100vw - 16px);
   display: flex;
   flex-direction: column;
   padding: 4px;
@@ -5881,15 +5882,90 @@ input[type="checkbox"] {
     min-width: 0;
   }
 
-  /* Friends: the conversation gets the width; the sidebar narrows. */
+  /* Friends: one column; the list slides over like chat's drawer. */
+  .wf-friends {
+    position: relative;
+  }
   .wf-friends-side {
-    width: 150px;
-    min-width: 150px;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(80vw, 320px);
+    min-width: 0;
+    z-index: 70;
+    transform: translateX(-102%);
+    transition: transform 160ms ease;
+    background: var(--wf-bg-raised);
+    border-right: 1px solid var(--wf-border);
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+    overflow-y: auto;
+  }
+  .wf-friends-side.open {
+    transform: translateX(0);
   }
 
   /* Sessions / canvas headers wrap instead of overflowing. */
   .wf-sessions-header,
   .wf-session-room-header {
+    flex-wrap: wrap;
+  }
+}
+
+/* Touch devices have no hover: reveal-on-hover controls become permanent. */
+@media (hover: none) {
+  .wf-msg-actions {
+    display: flex;
+  }
+  .wf-doc-card-kebab {
+    display: grid;
+  }
+  .wf-chat-channel-tools {
+    display: flex;
+  }
+  .wf-occupant-volume,
+  .wf-stage-volume {
+    opacity: 1;
+  }
+  .wf-notes-title svg {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  /* Drawer toggle lives in the channel header, clear of the composer. */
+  .wf-chat-menu-btn {
+    top: 9px;
+    left: 10px;
+    bottom: auto;
+    width: 36px;
+    height: 36px;
+    min-height: 36px;
+    border-radius: var(--wf-radius-md);
+    box-shadow: none;
+  }
+  .wf-chat-main-header {
+    padding-left: 58px;
+  }
+
+  /* Presence popup: open up-LEFT of its right-edge anchor, thumb-sized. */
+  .wf-status-menu {
+    left: auto;
+    right: 0;
+    bottom: 30px;
+    max-width: calc(100vw - 16px);
+  }
+  .wf-status-menu button {
+    min-height: 40px;
+    font-size: 14px;
+    padding: 8px 14px;
+  }
+  .wf-session-status {
+    font-size: 13px;
+  }
+
+  .wf-board-toolbar {
+    max-width: calc(100vw - 16px);
     flex-wrap: wrap;
   }
 }

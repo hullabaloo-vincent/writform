@@ -1,4 +1,5 @@
-import { FileText } from "lucide-react";
+import {
+  Menu, FileText } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { DmChannel } from "../../bindings/proto/DmChannel";
@@ -79,6 +80,9 @@ export function FriendsView() {
   const [username, setUsername] = useState("");
   const [error, setError] = useState<string | null>(null);
   const dmUnread = useFriends((s) => s.dmUnread);
+  // Mobile-only slide-over for the friends list (mirrors chat's drawer).
+  const [sideOpen, setSideOpen] = useState(false);
+  useEffect(() => setSideOpen(false), [dm]);
 
   const refresh = () => {
     void friendsApi
@@ -121,7 +125,11 @@ export function FriendsView() {
 
   return (
     <div className="wf-friends">
-      <div className="wf-friends-side">
+      <button className="wf-chat-menu-btn" title="Friends list" onClick={() => setSideOpen(true)}>
+        <Menu size={19} />
+      </button>
+      {sideOpen && <div className="wf-chat-side-scrim" onClick={() => setSideOpen(false)} />}
+      <div className={`wf-friends-side ${sideOpen ? "open" : ""}`}>
         <h2>Friends</h2>
         {error && <p className="wf-connect-error">{error}</p>}
         <form

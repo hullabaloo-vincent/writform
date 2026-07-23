@@ -27,8 +27,8 @@ function defaultRect(): Rect {
   return {
     x: Math.max(12, window.innerWidth - 420),
     y: Math.max(12, window.innerHeight - 360),
-    w: 400,
-    h: 300,
+    w: Math.min(400, window.innerWidth - 24),
+    h: Math.min(300, window.innerHeight - 24),
   };
 }
 

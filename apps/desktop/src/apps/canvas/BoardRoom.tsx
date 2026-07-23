@@ -1206,7 +1206,10 @@ export function BoardRoom() {
         {selectionBox && (
           <div
             className={`wf-selection-toolbar ${selectionBox.below ? "below" : ""}`}
-            style={{ left: selectionBox.left, top: selectionBox.top }}
+            style={{
+              left: Math.max(8, Math.min(selectionBox.left, window.innerWidth - 228)),
+              top: selectionBox.top,
+            }}
             // Keep the board from panning, and keep focus where it is so
             // formatting an element mid-edit doesn't close its text editor.
             onPointerDown={(e) => e.stopPropagation()}
