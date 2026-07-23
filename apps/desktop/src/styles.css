@@ -5713,6 +5713,22 @@ textarea.wf-el-edit {
     min-height: 36px;
   }
 
+  /* iOS: 100% tracks the layout viewport, which ignores the on-screen
+     keyboard and collapsing URL bar — dvh tracks what's actually visible,
+     so the tab bar and composer stay glued to the keyboard's top edge. */
+  .wf-shell {
+    height: 100dvh;
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* iOS Safari auto-zooms any focused field with a font under 16px; the
+     !important is deliberate — it must beat every per-component font-size. */
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+
   /* Shell: the app rail becomes a bottom tab bar. */
   .wf-body {
     flex-direction: column;
