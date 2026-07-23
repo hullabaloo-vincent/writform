@@ -35,7 +35,7 @@ export function devPreviewBackend(): Backend {
     configured: false,
     running: false,
     port: 7311,
-    server_name: "My WritForm Server",
+    server_name: "My subScribe Server",
     addr: null,
     fingerprint: null,
     lan_addrs: [],

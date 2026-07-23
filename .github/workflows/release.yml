@@ -140,7 +140,7 @@ jobs:
           files: target/release/writform-server
 
   # macOS is intentionally absent: those builds ship as source. Users build
-  # locally with scripts/Build WritForm (macOS).command, which avoids the
+  # locally with scripts/Build subScribe (macOS).command, which avoids the
   # Gatekeeper quarantine that an unnotarized downloaded .app would hit.
   desktop:
     needs: bump
@@ -178,7 +178,7 @@ jobs:
         with:
           projectPath: apps/desktop
           tagName: ${{ needs.bump.outputs.tag }}
-          releaseName: "WritForm ${{ needs.bump.outputs.tag }}"
+          releaseName: "subScribe ${{ needs.bump.outputs.tag }}"
           releaseDraft: true
           releaseBody: |
             ## Install
@@ -188,7 +188,7 @@ jobs:
             **macOS** — build from source (one double-click). Downloading an
             unnotarized `.app` would trip Gatekeeper; building locally avoids
             that entirely. Clone the repo and run
-            `scripts/Build WritForm (macOS).command` — it checks for and offers
+            `scripts/Build subScribe (macOS).command` — it checks for and offers
             to install everything the build needs. See the
             [setup guide](https://hullabaloo-vincent.github.io/writform/setup/)
             for details and for connecting to or hosting a server.

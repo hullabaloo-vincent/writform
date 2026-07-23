@@ -13,10 +13,15 @@ RUN sed -i 's|"apps/desktop/src-tauri",||' Cargo.toml \
 # The browser client: the same SPA the desktop app runs, built once and
 # served by the server at `/` (phones and other browsers use this).
 FROM node:22-slim AS webbuild
-WORKDIR /web
+# Mirror the repo layout: the in-app Docs viewer globs markdown from
+# ../../../../../docs-site/docs relative to its module, so docs-site must
+# sit beside apps/ exactly as in the repo or every page renders as
+# "was not bundled".
+WORKDIR /repo/apps/desktop
 COPY apps/desktop/package.json apps/desktop/package-lock.json ./
 RUN npm ci
 COPY apps/desktop ./
+COPY docs-site /repo/docs-site
 RUN npm run build
 
 FROM debian:bookworm-slim
@@ -27,7 +32,7 @@ RUN useradd --system --home /data writform \
     && mkdir -p /data \
     && chown writform:writform /data
 COPY --from=build /src/target/release/writform-server /usr/local/bin/writform-server
-COPY --from=webbuild /web/dist /app/web
+COPY --from=webbuild /repo/apps/desktop/dist /app/web
 USER writform
 VOLUME /data
 EXPOSE 7311

@@ -45,7 +45,7 @@ function PluginManagerView() {
       <p className="wf-session-meta">
         Install plugins by dropping a folder (with <code>manifest.json</code> +{" "}
         <code>main.js</code>) into the app's <code>plugins/</code> directory. Plugins use the same
-        extension points as WritForm's own apps.
+        extension points as subScribe's own apps.
       </p>
       {error && <p className="wf-connect-error">{error}</p>}
       {needsReload && (

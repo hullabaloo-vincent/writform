@@ -149,7 +149,7 @@ export function ConnectScreen() {
   return (
     <div className="wf-connect">
       <div className="wf-connect-card">
-        <h1>WritForm</h1>
+        <h1>subScribe</h1>
         {isDevPreview && (
           <p className="wf-connect-preview">Development preview — in-memory data, no real network.</p>
         )}
@@ -223,7 +223,7 @@ function Welcome({ onHost, onJoin }: { onHost: () => void; onJoin: () => void })
   return (
     <div className="wf-welcome">
       <p className="wf-connect-dim">
-        WritForm is self-hosted: your group's writing lives on a server one of you runs. How do
+        subScribe is self-hosted: your group's writing lives on a server one of you runs. How do
         you want to start?
       </p>
       <button className="wf-welcome-option" onClick={onHost}>
@@ -240,7 +240,7 @@ function Welcome({ onHost, onJoin }: { onHost: () => void; onJoin: () => void })
         <Globe size={22} />
         <span>
           <strong>Join a server</strong>
-          <small>Someone already hosts WritForm? Connect with the address they gave you.</small>
+          <small>Someone already hosts subScribe? Connect with the address they gave you.</small>
         </span>
       </button>
     </div>
@@ -256,7 +256,7 @@ function HostSetup({
   onStart: (port: number, serverName: string) => void;
   onBack: () => void;
 }) {
-  const [name, setName] = useState(defaults?.server_name ?? "My WritForm Server");
+  const [name, setName] = useState(defaults?.server_name ?? "My subScribe Server");
   const [port, setPort] = useState(String(defaults?.port ?? 7311));
   const portNum = Number(port);
   const portOk = Number.isInteger(portNum) && portNum >= 1024 && portNum <= 65535;
@@ -270,7 +270,7 @@ function HostSetup({
     >
       <h2>Host on this computer</h2>
       <p className="wf-connect-dim">
-        Your server starts with the app and keeps running while WritForm is open. You can stop
+        Your server starts with the app and keeps running while subScribe is open. You can stop
         it or check who can reach it any time in Settings → Server.
       </p>
       <label htmlFor="host-name">Server name (what friends see)</label>

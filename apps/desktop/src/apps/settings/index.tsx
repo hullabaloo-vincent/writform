@@ -977,7 +977,7 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
       <h4>Hosting — {host.server_name}</h4>
       <p className="wf-session-meta">
         This computer hosts the server ({host.running ? `running on port ${host.port}` : "stopped"}).
-        It runs while WritForm is open and starts again with the app.
+        It runs while subScribe is open and starts again with the app.
       </p>
 
       {host.running && (
@@ -1099,7 +1099,7 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
     try {
       await update.downloadAndInstall();
       setStatus("installed");
-      const restart = await confirmDialog("Update installed. Restart WritForm now?", {
+      const restart = await confirmDialog("Update installed. Restart subScribe now?", {
         title: "Update ready",
         confirmLabel: "Restart now",
       });
@@ -1117,7 +1117,7 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
     <section>
       <h3>Application</h3>
       <p className="wf-session-meta">
-        WritForm {version ?? ""} — updates are downloaded from GitHub Releases and verified
+        subScribe {version ?? ""} — updates are downloaded from GitHub Releases and verified
         against the app's signing key before installing.
       </p>
       {!inTauri ? (

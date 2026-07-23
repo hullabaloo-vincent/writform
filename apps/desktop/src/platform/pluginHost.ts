@@ -106,7 +106,7 @@ export async function loadEnabledPlugins(): Promise<void> {
   for (const plugin of plugins.filter((p) => p.enabled)) {
     const { manifest } = plugin;
     if (manifest.min_api_version > PLUGIN_API_VERSION) {
-      console.warn(`plugin ${manifest.id} needs a newer WritForm`);
+      console.warn(`plugin ${manifest.id} needs a newer subScribe`);
       continue;
     }
     try {

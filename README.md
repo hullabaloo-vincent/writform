@@ -1,4 +1,4 @@
-# WritForm
+# subScribe
 
 Self-hosted group creative-writing sessions: run your own server, connect with the
 desktop app by IP + port, and write together — Discord-style groups and chat, timed
@@ -16,7 +16,7 @@ palette), and third-party plugins use the exact same extension points — see
 
 **macOS:** build it locally — notarizing a download needs a paid Apple Developer
 account, but apps compiled on your own Mac are never quarantined, so they just
-open. Double-click **`scripts/Build WritForm (macOS).command`**; it checks for
+open. Double-click **`scripts/Build subScribe (macOS).command`**; it checks for
 Xcode Command Line Tools, Node, and Rust, offers to install anything missing,
 and drops the finished app in Applications.
 

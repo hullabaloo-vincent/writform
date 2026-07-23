@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
-/// Self-hosted WritForm server.
+/// Self-hosted subScribe server.
 #[derive(Debug, Parser)]
 #[command(name = "writform-server", version)]
 pub struct Config {
@@ -19,7 +19,7 @@ pub struct Config {
     pub port: u16,
 
     /// Human-readable server name shown to clients during TOFU.
-    #[arg(long, env = "WRITFORM_SERVER_NAME", default_value = "WritForm Server")]
+    #[arg(long, env = "WRITFORM_SERVER_NAME", default_value = "subScribe Server")]
     pub server_name: String,
 
     /// Directory with the built web client (index.html + assets). When set,

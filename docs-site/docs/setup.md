@@ -19,7 +19,7 @@ install anything missing.
 
 1. Download the source (**Code → Download ZIP** on GitHub, or `git clone`).
 2. Open the `scripts` folder.
-3. Double-click **Build WritForm (macOS).command**.
+3. Double-click **Build subScribe (macOS).command**.
 
 It verifies Xcode Command Line Tools, Node, and Rust, installs whatever is
 absent (asking first), builds the app, and offers to move it to Applications.
@@ -30,7 +30,7 @@ If Finder refuses to run the script because it came from a ZIP download, either
 run `xattr -dr com.apple.quarantine` on the folder, or start it from Terminal:
 
 ```sh
-./scripts/"Build WritForm (macOS).command"
+./scripts/"Build subScribe (macOS).command"
 ```
 
 ### Microphone or camera prompt never appears
@@ -45,11 +45,11 @@ tccutil reset Microphone com.writform.desktop
 tccutil reset Camera com.writform.desktop
 ```
 
-The next time WritForm asks, the real system prompt appears.
+The next time subScribe asks, the real system prompt appears.
 
 ## Host on this computer (easiest)
 
-1. Install WritForm and open it.
+1. Install subScribe and open it.
 2. Choose **Host on this computer**, pick a server name and port
    (default `7311`), and press **Start hosting**.
 3. Create the first account — the first registration becomes the
@@ -82,7 +82,7 @@ docker run -d --name writform --restart unless-stopped \
 A systemd unit ships in the repo under `deploy/`. For upgrading either
 flavor, see [Updating a server](#updating-a-server) below.
 
-## Using WritForm in a browser (phones included)
+## Using subScribe in a browser (phones included)
 
 The server can serve the app itself: open `https://your-server:7311/` in
 any browser — including on a phone — log in, and you get the same chat,
@@ -154,7 +154,7 @@ Connect from the app. Connecting cleanly *is* the fingerprint check —
 clients pin the server identity and warn loudly if it changed. Where to
 check versions: the server prints its version at startup, and a client
 that's newer than the server will tell you when it needs something the
-server doesn't have yet ("the server is running an older WritForm
+server doesn't have yet ("the server is running an older subScribe
 version…") — that message is the cue to run the update above.
 
 **Permission denied on an old volume:** volumes first created by releases up

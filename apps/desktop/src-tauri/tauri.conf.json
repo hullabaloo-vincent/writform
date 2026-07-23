@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "WritForm",
+  "productName": "subScribe",
   "version": "0.7.0",
   "identifier": "com.writform.desktop",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "WritForm",
+        "title": "subScribe",
         "width": 1280,
         "height": 800,
         "minWidth": 900,

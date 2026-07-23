@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 /**
- * WritForm's client is a platform: every feature — including core ones like
+ * subScribe's client is a platform: every feature — including core ones like
  * chat, sessions, and notes — is an "app" that contributes UI through named
  * slots and behavior through commands. Third-party plugins (Phase 6) use this
  * exact same surface, so the API ships pre-proven by the core apps.

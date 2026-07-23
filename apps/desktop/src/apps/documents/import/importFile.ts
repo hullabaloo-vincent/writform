@@ -83,7 +83,7 @@ async function convertFile(file: File): Promise<ConvertedFile> {
         throw {
           code: "pages_no_preview",
           message: isModern
-            ? "Pages stores this document in a format WritForm can't read directly, and this file has no embedded PDF preview. In Pages, choose File → Export To → Word (or PDF) and import that instead."
+            ? "Pages stores this document in a format subScribe can't read directly, and this file has no embedded PDF preview. In Pages, choose File → Export To → Word (or PDF) and import that instead."
             : "This .pages file has no embedded preview to import. In Pages, choose File → Export To → Word (or PDF) and import that instead.",
         };
       }

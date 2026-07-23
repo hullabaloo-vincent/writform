@@ -146,7 +146,7 @@ export function VideoStage() {
       stream: isMe ? localCamera : ((media?.camera && remoteVideo[u.id]?.camera) || null),
     });
     // Screen tiles while a share is live — including my own, so I can see
-    // exactly what's going out. (Sharing the WritForm window itself will
+    // exactly what's going out. (Sharing the subScribe window itself will
     // mirror-tunnel; that's inherent to self-preview.)
     const screenStream = isMe
       ? screenOn

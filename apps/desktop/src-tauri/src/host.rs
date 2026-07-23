@@ -1,4 +1,4 @@
-//! "Host on this computer": runs a full WritForm server inside the desktop
+//! "Host on this computer": runs a full subScribe server inside the desktop
 //! app, so a user can create a server without touching a terminal.
 //!
 //! The hosted server is identical to the standalone binary (same crate, same
@@ -99,7 +99,7 @@ fn status_of(host: &HostManager) -> HostStatus {
     let running = host.running.lock().expect("poisoned");
     let (port, server_name) = match &config {
         Some(c) => (c.port, c.server_name.clone()),
-        None => (DEFAULT_PORT, "My WritForm Server".to_string()),
+        None => (DEFAULT_PORT, "My subScribe Server".to_string()),
     };
     match running.as_ref() {
         Some(r) => HostStatus {
@@ -163,7 +163,7 @@ pub async fn start_impl(
     let server_name = {
         let trimmed = server_name.trim();
         if trimmed.is_empty() {
-            "My WritForm Server".to_string()
+            "My subScribe Server".to_string()
         } else {
             trimmed.to_string()
         }
@@ -311,7 +311,7 @@ async fn try_upnp(port: u16, lan: &[String]) -> UpnpResult {
             port,
             local_addr,
             0, // permanent lease; removed on Stop hosting
-            "WritForm",
+            "subScribe",
         )
         .await
     {

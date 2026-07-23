@@ -1,6 +1,6 @@
 # Plugins
 
-WritForm's client is a platform: chat, sessions, notes — every feature is an
+subScribe's client is a platform: chat, sessions, notes — every feature is an
 "app" registered on the same internal surface plugins use.
 
 ## Install a plugin
@@ -47,7 +47,7 @@ writform.register({
 
 Capabilities by permission: `ui` (slots + main view), `commands` (command
 palette), `chat` (slash commands + posting), `net` (authenticated calls to
-your WritForm server's REST API), `data` (server-side key-value storage
+your subScribe server's REST API), `data` (server-side key-value storage
 scoped to user/group/channel), `events` (live WebSocket events),
 `vault:read` / `vault:write` (notes vault). Full reference:
 `docs/plugin-api.md` in the repository.

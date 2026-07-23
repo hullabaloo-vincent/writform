@@ -22,7 +22,7 @@ export class CameraError extends Error {
 }
 
 const DENIED_MESSAGE =
-  "WritForm doesn't have camera access. Open System Settings → Privacy & Security → Camera and enable WritForm, then try again.";
+  "subScribe doesn't have camera access. Open System Settings → Privacy & Security → Camera and enable subScribe, then try again.";
 const RESTRICTED_MESSAGE =
   "Camera access is blocked by a device policy (Screen Time or an MDM profile), so video can't be used on this Mac.";
 const NO_DEVICE_MESSAGE = "No camera was found. Connect one and try again.";

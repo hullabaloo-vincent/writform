@@ -1,7 +1,7 @@
-# WritForm documentation.
+# subScribe documentation.
 # The SAME markdown pages render inside the app (Docs icon in the dock) and
 # build into this static site:  pip install mkdocs-material && mkdocs serve
-site_name: WritForm
+site_name: subScribe
 site_description: Self-hosted group creative writing — sessions, chat, voice, canvas, plugins.
 repo_url: https://github.com/hullabaloo-vincent/writform
 theme:

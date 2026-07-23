@@ -1,6 +1,6 @@
-# WritForm
+# subScribe
 
-WritForm is a **self-hosted group creative-writing app**. One of you runs the
+subScribe is a **self-hosted group creative-writing app**. One of you runs the
 server (one click, inside the app); everyone else connects to your address.
 Nothing touches a third-party cloud: writing, chat, voice signaling, and
 files all live on the server you run.

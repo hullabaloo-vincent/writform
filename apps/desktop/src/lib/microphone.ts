@@ -24,7 +24,7 @@ export class MicrophoneError extends Error {
 }
 
 const DENIED_MESSAGE =
-  "WritForm doesn't have microphone access. Open System Settings → Privacy & Security → Microphone and enable WritForm, then try again.";
+  "subScribe doesn't have microphone access. Open System Settings → Privacy & Security → Microphone and enable subScribe, then try again.";
 const RESTRICTED_MESSAGE =
   "Microphone access is blocked by a device policy (Screen Time or an MDM profile), so voice can't be used on this Mac.";
 const NO_DEVICE_MESSAGE = "No microphone was found. Connect one and try again.";

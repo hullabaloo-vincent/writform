@@ -5680,6 +5680,20 @@ textarea.wf-el-edit {
 
 /* ================= mobile (phones / the web client) ================= */
 
+/* Native feel: no page rubber-banding, no gray tap flash, no double-tap
+   zoom delay on controls. Harmless in the desktop webview. */
+body {
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button,
+a,
+select,
+input[type="checkbox"] {
+  touch-action: manipulation;
+}
+
 /* Desktop: the drawer wrapper is transparent to layout; the toggle and
    scrim exist only on narrow screens. */
 .wf-chat-side {

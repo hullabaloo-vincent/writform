@@ -2,7 +2,7 @@
 #
 # Double-clickable macOS build script.
 #
-# Builds WritForm.app from source on this machine. Because the app is compiled
+# Builds subScribe.app from source on this machine. Because the app is compiled
 # locally rather than downloaded, macOS never attaches the quarantine flag —
 # so the result opens with no Gatekeeper warning and no `xattr` incantation.
 #
@@ -68,7 +68,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || fail "cannot locate the repository"
 REPO_ROOT="$(pwd)"
 
 printf '%s\n' "$BOLD"
-printf '  WritForm — build from source\n'
+printf '  subScribe — build from source\n'
 printf '%s' "$RESET"
 printf '  %sCompiles the app on this Mac. Because it is built here rather than%s\n' "$DIM" "$RESET"
 printf '  %sdownloaded, macOS will not quarantine it — it just opens.%s\n' "$DIM" "$RESET"
@@ -178,7 +178,7 @@ else
 fi
 ok "dependencies ready"
 
-step "Building WritForm (this is the slow part — grab a coffee)"
+step "Building subScribe (this is the slow part — grab a coffee)"
 # --bundles app: just the .app, no DMG/installer wrapper needed locally.
 # createUpdaterArtifacts=false: the updater artifact would demand the
 # project's private signing key, which only the release pipeline has.
@@ -187,8 +187,8 @@ npx tauri build \
   --config '{"bundle":{"createUpdaterArtifacts":false}}' \
   || fail "the build failed — the compiler output above says why"
 
-APP_PATH="$REPO_ROOT/target/release/bundle/macos/WritForm.app"
-[ -d "$APP_PATH" ] || fail "build reported success but WritForm.app is missing"
+APP_PATH="$REPO_ROOT/target/release/bundle/macos/subScribe.app"
+[ -d "$APP_PATH" ] || fail "build reported success but subScribe.app is missing"
 ok "built $APP_PATH"
 
 # Confirm the bundle is properly signed; an invalid signature is the thing
@@ -202,10 +202,10 @@ fi
 # ---------------------------------------------------------------- install
 
 step "Installing"
-if confirm "Move WritForm.app to your Applications folder?"; then
-  if [ -e "/Applications/WritForm.app" ]; then
-    if confirm "WritForm is already in Applications. Replace it?"; then
-      rm -rf "/Applications/WritForm.app" || fail "could not remove the old copy"
+if confirm "Move subScribe.app to your Applications folder?"; then
+  if [ -e "/Applications/subScribe.app" ]; then
+    if confirm "subScribe is already in Applications. Replace it?"; then
+      rm -rf "/Applications/subScribe.app" || fail "could not remove the old copy"
     else
       info "keeping the existing copy; the fresh build stays in target/release/bundle/macos/"
       open -R "$APP_PATH"
@@ -214,17 +214,17 @@ if confirm "Move WritForm.app to your Applications folder?"; then
     fi
   fi
   cp -R "$APP_PATH" /Applications/ || fail "could not copy to /Applications"
-  ok "installed to /Applications/WritForm.app"
-  FINAL="/Applications/WritForm.app"
+  ok "installed to /Applications/subScribe.app"
+  FINAL="/Applications/subScribe.app"
 else
   info "left in place: $APP_PATH"
   FINAL="$APP_PATH"
 fi
 
-printf '\n%s%sWritForm is ready.%s\n' "$BOLD" "$GREEN" "$RESET"
+printf '\n%s%ssubScribe is ready.%s\n' "$BOLD" "$GREEN" "$RESET"
 info "Built on this Mac, so it is not quarantined — it opens like any other app."
 
-if confirm "Open WritForm now?"; then
+if confirm "Open subScribe now?"; then
   open "$FINAL" || warn "could not launch it; open it from Finder"
 else
   open -R "$FINAL"
