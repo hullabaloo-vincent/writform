@@ -5,7 +5,7 @@ Have a fun writing/creative group you meet with?
 Is your writing group having to use multiple apps for writing sessions, sharing, collaboration, and feedback?
 Hate sharing your info with big tech so they can serve you even MORE ads?
 
-For me, that's a yes, yes, yes, and a big 'ol YES.
+For me, that's a yes, yes, yes, and a big ol' YES.
 
 subScribe is a fully self-hosted app for group creative-writing sessions. Run your own server, connect with the
 desktop app, and write together with groups, chat (text, voice, and video), timed writing prompts with full session history, friends & DMs, and an
