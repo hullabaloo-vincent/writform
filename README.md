@@ -1,8 +1,14 @@
 # subScribe
 
-Self-hosted group creative-writing sessions: run your own server, connect with the
-desktop app by IP + port, and write together — Discord-style groups and chat, timed
-WYSIWYG writing prompts with full session history, friends & DMs, and an
+Tired of the ads on Discord?
+Have a fun writing/creative group you meet with?
+Is your writing group having to use multiple apps for writing sessions, sharing, collaboration, and feedback?
+Hate sharing your info with big tech so they can serve you even MORE ads?
+
+For me, that's a yes, yes, yes, and a big 'ol YES.
+
+subScribe is a fully self-hosted app for group creative-writing sessions. Run your own server, connect with the
+desktop app, and write together with groups, chat (text, voice, and video), timed writing prompts with full session history, friends & DMs, and an
 Obsidian-compatible personal notes vault.
 
 Every feature is an "app" on an internal platform layer (dock, UI slots, command
@@ -37,22 +43,27 @@ server.
 
 ## Built-in apps
 
-**Chat** — groups (invite codes, roles, kick), channels, messages with image
+- **Chat** — groups (invite codes, roles, kick), channels, messages with image
 attachments, markdown, custom emotes, @mentions and #channel references,
-presence (online/busy/invisible). **Sessions** — a session holds multiple
+presence (online/busy/invisible). 
+- **Sessions** — a session holds multiple
 rich-text prompts; each is started/timed/stopped by its creator, everyone
 writes privately, writings reveal when the prompt ends, side chat throughout,
-full history browsable. **Documents** — collaborative writing with live
+full history browsable.
+- **Documents** — collaborative writing with live
 multi-user editing (CRDT), writing formats (screenplay, stage play,
 manuscript, poetry), version history, folders, full-text search, anchored
 feedback threads, PDF/DOCX/RTF/Pages/TXT/MD import, and sharing with friends
-or whole groups. **Canvas** — group storyboards: sticky notes, text, frames
+or whole groups.
+- **Canvas** — group storyboards: sticky notes, text, frames
 (with color), connectors, pasted images, link cards, live document
 references, live multi-user editing. **Voice** — audio channels per group:
 peer-to-peer WebRTC mesh (media never touches the server), mute, speaking
 indicators, device/gain settings. **Friends** — requests, DMs, note sharing,
-profile cards. **Notes** — local-first markdown vault (Obsidian-compatible
-files), wiki-links + backlinks, share snapshots to friends. **Plugins** —
+profile cards.
+- **Notes** — local-first markdown vault (Obsidian-compatible
+files), wiki-links + backlinks, share snapshots to friends.
+- **Plugins** —
 enable third-party plugins with per-plugin permissions.
 
 Native notifications for DMs, mentions, new sessions, shared documents/notes,
@@ -98,7 +109,7 @@ they drift from the Rust types.
   Releases/GHCR (auto-update via the Tauri updater once signing keys are
   configured — see `.github/workflows/release.yml` for the one-time setup).
 
-## Security model (short version)
+## Security model
 
 Clients pin a self-hosted server on first connect (TOFU): TLS 1.3 with hybrid
 X25519+ML-KEM-768 key exchange (FIPS 203), plus an ML-DSA-65 (FIPS 204) server
