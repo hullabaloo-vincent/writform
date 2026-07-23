@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
-import { Trash2 } from "lucide-react";
+import { MessageSquare, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
@@ -7,6 +7,7 @@ import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { RichDoc, RichEditor } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
 import { notifyNow } from "../../lib/notifications";
+import { useSwipe } from "../../lib/useSwipe";
 import { countWordsInDocJson } from "../../lib/wordCount";
 import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -165,6 +166,14 @@ function SessionRoom() {
   const me = useSession((s) => s.session?.user);
   const groups = useChat((s) => s.groups);
   const [error, setError] = useState<string | null>(null);
+  // Phone layout: the side chat is a right-hand slide-over — swipe left
+  // (or the header button) opens it, swipe right closes. Desktop CSS keeps
+  // the fixed side pane and ignores this state.
+  const [chatOpen, setChatOpen] = useState(false);
+  const swipe = useSwipe({
+    onLeft: () => setChatOpen(true),
+    onRight: () => setChatOpen(false),
+  });
 
   if (!detail) {
     // Escape hatch: if loading stalls (server hiccup), don't trap the user.
@@ -180,11 +189,18 @@ function SessionRoom() {
   const ended = session.state === "ended";
 
   return (
-    <div className="wf-session-room">
+    <div className="wf-session-room" {...swipe}>
       <div className="wf-session-main">
         <header className="wf-session-room-header">
           <button onClick={closeSession}>←</button>
           <h2>{session.title}</h2>
+          <button
+            className="wf-room-chat-btn"
+            title="Session chat"
+            onClick={() => setChatOpen(true)}
+          >
+            <MessageSquare size={17} />
+          </button>
           {ended ? (
             <>
               <span className="wf-session-state ended">ended</span>
@@ -239,7 +255,8 @@ function SessionRoom() {
           {!ended && <NewPrompt sessionId={session.id} />}
         </div>
       </div>
-      <aside className="wf-session-chat">
+      {chatOpen && <div className="wf-chat-side-scrim" onClick={() => setChatOpen(false)} />}
+      <aside className={`wf-session-chat ${chatOpen ? "open" : ""}`}>
         <SessionChat channelId={session.chat_channel_id} />
       </aside>
     </div>

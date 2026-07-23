@@ -25,6 +25,7 @@ import type { Message } from "../../bindings/proto/Message";
 import { attachmentUrl, isCmdError } from "../../lib/backend";
 import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
+import { useSwipe } from "../../lib/useSwipe";
 import {
   Avatar,
   confirmDialog,
@@ -169,6 +170,7 @@ export function ChatView() {
   const activeGroupId = useChat((s) => s.activeGroupId);
   const activeChannelId = useChat((s) => s.activeChannelId);
   const loadGroups = useChat((s) => s.loadGroups);
+  const connectedVoiceId = useVoice((s) => s.connectedChannelId);
   // Mobile-only slide-over holding the group + channel sidebars; on desktop
   // the wrapper is `display: contents` and changes nothing.
   const [sideOpen, setSideOpen] = useState(false);
@@ -177,10 +179,19 @@ export function ChatView() {
     void loadGroups();
   }, [loadGroups]);
 
-  useEffect(() => setSideOpen(false), [activeChannelId, activeGroupId]);
+  // Joining voice counts as navigating too: close the drawer so the call
+  // (statusbar + stage) is immediately visible behind it.
+  useEffect(() => setSideOpen(false), [activeChannelId, activeGroupId, connectedVoiceId]);
+
+  // On phones the sidebar is a drawer: swipe right anywhere opens it,
+  // swipe left closes it. Desktop CSS ignores the open state entirely.
+  const swipe = useSwipe({
+    onRight: () => setSideOpen(true),
+    onLeft: () => setSideOpen(false),
+  });
 
   return (
-    <div className="wf-chat">
+    <div className="wf-chat" {...swipe}>
       <button
         className="wf-chat-menu-btn"
         title="Groups & channels"

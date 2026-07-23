@@ -345,6 +345,87 @@ export function BoardRoom() {
     return () => el.removeEventListener("wheel", swallow);
   }, [board?.id]);
 
+  // Touch: two fingers on the canvas pinch-zoom (and pan) the viewport.
+  // Tracking lives on window-level CAPTURE listeners: capture runs before
+  // React's delegated handlers, so the second finger can flip the touch
+  // count and be ignored by the gesture starters below before it would
+  // start a competing pan/drag — and window-level, because fingers wander
+  // outside the surface mid-gesture.
+  const touchPts = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ dist: number; scale: number; wx: number; wy: number } | null>(null);
+  /** The active pan/marquee/drag/resize registers an abort hook here so a
+   *  starting pinch can cancel it instead of fighting it over the view. */
+  const gestureCancels = useRef(new Set<() => void>());
+
+  useEffect(() => {
+    const beginPinch = () => {
+      for (const cancel of [...gestureCancels.current]) cancel();
+      gestureCancels.current.clear();
+      const rect = surfaceRef.current?.getBoundingClientRect();
+      if (!rect || touchPts.current.size !== 2) return;
+      const [a, b] = [...touchPts.current.values()];
+      const v = viewRef.current;
+      pinchRef.current = {
+        // Floor the baseline: fingers landing almost together would
+        // otherwise turn a tiny spread into an enormous scale factor.
+        dist: Math.max(24, Math.hypot(b.x - a.x, b.y - a.y)),
+        scale: v.scale,
+        wx: ((a.x + b.x) / 2 - rect.left - v.tx) / v.scale,
+        wy: ((a.y + b.y) / 2 - rect.top - v.ty) / v.scale,
+      };
+    };
+    const down = (e: PointerEvent) => {
+      if (e.pointerType !== "touch") return;
+      const surface = surfaceRef.current;
+      const target = e.target as Element | null;
+      if (!surface || !target || !surface.contains(target)) return;
+      // Toolbars and the minimap sit inside the surface but are controls,
+      // not canvas — fingers there must not count toward a pinch.
+      if (target.closest(".wf-board-toolbar, .wf-selection-toolbar, .wf-minimap, .wf-minimap-toggle"))
+        return;
+      touchPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (touchPts.current.size === 2) beginPinch();
+      else if (touchPts.current.size > 2) pinchRef.current = null;
+    };
+    const move = (e: PointerEvent) => {
+      const pt = touchPts.current.get(e.pointerId);
+      if (!pt) return;
+      pt.x = e.clientX;
+      pt.y = e.clientY;
+      const p = pinchRef.current;
+      const rect = surfaceRef.current?.getBoundingClientRect();
+      if (!p || !rect || touchPts.current.size !== 2) return;
+      const [a, b] = [...touchPts.current.values()];
+      const scale = Math.min(
+        2.5,
+        Math.max(0.2, (p.scale * Math.hypot(b.x - a.x, b.y - a.y)) / p.dist),
+      );
+      const cx = (a.x + b.x) / 2 - rect.left;
+      const cy = (a.y + b.y) / 2 - rect.top;
+      // Keep the world point that started under the fingers' midpoint under
+      // it as it moves — pinch and two-finger pan in one formula.
+      setView({ scale, tx: cx - p.wx * scale, ty: cy - p.wy * scale });
+    };
+    const up = (e: PointerEvent) => {
+      if (!touchPts.current.delete(e.pointerId)) return;
+      if (touchPts.current.size === 2) beginPinch();
+      else if (touchPts.current.size < 2) pinchRef.current = null;
+    };
+    window.addEventListener("pointerdown", down, true);
+    window.addEventListener("pointermove", move, true);
+    window.addEventListener("pointerup", up, true);
+    window.addEventListener("pointercancel", up, true);
+    const pts = touchPts.current;
+    return () => {
+      window.removeEventListener("pointerdown", down, true);
+      window.removeEventListener("pointermove", move, true);
+      window.removeEventListener("pointerup", up, true);
+      window.removeEventListener("pointercancel", up, true);
+      pts.clear();
+      pinchRef.current = null;
+    };
+  }, [board?.id]);
+
   // Peers do not announce leaving, so drop pointers that have gone quiet.
   useEffect(() => {
     const timer = setInterval(() => useCanvas.getState().pruneCursors(), 2000);
@@ -609,6 +690,7 @@ export function BoardRoom() {
   const broadcastCursor = (clientX: number, clientY: number) => {
     const boardId = useCanvas.getState().board?.id;
     if (boardId === undefined) return;
+    if (pinchRef.current) return; // pinch fingers aren't a pointer position
     const now = Date.now();
     if (now - lastCursorSent.current < 50) return; // ~20/s
     lastCursorSent.current = now;
@@ -680,6 +762,9 @@ export function BoardRoom() {
 
   const onSurfaceDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    // Second finger of a pinch: the touch tracker above owns it (it has
+    // already seen this pointerdown — capture phase runs first).
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
     if (tool === "sticky" || tool === "text" || tool === "frame") {
       const { x, y } = toWorld(e.clientX, e.clientY);
       placeElement(tool, x, y);
@@ -692,15 +777,21 @@ export function BoardRoom() {
       const rect = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
       setMarquee(rect);
       const onMove = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
         const now = toWorld(ev.clientX, ev.clientY);
         rect.x2 = now.x;
         rect.y2 = now.y;
         setMarquee({ ...rect });
       };
-      const onUp = () => {
+      const cancel = () => {
         window.removeEventListener("pointermove", onMove);
         window.removeEventListener("pointerup", onUp);
         setMarquee(null);
+      };
+      const onUp = (ev: PointerEvent) => {
+        if (ev.pointerId !== e.pointerId) return;
+        gestureCancels.current.delete(cancel);
+        cancel();
         const [lx, hx] = [Math.min(rect.x1, rect.x2), Math.max(rect.x1, rect.x2)];
         const [ly, hy] = [Math.min(rect.y1, rect.y2), Math.max(rect.y1, rect.y2)];
         const hit = new Set<number>();
@@ -710,6 +801,7 @@ export function BoardRoom() {
         }
         setSelected(hit);
       };
+      gestureCancels.current.add(cancel);
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
       return;
@@ -725,19 +817,32 @@ export function BoardRoom() {
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
       setView((v) => ({ ...v, tx: start.tx + ev.clientX - start.x, ty: start.ty + ev.clientY - start.y }));
     };
-    const onUp = () => {
-      target.releasePointerCapture(e.pointerId);
+    const cancel = () => {
+      try {
+        target.releasePointerCapture(e.pointerId);
+      } catch {
+        // capture already gone
+      }
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
     };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
+      cancel();
+    };
+    gestureCancels.current.add(cancel);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
 
   const onElementDown = (e: React.PointerEvent, el: CanvasElement) => {
     if (e.button !== 0) return;
+    // Fingers two and up belong to the pinch tracker, not to dragging.
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
     e.stopPropagation();
     if (tool === "connect") {
       if (connectFrom === null) {
@@ -817,6 +922,7 @@ export function BoardRoom() {
     const last = new Map<number, { x: number; y: number }>(origins);
     let lastSent = 0;
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
       const now = toWorld(ev.clientX, ev.clientY);
       const dx = now.x - startWorld.x;
       const dy = now.y - startWorld.y;
@@ -830,7 +936,21 @@ export function BoardRoom() {
         if (send) canvasApi.updateElement(id, pos).catch(() => {});
       }
     };
-    const onUp = () => {
+    const cancel = () => {
+      // A pinch is starting: this was a finger planting for it, not a drag.
+      // Put everything back where the grab found it (at most a few px and
+      // possibly one throttled sync ago) — no history entry.
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      for (const [id, origin] of origins) {
+        patchLocal(id, origin);
+        canvasApi.updateElement(id, origin).catch(() => {});
+        hold(id, false);
+      }
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       for (const [id, pos] of last) {
@@ -851,12 +971,14 @@ export function BoardRoom() {
         if (origin) recordPatch(id, origin, pos, dragSet.size > 1 ? "Move selection" : "Move element");
       }
     };
+    gestureCancels.current.add(cancel);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };
 
   const onResizeDown = (e: React.PointerEvent, el: CanvasElement) => {
     if (e.button !== 0) return;
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
     e.stopPropagation();
     hold(el.id, true);
     const startWorld = toWorld(e.clientX, e.clientY);
@@ -864,6 +986,7 @@ export function BoardRoom() {
     let last = { w: el.w, h: el.h };
     let lastSent = 0;
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
       const now = toWorld(ev.clientX, ev.clientY);
       last = {
         w: Math.max(60, snapv(origin.w + now.x - startWorld.x)),
@@ -876,7 +999,16 @@ export function BoardRoom() {
         canvasApi.updateElement(el.id, last).catch(() => {});
       }
     };
-    const onUp = () => {
+    const cancel = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      patchLocal(el.id, { w: origin.w, h: origin.h });
+      canvasApi.updateElement(el.id, { w: origin.w, h: origin.h }).catch(() => {});
+      hold(el.id, false);
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
       canvasApi
@@ -891,6 +1023,7 @@ export function BoardRoom() {
         });
       recordPatch(el.id, origin, last, "Resize element");
     };
+    gestureCancels.current.add(cancel);
     window.addEventListener("pointermove", onMove);
     window.addEventListener("pointerup", onUp);
   };

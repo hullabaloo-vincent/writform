@@ -14,6 +14,7 @@ import { FindBar } from "./FindBar";
 import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
+import { useSwipe } from "../../lib/useSwipe";
 import { activeLocalProvider, useLocalDocs } from "./local";
 import { OutlinePanel } from "./OutlinePanel";
 import { ShareLocalDialog } from "./ShareLocalDialog";
@@ -47,6 +48,8 @@ function LocalEditorInner({
   const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const offline = useSession((s) => s.phase === "offline");
+  // Same as the server editor: swipe right dismisses the outline overlay.
+  const panelSwipe = useSwipe({ onRight: () => setOutline(false) });
 
   const extensions = useMemo(
     () => [
@@ -182,7 +185,7 @@ function LocalEditorInner({
 
       {finding && editor && <FindBar editor={editor} onClose={() => setFinding(false)} />}
 
-      <div className="wf-doc-body">
+      <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
           <div className={`wf-page wf-fmt-${meta.format}`}>
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />

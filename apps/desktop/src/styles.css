@@ -1860,6 +1860,12 @@ body,
   border-left: 1px solid var(--wf-border);
 }
 
+/* Opens the session-chat slide-over on phones; the pane is always visible
+   on desktop, so the button only exists in the mobile block. */
+.wf-room-chat-btn {
+  display: none;
+}
+
 .wf-session-chat-header {
   padding: 12px;
   font-weight: 600;
@@ -4430,6 +4436,9 @@ textarea.wf-el-edit {
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  /* Touch drags must reach the pointer handlers — without this, iOS can
+     claim the gesture as a scroll and pointercancel the drag mid-move. */
+  touch-action: none;
 }
 
 .wf-stage-header:active {
@@ -4554,6 +4563,7 @@ textarea.wf-el-edit {
   width: 16px;
   height: 16px;
   cursor: nwse-resize;
+  touch-action: none;
   /* visible grip: two diagonal notches */
   background:
     linear-gradient(135deg, transparent 50%, var(--wf-border) 50%, var(--wf-border) 60%, transparent 60%),
@@ -5761,7 +5771,7 @@ input[type="checkbox"] {
     flex-direction: row;
     justify-content: space-around;
     gap: 4px;
-    padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+    padding: 4px 8px;
     border-right: none;
     border-top: 1px solid var(--wf-border);
   }
@@ -5777,14 +5787,23 @@ input[type="checkbox"] {
     margin-top: 0;
     margin-left: auto;
   }
+  /* The statusbar is the bottom-most element on screen. iOS reserves the
+     bottom edge for the home-indicator gesture (and Safari parks its
+     minimized toolbar there), so taps flush to the edge never reach the
+     app — pad the controls clear of that zone and let the bar's background
+     run to the edge, the way native tab bars do. env() is ~34px installed
+     to the home screen; the 14px floor covers in-browser Safari, where the
+     inset reads 0 while the toolbar still eats edge taps. */
   .wf-statusbar {
     flex-wrap: wrap;
     row-gap: 2px;
+    height: auto;
+    min-height: 34px;
+    padding: 4px 12px max(calc(4px + env(safe-area-inset-bottom, 0px)), 14px);
   }
-  /* Keep the statusbar slim: the coarse-pointer button bump is for content,
-     and connecting already has the accent icon in the tab bar. */
+  /* Tappable, but slimmer than the 36px content-button bump. */
   .wf-statusbar button {
-    min-height: 0;
+    min-height: 28px;
   }
   .wf-offline-connect {
     display: none;
@@ -5910,6 +5929,72 @@ input[type="checkbox"] {
   .wf-session-room-header {
     flex-wrap: wrap;
   }
+
+  /* Session room: the side chat becomes a right-hand slide-over (header
+     button or swipe left opens it) instead of squeezing the writing area. */
+  .wf-session-chat {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    right: 0;
+    width: min(85vw, 320px);
+    z-index: 70;
+    transform: translateX(102%);
+    transition: transform 160ms ease;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+    /* Its composer is at the screen's bottom edge: keep it out of the
+       home-indicator gesture zone, like the statusbar. */
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 10px);
+  }
+  .wf-session-chat.open {
+    transform: translateX(0);
+  }
+  .wf-room-chat-btn {
+    display: inline-flex;
+    margin-left: auto;
+  }
+
+  /* Docs: the page list becomes a drawer instead of a permanent sidebar. */
+  .wf-docs {
+    position: relative;
+  }
+  .wf-docs-nav {
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: min(80vw, 300px);
+    z-index: 70;
+    transform: translateX(-102%);
+    transition: transform 160ms ease;
+    box-shadow: 0 0 30px rgba(0, 0, 0, 0.5);
+  }
+  .wf-docs-nav.open {
+    transform: translateX(0);
+  }
+  /* Clear the floating menu button; tighter margins for narrow pages. */
+  .wf-docs-body {
+    padding: 58px 18px 60px;
+  }
+
+  /* Video stage: a floating window is unusable at phone size — dock it as
+     a full-width strip under the top edge instead. The !importants beat
+     the inline drag-position styles; the statusbar keeps the call controls
+     reachable, and the chat drawer (z 70) slides over the docked stage. */
+  .wf-stage {
+    left: 0 !important;
+    right: 0;
+    top: env(safe-area-inset-top, 0px) !important;
+    width: auto !important;
+    height: min(42dvh, 360px) !important;
+    z-index: 60;
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+  }
+  .wf-stage-resize {
+    display: none;
+  }
 }
 
 /* Touch devices have no hover: reveal-on-hover controls become permanent. */
@@ -5929,6 +6014,12 @@ input[type="checkbox"] {
   }
   .wf-notes-title svg {
     opacity: 1;
+  }
+  /* Thumb-sized corner grip for the floating video panel (tablets — phones
+     dock the panel and hide the grip entirely). */
+  .wf-stage-resize {
+    width: 28px;
+    height: 28px;
   }
 }
 

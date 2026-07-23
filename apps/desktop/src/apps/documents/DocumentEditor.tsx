@@ -16,6 +16,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isCmdError } from "../../lib/backend";
+import { useSwipe } from "../../lib/useSwipe";
 import { countWords, readingTime } from "../../lib/wordCount";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
@@ -142,6 +143,9 @@ function EditorInner({
   const { meta, myAccess, panel, setPanel } = state;
   const [exportOpen, setExportOpen] = useState(false);
   const [finding, setFinding] = useState(false);
+  // Phones show panels as overlays over the page — swipe right pushes the
+  // open one away. Starts inside the editor text never trigger (editable).
+  const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
 
   const extensions = useMemo(
     () => [
@@ -332,7 +336,7 @@ function EditorInner({
 
       {finding && editor && <FindBar editor={editor} onClose={() => setFinding(false)} />}
 
-      <div className="wf-doc-body">
+      <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
           <div className={`wf-page wf-fmt-${format}`}>
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />

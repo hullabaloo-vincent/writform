@@ -1,7 +1,8 @@
-import { BookOpen } from "lucide-react";
+import { BookOpen, Menu } from "lucide-react";
 import { marked } from "marked";
 import { useMemo, useState } from "react";
 
+import { useSwipe } from "../../lib/useSwipe";
 import type { WritformApp } from "../../platform";
 
 /**
@@ -33,6 +34,18 @@ function pageSource(file: string): string {
 
 function DocsView() {
   const [active, setActive] = useState("index.md");
+  // On phones the page list is a slide-over drawer (hamburger or swipe
+  // right to open, swipe left / pick a page to close); desktop CSS keeps
+  // it as the always-visible sidebar and ignores the open state.
+  const [navOpen, setNavOpen] = useState(false);
+  const swipe = useSwipe({
+    onRight: () => setNavOpen(true),
+    onLeft: () => setNavOpen(false),
+  });
+  const go = (file: string) => {
+    setActive(file);
+    setNavOpen(false);
+  };
   const html = useMemo(() => {
     // Internal links between pages stay in-app.
     const src = pageSource(active);
@@ -40,14 +53,18 @@ function DocsView() {
   }, [active]);
 
   return (
-    <div className="wf-docs">
-      <nav className="wf-docs-nav">
+    <div className="wf-docs" {...swipe}>
+      <button className="wf-chat-menu-btn" title="Documentation pages" onClick={() => setNavOpen(true)}>
+        <Menu size={19} />
+      </button>
+      {navOpen && <div className="wf-chat-side-scrim" onClick={() => setNavOpen(false)} />}
+      <nav className={`wf-docs-nav ${navOpen ? "open" : ""}`}>
         <h3>Documentation</h3>
         {NAV.map((p) => (
           <button
             key={p.file}
             className={active === p.file ? "active" : ""}
-            onClick={() => setActive(p.file)}
+            onClick={() => go(p.file)}
           >
             {p.title}
           </button>
@@ -66,7 +83,7 @@ function DocsView() {
           const inApp = NAV.find((p) => href === p.file || href.endsWith(`/${p.file}`));
           if (inApp) {
             e.preventDefault();
-            setActive(inApp.file);
+            go(inApp.file);
           }
         }}
         dangerouslySetInnerHTML={{ __html: html }}

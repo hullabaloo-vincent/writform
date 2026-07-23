@@ -7,6 +7,7 @@ import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import type { Message } from "../../bindings/proto/Message";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
+import { useSwipe } from "../../lib/useSwipe";
 import {
   Avatar,
   confirmDialog,
@@ -123,8 +124,14 @@ export function FriendsView() {
       .catch((e) => setError(isCmdError(e) ? e.message : String(e)));
   };
 
+  // Same drawer gesture as chat: swipe right opens the list, left closes.
+  const swipe = useSwipe({
+    onRight: () => setSideOpen(true),
+    onLeft: () => setSideOpen(false),
+  });
+
   return (
-    <div className="wf-friends">
+    <div className="wf-friends" {...swipe}>
       <button className="wf-chat-menu-btn" title="Friends list" onClick={() => setSideOpen(true)}>
         <Menu size={19} />
       </button>
