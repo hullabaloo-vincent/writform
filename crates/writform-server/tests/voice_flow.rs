@@ -87,6 +87,21 @@ async fn ws_connect(server: &TestServer, token: &str, rooms: &[String]) -> WsCon
         })
         .unwrap();
         ws.send(WsMsg::Text(sub.into())).await.unwrap();
+        // Same fence as canvas/documents tests: Sub has no success ack, but
+        // frames process in order per connection, so a malformed follow-up
+        // Sub's `bad_room` error proves the real subscription is live before
+        // the test triggers any broadcasts.
+        let fence = serde_json::to_string(&ClientFrame::Sub {
+            rooms: vec!["nonsense".into()],
+        })
+        .unwrap();
+        ws.send(WsMsg::Text(fence.into())).await.unwrap();
+        loop {
+            if let ServerFrame::Error { code, .. } = next_frame(&mut ws).await {
+                assert_eq!(code, "bad_room");
+                break;
+            }
+        }
     }
     ws
 }

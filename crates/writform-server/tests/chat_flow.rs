@@ -125,6 +125,22 @@ async fn ws_connect(server: &TestServer, token: &str, rooms: &[String]) -> WsCon
         })
         .unwrap();
         ws.send(WsMsg::Text(sub.into())).await.unwrap();
+        // Subs get no success ack, and frames process in order per
+        // connection — so a malformed follow-up Sub's `bad_room` error
+        // proves the subscription above is live. Without this fence a
+        // broadcast fired right after connect can beat the Sub, and the
+        // event is silently lost (shows up as CI-only frame timeouts).
+        let fence = serde_json::to_string(&ClientFrame::Sub {
+            rooms: vec!["nonsense".into()],
+        })
+        .unwrap();
+        ws.send(WsMsg::Text(fence.into())).await.unwrap();
+        loop {
+            if let ServerFrame::Error { code, .. } = next_frame(&mut ws).await {
+                assert_eq!(code, "bad_room");
+                break;
+            }
+        }
     }
     ws
 }
