@@ -30,7 +30,11 @@ function setToken(t: string | null) {
     document.cookie = "wf_token=; Max-Age=0; Path=/api/v1/attachments; SameSite=Strict";
   } else {
     localStorage.setItem(TOKEN_KEY, t);
-    document.cookie = `wf_token=${t}; Path=/api/v1/attachments; SameSite=Strict; Secure`;
+    // Max-Age matters: without it this is a session cookie, and mobile
+    // browsers end sessions aggressively — the localStorage token would
+    // keep the app working while every <img> quietly 401s. 30 days
+    // matches the server's session lifetime.
+    document.cookie = `wf_token=${t}; Max-Age=2592000; Path=/api/v1/attachments; SameSite=Strict; Secure`;
   }
 }
 
@@ -207,12 +211,17 @@ export function webBackend(): Backend {
       ws.stop();
     },
     currentSession: async () => {
-      if (!token()) return null;
+      const t = token();
+      if (!t) return null;
       const res = await apiFetch("GET", "/api/v1/auth/me");
       if (res.status >= 400) {
         setToken(null);
         return null;
       }
+      // Re-mint the attachment cookie on every boot: the localStorage token
+      // outlives it (browsers evict cookies independently), and without the
+      // cookie every <img> 401s while the rest of the app works fine.
+      setToken(t);
       ws.start();
       return { addr: location.host, user: res.body as User };
     },

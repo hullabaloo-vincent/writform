@@ -27,6 +27,7 @@ const ELEMENT_KINDS: &[&str] = &[
     "image",
     "link",
     "document",
+    "shape",
 ];
 const MAX_TEXT: usize = 4000;
 const MAX_ELEMENTS_PER_BOARD: i64 = 2000;

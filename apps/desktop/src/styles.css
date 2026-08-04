@@ -11,6 +11,8 @@
   --wf-danger: #e08080;
   --wf-success: #4caf7d;
   --wf-warn: #e0a03c;
+  --wf-shape-stroke: #8f8fa3;
+  --wf-shape-fill: rgba(143, 143, 163, 0.16);
   --wf-scrim: rgba(0, 0, 0, 0.45);
   --wf-radius-sm: 8px;
   --wf-radius-md: 11px;
@@ -1752,6 +1754,27 @@ body,
   color: var(--wf-accent);
 }
 
+/* Destructive control sits apart, on the header's far edge. */
+.wf-prompt-delete {
+  margin-left: auto;
+}
+
+/* Submissions disclosure — long sessions stay scannable. */
+.wf-subs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 13px;
+  color: var(--wf-text-dim);
+  background: transparent;
+  border: none;
+}
+
+.wf-subs-toggle:hover {
+  color: var(--wf-text);
+}
+
 .wf-prompt > header button:not(.wf-primary):not(.wf-danger) {
   padding: 5px 14px;
   background: var(--wf-bg);
@@ -1765,6 +1788,20 @@ body,
 
 .wf-countdown.urgent {
   color: #e88;
+  font-weight: 600;
+  /* Spans can't transform — the pulse needs a box. */
+  display: inline-block;
+  animation: wf-countdown-pulse 1s ease-in-out infinite;
+}
+
+@keyframes wf-countdown-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.15);
+  }
 }
 
 .wf-prompt-doc {
@@ -2804,7 +2841,8 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
 
 .wf-board-tool-sticky,
 .wf-board-tool-text,
-.wf-board-tool-frame {
+.wf-board-tool-frame,
+.wf-board-tool-shape {
   cursor: crosshair;
 }
 
@@ -2908,7 +2946,8 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
 }
 
 .wf-el-text .wf-el-placeholder,
-.wf-el-frame .wf-el-placeholder {
+.wf-el-frame .wf-el-placeholder,
+.wf-el-shape .wf-el-placeholder {
   color: var(--wf-text-dim);
 }
 
@@ -2935,6 +2974,88 @@ textarea.wf-el-edit {
   border-radius: 4px;
   background: var(--wf-accent);
   cursor: nwse-resize;
+}
+
+/* Clips cropped images to the element box; the element div itself must NOT
+   clip, or the selection handles hanging outside it would vanish. */
+.wf-el-imgwrap {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: var(--wf-radius-md);
+  pointer-events: none;
+}
+
+/* Shape elements: an SVG outline stretching with the box, label centered.
+   The svg class is deliberately NOT `.wf-el-shape` — that's the element
+   div's own kind class, and pointer-events:none there froze the element. */
+.wf-el-shape-svg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* fill is inherited from the svg root's inline style (outline vs filled) —
+   setting it here would override that, since child rules beat inheritance. */
+.wf-el-shape-svg ellipse,
+.wf-el-shape-svg polygon,
+.wf-el-shape-svg rect {
+  stroke-width: 2;
+}
+
+.wf-el-shape-text {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 10px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--wf-text);
+}
+
+textarea.wf-el-shape-text {
+  display: block;
+  resize: none;
+  background: transparent;
+  border: none;
+  text-align: center;
+}
+
+/* Mid-edge crop pills on a lone selected image. */
+.wf-el-crop {
+  position: absolute;
+  background: var(--wf-accent);
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+.wf-el-crop.n,
+.wf-el-crop.s {
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 7px;
+  cursor: ns-resize;
+}
+.wf-el-crop.e,
+.wf-el-crop.w {
+  top: 50%;
+  transform: translateY(-50%);
+  width: 7px;
+  height: 22px;
+  cursor: ew-resize;
+}
+.wf-el-crop.n {
+  top: -4px;
+}
+.wf-el-crop.s {
+  bottom: -4px;
+}
+.wf-el-crop.e {
+  right: -4px;
+}
+.wf-el-crop.w {
+  left: -4px;
 }
 
 .wf-board-toolbar {
@@ -3018,6 +3139,95 @@ textarea.wf-el-edit {
     ),
     var(--wf-bg-raised);
   border: 1px solid var(--wf-border) !important;
+}
+
+/* Font / color triggers: the "Aa" renders in the current typeface, the dot
+   shows the current color; each opens a small popover menu below. */
+.wf-board-font {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.wf-board-font > span:first-child {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Text-color trigger: "A" over a bar showing the current color; with no
+   color set the bar is a mini rainbow, so it always reads as a color
+   control rather than an empty circle. */
+.wf-board-colorbtn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.wf-board-colorbar {
+  width: 14px;
+  height: 3px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, #e05b5b, #e0a04c, #7fbf7a, #709ed6, #b7a3ea);
+}
+
+.wf-board-menuwrap {
+  position: relative;
+  display: inline-flex;
+}
+
+.wf-board-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  padding: 6px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.wf-board-menu-fonts {
+  flex-direction: column;
+  min-width: 140px;
+}
+
+.wf-board-menu-fonts button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  font-size: 14px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  white-space: nowrap;
+}
+
+.wf-board-menu-fonts button:hover {
+  background: var(--wf-bg-hover);
+}
+
+.wf-board-menu-colors {
+  gap: 6px;
+  align-items: center;
+}
+
+/* The shape picker hangs off the BOTTOM toolbar, so it opens upward. */
+.wf-board-menu-shapes {
+  top: auto;
+  bottom: calc(100% + 8px);
+  gap: 4px;
+}
+
+.wf-invisible {
+  visibility: hidden;
 }
 
 .wf-board-fontsize {
@@ -4577,7 +4787,8 @@ textarea.wf-el-edit {
   border-radius: var(--wf-radius-sm);
 }
 
-.wf-msg:hover {
+.wf-msg:hover,
+.wf-msg.actions-open {
   background: rgba(255, 255, 255, 0.02);
 }
 
@@ -5999,8 +6210,11 @@ input[type="checkbox"] {
 
 /* Touch devices have no hover: reveal-on-hover controls become permanent. */
 @media (hover: none) {
-  .wf-msg-actions {
-    display: flex;
+  /* Message actions are tap-to-reveal (MessageRow toggles `.open`) — always
+     showing them on every message buried the chat under buttons. */
+  .wf-msg-actions button {
+    width: 34px;
+    height: 34px;
   }
   .wf-doc-card-kebab {
     display: grid;
@@ -6020,6 +6234,36 @@ input[type="checkbox"] {
   .wf-stage-resize {
     width: 28px;
     height: 28px;
+  }
+  /* Canvas element scale grip, same treatment (offsets keep it centered
+     on the corner). */
+  .wf-el-resize {
+    width: 26px;
+    height: 26px;
+    right: -13px;
+    bottom: -13px;
+  }
+  .wf-el-crop.n,
+  .wf-el-crop.s {
+    width: 34px;
+    height: 14px;
+  }
+  .wf-el-crop.e,
+  .wf-el-crop.w {
+    width: 14px;
+    height: 34px;
+  }
+  .wf-el-crop.n {
+    top: -7px;
+  }
+  .wf-el-crop.s {
+    bottom: -7px;
+  }
+  .wf-el-crop.e {
+    right: -7px;
+  }
+  .wf-el-crop.w {
+    left: -7px;
   }
 }
 

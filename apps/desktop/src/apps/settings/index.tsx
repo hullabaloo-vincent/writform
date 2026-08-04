@@ -676,7 +676,7 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         />
         <span className="wf-session-meta">{Math.round(settings.inputGain * 100)}%</span>
       </label>
-      {canPickAudioOutput() && (
+      {canPickAudioOutput() ? (
         <label className="wf-settings-field">
           Output device (speakers / headphones)
           <select
@@ -691,6 +691,15 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
             ))}
           </select>
         </label>
+      ) : (
+        // Android Chrome and macOS WKWebView have no setSinkId — better to
+        // say why the picker is missing than to silently omit it.
+        <div className="wf-settings-field">
+          Output device (speakers / headphones)
+          <span className="wf-session-meta">
+            Audio output follows the device's own routing on this platform.
+          </span>
+        </div>
       )}
       <label className="wf-settings-field wf-field-row">
         Speaker volume

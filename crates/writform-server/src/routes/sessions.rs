@@ -559,6 +559,35 @@ pub async fn start_prompt(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// Delete a prompt in any state — submissions and their snapshots cascade.
+/// Same permission as stopping: the prompt's creator, or the session
+/// creator / a group admin.
+pub async fn delete_prompt(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(prompt_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let (session_id, _prompt_state, creator_id) = prompt_session(&state, prompt_id).await?;
+    let session = require_session_access(&state, session_id, auth.user_id).await?;
+    if creator_id != auth.user_id.0 {
+        require_creator_or_admin(&state, &session, auth.user_id).await?;
+    }
+    sqlx::query("DELETE FROM session_prompts WHERE id = ?")
+        .bind(prompt_id)
+        .execute(&state.pool)
+        .await?;
+    state.ws.broadcast(
+        &format!("session:{session_id}"),
+        "prompt.deleted",
+        serde_json::json!({ "session_id": session_id, "prompt_id": prompt_id }),
+    );
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Grace between "Stop" and the prompt actually ending, so writers can
+/// finish a sentence instead of being cut off mid-word.
+const STOP_GRACE_MS: i64 = 10_000;
+
 pub async fn stop_prompt(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -575,7 +604,37 @@ pub async fn stop_prompt(
             "prompt is not running",
         ));
     }
-    end_prompt_inner(&state, prompt_id, "stopped").await?;
+    let (ends_at,): (Option<i64>,) =
+        sqlx::query_as("SELECT ends_at FROM session_prompts WHERE id = ?")
+            .bind(prompt_id)
+            .fetch_one(&state.pool)
+            .await?;
+    let grace_end = now_millis() + STOP_GRACE_MS;
+    if ends_at.map_or(true, |t| t > grace_end) {
+        // First Stop: schedule the end instead of cutting writers off. The
+        // existing timer machinery does the rest — and a stale earlier timer
+        // firing later is harmless because end_prompt_inner no-ops on an
+        // already-ended prompt.
+        sqlx::query("UPDATE session_prompts SET ends_at = ? WHERE id = ? AND state = 'running'")
+            .bind(grace_end)
+            .bind(prompt_id)
+            .execute(&state.pool)
+            .await?;
+        spawn_prompt_timer(state.clone(), prompt_id, grace_end);
+        state.ws.broadcast(
+            &format!("session:{session_id}"),
+            "prompt.stopping",
+            serde_json::json!({
+                "session_id": session_id,
+                "prompt_id": prompt_id,
+                "ends_at": grace_end,
+            }),
+        );
+    } else {
+        // Already inside the grace (second Stop) or naturally about to end:
+        // end immediately — the escape hatch.
+        end_prompt_inner(&state, prompt_id, "stopped").await?;
+    }
     Ok(StatusCode::NO_CONTENT)
 }
 

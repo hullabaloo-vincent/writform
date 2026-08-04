@@ -192,7 +192,38 @@ async fn multi_prompt_session_lifecycle() {
         .await;
     assert_eq!(res.status(), 204);
 
-    // Creator stops the prompt early → everyone's writing is revealed.
+    // Creator stops the prompt — writers get a 10-second grace first: the
+    // prompt stays running with a deadline instead of ending instantly.
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &format!("/prompts/{}/stop", p1.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let detail: SessionDetail = server
+        .get(&alice.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    let stopping = &detail.prompts[0];
+    assert!(matches!(
+        stopping.state,
+        writform_proto::sessions::PromptState::Running
+    ));
+    let ends_at = stopping.ends_at.expect("grace deadline set");
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    assert!(
+        ends_at > now && ends_at <= now + 10_500,
+        "deadline ~10s out, got {}ms",
+        ends_at - now
+    );
+    assert_eq!(detail.submissions.len(), 1, "still hidden during the grace");
+
+    // A second Stop inside the grace ends it immediately → writing revealed.
     let res = server
         .req(
             reqwest::Method::POST,
@@ -250,6 +281,35 @@ async fn multi_prompt_session_lifecycle() {
         .await;
     assert_eq!(sessions.len(), 1);
     assert_eq!(detail.prompts.len(), 2);
+
+    // Prompts are deletable afterward (alice as admin, bob as session
+    // creator) — and everyone's submissions cascade away with the prompt.
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/prompts/{}", p2.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &bob.token,
+            &format!("/prompts/{}", p1.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let detail: SessionDetail = server
+        .get(&bob.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    assert!(detail.prompts.is_empty());
+    assert!(
+        detail.submissions.is_empty(),
+        "submissions cascade with their prompt"
+    );
 }
 
 #[tokio::test]

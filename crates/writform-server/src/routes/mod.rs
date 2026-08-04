@@ -182,6 +182,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/sessions/{id}/prompts",
             post(sessions::create_prompt),
         )
+        .route("/api/v1/prompts/{id}", delete(sessions::delete_prompt))
         .route("/api/v1/prompts/{id}/start", post(sessions::start_prompt))
         .route("/api/v1/prompts/{id}/stop", post(sessions::stop_prompt))
         .route(

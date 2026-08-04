@@ -1060,12 +1060,15 @@ export function MessageActions({
   message,
   authorOnly = false,
   onReply,
+  forceOpen = false,
 }: {
   message: Message;
   /** DMs have no group admin — only the author may delete. */
   authorOnly?: boolean;
   /** When set, a reply button appears and hands back the message. */
   onReply?: (message: Message) => void;
+  /** Touch devices have no hover — the row's tap-to-reveal drives this. */
+  forceOpen?: boolean;
 }) {
   const me = useSession((s) => s.session?.user);
   const groups = useChat((s) => s.groups);
@@ -1085,7 +1088,7 @@ export function MessageActions({
     // `open` keeps the bar visible while the picker is up: it is otherwise
     // only shown on `.wf-msg:hover`, and the picker sits above the row, so
     // reaching for an emoji left the row and closed the drawer.
-    <span className={`wf-msg-actions ${pickerOpen ? "open" : ""}`}>
+    <span className={`wf-msg-actions ${pickerOpen || forceOpen ? "open" : ""}`}>
       {onReply && message.kind === "text" && (
         <button className="wf-icon" title="Reply" onClick={() => onReply(message)}>
           <Reply size={13} />
@@ -1403,14 +1406,45 @@ export function MessageRow({
   sharedNoteCard?: (content: string) => React.ReactNode;
 }) {
   const editing = useChat((s) => s.editingMessageId === message.id);
+  // Touch has no hover: tapping the message reveals its action row (one
+  // message at a time — tapping anywhere else closes it again).
+  const [touchActive, setTouchActive] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!touchActive) return;
+    const close = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setTouchActive(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [touchActive]);
+  const onTapReveal = (e: React.MouseEvent) => {
+    if (!window.matchMedia("(hover: none)").matches) return;
+    // Interactive content keeps its own tap; selecting text isn't a tap.
+    const el = e.target instanceof Element ? e.target : null;
+    if (el?.closest("button, a, input, textarea, img, [contenteditable], .wf-msg-edit")) return;
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    setTouchActive((v) => !v);
+  };
   const time = new Date(message.created_at).toLocaleTimeString([], {
     hour: "2-digit",
     minute: "2-digit",
   });
   const url = message.kind === "text" && message.content ? firstUrl(message.content) : null;
   return (
-    <div className={`wf-msg ${compact ? "compact" : ""}`} id={`wf-msg-${message.id}`}>
-      <MessageActions message={message} authorOnly={authorOnly} onReply={onReply} />
+    <div
+      ref={rootRef}
+      className={`wf-msg ${compact ? "compact" : ""} ${touchActive ? "actions-open" : ""}`}
+      id={`wf-msg-${message.id}`}
+      onClick={onTapReveal}
+    >
+      <MessageActions
+        message={message}
+        authorOnly={authorOnly}
+        onReply={onReply}
+        forceOpen={touchActive}
+      />
       {!compact && (
         <div className="wf-msg-meta">
           <button className="wf-user-link" onClick={() => showProfile(message.author.id)}>

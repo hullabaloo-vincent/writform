@@ -117,6 +117,25 @@ let cameraStream: MediaStream | null = null;
 let screenStream: MediaStream | null = null;
 let inputGainNode: GainNode | null = null;
 let audioCtx: AudioContext | null = null;
+
+/**
+ * Nudge a suspended AudioContext back to life. Mobile autoplay policy can
+ * suspend it at creation or on backgrounding — and since the OUTGOING mic
+ * always flows through this context, a suspended context means peers get
+ * digital silence while everything else looks healthy. Never await
+ * `resume()`: Chrome leaves the promise pending (not rejected) when policy
+ * blocks it, so the gesture/visibility listeners below are what guarantee
+ * recovery on the next real interaction.
+ */
+function resumeAudio(): void {
+  if (audioCtx?.state === "suspended") void audioCtx.resume().catch(() => {});
+  // Detached remote <audio> elements can be autoplay-blocked the same way.
+  for (const el of audioEls.values()) void el.play().catch(() => {});
+}
+window.addEventListener("pointerdown", resumeAudio, { passive: true });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") resumeAudio();
+});
 let speakingTimer: ReturnType<typeof setInterval> | null = null;
 /** The stage auto-opens once per join when remote video first appears. */
 let stageAutoOpened = false;
@@ -188,7 +207,7 @@ function playBlip(direction: "join" | "leave") {
   if (!loadVoiceSettings().sounds) return;
   try {
     audioCtx ??= new AudioContext();
-    if (audioCtx.state === "suspended") void audioCtx.resume();
+    resumeAudio();
     const now = audioCtx.currentTime;
     const gain = audioCtx.createGain();
     gain.gain.setValueAtTime(0.12, now);
@@ -248,7 +267,7 @@ async function swapMicrophone(deviceId: string | null): Promise<void> {
     localStream = stream;
     try {
       audioCtx ??= new AudioContext();
-      if (audioCtx.state === "suspended") void audioCtx.resume();
+      resumeAudio();
       const source = audioCtx.createMediaStreamSource(stream);
       inputGainNode = audioCtx.createGain();
       inputGainNode.gain.value = loadVoiceSettings().inputGain;
@@ -312,7 +331,7 @@ function watchSpeaking(userId: number, stream: MediaStream) {
     audioCtx ??= new AudioContext();
     // WKWebView starts AudioContexts suspended; a suspended graph reads pure
     // silence, which kept every speaking indicator dark.
-    if (audioCtx.state === "suspended") void audioCtx.resume();
+    resumeAudio();
     const source = audioCtx.createMediaStreamSource(stream);
     const analyser = audioCtx.createAnalyser();
     analyser.fftSize = 512;
@@ -414,6 +433,20 @@ function wireTransceivers(peerId: number, pc: RTCPeerConnection, initiator: bool
     pc.addTransceiver(screenTrack ?? "video", { direction: "sendrecv" });
   }
   const ts = pc.getTransceivers();
+  if (!initiator) {
+    // Transceivers adopted from an offer default to `recvonly`, and
+    // replaceTrack alone never changes direction — without the explicit
+    // sendrecv the answer SDP keeps a=recvonly on the audio m-line and this
+    // peer is silent to the other side (hears everything, is never heard).
+    // Audio also wires ABOVE the cam/screen guard so a stale audio-only
+    // offer still gets a talking answer.
+    const audio = ts[SLOT_AUDIO];
+    if (audio) {
+      audio.direction = "sendrecv";
+      const audioTrack = (sendStream ?? localStream)?.getAudioTracks()[0];
+      if (audioTrack) void audio.sender.replaceTrack(audioTrack).catch(() => {});
+    }
+  }
   const cam = ts[SLOT_CAMERA];
   const screen = ts[SLOT_SCREEN];
   // A stale audio-only client offers a single m-line; that pair simply
@@ -422,9 +455,6 @@ function wireTransceivers(peerId: number, pc: RTCPeerConnection, initiator: bool
   if (!initiator) {
     cam.direction = "sendrecv";
     screen.direction = "sendrecv";
-    const audio = ts[SLOT_AUDIO];
-    const audioTrack = (sendStream ?? localStream)?.getAudioTracks()[0];
-    if (audio && audioTrack) void audio.sender.replaceTrack(audioTrack).catch(() => {});
     const camTrack = cameraStream?.getVideoTracks()[0];
     if (camTrack) void cam.sender.replaceTrack(camTrack).catch(() => {});
     const screenTrack = screenStream?.getVideoTracks()[0];
@@ -613,6 +643,11 @@ export const useVoice = create<VoiceState>((set, get) => ({
       const settings = loadVoiceSettings();
       userVolume = loadUserVolume();
       set({ userVolumes: { ...userVolume } });
+      // Create the AudioContext NOW, synchronously inside the click's user
+      // activation — after the permission-prompt awaits below, mobile
+      // autoplay policy would start it suspended (= silent outgoing audio).
+      audioCtx ??= new AudioContext();
+      resumeAudio();
       // Resolves the macOS permission gate first: a WKWebView never raises
       // the system prompt on its own, so without this the call just fails.
       const stream = localStream ?? (await getMicrophoneStream(settings.inputDeviceId));
@@ -625,7 +660,7 @@ export const useVoice = create<VoiceState>((set, get) => ({
       // Input volume: mic → gain → the stream peers actually receive.
       try {
         audioCtx ??= new AudioContext();
-        if (audioCtx.state === "suspended") void audioCtx.resume();
+        resumeAudio();
         const source = audioCtx.createMediaStreamSource(stream);
         inputGainNode = audioCtx.createGain();
         inputGainNode.gain.value = settings.inputGain;

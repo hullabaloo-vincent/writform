@@ -99,14 +99,16 @@ bandwidth).
 
 ## Canvas
 
-Shared storyboards per group: sticky notes, text, colored frames,
-connectors, pasted **images**, **link cards** with server-fetched previews,
-and live **document references** (a whole document or a selection, kept in
-sync as it's edited). Multi-select with shift-click or shift-drag; moving a
-frame moves what's inside it; snap-to-grid toggle; per-element text
-formatting (bold/italic/underline, size, alignment, bullets); connectors
-have per-side anchors, dashed styles, and arrow/dot end decorations.
-Everything syncs live.
+Shared storyboards per group: sticky notes, text, **shapes** (rectangle,
+ellipse, diamond, triangle — with centered labels and colorable outlines),
+colored frames, connectors, pasted **images** (croppable from any edge, with
+rotate/flip), **link cards** with server-fetched previews, and live
+**document references** (a whole document or a selection, kept in sync as
+it's edited). Multi-select with shift-click or shift-drag; moving a frame
+moves what's inside it; snap-to-grid toggle; per-element text formatting
+(bold/italic/underline, size, alignment, bullets, four typefaces, text
+colors); connectors have per-side anchors, dashed styles, and arrow/dot end
+decorations. Everything syncs live.
 
 ## Notes
 

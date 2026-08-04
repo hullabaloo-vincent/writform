@@ -63,6 +63,9 @@ export function RichEditor({
     content: value ?? undefined,
     editable,
     autofocus: autoFocus ? "end" : false,
+    // WebViews default contenteditable spellcheck off — writers want the
+    // squiggle, so ask for it explicitly.
+    editorProps: { attributes: { spellcheck: "true" } },
     onUpdate: ({ editor }) => onChange?.(editor.getJSON()),
   });
 

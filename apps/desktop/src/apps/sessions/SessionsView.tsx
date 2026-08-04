@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
-import { MessageSquare, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
@@ -305,6 +305,9 @@ function PromptCard({
     () => (detail?.submissions ?? []).filter((s) => s.prompt_id === prompt.id),
     [detail, prompt.id],
   );
+  // Collapsed by default: ten prompts × five writers otherwise makes the
+  // session an endless scroll.
+  const [showSubs, setShowSubs] = useState(false);
 
   return (
     <section className={`wf-prompt wf-prompt-${prompt.state}`}>
@@ -336,11 +339,50 @@ function PromptCard({
               />
             )}
             {canControl && (
-              <button onClick={() => void sessionApi.stopPrompt(prompt.id)}>Stop</button>
+              <button
+                title={
+                  prompt.ends_at != null && prompt.ends_at - Date.now() <= 10_000
+                    ? "End immediately, skipping the grace period"
+                    : "Writers get a 10-second warning before it ends"
+                }
+                onClick={() => void sessionApi.stopPrompt(prompt.id)}
+              >
+                {prompt.ends_at != null && prompt.ends_at - Date.now() <= 10_000
+                  ? "Stop now"
+                  : "Stop"}
+              </button>
             )}
           </>
         )}
         {prompt.state === "ended" && <span className="wf-prompt-chip">done</span>}
+        {canControl && (
+          <button
+            className="wf-danger wf-prompt-delete"
+            title="Delete prompt"
+            onClick={() => {
+              const stakes =
+                prompt.state === "running"
+                  ? " Everyone's in-progress writing for it is deleted too."
+                  : prompt.state === "ended" && submissions.length > 0
+                    ? " Everyone's writing for it is deleted too."
+                    : "";
+              void confirmDialog(
+                `Delete prompt ${index + 1} for everyone?${stakes} This cannot be undone.`,
+                { title: "Delete prompt", confirmLabel: "Delete prompt", danger: true },
+              ).then((ok) => {
+                if (ok) {
+                  sessionApi
+                    .deletePrompt(prompt.id)
+                    .catch((e) =>
+                      toast(isCmdError(e) ? e.message : "Couldn't delete the prompt.", "error"),
+                    );
+                }
+              });
+            }}
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </header>
       <div className="wf-prompt-doc">
         <RichDoc doc={prompt.prompt_doc as JSONContent} />
@@ -350,15 +392,25 @@ function PromptCard({
 
       {prompt.state === "ended" && (
         <div className="wf-submissions">
-          {submissions.length === 0 && (
+          {submissions.length === 0 ? (
             <p className="wf-session-meta">No one submitted for this prompt.</p>
+          ) : (
+            <>
+              <button className="wf-subs-toggle" onClick={() => setShowSubs((v) => !v)}>
+                {showSubs ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                {showSubs
+                  ? "Hide submissions"
+                  : `Show ${submissions.length} ${submissions.length === 1 ? "submission" : "submissions"}`}
+              </button>
+              {showSubs &&
+                submissions.map((sub) => (
+                  <article key={sub.id} className="wf-submission">
+                    <header>{sub.author.display_name ?? sub.author.username}</header>
+                    <RichDoc doc={sub.doc as JSONContent} />
+                  </article>
+                ))}
+            </>
           )}
-          {submissions.map((sub) => (
-            <article key={sub.id} className="wf-submission">
-              <header>{sub.author.display_name ?? sub.author.username}</header>
-              <RichDoc doc={sub.doc as JSONContent} />
-            </article>
-          ))}
         </div>
       )}
     </section>

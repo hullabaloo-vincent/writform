@@ -30,6 +30,7 @@ export const sessionApi = {
     }),
   startPrompt: (promptId: number) => api<null>("POST", `/api/v1/prompts/${promptId}/start`),
   stopPrompt: (promptId: number) => api<null>("POST", `/api/v1/prompts/${promptId}/stop`),
+  deletePrompt: (promptId: number) => api<null>("DELETE", `/api/v1/prompts/${promptId}`),
   saveSubmission: (promptId: number, doc: unknown) =>
     api<null>("PUT", `/api/v1/prompts/${promptId}/submission`, { doc }),
 };

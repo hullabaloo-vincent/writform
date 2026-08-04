@@ -3,6 +3,7 @@ import { create } from "zustand";
 import type { SessionDetail } from "../../bindings/proto/SessionDetail";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { backend, isCmdError } from "../../lib/backend";
+import { toast } from "../../platform";
 import { sessionApi } from "./api";
 
 interface SessionsState {
@@ -75,10 +76,36 @@ export function installSessionsWsHandler(): () => void {
     const { kind, data } = event;
     const state = useSessions.getState();
 
-    if (kind === "prompt.created" || kind === "prompt.started" || kind === "prompt.ended") {
+    if (
+      kind === "prompt.created" ||
+      kind === "prompt.started" ||
+      kind === "prompt.ended" ||
+      kind === "prompt.deleted"
+    ) {
       // Structure changed → refetch detail (REST is truth).
       const { session_id } = data as { session_id: number };
       if (session_id === state.activeSessionId) void state.refreshDetail();
+    } else if (kind === "prompt.stopping") {
+      // Stop was clicked and the server granted a short grace — surface the
+      // deadline immediately so the countdown appears, and warn once.
+      const { session_id, prompt_id, ends_at } = data as {
+        session_id: number;
+        prompt_id: number;
+        ends_at: number;
+      };
+      if (session_id === state.activeSessionId) {
+        useSessions.setState((s) => ({
+          detail: s.detail
+            ? {
+                ...s.detail,
+                prompts: s.detail.prompts.map((p) =>
+                  p.id === prompt_id ? { ...p, ends_at } : p,
+                ),
+              }
+            : s.detail,
+        }));
+        toast("Prompt stopping — 10 seconds to finish your sentence");
+      }
     } else if (kind === "session.ended") {
       const { session_id } = data as { session_id: number };
       if (session_id === state.activeSessionId) void state.refreshDetail();

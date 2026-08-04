@@ -3,6 +3,8 @@
  * accent color (or a stable color derived from the name).
  */
 
+import { useState } from "react";
+
 import { attachmentUrl } from "../lib/backend";
 
 const PALETTE = ["#8ab6e8", "#93d3a2", "#e8d478", "#e89ab0", "#b7a3ea", "#7fd0c9"];
@@ -36,13 +38,17 @@ export function Avatar({
   /** One letter instead of two — reads better in large call tiles. */
   singleInitial?: boolean;
 }) {
+  // A failed load (expired auth cookie, deleted attachment) falls back to
+  // initials instead of the browser's broken-image glyph. Keyed by id so a
+  // changed avatar gets a fresh chance.
+  const [failedId, setFailedId] = useState<number | null>(null);
   const style: React.CSSProperties = {
     width: size,
     height: size,
     borderRadius: "50%",
     flexShrink: 0,
   };
-  if (attachmentId != null) {
+  if (attachmentId != null && attachmentId !== failedId) {
     return (
       <img
         className="wf-avatar"
@@ -50,6 +56,7 @@ export function Avatar({
         src={attachmentUrl(attachmentId)}
         alt={name}
         draggable={false}
+        onError={() => setFailedId(attachmentId)}
       />
     );
   }

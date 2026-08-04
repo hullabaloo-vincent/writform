@@ -3,10 +3,16 @@ import {
   AlignLeft,
   AlignRight,
   Bold,
+  Check,
+  Circle,
+  Diamond,
   ExternalLink,
   Frame as FrameIcon,
   ChevronDown,
   Crop,
+  Shapes,
+  Square,
+  Triangle,
   FlipHorizontal,
   FlipVertical,
   Maximize2,
@@ -16,6 +22,7 @@ import {
   Grid3x3,
   Map as MapIcon,
   Italic,
+  PaintBucket,
   Link2,
   List,
   MousePointer2,
@@ -127,13 +134,56 @@ interface TextStyle {
   underline?: boolean;
   align?: "left" | "center" | "right";
   list?: "bullet";
+  /** Typeface; undefined = the app's default sans. */
+  font?: "serif" | "mono" | "hand";
+  /** Text color from the fixed palette; undefined = inherit. */
+  textColor?: string;
   /** Image transforms — stored here so they need no schema change. */
   rotate?: number;
   flipX?: boolean;
   flipY?: boolean;
   /** How the image fills its box: contain (default) or cover (crop). */
   fit?: "contain" | "cover";
+  /** Per-side crop, as fractions of the source image hidden (0–0.95). */
+  crop?: { t: number; r: number; b: number; l: number };
+  /** Which outline a `shape` element draws. */
+  shape?: "rect" | "ellipse" | "diamond" | "triangle";
+  /** Shape elements: fill the outline with the color's translucent tint. */
+  filled?: boolean;
 }
+
+type ShapeKind = NonNullable<TextStyle["shape"]>;
+
+const SHAPE_OPTIONS: { kind: ShapeKind; title: string; icon: typeof Square }[] = [
+  { kind: "rect", title: "Rectangle", icon: Square },
+  { kind: "ellipse", title: "Ellipse", icon: Circle },
+  { kind: "diamond", title: "Diamond", icon: Diamond },
+  { kind: "triangle", title: "Triangle", icon: Triangle },
+];
+
+const FONT_STACKS: Record<NonNullable<TextStyle["font"]>, string> = {
+  serif: "Georgia, 'Times New Roman', serif",
+  mono: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  hand: "'Segoe Print', 'Bradley Hand', 'Comic Sans MS', cursive",
+};
+/** Popover entries: value, display name, rendered in its own typeface. */
+const FONT_OPTIONS: { value: TextStyle["font"]; label: string }[] = [
+  { value: undefined, label: "Simple" },
+  { value: "serif", label: "Bookish" },
+  { value: "mono", label: "Technical" },
+  { value: "hand", label: "Scribbled" },
+];
+
+/** Text color swatches; undefined (default) inherits the element's color. */
+const TEXT_COLORS: { css: string; name: string }[] = [
+  { css: "#eceaf2", name: "Light" },
+  { css: "#1d1c22", name: "Ink" },
+  { css: "#e05b5b", name: "Red" },
+  { css: "#e0a04c", name: "Orange" },
+  { css: "#7fbf7a", name: "Green" },
+  { css: "#709ed6", name: "Blue" },
+  { css: "#b7a3ea", name: "Purple" },
+];
 
 function textStyle(raw: string): TextStyle {
   try {
@@ -151,6 +201,52 @@ function imageTransform(st: TextStyle): string | undefined {
   if (st.flipX) parts.push("scaleX(-1)");
   if (st.flipY) parts.push("scaleY(-1)");
   return parts.length > 0 ? parts.join(" ") : undefined;
+}
+
+/**
+ * The image body of an image element. A cropped image renders oversized and
+ * offset inside an overflow-hidden wrapper — the box shows a window into the
+ * source. The wrapper (not the element div) clips, so the selection handles
+ * hanging outside the box stay visible.
+ */
+function CanvasImage({ el }: { el: CanvasElement }) {
+  const st = textStyle(el.style);
+  const c = st.crop;
+  if (!c) {
+    return (
+      <div className="wf-el-imgwrap">
+        <img
+          className="wf-el-img"
+          src={attachmentUrl(Number(el.text))}
+          alt=""
+          draggable={false}
+          style={{ transform: imageTransform(st), objectFit: st.fit ?? "contain" }}
+        />
+      </div>
+    );
+  }
+  const w = el.w / Math.max(0.05, 1 - c.l - c.r);
+  const h = el.h / Math.max(0.05, 1 - c.t - c.b);
+  return (
+    <div className="wf-el-imgwrap">
+      <img
+        className="wf-el-img"
+        src={attachmentUrl(Number(el.text))}
+        alt=""
+        draggable={false}
+        style={{
+          position: "absolute",
+          left: -w * c.l,
+          top: -h * c.t,
+          width: w,
+          height: h,
+          maxWidth: "none",
+          objectFit: "fill",
+          transform: imageTransform(st),
+        }}
+      />
+    </div>
+  );
 }
 
 const FONT_SIZES = [12, 14, 16, 20, 24, 32, 40, 48];
@@ -173,7 +269,43 @@ const Z_BAND_CURSOR = 900_000;
 /** Grid step for snap-to-grid (world units). */
 const GRID = 8;
 
-type Tool = "select" | "sticky" | "text" | "frame" | "connect";
+type Tool = "select" | "sticky" | "text" | "frame" | "shape" | "connect";
+
+/** SVG outline of a shape element, stretching with its box. */
+function ShapeBody({ el }: { el: CanvasElement }) {
+  const st = textStyle(el.style);
+  const shape = st.shape ?? "rect";
+  // Stroke/fill go through inline STYLE, not SVG attributes: presentation
+  // attributes can't resolve var(), which silently becomes stroke:none — an
+  // invisible shape. Style inherits to the child node.
+  const stroke = FRAME_COLORS[el.color]?.border ?? "var(--wf-shape-stroke)";
+  const fill = st.filled ? (FRAME_COLORS[el.color]?.bg ?? "var(--wf-shape-fill)") : "transparent";
+  const { w, h } = el;
+  const m = 1.5; // stroke inset so the 2px line isn't clipped by the box
+  // NOT class "wf-el-shape": the element DIV already carries that name (it
+  // is `wf-el-${kind}`), and sharing it put pointer-events:none on the whole
+  // element — an unclickable, undraggable shape.
+  return (
+    <svg
+      className="wf-el-shape-svg"
+      width={w}
+      height={h}
+      viewBox={`0 0 ${w} ${h}`}
+      style={{ stroke, fill }}
+      aria-hidden
+    >
+      {shape === "ellipse" ? (
+        <ellipse cx={w / 2} cy={h / 2} rx={w / 2 - m} ry={h / 2 - m} />
+      ) : shape === "diamond" ? (
+        <polygon points={`${w / 2},${m} ${w - m},${h / 2} ${w / 2},${h - m} ${m},${h / 2}`} />
+      ) : shape === "triangle" ? (
+        <polygon points={`${w / 2},${m} ${w - m},${h - m} ${m},${h - m}`} />
+      ) : (
+        <rect x={m} y={m} width={w - 2 * m} height={h - 2 * m} rx={10} />
+      )}
+    </svg>
+  );
+}
 
 /** Connector styling, stored as JSON in the connector element's `text`. */
 type ConnAnchor = "auto" | "top" | "bottom" | "left" | "right";
@@ -311,6 +443,16 @@ export function BoardRoom() {
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<Viewport>({ tx: 60, ty: 40, scale: 1 });
   const [tool, setTool] = useState<Tool>("select");
+  /** Which outline the shape tool places; picked from the toolbar popover. */
+  const [shapeKind, setShapeKind] = useState<ShapeKind>("rect");
+  const [shapeMenu, setShapeMenu] = useState(false);
+  useEffect(() => {
+    if (!shapeMenu) return;
+    // The toolbar swallows pointerdown, so only outside presses reach here.
+    const close = () => setShapeMenu(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [shapeMenu]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null,
@@ -730,13 +872,15 @@ export function BoardRoom() {
     });
   };
 
-  const placeElement = (kind: "sticky" | "text" | "frame", x: number, y: number) => {
+  const placeElement = (kind: "sticky" | "text" | "frame" | "shape", x: number, y: number) => {
     const defaults =
       kind === "sticky"
         ? { w: 180, h: 140, text: "", color: "yellow" }
         : kind === "text"
           ? { w: 240, h: 48, text: "", color: "" }
-          : { w: 520, h: 360, text: "Frame", color: "" };
+          : kind === "shape"
+            ? { w: 180, h: 130, text: "", color: "" }
+            : { w: 520, h: 360, text: "Frame", color: "" };
     canvasApi
       .createElement(board.id, {
         kind,
@@ -746,7 +890,7 @@ export function BoardRoom() {
         h: defaults.h,
         text: defaults.text,
         color: defaults.color,
-        style: "",
+        style: kind === "shape" ? JSON.stringify({ shape: shapeKind }) : "",
         from_id: null,
         to_id: null,
       })
@@ -765,7 +909,7 @@ export function BoardRoom() {
     // Second finger of a pinch: the touch tracker above owns it (it has
     // already seen this pointerdown — capture phase runs first).
     if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
-    if (tool === "sticky" || tool === "text" || tool === "frame") {
+    if (tool === "sticky" || tool === "text" || tool === "frame" || tool === "shape") {
       const { x, y } = toWorld(e.clientX, e.clientY);
       placeElement(tool, x, y);
       return;
@@ -1028,6 +1172,102 @@ export function BoardRoom() {
     window.addEventListener("pointerup", onUp);
   };
 
+  /** Edge-handle crop for images: the box edge moves while the visible
+   *  content stays put (the source's on-screen scale never changes mid-drag),
+   *  so dragging inward cuts and dragging back out restores, until the crop
+   *  fraction reaches zero and the box simply stops growing. */
+  const onCropDown = (e: React.PointerEvent, el: CanvasElement, side: "t" | "r" | "b" | "l") => {
+    if (e.button !== 0) return;
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
+    e.stopPropagation();
+    e.preventDefault();
+    hold(el.id, true);
+    const startWorld = toWorld(e.clientX, e.clientY);
+    const st0 = textStyle(el.style);
+    const crop0 = st0.crop ?? { t: 0, r: 0, b: 0, l: 0 };
+    // On-screen size of the FULL source at drag start — held constant.
+    const srcW = el.w / Math.max(0.05, 1 - crop0.l - crop0.r);
+    const srcH = el.h / Math.max(0.05, 1 - crop0.t - crop0.b);
+    const origin: Partial<CanvasElement> = {
+      x: el.x,
+      y: el.y,
+      w: el.w,
+      h: el.h,
+      style: el.style,
+    };
+    let last: Partial<CanvasElement> | null = null;
+    let lastSent = 0;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      const now = toWorld(ev.clientX, ev.clientY);
+      const dx = now.x - startWorld.x;
+      const dy = now.y - startWorld.y;
+      const next = { ...crop0 };
+      let { x, y, w, h } = el;
+      if (side === "r") {
+        next.r = Math.min(Math.max(0, crop0.r - dx / srcW), 0.95 - crop0.l);
+        w = Math.max(1, Math.round(srcW * (1 - crop0.l - next.r)));
+      } else if (side === "l") {
+        next.l = Math.min(Math.max(0, crop0.l + dx / srcW), 0.95 - crop0.r);
+        w = Math.max(1, Math.round(srcW * (1 - next.l - crop0.r)));
+        x = Math.round(el.x + srcW * (next.l - crop0.l));
+      } else if (side === "b") {
+        next.b = Math.min(Math.max(0, crop0.b - dy / srcH), 0.95 - crop0.t);
+        h = Math.max(1, Math.round(srcH * (1 - crop0.t - next.b)));
+      } else {
+        next.t = Math.min(Math.max(0, crop0.t + dy / srcH), 0.95 - crop0.b);
+        h = Math.max(1, Math.round(srcH * (1 - next.t - crop0.b)));
+        y = Math.round(el.y + srcH * (next.t - crop0.t));
+      }
+      const cropped = next.t > 0 || next.r > 0 || next.b > 0 || next.l > 0;
+      last = {
+        x,
+        y,
+        w,
+        h,
+        style: JSON.stringify({ ...st0, crop: cropped ? next : undefined }),
+      };
+      patchLocal(el.id, last);
+      const t = Date.now();
+      if (t - lastSent > 120) {
+        lastSent = t;
+        canvasApi.updateElement(el.id, last).catch(() => {});
+      }
+    };
+    const cancel = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      patchLocal(el.id, origin);
+      canvasApi.updateElement(el.id, origin).catch(() => {});
+      hold(el.id, false);
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      if (!last) {
+        hold(el.id, false);
+        return;
+      }
+      const final = last;
+      canvasApi
+        .updateElement(el.id, final)
+        .then((updated) => {
+          hold(el.id, false);
+          useCanvas.getState().applyElement(updated);
+        })
+        .catch((err) => {
+          hold(el.id, false);
+          fail(err);
+        });
+      recordPatch(el.id, origin, final, "Crop image");
+    };
+    gestureCancels.current.add(cancel);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
   /** Snap the element box back to the image's natural aspect ratio, keeping
    *  the current width. Rotation is applied to the content, not the box, so
    *  a quarter-turn swaps the ratio. */
@@ -1035,11 +1275,16 @@ export function BoardRoom() {
     const img = new window.Image();
     img.onload = () => {
       if (!img.width || !img.height) return;
-      const quarterTurned = Math.abs(((textStyle(el.style).rotate ?? 0) / 90) % 2) === 1;
+      const st = textStyle(el.style);
+      const quarterTurned = Math.abs(((st.rotate ?? 0) / 90) % 2) === 1;
       const ratio = quarterTurned ? img.width / img.height : img.height / img.width;
       const h = Math.max(60, Math.round(el.w * ratio));
-      applyPatchWithHistory(el, { h }, "Fit image");
+      const patch: Partial<CanvasElement> = { h };
+      // Matching the source's aspect only makes sense for the whole source.
+      if (st.crop) patch.style = JSON.stringify({ ...st, crop: undefined });
+      applyPatchWithHistory(el, patch, "Fit image");
     };
+    img.onerror = () => setError("Couldn't load the image to fit its size.");
     img.src = attachmentUrl(Number(el.text));
   };
 
@@ -1073,7 +1318,7 @@ export function BoardRoom() {
   const byId = (a: CanvasElement, b: CanvasElement) => a.id - b.id;
   const frames = all.filter((el) => el.kind === "frame").sort(byId);
   const bodies = all
-    .filter((el) => ["sticky", "text", "image", "link", "document"].includes(el.kind))
+    .filter((el) => ["sticky", "text", "image", "link", "document", "shape"].includes(el.kind))
     .sort(byId);
   const connectors = all.filter((el) => el.kind === "connector");
     // Single-selection element (color swatches, connector styling, resize).
@@ -1264,20 +1509,22 @@ export function BoardRoom() {
               }
             >
               {el.kind === "image" ? (
-                <img
-                  className="wf-el-img"
-                  src={attachmentUrl(Number(el.text))}
-                  alt=""
-                  draggable={false}
-                  style={{
-                    transform: imageTransform(textStyle(el.style)),
-                    objectFit: textStyle(el.style).fit ?? "contain",
-                  }}
-                />
+                <CanvasImage el={el} />
               ) : el.kind === "link" ? (
                 <LinkCard url={el.text} />
               ) : el.kind === "document" ? (
                 <CanvasDocCard payload={el.text} />
+              ) : el.kind === "shape" ? (
+                <>
+                  <ShapeBody el={el} />
+                  <ElementText
+                    el={el}
+                    editing={editing === el.id}
+                    onCommit={(text) => commitText(el, text)}
+                    onDraft={(text) => autosaveText(el, text)}
+                    className="wf-el-shape-text"
+                  />
+                </>
               ) : (
                 <ElementText
                   el={el}
@@ -1289,6 +1536,15 @@ export function BoardRoom() {
               )}
               {selected.has(el.id) && selected.size === 1 && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
+              )}
+              {/* Images: mid-edge handles crop (the corner still scales). */}
+              {selected.has(el.id) && selected.size === 1 && el.kind === "image" && (
+                <>
+                  <span className="wf-el-crop n" onPointerDown={(e) => onCropDown(e, el, "t")} />
+                  <span className="wf-el-crop e" onPointerDown={(e) => onCropDown(e, el, "r")} />
+                  <span className="wf-el-crop s" onPointerDown={(e) => onCropDown(e, el, "b")} />
+                  <span className="wf-el-crop w" onPointerDown={(e) => onCropDown(e, el, "l")} />
+                </>
               )}
             </div>
           ))}
@@ -1381,13 +1637,33 @@ export function BoardRoom() {
                 onFitBox={() => fitImageToContent(selectedEl)}
               />
             )}
-            {selectedEl && selectedEl.kind === "frame" && (
+            {selectedEl && (selectedEl.kind === "frame" || selectedEl.kind === "shape") && (
               <>
+                {selectedEl.kind === "shape" && (
+                  <button
+                    className={`wf-icon ${textStyle(selectedEl.style).filled ? "active" : ""}`}
+                    title={
+                      textStyle(selectedEl.style).filled
+                        ? "Filled (click for outline only)"
+                        : "Outline (click to fill)"
+                    }
+                    onClick={() => {
+                      const s = textStyle(selectedEl.style);
+                      applyPatchWithHistory(
+                        selectedEl,
+                        { style: JSON.stringify({ ...s, filled: !s.filled || undefined }) },
+                        "Toggle shape fill",
+                      );
+                    }}
+                  >
+                    <PaintBucket size={15} />
+                  </button>
+                )}
                 <button
                   className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
-                  title="No fill"
+                  title={selectedEl.kind === "frame" ? "No fill" : "Default outline"}
                   onClick={() => {
-                    applyPatchWithHistory(selectedEl, { color: "" }, "Change frame fill");
+                    applyPatchWithHistory(selectedEl, { color: "" }, "Change color");
                   }}
                 />
                 {Object.entries(FRAME_COLORS).map(([key, css]) => (
@@ -1397,13 +1673,16 @@ export function BoardRoom() {
                     style={{ background: css.border }}
                     title={key}
                     onClick={() => {
-                      applyPatchWithHistory(selectedEl, { color: key }, "Change frame fill");
+                      applyPatchWithHistory(selectedEl, { color: key }, "Change color");
                     }}
                   />
                 ))}
               </>
             )}
-            {selectedEl && (selectedEl.kind === "sticky" || selectedEl.kind === "text") && (
+            {selectedEl &&
+              (selectedEl.kind === "sticky" ||
+                selectedEl.kind === "text" ||
+                selectedEl.kind === "shape") && (
               <TextStyleControls
                 element={selectedEl}
                 onChange={(st) => {
@@ -1441,6 +1720,33 @@ export function BoardRoom() {
           <ToolButton tool="frame" active={tool} set={setTool} title="Frame (click to place)">
             <FrameIcon size={17} />
           </ToolButton>
+          <span className="wf-board-menuwrap">
+            <button
+              className={tool === "shape" ? "active" : ""}
+              title="Shape (pick one, then click to place)"
+              onClick={() => setShapeMenu((v) => !v)}
+            >
+              <Shapes size={17} />
+            </button>
+            {shapeMenu && (
+              <span className="wf-board-menu wf-board-menu-shapes">
+                {SHAPE_OPTIONS.map((s) => (
+                  <button
+                    key={s.kind}
+                    className={tool === "shape" && shapeKind === s.kind ? "active" : ""}
+                    title={s.title}
+                    onClick={() => {
+                      setShapeKind(s.kind);
+                      setTool("shape");
+                      setShapeMenu(false);
+                    }}
+                  >
+                    <s.icon size={16} />
+                  </button>
+                ))}
+              </span>
+            )}
+          </span>
           <ToolButton
             tool="connect"
             active={tool}
@@ -1520,6 +1826,8 @@ function textStyleCss(st: TextStyle): React.CSSProperties {
     fontStyle: st.italic ? "italic" : undefined,
     textDecoration: st.underline ? "underline" : undefined,
     textAlign: st.align,
+    fontFamily: st.font ? FONT_STACKS[st.font] : undefined,
+    color: st.textColor,
   };
 }
 
@@ -1619,6 +1927,15 @@ function TextStyleControls({
   const st = textStyle(element.style);
   const size = st.size ?? 14;
   const align = st.align ?? "left";
+  const [menu, setMenu] = useState<null | "font" | "color">(null);
+  useEffect(() => {
+    if (!menu) return;
+    // The selection toolbar stops pointerdown propagation, so only presses
+    // OUTSIDE it reach the window — exactly when the menu should close.
+    const close = () => setMenu(null);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [menu]);
   const stepSize = (dir: 1 | -1) => {
     const idx = FONT_SIZES.findIndex((s) => s >= size);
     const at = idx === -1 ? FONT_SIZES.length - 1 : idx;
@@ -1674,6 +1991,76 @@ function TextStyleControls({
       >
         <List size={15} />
       </button>
+      <span className="wf-board-menuwrap">
+        <button
+          className="wf-board-font"
+          title="Font"
+          onClick={() => setMenu(menu === "font" ? null : "font")}
+        >
+          <span style={{ fontFamily: st.font ? FONT_STACKS[st.font] : undefined }}>Aa</span>
+          <ChevronDown size={12} />
+        </button>
+        {menu === "font" && (
+          <span className="wf-board-menu wf-board-menu-fonts">
+            {FONT_OPTIONS.map((f) => (
+              <button
+                key={f.label}
+                className={st.font === f.value ? "active" : ""}
+                style={{ fontFamily: f.value ? FONT_STACKS[f.value] : undefined }}
+                onClick={() => {
+                  onChange({ ...st, font: f.value });
+                  setMenu(null);
+                }}
+              >
+                <Check size={13} className={st.font === f.value ? "" : "wf-invisible"} />
+                {f.label}
+              </button>
+            ))}
+          </span>
+        )}
+      </span>
+      <span className="wf-board-menuwrap">
+        <button
+          className="wf-board-font"
+          title="Text color"
+          onClick={() => setMenu(menu === "color" ? null : "color")}
+        >
+          {/* The classic "A over a color bar" glyph — a bare dot read as
+              "empty", not as a color control. Default shows a mini rainbow. */}
+          <span className="wf-board-colorbtn">
+            A
+            <span
+              className="wf-board-colorbar"
+              style={st.textColor ? { background: st.textColor } : undefined}
+            />
+          </span>
+          <ChevronDown size={12} />
+        </button>
+        {menu === "color" && (
+          <span className="wf-board-menu wf-board-menu-colors">
+            <button
+              className={`wf-board-swatch wf-board-swatch-none ${st.textColor === undefined ? "active" : ""}`}
+              title="Default"
+              onClick={() => {
+                onChange({ ...st, textColor: undefined });
+                setMenu(null);
+              }}
+            />
+            {TEXT_COLORS.map((c) => (
+              <button
+                key={c.css}
+                className={`wf-board-swatch ${st.textColor === c.css ? "active" : ""}`}
+                style={{ background: c.css }}
+                title={c.name}
+                onClick={() => {
+                  onChange({ ...st, textColor: c.css });
+                  setMenu(null);
+                }}
+              />
+            ))}
+          </span>
+        )}
+      </span>
     </>
   );
 }
@@ -1946,19 +2333,28 @@ function ImageControls({
       <button
         className={`wf-icon ${st.fit === "cover" ? "active" : ""}`}
         title={st.fit === "cover" ? "Filling the box (click to fit inside)" : "Fitting inside the box (click to fill)"}
-        onClick={() => onChange({ ...st, fit: st.fit === "cover" ? undefined : "cover" })}
+        // Fit modes describe the WHOLE source in the box, so entering one
+        // discards any edge crop rather than compounding with it.
+        onClick={() => onChange({ ...st, fit: st.fit === "cover" ? undefined : "cover", crop: undefined })}
       >
         <Crop size={15} />
       </button>
       <button className="wf-icon" title="Match the image's aspect ratio" onClick={onFitBox}>
         <Maximize2 size={15} />
       </button>
-      {(rotate !== 0 || st.flipX || st.flipY || st.fit) && (
+      {(rotate !== 0 || st.flipX || st.flipY || st.fit || st.crop) && (
         <button
           className="wf-icon"
           title="Reset transform"
           onClick={() =>
-            onChange({ ...st, rotate: undefined, flipX: undefined, flipY: undefined, fit: undefined })
+            onChange({
+              ...st,
+              rotate: undefined,
+              flipX: undefined,
+              flipY: undefined,
+              fit: undefined,
+              crop: undefined,
+            })
           }
         >
           <RefreshCw size={15} />
