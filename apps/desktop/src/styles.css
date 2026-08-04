@@ -6206,6 +6206,20 @@ input[type="checkbox"] {
   .wf-stage-resize {
     display: none;
   }
+
+  /* Fixed slide-overs escape the shell's safe-area padding — pad their own
+     tops so the first row clears the phone's status bar (each panel's
+     background still runs underneath it). */
+  .wf-chat-side,
+  .wf-session-chat {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .wf-friends-side {
+    padding-top: calc(16px + env(safe-area-inset-top, 0px));
+  }
+  .wf-docs-nav {
+    padding-top: calc(18px + env(safe-area-inset-top, 0px));
+  }
 }
 
 /* Touch devices have no hover: reveal-on-hover controls become permanent. */
