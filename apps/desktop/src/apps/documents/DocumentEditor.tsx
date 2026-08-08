@@ -13,7 +13,7 @@ import {
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { isCmdError } from "../../lib/backend";
 import { useSwipe } from "../../lib/useSwipe";
@@ -29,6 +29,7 @@ import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
 import { exportDocument } from "./export";
+import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
 import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
@@ -51,8 +52,6 @@ function caretColor(name: string): string {
   for (const c of name) h = (h * 31 + c.charCodeAt(0)) >>> 0;
   return CARET_COLORS[h % CARET_COLORS.length];
 }
-
-const AUTO_SNAPSHOT_MS = 60_000;
 
 type Panel = "none" | "history" | "feedback" | "outline";
 
@@ -166,7 +165,13 @@ function EditorInner({
     [],
   );
 
-  const editor = useEditor({ extensions, editable: !readonly });
+  const editor = useEditor({
+    extensions,
+    editable: !readonly,
+    // WebViews default contenteditable spellcheck off — writers want the
+    // squiggle, same as the prompt editor.
+    editorProps: { attributes: { spellcheck: "true" } },
+  });
 
   useEffect(() => {
     editor?.setEditable(!readonly);
@@ -181,7 +186,7 @@ function EditorInner({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [provider]);
 
-  useAutoSnapshot(editor, meta.id, readonly);
+  useAutoRevisions(editor, (json) => documentsApi.snapshot(meta.id, json), !readonly);
   useFeedbackDecorations(editor, provider, state.threads, panel === "feedback");
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
@@ -476,32 +481,4 @@ function Peers({ provider }: { provider: DocProvider }) {
       {peers.length > 5 && <span className="wf-doc-peer-more">+{peers.length - 5}</span>}
     </span>
   );
-}
-
-/** Debounced auto-snapshots for version history (server rate-limits/dedups). */
-function useAutoSnapshot(editor: Editor | null, docId: number, readonly: boolean) {
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useEffect(() => {
-    if (!editor || readonly) return;
-    const schedule = () => {
-      if (timer.current) clearTimeout(timer.current);
-      timer.current = setTimeout(() => {
-        timer.current = null;
-        documentsApi.snapshot(docId, JSON.stringify(editor.getJSON())).catch(() => {});
-      }, AUTO_SNAPSHOT_MS);
-    };
-    editor.on("update", schedule);
-    return () => {
-      editor.off("update", schedule);
-      if (timer.current) {
-        clearTimeout(timer.current);
-        // Final best-effort snapshot on close.
-        try {
-          documentsApi.snapshot(docId, JSON.stringify(editor.getJSON())).catch(() => {});
-        } catch {
-          // editor already destroyed
-        }
-      }
-    };
-  }, [editor, docId, readonly]);
 }

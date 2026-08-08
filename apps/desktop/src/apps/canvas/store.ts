@@ -6,6 +6,7 @@ import type { UserRef } from "../../bindings/proto/UserRef";
 import { backend } from "../../lib/backend";
 import { useSession } from "../../stores/session";
 import { canvasApi } from "./api";
+import { closeLocalBoard, isLocalBoard } from "./local";
 
 /** A peer's pointer on the board. Ephemeral: never fetched, only broadcast. */
 export interface RemoteCursor {
@@ -56,7 +57,13 @@ export const useCanvas = create<CanvasState>((set, get) => ({
 
   openBoard: async (boardId) => {
     set({ activeBoardId: boardId, board: null, elements: {}, cursors: {} });
-    await backend.wsSub([`canvas:${boardId}`]);
+    // A board on this device has no room to join and no peers to hear from;
+    // `detail` opens its file instead. Closing any local board on the way to
+    // a server one keeps element writes — which carry no board id — honest.
+    if (!isLocalBoard(boardId)) {
+      await closeLocalBoard();
+      await backend.wsSub([`canvas:${boardId}`]);
+    }
     const detail = await canvasApi.detail(boardId);
     const elements: Record<number, CanvasElement> = {};
     for (const el of detail.elements) elements[el.id] = el;
@@ -65,7 +72,10 @@ export const useCanvas = create<CanvasState>((set, get) => ({
 
   closeBoard: () => {
     const { activeBoardId } = get();
-    if (activeBoardId !== null) void backend.wsUnsub([`canvas:${activeBoardId}`]);
+    if (activeBoardId !== null) {
+      if (isLocalBoard(activeBoardId)) void closeLocalBoard();
+      else void backend.wsUnsub([`canvas:${activeBoardId}`]);
+    }
     set({ activeBoardId: null, board: null, elements: {}, localHold: new Set(), cursors: {} });
   },
 
@@ -136,6 +146,10 @@ export function installCanvasWsHandler(): () => void {
     } else if (kind === "canvas.element.deleted") {
       const { board_id, element_id } = data as { board_id: number; element_id: number };
       if (board_id === state.activeBoardId) state.removeElement(element_id);
+    } else if (kind === "canvas.board.updated") {
+      // Only people with the board open hear this — it's the background.
+      const board = data as CanvasBoard;
+      if (state.activeBoardId === board.id) useCanvas.setState({ board });
     } else if (kind === "canvas.board.created") {
       const board = data as CanvasBoard;
       useCanvas.setState((s) => {

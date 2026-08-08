@@ -1,4 +1,3 @@
-import type { JSONContent } from "@tiptap/core";
 import type { Editor } from "@tiptap/react";
 import { BookmarkPlus, Clock3, FileDiff, RotateCcw, X } from "lucide-react";
 import { useState } from "react";
@@ -9,7 +8,32 @@ import { RichDoc } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
 import { confirmDialog, Modal } from "../../platform";
 import { documentsApi } from "./api";
+import { alignChanges, flatten } from "./history";
 import { useDocuments } from "./store";
+
+/** One revision as the list renders it, whatever storage it came from. */
+export interface VersionRow {
+  key: string;
+  name: string | null;
+  kind: string;
+  created_at: number;
+  changed_blocks: number;
+  added_words: number;
+  removed_words: number;
+  /** Server documents name the author; on-device documents have only you. */
+  author?: string | null;
+}
+
+const serverRow = (v: DocumentVersionMeta): VersionRow => ({
+  key: String(v.id),
+  name: v.name,
+  kind: v.kind,
+  created_at: v.created_at,
+  changed_blocks: v.changed_blocks,
+  added_words: v.added_words,
+  removed_words: v.removed_words,
+  author: v.created_by.display_name ?? v.created_by.username,
+});
 
 type HistoryTab = "drafts" | "changes" | "activity";
 interface Preview {
@@ -50,6 +74,11 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
     } catch (e) {
       setError(isCmdError(e) ? e.message : String(e));
     }
+  };
+
+  const openByKey = async (row: VersionRow, mode: Preview["mode"]) => {
+    const meta = versions.find((v) => String(v.id) === row.key);
+    if (meta) await openPreview(meta, mode);
   };
 
   const restore = async () => {
@@ -115,12 +144,22 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
               </button>
             </form>
           )}
-          <VersionList versions={drafts} active={preview?.meta.id} onOpen={(v) => void openPreview(v, "draft")} empty="No draft milestones yet. Save First draft when the iteration is ready." />
+          <VersionList
+            versions={drafts.map(serverRow)}
+            active={preview ? String(preview.meta.id) : undefined}
+            onOpen={(row) => void openByKey(row, "draft")}
+            empty="No draft milestones yet. Save First draft when the iteration is ready."
+          />
         </>
       )}
 
       {tab === "changes" && (
-        <VersionList versions={changes} active={preview?.meta.id} onOpen={(v) => void openPreview(v, "change")} empty="No changes recorded yet — they appear as you write." />
+        <VersionList
+          versions={changes.map(serverRow)}
+          active={preview ? String(preview.meta.id) : undefined}
+          onOpen={(row) => void openByKey(row, "change")}
+          empty="No changes recorded yet — they appear as you write."
+        />
       )}
 
       {tab === "activity" && <ActivityList items={activities} />}
@@ -145,16 +184,16 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
   );
 }
 
-function VersionList({ versions, active, onOpen, empty }: { versions: DocumentVersionMeta[]; active?: number; onOpen: (version: DocumentVersionMeta) => void; empty: string }) {
+export function VersionList({ versions, active, onOpen, empty }: { versions: VersionRow[]; active?: string; onOpen: (version: VersionRow) => void; empty: string }) {
   return (
     <ul className="wf-doc-versions">
       {versions.map((v) => (
-        <li key={v.id}>
-          <button className={`wf-doc-version ${active === v.id ? "active" : ""}`} onClick={() => onOpen(v)}>
+        <li key={v.key}>
+          <button className={`wf-doc-version ${active === v.key ? "active" : ""}`} onClick={() => onOpen(v)}>
             <span className="wf-doc-version-name">{v.name ?? new Date(v.created_at).toLocaleString()}</span>
             <span className="wf-doc-version-meta">
               {v.kind === "draft" ? <span className="wf-doc-version-badge">draft</span> : <span>{v.changed_blocks} blocks · +{v.added_words} / -{v.removed_words} words</span>}
-              {v.created_by.display_name ?? v.created_by.username} · {new Date(v.created_at).toLocaleString()}
+              {v.author ? `${v.author} · ` : ""}{new Date(v.created_at).toLocaleString()}
             </span>
           </button>
         </li>
@@ -183,82 +222,7 @@ function ActivityList({ items }: { items: DocumentActivity[] }) {
   );
 }
 
-interface FlatBlock { type: string; element: string; text: string }
-function flatten(raw: string | null): FlatBlock[] {
-  if (!raw) return [];
-  const doc = JSON.parse(raw) as JSONContent;
-  const read = (node: JSONContent): string => `${node.text ?? ""}${(node.content ?? []).map(read).join("")}`;
-  return (doc.content ?? []).map((node) => ({ type: node.type ?? "paragraph", element: String(node.attrs?.element ?? ""), text: read(node) }));
-}
-
-interface AlignedBlock { oldBlock?: FlatBlock; newBlock?: FlatBlock; index: number }
-
-function blockKey(block: FlatBlock): string {
-  return JSON.stringify([block.type, block.element, block.text]);
-}
-
-function positionsFor(blocks: FlatBlock[]): Map<string, number[]> {
-  const positions = new Map<string, number[]>();
-  blocks.forEach((block, index) => {
-    const key = blockKey(block);
-    const matches = positions.get(key) ?? [];
-    matches.push(index);
-    positions.set(key, matches);
-  });
-  return positions;
-}
-
-function nextPosition(positions: Map<string, number[]>, block: FlatBlock, from: number): number | undefined {
-  return positions.get(blockKey(block))?.find((position) => position >= from);
-}
-
-function alignChanges(oldBlocks: FlatBlock[], newBlocks: FlatBlock[]): AlignedBlock[] {
-  const oldPositions = positionsFor(oldBlocks);
-  const newPositions = positionsFor(newBlocks);
-  const changes: AlignedBlock[] = [];
-  let oldIndex = 0;
-  let newIndex = 0;
-
-  while (oldIndex < oldBlocks.length && newIndex < newBlocks.length) {
-    if (blockKey(oldBlocks[oldIndex]) === blockKey(newBlocks[newIndex])) {
-      oldIndex += 1;
-      newIndex += 1;
-      continue;
-    }
-
-    const insertedUntil = nextPosition(newPositions, oldBlocks[oldIndex], newIndex + 1);
-    const deletedUntil = nextPosition(oldPositions, newBlocks[newIndex], oldIndex + 1);
-    const preferInsert = insertedUntil !== undefined
-      && (deletedUntil === undefined || insertedUntil - newIndex <= deletedUntil - oldIndex);
-
-    if (preferInsert) {
-      while (newIndex < insertedUntil) {
-        changes.push({ newBlock: newBlocks[newIndex], index: newIndex });
-        newIndex += 1;
-      }
-    } else if (deletedUntil !== undefined) {
-      while (oldIndex < deletedUntil) {
-        changes.push({ oldBlock: oldBlocks[oldIndex], index: oldIndex });
-        oldIndex += 1;
-      }
-    } else {
-      changes.push({ oldBlock: oldBlocks[oldIndex], newBlock: newBlocks[newIndex], index: newIndex });
-      oldIndex += 1;
-      newIndex += 1;
-    }
-  }
-  while (oldIndex < oldBlocks.length) {
-    changes.push({ oldBlock: oldBlocks[oldIndex], index: oldIndex });
-    oldIndex += 1;
-  }
-  while (newIndex < newBlocks.length) {
-    changes.push({ newBlock: newBlocks[newIndex], index: newIndex });
-    newIndex += 1;
-  }
-  return changes;
-}
-
-function RevisionDiff({ before, after }: { before: string | null; after: string }) {
+export function RevisionDiff({ before, after }: { before: string | null; after: string }) {
   const oldBlocks = flatten(before);
   const newBlocks = flatten(after);
   const rows = alignChanges(oldBlocks, newBlocks).map(({ oldBlock, newBlock, index }, rowIndex) => (

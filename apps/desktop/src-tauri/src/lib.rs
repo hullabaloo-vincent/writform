@@ -1,6 +1,7 @@
 pub mod att_protocol;
 pub mod commands;
 pub mod host;
+pub mod localboards;
 pub mod localdocs;
 mod media;
 pub mod net;
@@ -91,6 +92,14 @@ pub fn run() {
             localdocs::localdoc_read,
             localdocs::localdoc_write,
             localdocs::localdoc_delete,
+            localdocs::localdoc_history_read,
+            localdocs::localdoc_history_write,
+            localboards::localboard_list,
+            localboards::localboard_read,
+            localboards::localboard_write,
+            localboards::localboard_delete,
+            localboards::localmedia_write,
+            localboards::localmedia_prune,
             plugins::plugins_list,
             plugins::plugin_read_entry,
             plugins::plugin_set_enabled,

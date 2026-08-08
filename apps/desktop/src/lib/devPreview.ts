@@ -28,6 +28,9 @@ export function devPreviewBackend(): Backend {
   let portable: PortableProfile | null = null;
   const localdocs = new Map<string, string>();
   const localdocTimes = new Map<string, number>();
+  const localdocHistory = new Map<string, string>();
+  const localboards = new Map<string, string>();
+  const localboardTimes = new Map<string, number>();
   let pending: SavedServer | null = null;
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -1293,6 +1296,39 @@ export function devPreviewBackend(): Backend {
     async localdocDelete(id) {
       localdocs.delete(id);
       localdocTimes.delete(id);
+      localdocHistory.delete(id);
     },
+    async localdocHistoryRead(id) {
+      return localdocHistory.get(id) ?? "";
+    },
+    async localdocHistoryWrite(id, content) {
+      localdocHistory.set(id, content);
+    },
+    async localboardList() {
+      return [...localboards.entries()]
+        .map(([id, raw]) => {
+          const parsed = JSON.parse(raw) as { name?: string };
+          return { id, name: parsed.name ?? "Untitled", updated_at: localboardTimes.get(id) ?? 0 };
+        })
+        .sort((a, b) => b.updated_at - a.updated_at);
+    },
+    async localboardRead(id) {
+      const raw = localboards.get(id);
+      if (raw === undefined) throw { code: "io", message: "no such local board" };
+      return raw;
+    },
+    async localboardWrite(id, content) {
+      localboards.set(id, content);
+      localboardTimes.set(id, Date.now());
+    },
+    async localboardDelete(id) {
+      localboards.delete(id);
+      localboardTimes.delete(id);
+    },
+    async localmediaWrite() {
+      // Dev preview has no custom URI scheme to serve these back through.
+      throw { code: "not_supported", message: "Local board images need the desktop app" };
+    },
+    async localmediaPrune() {},
   };
 }

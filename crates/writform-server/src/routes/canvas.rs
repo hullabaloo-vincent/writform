@@ -7,7 +7,7 @@ use axum::http::StatusCode;
 use axum::Json;
 use writform_proto::canvas::{
     BoardDetail, CanvasBoard, CanvasElement, CreateBoardRequest, CreateElementRequest,
-    UpdateElementRequest,
+    UpdateBoardRequest, UpdateElementRequest,
 };
 use writform_proto::{GroupId, UserId};
 
@@ -28,8 +28,14 @@ const ELEMENT_KINDS: &[&str] = &[
     "link",
     "document",
     "shape",
+    "sketch",
 ];
 const MAX_TEXT: usize = 4000;
+/// A sketch keeps its strokes in `text` as JSON points, which is far more
+/// than prose needs and still small enough to sit beside 2000 elements.
+const MAX_SKETCH_TEXT: usize = 128 * 1024;
+/// Board background JSON: a color, an attachment id, and a fit keyword.
+const MAX_BOARD_STYLE: usize = 2000;
 const MAX_ELEMENTS_PER_BOARD: i64 = 2000;
 
 async fn require_group_member(
@@ -55,6 +61,7 @@ type BoardRow = (
     i64,
     i64,
     String,
+    String,
     i64,
     i64,
     String,
@@ -64,17 +71,19 @@ type BoardRow = (
 );
 
 fn row_to_board(row: BoardRow) -> CanvasBoard {
-    let (id, group_id, name, created_at, creator_id, username, display_name, avatar, accent) = row;
+    let (id, group_id, name, style, created_at, creator_id, username, display_name, avatar, accent) =
+        row;
     CanvasBoard {
         id,
         group_id: GroupId(group_id),
         creator: perms::user_ref(UserId(creator_id), username, display_name, avatar, accent),
         name,
+        style,
         created_at,
     }
 }
 
-const BOARD_SELECT: &str = "SELECT b.id, b.group_id, b.name, b.created_at,
+const BOARD_SELECT: &str = "SELECT b.id, b.group_id, b.name, b.style, b.created_at,
     u.id, u.username, u.display_name, u.avatar_attachment_id, u.accent_color
     FROM canvas_boards b JOIN users u ON u.id = b.creator_id";
 
@@ -158,11 +167,41 @@ pub async fn create_board(
         group_id: GroupId(group_id),
         creator: crate::perms::user_ref(auth.user_id, username, display_name, avatar, accent),
         name: name.to_string(),
+        style: String::new(),
         created_at: now,
     };
     state.ws.broadcast(
         &format!("group:{group_id}"),
         "canvas.board.created",
+        serde_json::to_value(&board).expect("serializable"),
+    );
+    Ok(Json(board))
+}
+
+/// Change the board's background. Any member may: the background is part of
+/// the board's contents, which every member can already edit.
+pub async fn update_board(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(board_id): Path<i64>,
+    Json(req): Json<UpdateBoardRequest>,
+) -> Result<Json<CanvasBoard>, AppError> {
+    let mut board = require_board_access(&state, board_id, auth.user_id).await?;
+    if req.style.len() > MAX_BOARD_STYLE {
+        return Err(AppError::bad_request(
+            "invalid_style",
+            "board style is too large",
+        ));
+    }
+    sqlx::query("UPDATE canvas_boards SET style = ? WHERE id = ?")
+        .bind(&req.style)
+        .bind(board_id)
+        .execute(&state.pool)
+        .await?;
+    board.style = req.style;
+    state.ws.broadcast(
+        &format!("canvas:{board_id}"),
+        "canvas.board.updated",
         serde_json::to_value(&board).expect("serializable"),
     );
     Ok(Json(board))
@@ -179,6 +218,7 @@ fn row_to_element(row: ElementRow) -> CanvasElement {
         h,
         z,
         text,
+        page,
         color,
         style,
         from_id,
@@ -196,6 +236,7 @@ fn row_to_element(row: ElementRow) -> CanvasElement {
         h,
         z,
         text,
+        page,
         color,
         style,
         from_id,
@@ -215,6 +256,7 @@ type ElementRow = (
     f64,
     i64,
     String,
+    i64,
     String,
     String,
     Option<i64>,
@@ -223,7 +265,7 @@ type ElementRow = (
     i64,
 );
 
-const ELEMENT_SELECT: &str = "SELECT id, board_id, kind, x, y, w, h, z, text, color, style,
+const ELEMENT_SELECT: &str = "SELECT id, board_id, kind, x, y, w, h, z, text, page, color, style,
     from_id, to_id, updated_by, updated_at FROM canvas_elements";
 
 pub async fn board_detail(
@@ -279,8 +321,15 @@ pub async fn delete_board(
     Ok(StatusCode::NO_CONTENT)
 }
 
-fn validate_text(text: &str) -> Result<(), AppError> {
-    if text.len() > MAX_TEXT {
+/// `text` holds prose for most kinds, so it stays tightly capped; a sketch's
+/// stroke data lives there too and needs room to be a drawing.
+fn validate_text(kind: &str, text: &str) -> Result<(), AppError> {
+    let max = if kind == "sketch" {
+        MAX_SKETCH_TEXT
+    } else {
+        MAX_TEXT
+    };
+    if text.len() > max {
         return Err(AppError::bad_request("text_too_long", "text is too long"));
     }
     Ok(())
@@ -296,7 +345,7 @@ pub async fn create_element(
     if !ELEMENT_KINDS.contains(&req.kind.as_str()) {
         return Err(AppError::bad_request("bad_kind", "unknown element kind"));
     }
-    validate_text(&req.text)?;
+    validate_text(&req.kind, &req.text)?;
     if req.kind == "connector" {
         let (Some(from_id), Some(to_id)) = (req.from_id, req.to_id) else {
             return Err(AppError::bad_request(
@@ -335,8 +384,8 @@ pub async fn create_element(
     .fetch_one(&state.pool)
     .await?;
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO canvas_elements (board_id, kind, x, y, w, h, z, text, color, style, from_id, to_id, updated_by, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO canvas_elements (board_id, kind, x, y, w, h, z, text, page, color, style, from_id, to_id, updated_by, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(board_id)
     .bind(&req.kind)
@@ -346,6 +395,7 @@ pub async fn create_element(
     .bind(req.h)
     .bind(z)
     .bind(&req.text)
+    .bind(req.page.unwrap_or(0).max(0))
     .bind(&req.color)
     .bind(&req.style)
     .bind(req.from_id)
@@ -365,6 +415,7 @@ pub async fn create_element(
         h: req.h,
         z,
         text: req.text,
+        page: req.page.unwrap_or(0).max(0),
         color: req.color,
         style: req.style,
         from_id: req.from_id,
@@ -381,12 +432,15 @@ pub async fn create_element(
 }
 
 /// Which board an element belongs to (also proves it exists).
-async fn element_board(state: &AppState, element_id: i64) -> Result<i64, AppError> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT board_id FROM canvas_elements WHERE id = ?")
-        .bind(element_id)
-        .fetch_optional(&state.pool)
-        .await?;
-    row.map(|(b,)| b).ok_or_else(|| {
+/// The element's board and kind — the kind decides how much `text` it may
+/// hold, so an update has to know it before validating.
+async fn element_board(state: &AppState, element_id: i64) -> Result<(i64, String), AppError> {
+    let row: Option<(i64, String)> =
+        sqlx::query_as("SELECT board_id, kind FROM canvas_elements WHERE id = ?")
+            .bind(element_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    row.ok_or_else(|| {
         AppError::new(
             StatusCode::NOT_FOUND,
             "no_such_element",
@@ -401,10 +455,10 @@ pub async fn update_element(
     Path(element_id): Path<i64>,
     Json(req): Json<UpdateElementRequest>,
 ) -> Result<Json<CanvasElement>, AppError> {
-    let board_id = element_board(&state, element_id).await?;
+    let (board_id, kind) = element_board(&state, element_id).await?;
     require_board_access(&state, board_id, auth.user_id).await?;
     if let Some(text) = &req.text {
-        validate_text(text)?;
+        validate_text(&kind, text)?;
     }
 
     let now = now_millis();
@@ -413,7 +467,8 @@ pub async fn update_element(
             x = COALESCE(?, x), y = COALESCE(?, y),
             w = COALESCE(?, w), h = COALESCE(?, h),
             z = COALESCE(?, z),
-            text = COALESCE(?, text), color = COALESCE(?, color),
+            text = COALESCE(?, text), page = COALESCE(?, page),
+            color = COALESCE(?, color),
             style = COALESCE(?, style),
             updated_by = ?, updated_at = ?
          WHERE id = ?",
@@ -424,6 +479,7 @@ pub async fn update_element(
     .bind(req.h)
     .bind(req.z)
     .bind(req.text.as_deref())
+    .bind(req.page)
     .bind(req.color.as_deref())
     .bind(req.style.as_deref())
     .bind(auth.user_id.0)
@@ -450,7 +506,7 @@ pub async fn delete_element(
     auth: AuthUser,
     Path(element_id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    let board_id = element_board(&state, element_id).await?;
+    let (board_id, _) = element_board(&state, element_id).await?;
     require_board_access(&state, board_id, auth.user_id).await?;
     // Cascades to connectors referencing this element.
     sqlx::query("DELETE FROM canvas_elements WHERE id = ? OR from_id = ? OR to_id = ?")

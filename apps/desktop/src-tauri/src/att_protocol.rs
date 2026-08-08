@@ -9,6 +9,24 @@ use tauri::Manager;
 
 use crate::servers::ConnectionManager;
 
+/// Content type from the file's own magic bytes — local media is stored as
+/// the raw bytes that were pasted, with no sidecar metadata.
+fn sniff_image(bytes: &[u8]) -> &'static str {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        "image/png"
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        "image/jpeg"
+    } else if bytes.starts_with(b"GIF8") {
+        "image/gif"
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        "image/webp"
+    } else if bytes.starts_with(b"<svg") || bytes.starts_with(b"<?xml") {
+        "image/svg+xml"
+    } else {
+        "application/octet-stream"
+    }
+}
+
 pub fn handle(
     ctx: tauri::UriSchemeContext<'_, tauri::Wry>,
     request: tauri::http::Request<Vec<u8>>,
@@ -25,6 +43,27 @@ pub fn handle(
                     .expect("valid response"),
             );
         };
+
+        // `localboard/<media>`: a picture this device owns, read straight off
+        // disk. No server, no account — offline boards keep their images.
+        if uri.host() == Some("localboard") {
+            let media = uri.path().trim_start_matches('/');
+            let Some(bytes) = crate::localboards::media_bytes(&app, media) else {
+                return respond_err(responder, StatusCode::NOT_FOUND);
+            };
+            return responder.respond(
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::CONTENT_TYPE, sniff_image(&bytes))
+                    // Media ids are unique per picture, so this never goes stale.
+                    .header(
+                        header::CACHE_CONTROL,
+                        "private, max-age=31536000, immutable",
+                    )
+                    .body(bytes)
+                    .expect("valid response"),
+            );
+        }
 
         // Path is /<id>; host is "attachment".
         let id = uri.path().trim_start_matches('/');

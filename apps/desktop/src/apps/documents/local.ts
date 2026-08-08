@@ -93,6 +93,8 @@ interface LocalDocsState {
   items: LocalDocMeta[];
   loaded: boolean;
   activeLocalId: string | null;
+  /** Panel the editor should open with, set by the list before opening. */
+  pendingPanel: "history" | null;
   load: () => Promise<void>;
   create: (title: string, format: string, state_b64?: string) => Promise<string>;
   rename: (id: string, title: string) => Promise<void>;
@@ -106,6 +108,7 @@ export const useLocalDocs = create<LocalDocsState>((set, get) => ({
   items: [],
   loaded: false,
   activeLocalId: null,
+  pendingPanel: null,
 
   load: async () => {
     const items = await backend.localdocList();

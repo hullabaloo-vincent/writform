@@ -8,6 +8,7 @@ import {
   Diamond,
   ExternalLink,
   Frame as FrameIcon,
+  HardDrive,
   ChevronDown,
   Crop,
   Shapes,
@@ -20,7 +21,28 @@ import {
   RotateCcw,
   RotateCw,
   Grid3x3,
+  ArrowDownToLine,
+  ArrowRight,
+  ArrowUpToLine,
+  Plus,
+  Ban,
+  ClipboardPaste,
+  Copy,
+  CopyPlus,
+  CornerDownRight,
+  Heart,
+  Lock,
+  Scissors,
+  Squircle,
+  Unlock,
+  ImagePlus,
+  Pencil,
+  Search,
+  Star,
+  Palette,
+  Pipette,
   Map as MapIcon,
+  Minus,
   Italic,
   PaintBucket,
   Link2,
@@ -36,17 +58,25 @@ import {
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
-import { attachmentUrl, isCmdError } from "../../lib/backend";
+import { isCmdError } from "../../lib/backend";
 import { uploadBlob } from "../../lib/upload";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useChat } from "../chat/store";
 import { CanvasDocCard } from "../documents/CanvasDocCard";
 import { canvasApi } from "./api";
+import { BoardFind } from "./BoardFind";
+import { imageSrc, isLocalBoard, saveLocalImage } from "./local";
+import {
+  parseSketch,
+  SketchPad,
+  SketchStrokes,
+  type SketchData,
+} from "./SketchPad";
 import { useCanvas } from "./store";
 
 /** One preview fetch per URL per session; cards share the promise. */
@@ -55,6 +85,9 @@ function fetchPreview(url: string): Promise<LinkPreview> {
   let p = previewCache.get(url);
   if (!p) {
     p = canvasApi.linkPreview(url);
+    // Don't cache a failure: a link pasted with no server should still get its
+    // preview once there is one.
+    void p.catch(() => previewCache.delete(url));
     previewCache.set(url, p);
   }
   return p;
@@ -108,12 +141,15 @@ function LinkCard({ url }: { url: string }) {
   );
 }
 
+/** Note fills carry alpha so overlapping notes read as stacked layers rather
+ *  than one hiding the other — kept high enough that the note's dark text
+ *  stays legible over a dark board or a background image. */
 const STICKY_COLORS: Record<string, string> = {
-  yellow: "#e8d478",
-  pink: "#e89ab0",
-  blue: "#8ab6e8",
-  green: "#93d3a2",
-  purple: "#b7a3ea",
+  yellow: "rgba(232, 212, 120, 0.75)",
+  pink: "rgba(232, 154, 176, 0.75)",
+  blue: "rgba(138, 182, 232, 0.75)",
+  green: "rgba(147, 211, 162, 0.75)",
+  purple: "rgba(183, 163, 234, 0.75)",
 };
 
 /** Soft translucent frame fills (Freeform-style); "" = plain frame. */
@@ -147,10 +183,15 @@ interface TextStyle {
   /** Per-side crop, as fractions of the source image hidden (0–0.95). */
   crop?: { t: number; r: number; b: number; l: number };
   /** Which outline a `shape` element draws. */
-  shape?: "rect" | "ellipse" | "diamond" | "triangle";
+  shape?: "rect" | "ellipse" | "diamond" | "triangle" | "star" | "heart";
   /** Shape elements: fill the outline with the color's translucent tint. */
   filled?: boolean;
+  /** Corner radius in px; undefined = whatever the kind's stylesheet says. */
+  radius?: number;
+  /** Locked: still selectable and stylable, but it won't move or resize. */
+  locked?: boolean;
 }
+
 
 type ShapeKind = NonNullable<TextStyle["shape"]>;
 
@@ -159,7 +200,40 @@ const SHAPE_OPTIONS: { kind: ShapeKind; title: string; icon: typeof Square }[] =
   { kind: "ellipse", title: "Ellipse", icon: Circle },
   { kind: "diamond", title: "Diamond", icon: Diamond },
   { kind: "triangle", title: "Triangle", icon: Triangle },
+  { kind: "star", title: "Star", icon: Star },
+  { kind: "heart", title: "Heart", icon: Heart },
 ];
+
+/** Five-pointed star inscribed in the box, so it stretches with the shape. */
+function starPoints(w: number, h: number, m: number): string {
+  const cx = w / 2;
+  const cy = h / 2;
+  const rx = w / 2 - m;
+  const ry = h / 2 - m;
+  return Array.from({ length: 10 }, (_, i) => {
+    const angle = -Math.PI / 2 + (i * Math.PI) / 5;
+    const reach = i % 2 === 0 ? 1 : 0.4; // alternate outer point / inner notch
+    return `${(cx + Math.cos(angle) * rx * reach).toFixed(2)},${(cy + Math.sin(angle) * ry * reach).toFixed(2)}`;
+  }).join(" ");
+}
+
+/** Heart drawn in a 0–1 box and mapped onto the element's, stroke inset. */
+function heartPath(w: number, h: number, m: number): string {
+  const px = (v: number) => (m + v * (w - 2 * m)).toFixed(2);
+  const py = (v: number) => (m + v * (h - 2 * m)).toFixed(2);
+  const curve = (a: number[], b: number[], end: number[]) =>
+    `C ${px(a[0])},${py(a[1])} ${px(b[0])},${py(b[1])} ${px(end[0])},${py(end[1])}`;
+  return [
+    `M ${px(0.5)},${py(0.95)}`,
+    curve([0.15, 0.72], [0.02, 0.48], [0.02, 0.32]),
+    curve([0.02, 0.14], [0.18, 0.05], [0.32, 0.05]),
+    curve([0.41, 0.05], [0.47, 0.12], [0.5, 0.19]),
+    curve([0.53, 0.12], [0.59, 0.05], [0.68, 0.05]),
+    curve([0.82, 0.05], [0.98, 0.14], [0.98, 0.32]),
+    curve([0.98, 0.48], [0.85, 0.72], [0.5, 0.95]),
+    "Z",
+  ].join(" ");
+}
 
 const FONT_STACKS: Record<NonNullable<TextStyle["font"]>, string> = {
   serif: "Georgia, 'Times New Roman', serif",
@@ -217,7 +291,7 @@ function CanvasImage({ el }: { el: CanvasElement }) {
       <div className="wf-el-imgwrap">
         <img
           className="wf-el-img"
-          src={attachmentUrl(Number(el.text))}
+          src={imageSrc(el)}
           alt=""
           draggable={false}
           style={{ transform: imageTransform(st), objectFit: st.fit ?? "contain" }}
@@ -231,7 +305,7 @@ function CanvasImage({ el }: { el: CanvasElement }) {
     <div className="wf-el-imgwrap">
       <img
         className="wf-el-img"
-        src={attachmentUrl(Number(el.text))}
+        src={imageSrc(el)}
         alt=""
         draggable={false}
         style={{
@@ -269,7 +343,33 @@ const Z_BAND_CURSOR = 900_000;
 /** Grid step for snap-to-grid (world units). */
 const GRID = 8;
 
+/** Floors for the resize handle, so an element can't be dragged to nothing. */
+const MIN_W = 60;
+const MIN_H = 36;
+
 type Tool = "select" | "sticky" | "text" | "frame" | "shape" | "connect";
+
+/**
+ * A sketch's strokes, scaled into whatever box the element occupies. The
+ * class is `wf-el-sketch-svg`, never `wf-el-sketch` — that name belongs to
+ * the element div (`wf-el-${kind}`), and sharing it would put this layer's
+ * pointer-events: none on the whole element and make it undraggable.
+ */
+function SketchBody({ el }: { el: CanvasElement }) {
+  const data = parseSketch(el.text);
+  if (!data || data.strokes.length === 0) return null;
+  const { x, y, w, h } = data.box;
+  return (
+    <svg
+      className="wf-el-sketch-svg"
+      viewBox={`${x} ${y} ${w} ${h}`}
+      preserveAspectRatio="xMidYMid meet"
+      aria-hidden
+    >
+      <SketchStrokes strokes={data.strokes} />
+    </svg>
+  );
+}
 
 /** SVG outline of a shape element, stretching with its box. */
 function ShapeBody({ el }: { el: CanvasElement }) {
@@ -300,6 +400,10 @@ function ShapeBody({ el }: { el: CanvasElement }) {
         <polygon points={`${w / 2},${m} ${w - m},${h / 2} ${w / 2},${h - m} ${m},${h / 2}`} />
       ) : shape === "triangle" ? (
         <polygon points={`${w / 2},${m} ${w - m},${h - m} ${m},${h - m}`} />
+      ) : shape === "star" ? (
+        <polygon points={starPoints(w, h, m)} />
+      ) : shape === "heart" ? (
+        <path d={heartPath(w, h, m)} />
       ) : (
         <rect x={m} y={m} width={w - 2 * m} height={h - 2 * m} rx={10} />
       )}
@@ -310,12 +414,20 @@ function ShapeBody({ el }: { el: CanvasElement }) {
 /** Connector styling, stored as JSON in the connector element's `text`. */
 type ConnAnchor = "auto" | "top" | "bottom" | "left" | "right";
 type ConnCap = "none" | "arrow" | "dot";
+type ConnRoute = "straight" | "elbow" | "curve";
 interface ConnStyle {
   from_anchor: ConnAnchor;
   to_anchor: ConnAnchor;
   dash: boolean;
   start_cap: ConnCap;
   end_cap: ConnCap;
+  /** How the line gets there: direct, right-angled, or a smooth curve. */
+  route: ConnRoute;
+  width: number;
+  /** Key into FRAME_COLORS; "" keeps the board's default line color. */
+  color: string;
+  /** Words on the line, drawn at its midpoint. */
+  label: string;
 }
 
 const CONN_DEFAULTS: ConnStyle = {
@@ -324,7 +436,163 @@ const CONN_DEFAULTS: ConnStyle = {
   dash: false,
   start_cap: "none",
   end_cap: "none",
+  route: "straight",
+  width: 2,
+  color: "",
+  label: "",
 };
+
+const CONN_ROUTES: { id: ConnRoute; title: string; icon: typeof Spline }[] = [
+  { id: "straight", title: "Straight line", icon: Minus },
+  { id: "elbow", title: "Right angles", icon: CornerDownRight },
+  { id: "curve", title: "Curved", icon: Spline },
+];
+
+const CONN_WIDTHS = [1.5, 3, 5];
+
+type Side = "top" | "right" | "bottom" | "left";
+const SIDES: Side[] = ["top", "right", "bottom", "left"];
+
+/** Which edge an endpoint sits on — the direction its line should leave in. */
+function sideOf(el: CanvasElement, at: { x: number; y: number }, anchor: ConnAnchor): Side {
+  if (anchor !== "auto") return anchor;
+  const dx = (at.x - (el.x + el.w / 2)) / Math.max(1, el.w / 2);
+  const dy = (at.y - (el.y + el.h / 2)) / Math.max(1, el.h / 2);
+  if (Math.abs(dx) >= Math.abs(dy)) return dx >= 0 ? "right" : "left";
+  return dy >= 0 ? "bottom" : "top";
+}
+
+const stub = (p: { x: number; y: number }, side: Side, by: number) => ({
+  x: p.x + (side === "left" ? -by : side === "right" ? by : 0),
+  y: p.y + (side === "top" ? -by : side === "bottom" ? by : 0),
+});
+
+/** Orthogonal route: leave each end along its own side, then turn. */
+function elbowPoints(
+  p1: { x: number; y: number },
+  s1: Side,
+  p2: { x: number; y: number },
+  s2: Side,
+): { x: number; y: number }[] {
+  const gap = 24;
+  const a = stub(p1, s1, gap);
+  const b = stub(p2, s2, gap);
+  const h1 = s1 === "left" || s1 === "right";
+  const h2 = s2 === "left" || s2 === "right";
+  const middle: { x: number; y: number }[] = h1
+    ? h2
+      ? [
+          { x: (a.x + b.x) / 2, y: a.y },
+          { x: (a.x + b.x) / 2, y: b.y },
+        ]
+      : [{ x: b.x, y: a.y }]
+    : h2
+      ? [{ x: a.x, y: b.y }]
+      : [
+          { x: a.x, y: (a.y + b.y) / 2 },
+          { x: b.x, y: (a.y + b.y) / 2 },
+        ];
+  const points = [p1, a, ...middle, b, p2];
+  // Drop repeats so the corner rounding never divides by a zero-length leg.
+  return points.filter(
+    (p, i) => i === 0 || Math.hypot(p.x - points[i - 1].x, p.y - points[i - 1].y) > 0.5,
+  );
+}
+
+/** Polyline with rounded corners, the way a drawn elbow looks. */
+function roundedPath(points: { x: number; y: number }[], radius = 12): string {
+  if (points.length < 2) return "";
+  let d = `M ${points[0].x},${points[0].y}`;
+  for (let i = 1; i < points.length - 1; i += 1) {
+    const prev = points[i - 1];
+    const here = points[i];
+    const next = points[i + 1];
+    const inLen = Math.hypot(here.x - prev.x, here.y - prev.y);
+    const outLen = Math.hypot(next.x - here.x, next.y - here.y);
+    const r = Math.min(radius, inLen / 2, outLen / 2);
+    const before = {
+      x: here.x + ((prev.x - here.x) / inLen) * r,
+      y: here.y + ((prev.y - here.y) / inLen) * r,
+    };
+    const after = {
+      x: here.x + ((next.x - here.x) / outLen) * r,
+      y: here.y + ((next.y - here.y) / outLen) * r,
+    };
+    d += ` L ${before.x},${before.y} Q ${here.x},${here.y} ${after.x},${after.y}`;
+  }
+  const last = points[points.length - 1];
+  return `${d} L ${last.x},${last.y}`;
+}
+
+interface ConnGeometry {
+  d: string;
+  startAngle: number;
+  endAngle: number;
+  labelAt: { x: number; y: number };
+}
+
+/** The drawn shape of a connector, plus where its caps point and its label
+ *  sits — all three depend on the route, so they're worked out together. */
+function connectorGeometry(
+  p1: { x: number; y: number },
+  s1: Side,
+  p2: { x: number; y: number },
+  s2: Side,
+  route: ConnRoute,
+): ConnGeometry {
+  const angle = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+
+  if (route === "elbow") {
+    const points = elbowPoints(p1, s1, p2, s2);
+    // Midpoint by distance along the polyline, so the label sits on the line
+    // rather than at the average of its ends.
+    const lengths = points.slice(1).map((p, i) => Math.hypot(p.x - points[i].x, p.y - points[i].y));
+    const total = lengths.reduce((sum, l) => sum + l, 0);
+    let walked = 0;
+    let labelAt = points[0];
+    for (let i = 0; i < lengths.length; i += 1) {
+      if (walked + lengths[i] >= total / 2) {
+        const t = lengths[i] === 0 ? 0 : (total / 2 - walked) / lengths[i];
+        labelAt = {
+          x: points[i].x + (points[i + 1].x - points[i].x) * t,
+          y: points[i].y + (points[i + 1].y - points[i].y) * t,
+        };
+        break;
+      }
+      walked += lengths[i];
+    }
+    return {
+      d: roundedPath(points),
+      startAngle: angle(points[0], points[1]),
+      endAngle: angle(points[points.length - 2], points[points.length - 1]),
+      labelAt,
+    };
+  }
+
+  if (route === "curve") {
+    const reach = Math.max(48, Math.hypot(p2.x - p1.x, p2.y - p1.y) / 2);
+    const c1 = stub(p1, s1, reach);
+    const c2 = stub(p2, s2, reach);
+    return {
+      d: `M ${p1.x},${p1.y} C ${c1.x},${c1.y} ${c2.x},${c2.y} ${p2.x},${p2.y}`,
+      startAngle: angle(p1, c1),
+      endAngle: angle(c2, p2),
+      // The cubic's own midpoint, not the chord's.
+      labelAt: {
+        x: (p1.x + 3 * c1.x + 3 * c2.x + p2.x) / 8,
+        y: (p1.y + 3 * c1.y + 3 * c2.y + p2.y) / 8,
+      },
+    };
+  }
+
+  return {
+    d: `M ${p1.x},${p1.y} L ${p2.x},${p2.y}`,
+    startAngle: angle(p1, p2),
+    endAngle: angle(p1, p2),
+    labelAt: { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 },
+  };
+}
 
 function connStyle(text: string): ConnStyle {
   try {
@@ -373,22 +641,28 @@ function ConnectorCap({
   kind,
   at,
   angleDeg,
+  color,
 }: {
   kind: ConnCap;
   at: { x: number; y: number };
   angleDeg: number;
+  /** Matches the line; undefined leaves the stylesheet's color in charge. */
+  color?: string;
 }) {
   if (kind === "arrow") {
     return (
       <path
         className="wf-cap"
         d="M0,0 L-14,7 L-14,-7 Z"
+        style={color ? { fill: color } : undefined}
         transform={`translate(${at.x}, ${at.y}) rotate(${angleDeg})`}
       />
     );
   }
   if (kind === "dot") {
-    return <circle className="wf-cap" cx={at.x} cy={at.y} r={5} />;
+    return (
+      <circle className="wf-cap" cx={at.x} cy={at.y} r={5} style={color ? { fill: color } : undefined} />
+    );
   }
   return null;
 }
@@ -408,10 +682,120 @@ interface CanvasHistoryAction {
   redo: () => Promise<void>;
 }
 
+/** Marks a clipboard payload as ours, so pasting elsewhere is still plain text
+ *  and pasting here is a real copy rather than a sticky full of JSON. */
+const CLIP_PREFIX = "writform/canvas-v1:";
+
+/** What the right-click menu's Paste uses. The clipboard proper can only be
+ *  read inside a paste event, and a menu click isn't one. */
+let lastCopy: CanvasElement[] = [];
+
+interface BoardMenuItem {
+  label: string;
+  icon?: React.ReactNode;
+  danger?: boolean;
+  disabled?: boolean;
+  /** Draws a tick, for the settings-style entries. */
+  checked?: boolean;
+  onClick: () => void;
+}
+
+/** `null` entries render as separators. */
+interface BoardMenuState {
+  x: number;
+  y: number;
+  items: (BoardMenuItem | null)[];
+}
+
+type BgFit = "cover" | "contain" | "stretch" | "tile" | "center";
+
+/** The board's own `style` column: a color, an image, and how it's laid in.
+ *  `image` is an attachment id on a group board, or a `local:` reference to a
+ *  picture stored on this device. */
+interface BoardBackground {
+  color?: string;
+  image?: number | string;
+  fit?: BgFit;
+}
+
+const BG_FITS: { id: BgFit; label: string }[] = [
+  { id: "cover", label: "Fill" },
+  { id: "contain", label: "Fit" },
+  { id: "stretch", label: "Stretch" },
+  { id: "tile", label: "Tile" },
+  { id: "center", label: "Center" },
+];
+
+const BG_COLORS: { label: string; value?: string }[] = [
+  { label: "Default" },
+  { label: "Ink", value: "#12131a" },
+  { label: "Slate", value: "#1d1f27" },
+  { label: "Moss", value: "#1b2620" },
+  { label: "Plum", value: "#231b2a" },
+  { label: "Paper", value: "#f6f3ea" },
+  { label: "Sand", value: "#e8dcc6" },
+  { label: "Sky", value: "#dbe6f2" },
+];
+
+/** A board's pages. Elements store the page's ID, never its position, so
+ *  deleting one doesn't silently move everything on the pages after it. */
+interface BoardPage {
+  id: number;
+  name: string;
+}
+
+/** Everything the board's single `style` column holds. */
+interface BoardStyle extends BoardBackground {
+  pages?: BoardPage[];
+}
+
+function parseBoardStyle(raw: string): BoardStyle {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as BoardStyle;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function parseBackground(raw: string): BoardBackground {
+  const { color, image, fit } = parseBoardStyle(raw);
+  return { color, image, fit };
+}
+
+/** Every board has at least one page, whether or not it says so. */
+function boardPages(raw: string): BoardPage[] {
+  const pages = parseBoardStyle(raw).pages;
+  return pages && pages.length > 0 ? pages : [{ id: 0, name: "Page 1" }];
+}
+
+/** Only the color is set when there's no image, so the dot grid survives. */
+function backgroundStyle(bg: BoardBackground): CSSProperties {
+  const style: CSSProperties = {};
+  if (bg.color) style.backgroundColor = bg.color;
+  if (bg.image !== undefined) {
+    const fit = bg.fit ?? "cover";
+    style.backgroundImage = `url("${imageSrc({ text: String(bg.image) })}")`;
+    style.backgroundSize =
+      fit === "stretch" ? "100% 100%" : fit === "cover" || fit === "contain" ? fit : "auto";
+    style.backgroundRepeat = fit === "tile" ? "repeat" : "no-repeat";
+    style.backgroundPosition = "center";
+  }
+  return style;
+}
+
+/** Keyboard and clipboard shortcuts belong to whatever is being typed in. */
+function isTypingTarget(): boolean {
+  const el = document.activeElement as HTMLElement | null;
+  const tag = (el?.tagName ?? "").toLowerCase();
+  return tag === "textarea" || tag === "input" || el?.isContentEditable === true;
+}
+
 function createRequest(el: CanvasElement, from_id = el.from_id, to_id = el.to_id) {
   return {
     kind: el.kind, x: el.x, y: el.y, w: el.w, h: el.h, text: el.text,
-    color: el.color, style: el.style, from_id, to_id,
+    page: el.page ?? 0, color: el.color, style: el.style, from_id, to_id,
   };
 }
 
@@ -423,6 +807,37 @@ function patchLocal(id: number, patch: Partial<CanvasElement>) {
     if (!el) return s;
     return { elements: { ...s.elements, [id]: { ...el, ...patch } } };
   });
+}
+
+const isLocked = (el: CanvasElement): boolean => textStyle(el.style).locked === true;
+
+/** Mirrors the per-kind corner radius in styles.css, so the radius handle
+ *  starts where the element already looks rounded. Keep the two in step. */
+const defaultRadius = (el: CanvasElement): number =>
+  el.kind === "sticky" ? 16 : el.kind === "frame" ? 20 : 8;
+
+/** Kinds with a box to round. Shapes draw their own outline in SVG. */
+const canRound = (el: CanvasElement): boolean =>
+  !["connector", "shape"].includes(el.kind);
+
+/** How far from the corner the radius handle may travel. It rides the radius
+ *  it controls, but only this far: on a large element half the shorter side
+ *  is hundreds of pixels, and a handle drifting toward the middle reads as a
+ *  loose dot rather than a corner control. */
+const RADIUS_HANDLE_MAX = 26;
+
+const radiusHandleAt = (el: CanvasElement): number => {
+  const radius = textStyle(el.style).radius ?? defaultRadius(el);
+  return Math.max(
+    7,
+    Math.min(radius, RADIUS_HANDLE_MAX, Math.min(el.w, el.h) / 2 - 6),
+  );
+};
+
+function minZ(elements: Record<number, CanvasElement>): number {
+  let z = 0;
+  for (const el of Object.values(elements)) if (el.z < z) z = el.z;
+  return z;
 }
 
 function maxZ(elements: Record<number, CanvasElement>): number {
@@ -445,6 +860,12 @@ export function BoardRoom() {
   const [tool, setTool] = useState<Tool>("select");
   /** Which outline the shape tool places; picked from the toolbar popover. */
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rect");
+  const [finding, setFinding] = useState(false);
+  /** null = closed; `{ el: null }` = drawing a new one; `{ el }` = editing. */
+  const [sketching, setSketching] = useState<{ el: CanvasElement | null } | null>(null);
+  const [menu, setMenu] = useState<BoardMenuState | null>(null);
+  const [activePage, setActivePage] = useState(0);
+  const [renamingPage, setRenamingPage] = useState<number | null>(null);
   const [shapeMenu, setShapeMenu] = useState(false);
   useEffect(() => {
     if (!shapeMenu) return;
@@ -578,12 +999,21 @@ export function BoardRoom() {
   /** Quantize a world coordinate to the grid when snapping is on. */
   const snapv = (v: number) => (snapRef.current ? Math.round(v / GRID) * GRID : v);
 
+  /** World point at the middle of the visible board — where new things land. */
+  const centerOfView = () => {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    const v = viewRef.current;
+    if (!rect) return { x: 0, y: 0 };
+    return { x: (rect.width / 2 - v.tx) / v.scale, y: (rect.height / 2 - v.ty) / v.scale };
+  };
+
   const fail = (e: unknown) => setError(isCmdError(e) ? e.message : String(e));
 
   useEffect(() => {
     undoStack.current = [];
     redoStack.current = [];
     liveIds.current.clear();
+    setActivePage(0);
     refreshHistory((n) => n + 1);
   }, [board?.id]);
 
@@ -691,6 +1121,30 @@ export function BoardRoom() {
     });
   };
 
+  /** Connectors go first so no endpoint disappears out from under one. */
+  const removeAll = async (snapshots: CanvasElement[]) => {
+    const bodyIds = snapshots.filter((el) => el.kind !== "connector").map((el) => resolveId(el.id));
+    const connectorIds = snapshots.filter((el) => el.kind === "connector").map((el) => resolveId(el.id));
+    for (const id of [...connectorIds, ...bodyIds]) {
+      await canvasApi.deleteElement(id).catch(() => {});
+      useCanvas.getState().removeElement(id);
+    }
+  };
+
+  /** Bodies first, then connectors onto their (possibly new) endpoint ids. */
+  const recreateAll = async (snapshots: CanvasElement[]) => {
+    for (const el of snapshots.filter((item) => item.kind !== "connector")) {
+      const created = await canvasApi.createElement(el.board_id, createRequest(el));
+      liveIds.current.set(el.id, created.id);
+      useCanvas.getState().applyElement(created);
+    }
+    for (const el of snapshots.filter((item) => item.kind === "connector")) {
+      const created = await canvasApi.createElement(el.board_id, createRequest(el, el.from_id === null ? null : resolveId(el.from_id), el.to_id === null ? null : resolveId(el.to_id)));
+      liveIds.current.set(el.id, created.id);
+      useCanvas.getState().applyElement(created);
+    }
+  };
+
   const deleteSelected = (ids: Set<number>) => {
     if (ids.size === 0) return;
     const current = useCanvas.getState().elements;
@@ -700,60 +1154,218 @@ export function BoardRoom() {
     }
     const snapshots = [...logicalIds].map((id) => current[id]).filter(Boolean);
     for (const el of snapshots) liveIds.current.set(el.id, el.id);
-    const remove = async () => {
-      const bodyIds = snapshots.filter((el) => el.kind !== "connector").map((el) => resolveId(el.id));
-      const connectorIds = snapshots.filter((el) => el.kind === "connector").map((el) => resolveId(el.id));
-      for (const id of [...connectorIds, ...bodyIds]) {
-        await canvasApi.deleteElement(id).catch(() => {});
-        useCanvas.getState().removeElement(id);
-      }
-    };
-    const restore = async () => {
-      for (const el of snapshots.filter((item) => item.kind !== "connector")) {
-        const created = await canvasApi.createElement(el.board_id, createRequest(el));
-        liveIds.current.set(el.id, created.id);
-        useCanvas.getState().applyElement(created);
-      }
-      for (const el of snapshots.filter((item) => item.kind === "connector")) {
-        const created = await canvasApi.createElement(el.board_id, createRequest(el, el.from_id === null ? null : resolveId(el.from_id), el.to_id === null ? null : resolveId(el.to_id)));
-        liveIds.current.set(el.id, created.id);
-        useCanvas.getState().applyElement(created);
-      }
-    };
+    const remove = () => removeAll(snapshots);
+    const restore = () => recreateAll(snapshots);
     void remove().catch(fail);
     pushHistory({ label: snapshots.length === 1 ? "Delete element" : `Delete ${snapshots.length} elements`, undo: restore, redo: remove });
     setSelected(new Set());
   };
 
+  /**
+   * Drop the pasted copy where the eye is: centred in the viewport, or nudged
+   * off the original for a duplicate. Connectors are re-pointed at the new
+   * copies, so a pasted diagram stays wired the way it was drawn.
+   */
+  const pasteElements = async (
+    payload: CanvasElement[],
+    placement: { mode: "center" } | { mode: "offset"; dx: number; dy: number },
+  ) => {
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined || payload.length === 0) return;
+    const bodies = payload.filter((el) => el.kind !== "connector");
+    const connectors = payload.filter((el) => el.kind === "connector");
+    let dx = 0;
+    let dy = 0;
+    if (placement.mode === "offset") {
+      dx = placement.dx;
+      dy = placement.dy;
+    } else if (bodies.length > 0) {
+      const midX = (Math.min(...bodies.map((el) => el.x)) + Math.max(...bodies.map((el) => el.x + el.w))) / 2;
+      const midY = (Math.min(...bodies.map((el) => el.y)) + Math.max(...bodies.map((el) => el.y + el.h))) / 2;
+      const center = centerOfView();
+      dx = center.x - midX;
+      dy = center.y - midY;
+    }
+
+    const idMap = new Map<number, number>();
+    const created: CanvasElement[] = [];
+    for (const el of bodies) {
+      const made = await canvasApi.createElement(boardId, {
+        ...createRequest(el, null, null),
+        x: snapv(el.x + dx),
+        y: snapv(el.y + dy),
+      });
+      idMap.set(el.id, made.id);
+      liveIds.current.set(made.id, made.id);
+      useCanvas.getState().applyElement(made);
+      created.push(made);
+    }
+    for (const el of connectors) {
+      const from = el.from_id === null ? undefined : idMap.get(el.from_id);
+      const to = el.to_id === null ? undefined : idMap.get(el.to_id);
+      if (from === undefined || to === undefined) continue; // would dangle
+      const made = await canvasApi.createElement(boardId, createRequest(el, from, to));
+      liveIds.current.set(made.id, made.id);
+      useCanvas.getState().applyElement(made);
+      created.push(made);
+    }
+    if (created.length === 0) return;
+    setSelected(new Set(created.filter((el) => el.kind !== "connector").map((el) => el.id)));
+    pushHistory({
+      label: created.length === 1 ? "Paste element" : `Paste ${created.length} elements`,
+      undo: () => removeAll(created),
+      redo: () => recreateAll(created),
+    });
+  };
+
+  const copyPayload = (ids: Set<number>): CanvasElement[] => {
+    const current = useCanvas.getState().elements;
+    const bodies = [...ids]
+      .map((id) => current[id])
+      .filter((el): el is CanvasElement => Boolean(el) && el.kind !== "connector");
+    const bodyIds = new Set(bodies.map((el) => el.id));
+    // Connectors come along when both ends do — including ones the marquee
+    // never touched, since a link between two copied notes is part of them.
+    const connectors = Object.values(current).filter(
+      (el) =>
+        el.kind === "connector" &&
+        el.from_id !== null &&
+        el.to_id !== null &&
+        bodyIds.has(el.from_id) &&
+        bodyIds.has(el.to_id),
+    );
+    return [...bodies, ...connectors];
+  };
+
+  /**
+   * Frame a set of elements: centre them and pick the scale that fits, with
+   * room to breathe. An empty set means "show me the whole board", which is
+   * what F does when nothing is selected.
+   */
+  const focusOn = (ids: Set<number>) => {
+    const source = useCanvas.getState().elements;
+    const picked = (ids.size > 0 ? [...ids].map((id) => source[id]) : Object.values(source)).filter(
+      (el): el is CanvasElement =>
+        Boolean(el) && el.kind !== "connector" && (ids.size > 0 || (el.page ?? 0) === activePage),
+    );
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (picked.length === 0 || !rect) return;
+    const minX = Math.min(...picked.map((el) => el.x));
+    const minY = Math.min(...picked.map((el) => el.y));
+    const maxX = Math.max(...picked.map((el) => el.x + el.w));
+    const maxY = Math.max(...picked.map((el) => el.y + el.h));
+    const pad = 96;
+    const scale = Math.min(
+      2.5,
+      Math.max(
+        0.2,
+        Math.min(
+          (rect.width - pad) / Math.max(1, maxX - minX),
+          (rect.height - pad) / Math.max(1, maxY - minY),
+        ),
+      ),
+    );
+    setView({
+      scale,
+      tx: rect.width / 2 - ((minX + maxX) / 2) * scale,
+      ty: rect.height / 2 - ((minY + maxY) / 2) * scale,
+    });
+  };
+
   // Keyboard history and deletion (unless typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
-      if (tag === "textarea" || tag === "input") return;
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
+      if (isTypingTarget()) return;
+      const mod = e.metaKey || e.ctrlKey;
+      const key = e.key.toLowerCase();
+      if (mod && key === "z") {
         e.preventDefault();
         if (e.shiftKey) void redo(); else void undo();
+        return;
+      }
+      if (mod && key === "a") {
+        e.preventDefault();
+        const all = Object.values(useCanvas.getState().elements).filter(
+          (el) => el.kind !== "connector" && (el.page ?? 0) === activePage,
+        );
+        setSelected(new Set(all.map((el) => el.id)));
+        return;
+      }
+      if (mod && key === "f") {
+        e.preventDefault();
+        setFinding(true);
+        return;
+      }
+      if (!mod && key === "f") {
+        // Frame the selection, or the whole board when nothing is selected.
+        e.preventDefault();
+        focusOn(selected);
+        return;
+      }
+      if (mod && key === "d") {
+        // Duplicate in place, nudged so the copy is visibly its own thing.
+        e.preventDefault();
+        if (selected.size > 0) {
+          void pasteElements(copyPayload(selected), { mode: "offset", dx: 24, dy: 24 }).catch(fail);
+        }
         return;
       }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
       if (selected.size > 0) deleteSelected(selected);
     };
+    // Copy/cut ride the real clipboard events, so the board's copy replaces
+    // whatever else was on the clipboard and the newest copy always wins at
+    // paste time — no private clipboard shadowing the system one.
+    const writeClipboard = (e: ClipboardEvent): boolean => {
+      if (isTypingTarget()) return false;
+      const payload = copyPayload(selected);
+      if (payload.length === 0) return false;
+      e.preventDefault();
+      lastCopy = payload; // so the right-click menu's Paste matches ⌘V
+      e.clipboardData?.setData("text/plain", CLIP_PREFIX + JSON.stringify(payload));
+      return true;
+    };
+    const onCopy = (e: ClipboardEvent) => void writeClipboard(e);
+    const onCut = (e: ClipboardEvent) => {
+      if (writeClipboard(e)) deleteSelected(selected);
+    };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [selected]);
+    window.addEventListener("copy", onCopy);
+    window.addEventListener("cut", onCut);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("copy", onCopy);
+      window.removeEventListener("cut", onCut);
+    };
+    // activePage matters: select-all must mean the page in view, not the one
+    // that happened to be open when the listener was attached.
+  }, [selected, activePage]);
+
+  // A page someone else deleted can't stay selected, or the board would look
+  // empty with no way back.
+  useEffect(() => {
+    const live = boardPages(board?.style ?? "");
+    if (!live.some((p) => p.id === activePage)) setActivePage(live[0].id);
+  }, [board?.style, activePage]);
+
+  // Any press outside the context menu dismisses it; so does Escape.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [menu]);
 
   // Paste onto the board: images become image elements, URLs become link
   // cards, other text becomes a sticky — placed at the viewport center.
   useEffect(() => {
-    const centerWorld = () => {
-      const rect = surfaceRef.current?.getBoundingClientRect();
-      const v = viewRef.current;
-      if (!rect) return { x: 0, y: 0 };
-      return {
-        x: (rect.width / 2 - v.tx) / v.scale,
-        y: (rect.height / 2 - v.ty) / v.scale,
-      };
-    };
     const create = (
       kind: string,
       text: string,
@@ -763,10 +1375,11 @@ export function BoardRoom() {
     ) => {
       const boardId = useCanvas.getState().board?.id;
       if (boardId === undefined) return;
-      const { x, y } = centerWorld();
+      const { x, y } = centerOfView();
       canvasApi
         .createElement(boardId, {
           kind,
+          page: activePage,
           x: snapv(x - w / 2),
           y: snapv(y - h / 2),
           w,
@@ -785,36 +1398,59 @@ export function BoardRoom() {
         .catch(fail);
     };
     const onPaste = (e: ClipboardEvent) => {
-      const tag = (document.activeElement?.tagName ?? "").toLowerCase();
-      if (tag === "textarea" || tag === "input") return; // typing somewhere
+      if (isTypingTarget()) return; // typing somewhere
       const item = [...(e.clipboardData?.items ?? [])].find((i) =>
         i.type.startsWith("image/"),
       );
       const file = item?.getAsFile();
       if (file) {
         e.preventDefault();
-        void uploadBlob(file, "pasted.png")
-          .then((meta) => {
-            // Natural aspect ratio, capped at 480px on the long edge.
-            const img = new window.Image();
-            img.onload = () => {
-              const scale = Math.min(1, 480 / Math.max(img.width, img.height));
-              create(
-                "image",
-                String(meta.id),
-                Math.max(60, Math.round(img.width * scale)),
-                Math.max(60, Math.round(img.height * scale)),
-              );
-            };
-            img.onerror = () => create("image", String(meta.id), 320, 240);
-            img.src = URL.createObjectURL(file);
-          })
-          .catch(fail);
+        const boardId = useCanvas.getState().board?.id;
+        if (boardId === undefined) return;
+        // Place at the picture's own aspect ratio, capped at 480px on the
+        // long edge.
+        const place = (ref: string) => {
+          const img = new window.Image();
+          const url = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const scale = Math.min(1, 480 / Math.max(img.width, img.height));
+            create(
+              "image",
+              ref,
+              Math.max(60, Math.round(img.width * scale)),
+              Math.max(60, Math.round(img.height * scale)),
+            );
+          };
+          img.onerror = () => {
+            URL.revokeObjectURL(url);
+            create("image", ref, 320, 240);
+          };
+          img.src = url;
+        };
+        // A board on this device keeps its pictures beside it; a group board
+        // uploads them as attachments so everyone else can see them.
+        if (isLocalBoard(boardId)) {
+          void saveLocalImage(file).then(place).catch(fail);
+        } else {
+          void uploadBlob(file, "pasted.png")
+            .then((meta) => place(String(meta.id)))
+            .catch(fail);
+        }
         return;
       }
       const text = e.clipboardData?.getData("text/plain")?.trim();
       if (!text) return;
       e.preventDefault();
+      if (text.startsWith(CLIP_PREFIX)) {
+        try {
+          const payload = JSON.parse(text.slice(CLIP_PREFIX.length)) as CanvasElement[];
+          if (Array.isArray(payload)) void pasteElements(payload, { mode: "center" }).catch(fail);
+        } catch {
+          // mangled on the way through the clipboard — nothing to paste
+        }
+        return;
+      }
       if (/^https?:\/\/\S+$/.test(text)) create("link", text, 280, 96);
       else create("sticky", text.slice(0, 4000), 180, 140, "yellow");
     };
@@ -824,8 +1460,249 @@ export function BoardRoom() {
   }, []);
 
   if (!board) return <div className="wf-sessions-empty">Loading…</div>;
+  const local = isLocalBoard(board.id);
   const group = groups.find((g) => g.id === board.group_id);
-  const canDelete = me && (board.creator.id === me.id || group?.my_role === "admin");
+  const canDelete = local || (me && (board.creator.id === me.id || group?.my_role === "admin"));
+  const background = parseBackground(board.style);
+
+  const writeBoardStyle = async (style: string) => {
+    const current = useCanvas.getState().board;
+    if (!current) return;
+    useCanvas.setState({ board: await canvasApi.updateBoard(current.id, style) });
+  };
+  /**
+   * Insert a finished sketch at the centre of the view, or save an edit back
+   * into the element it came from. The drawing's own proportions set the
+   * element's starting size, capped so a big doodle doesn't land oversized.
+   */
+  const saveSketch = (data: SketchData, target: CanvasElement | null) => {
+    const text = JSON.stringify(data);
+    setSketching(null);
+    if (target) {
+      applyPatchWithHistory(target, { text }, "Edit sketch");
+      return;
+    }
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const scale = Math.min(1, 420 / Math.max(data.box.w, data.box.h));
+    const w = Math.max(MIN_W, Math.round(data.box.w * scale));
+    const h = Math.max(MIN_H, Math.round(data.box.h * scale));
+    const center = centerOfView();
+    canvasApi
+      .createElement(boardId, {
+        kind: "sketch",
+        page: activePage,
+        x: snapv(center.x - w / 2),
+        y: snapv(center.y - h / 2),
+        w,
+        h,
+        text,
+        color: "",
+        style: "",
+        from_id: null,
+        to_id: null,
+      })
+      .then((el) => {
+        useCanvas.getState().applyElement(el);
+        setSelected(new Set([el.id]));
+        recordCreate(el, "Add sketch");
+      })
+      .catch(fail);
+  };
+
+  /** Patch every element of a selection as one undoable step. */
+  const patchEach = (
+    ids: Set<number>,
+    patchFor: (el: CanvasElement, index: number) => Partial<CanvasElement>,
+    label: string,
+  ) => {
+    const source = useCanvas.getState().elements;
+    const after: { id: number; patch: Partial<CanvasElement> }[] = [];
+    const before: { id: number; patch: Partial<CanvasElement> }[] = [];
+    [...ids]
+      .map((id) => source[id])
+      .filter(Boolean)
+      .forEach((el, index) => {
+        const patch = patchFor(el, index);
+        const prev: Partial<CanvasElement> = {};
+        for (const key of Object.keys(patch) as (keyof CanvasElement)[]) {
+          (prev as Record<string, unknown>)[key] = el[key];
+        }
+        if (JSON.stringify(prev) === JSON.stringify(patch)) return;
+        after.push({ id: el.id, patch });
+        before.push({ id: el.id, patch: prev });
+      });
+    if (after.length === 0) return;
+    const apply = async (list: typeof after) => {
+      for (const item of list) await commitPatch(resolveId(item.id), item.patch);
+    };
+    void apply(after).catch(fail);
+    pushHistory({ label, undo: () => apply(before), redo: () => apply(after) });
+  };
+
+  const styleEach = (ids: Set<number>, change: (st: TextStyle) => TextStyle, label: string) =>
+    patchEach(ids, (el) => ({ style: JSON.stringify(change(textStyle(el.style))) }), label);
+
+  const reorder = (ids: Set<number>, dir: "front" | "back") => {
+    const source = useCanvas.getState().elements;
+    const top = maxZ(source);
+    const bottom = minZ(source);
+    patchEach(
+      ids,
+      (_el, index) => ({ z: dir === "front" ? top + 1 + index : bottom - 1 - index }),
+      dir === "front" ? "Bring to front" : "Send to back",
+    );
+  };
+
+  /** Copy for the menu: the in-app buffer is what Paste reads, and the system
+   *  clipboard is kept in step so ⌘V gives the same thing. */
+  const copyToBuffer = (ids: Set<number>) => {
+    const payload = copyPayload(ids);
+    if (payload.length === 0) return;
+    lastCopy = payload;
+    void navigator.clipboard
+      ?.writeText?.(CLIP_PREFIX + JSON.stringify(payload))
+      .catch(() => {});
+  };
+
+  const openElementMenu = (e: React.MouseEvent, el: CanvasElement) => {
+    e.preventDefault();
+    e.stopPropagation();
+    // Right-clicking outside the current selection retargets it first.
+    const ids = selected.has(el.id) ? new Set(selected) : new Set([el.id]);
+    if (!selected.has(el.id)) setSelected(ids);
+    const st = textStyle(el.style);
+    const locked = st.locked === true;
+    const many = ids.size > 1;
+    const editable = !many && ["sticky", "text", "frame", "shape", "sketch"].includes(el.kind);
+    const items: (BoardMenuItem | null)[] = [
+      { label: "Bring to front", icon: <ArrowUpToLine size={14} />, onClick: () => reorder(ids, "front") },
+      { label: "Send to back", icon: <ArrowDownToLine size={14} />, onClick: () => reorder(ids, "back") },
+      null,
+      {
+        label: "Cut",
+        icon: <Scissors size={14} />,
+        onClick: () => {
+          copyToBuffer(ids);
+          deleteSelected(ids);
+        },
+      },
+      { label: "Copy", icon: <Copy size={14} />, onClick: () => copyToBuffer(ids) },
+      {
+        label: "Paste",
+        icon: <ClipboardPaste size={14} />,
+        disabled: lastCopy.length === 0,
+        onClick: () => void pasteElements(lastCopy, { mode: "center" }).catch(fail),
+      },
+      {
+        label: "Duplicate",
+        icon: <CopyPlus size={14} />,
+        onClick: () =>
+          void pasteElements(copyPayload(ids), { mode: "offset", dx: 24, dy: 24 }).catch(fail),
+      },
+      null,
+      {
+        label: locked ? "Unlock" : "Lock",
+        icon: locked ? <Unlock size={14} /> : <Lock size={14} />,
+        checked: locked,
+        onClick: () =>
+          styleEach(
+            ids,
+            (s) => ({ ...s, locked: locked ? undefined : true }),
+            locked ? "Unlock" : "Lock",
+          ),
+      },
+      {
+        label: "Round corners",
+        icon: <Squircle size={14} />,
+        checked: (st.radius ?? 16) > 0,
+        onClick: () =>
+          styleEach(
+            ids,
+            (s) => ({ ...s, radius: (s.radius ?? 16) > 0 ? 0 : 16 }),
+            "Round corners",
+          ),
+      },
+      editable ? null : undefined,
+      editable
+        ? {
+            label: el.kind === "sketch" ? "Edit sketch" : "Edit text",
+            icon: <Pencil size={14} />,
+            onClick: () => (el.kind === "sketch" ? setSketching({ el }) : beginEditing(el)),
+          }
+        : undefined,
+      null,
+      {
+        label: many ? `Delete ${ids.size} elements` : "Delete",
+        icon: <Trash2 size={14} />,
+        danger: true,
+        onClick: () => deleteSelected(ids),
+      },
+    ].filter((item) => item !== undefined) as (BoardMenuItem | null)[];
+    setMenu({ x: e.clientX, y: e.clientY, items });
+  };
+
+  const applyBackground = (style: string) => {
+    const before = board.style;
+    if (before === style) return;
+    void writeBoardStyle(style).catch(fail);
+    pushHistory({
+      label: "Board background",
+      undo: () => writeBoardStyle(before),
+      redo: () => writeBoardStyle(style),
+    });
+  };
+
+  /* --- pages --- */
+
+  const pages = boardPages(board.style);
+  /** Merge into the board's one style blob so pages and background, which
+   *  share the column, can never overwrite each other. */
+  const writePages = (next: BoardPage[]) =>
+    writeBoardStyle(JSON.stringify({ ...parseBoardStyle(board.style), pages: next }));
+
+  const addPage = () => {
+    const id = pages.reduce((top, p) => Math.max(top, p.id), 0) + 1;
+    const next = [...pages, { id, name: `Page ${pages.length + 1}` }];
+    void writePages(next).then(() => setActivePage(id)).catch(fail);
+  };
+
+  const renamePage = (id: number, name: string) => {
+    const clean = name.trim().slice(0, 60);
+    if (!clean || clean === pages.find((p) => p.id === id)?.name) return;
+    void writePages(pages.map((p) => (p.id === id ? { ...p, name: clean } : p))).catch(fail);
+  };
+
+  const deletePage = async (id: number) => {
+    if (pages.length <= 1) return; // a board is always at least one page
+    const doomed = Object.values(useCanvas.getState().elements).filter(
+      (el) => (el.page ?? 0) === id,
+    );
+    const ok = await confirmDialog(
+      doomed.length === 0
+        ? "Delete this page?"
+        : `Delete this page and the ${doomed.length} thing${doomed.length === 1 ? "" : "s"} on it?`,
+      { title: "Delete page", confirmLabel: "Delete page", danger: true },
+    );
+    if (!ok) return;
+    for (const el of doomed) liveIds.current.set(el.id, el.id);
+    const before = pages;
+    const remaining = pages.filter((p) => p.id !== id);
+    // Undo has to put the page back as well as its contents, or the restored
+    // elements would belong to a page that no longer exists.
+    const drop = async () => {
+      await removeAll(doomed);
+      await writePages(remaining);
+    };
+    const restore = async () => {
+      await writePages(before);
+      await recreateAll(doomed);
+    };
+    void drop()
+      .then(() => setActivePage(remaining[0].id))
+      .catch(fail);
+    pushHistory({ label: "Delete page", undo: restore, redo: drop });
+  };
 
   // Broadcast our pointer to peers, throttled. Fire-and-forget: a dropped
   // frame is corrected by the next move, so failures are ignored.
@@ -849,6 +1726,84 @@ export function BoardRoom() {
       tx: rect.width / 2 - worldX * v.scale,
       ty: rect.height / 2 - worldY * v.scale,
     }));
+  };
+
+
+  /**
+   * The arrow affordances around a selected element: make a fresh element on
+   * that side and wire it up in one step. Kinds whose text is data rather
+   * than words (a picture, a sketch, a link) spawn a note instead — an empty
+   * copy of them would mean nothing.
+   */
+  const spawnLinked = async (el: CanvasElement, side: Side) => {
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const gap = 80;
+    const kind = ["sticky", "text", "shape", "frame"].includes(el.kind) ? el.kind : "sticky";
+    const sameKind = kind === el.kind;
+    const made = await canvasApi.createElement(boardId, {
+      kind,
+      page: activePage,
+      x: snapv(el.x + (side === "left" ? -(el.w + gap) : side === "right" ? el.w + gap : 0)),
+      y: snapv(el.y + (side === "top" ? -(el.h + gap) : side === "bottom" ? el.h + gap : 0)),
+      w: sameKind ? el.w : 180,
+      h: sameKind ? el.h : 140,
+      text: "",
+      color: sameKind ? el.color : "yellow",
+      // Carry the look across, but never the lock — a new element you can't
+      // move would be baffling.
+      style: sameKind ? JSON.stringify({ ...textStyle(el.style), locked: undefined }) : "",
+      from_id: null,
+      to_id: null,
+    });
+    useCanvas.getState().applyElement(made);
+    const opposite: Record<Side, Side> = {
+      top: "bottom",
+      bottom: "top",
+      left: "right",
+      right: "left",
+    };
+    const link = await canvasApi.createElement(boardId, {
+      kind: "connector",
+      page: activePage,
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      text: JSON.stringify({
+        ...CONN_DEFAULTS,
+        from_anchor: side,
+        to_anchor: opposite[side],
+        end_cap: "arrow",
+      }),
+      color: "",
+      style: "",
+      from_id: el.id,
+      to_id: made.id,
+    });
+    useCanvas.getState().applyElement(link);
+    for (const item of [made, link]) liveIds.current.set(item.id, item.id);
+    setSelected(new Set([made.id]));
+    if (kind !== "frame") beginEditing(made);
+    pushHistory({
+      label: "Add linked element",
+      undo: () => removeAll([made, link]),
+      redo: () => recreateAll([made, link]),
+    });
+  };
+
+  /** Find-and-replace writes: one undo step for the whole sweep. */
+  const replaceInElements = (edits: { id: number; text: string }[], label: string) => {
+    if (edits.length === 0) return;
+    const source = useCanvas.getState().elements;
+    const before = edits
+      .filter((edit) => source[edit.id])
+      .map((edit) => ({ id: edit.id, text: source[edit.id].text }));
+    const apply = async (list: { id: number; text: string }[]) => {
+      for (const item of list) await commitPatch(resolveId(item.id), { text: item.text });
+    };
+    void apply(edits).catch(fail);
+    pushHistory({ label, undo: () => apply(before), redo: () => apply(edits) });
   };
 
   const toWorld = (clientX: number, clientY: number) => {
@@ -884,6 +1839,7 @@ export function BoardRoom() {
     canvasApi
       .createElement(board.id, {
         kind,
+        page: activePage,
         x: snapv(x - defaults.w / 2),
         y: snapv(y - defaults.h / 2),
         w: defaults.w,
@@ -995,6 +1951,7 @@ export function BoardRoom() {
         canvasApi
           .createElement(board.id, {
             kind: "connector",
+            page: activePage,
             x: 0,
             y: 0,
             w: 0,
@@ -1031,6 +1988,9 @@ export function BoardRoom() {
     const dragSet = new Set(selected.has(el.id) ? selected : [el.id]);
     if (!selected.has(el.id)) setSelected(new Set([el.id]));
     if (editing !== null && editing !== el.id) setEditing(null);
+    // Locked elements still select — that's how you reach the unlock item —
+    // but grabbing one never starts a drag.
+    if (isLocked(el)) return;
 
     const all = useCanvas.getState().elements;
     // A frame carries everything whose center sits inside it.
@@ -1058,7 +2018,7 @@ export function BoardRoom() {
     const origins = new Map<number, { x: number; y: number }>();
     for (const id of dragSet) {
       const item = all[id];
-      if (!item) continue;
+      if (!item || isLocked(item)) continue; // a frame can't drag locked children
       origins.set(id, { x: item.x, y: item.y });
       hold(id, true);
     }
@@ -1132,10 +2092,22 @@ export function BoardRoom() {
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== e.pointerId) return;
       const now = toWorld(ev.clientX, ev.clientY);
-      last = {
-        w: Math.max(60, snapv(origin.w + now.x - startWorld.x)),
-        h: Math.max(36, snapv(origin.h + now.y - startWorld.y)),
-      };
+      const rawW = origin.w + now.x - startWorld.x;
+      const rawH = origin.h + now.y - startWorld.y;
+      if (ev.shiftKey) {
+        // Hold shift to keep the proportions: whichever axis the pointer
+        // pushed further sets one scale, which both axes then take. The grid
+        // gives way here — snapping both sides would break the ratio.
+        const grow = Math.abs(rawW / origin.w - 1) >= Math.abs(rawH / origin.h - 1);
+        const scale = Math.max(
+          grow ? rawW / origin.w : rawH / origin.h,
+          MIN_W / origin.w,
+          MIN_H / origin.h,
+        );
+        last = { w: Math.round(origin.w * scale), h: Math.round(origin.h * scale) };
+      } else {
+        last = { w: Math.max(MIN_W, snapv(rawW)), h: Math.max(MIN_H, snapv(rawH)) };
+      }
       patchLocal(el.id, last);
       const t = Date.now();
       if (t - lastSent > 120) {
@@ -1166,6 +2138,65 @@ export function BoardRoom() {
           fail(e);
         });
       recordPatch(el.id, origin, last, "Resize element");
+    };
+    gestureCancels.current.add(cancel);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  /**
+   * Corner-radius handle. Dragging away from the corner rounds it off and
+   * back toward it squares it up, measured from where you grabbed so the
+   * handle never jumps out from under the pointer.
+   */
+  const onRadiusDown = (e: React.PointerEvent, el: CanvasElement) => {
+    if (e.button !== 0) return;
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
+    e.stopPropagation();
+    e.preventDefault();
+    hold(el.id, true);
+    const startWorld = toWorld(e.clientX, e.clientY);
+    const before = el.style;
+    const origin = textStyle(before).radius ?? defaultRadius(el);
+    const max = Math.floor(Math.min(el.w, el.h) / 2);
+    let last = before;
+    let lastSent = 0;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      const now = toWorld(ev.clientX, ev.clientY);
+      const along = (now.x - startWorld.x + (now.y - startWorld.y)) / 2;
+      const radius = Math.round(Math.min(max, Math.max(0, origin + along)));
+      last = JSON.stringify({ ...textStyle(before), radius });
+      patchLocal(el.id, { style: last });
+      const t = Date.now();
+      if (t - lastSent > 120) {
+        lastSent = t;
+        canvasApi.updateElement(el.id, { style: last }).catch(() => {});
+      }
+    };
+    const cancel = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      patchLocal(el.id, { style: before });
+      canvasApi.updateElement(el.id, { style: before }).catch(() => {});
+      hold(el.id, false);
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      canvasApi
+        .updateElement(el.id, { style: last })
+        .then((updated) => {
+          hold(el.id, false);
+          useCanvas.getState().applyElement(updated);
+        })
+        .catch((err) => {
+          hold(el.id, false);
+          fail(err);
+        });
+      recordPatch(el.id, { style: before }, { style: last }, "Corner radius");
     };
     gestureCancels.current.add(cancel);
     window.addEventListener("pointermove", onMove);
@@ -1285,7 +2316,7 @@ export function BoardRoom() {
       applyPatchWithHistory(el, patch, "Fit image");
     };
     img.onerror = () => setError("Couldn't load the image to fit its size.");
-    img.src = attachmentUrl(Number(el.text));
+    img.src = imageSrc(el);
   };
 
   const beginEditing = (el: CanvasElement) => {
@@ -1308,7 +2339,9 @@ export function BoardRoom() {
     recordPatch(el.id, { text: original }, { text }, "Edit text");
   };
 
-  const all = Object.values(elements);
+  // Only the page in view: everything downstream (frames, bodies, links,
+  // the minimap, select-all) reads from this one list.
+  const all = Object.values(elements).filter((el) => (el.page ?? 0) === activePage);
   // Render order is by id — deliberately NOT by `z`. Stacking is expressed
   // with z-index instead (see Z_BAND_*), because sorting the DOM by `z` made
   // React *move* nodes whenever anyone's `z` changed, and every click
@@ -1318,7 +2351,9 @@ export function BoardRoom() {
   const byId = (a: CanvasElement, b: CanvasElement) => a.id - b.id;
   const frames = all.filter((el) => el.kind === "frame").sort(byId);
   const bodies = all
-    .filter((el) => ["sticky", "text", "image", "link", "document", "shape"].includes(el.kind))
+    .filter((el) =>
+      ["sticky", "text", "image", "link", "document", "shape", "sketch"].includes(el.kind),
+    )
     .sort(byId);
   const connectors = all.filter((el) => el.kind === "connector");
     // Single-selection element (color swatches, connector styling, resize).
@@ -1371,18 +2406,40 @@ export function BoardRoom() {
         <button onClick={closeBoard}>←</button>
         <h2>{board.name}</h2>
         <span className="wf-session-meta">
-          {group?.name} · by {board.creator.display_name ?? board.creator.username}
+          {local ? (
+            <span className="wf-doc-local-chip" title="Stored on this device only">
+              <HardDrive size={13} /> on this device
+            </span>
+          ) : (
+            <>
+              {group?.name} · by {board.creator.display_name ?? board.creator.username}
+            </>
+          )}
         </span>
         <span className="wf-statusbar-spacer" />
+        <button
+          title="Find and replace (⌘/Ctrl+F)"
+          className={finding ? "active" : ""}
+          onClick={() => setFinding((f) => !f)}
+        >
+          <Search size={16} />
+        </button>
+        <BackgroundMenu
+          background={background}
+          local={local}
+          onChange={applyBackground}
+          onError={fail}
+        />
         {canDelete && (
           <button
             className="wf-danger"
             onClick={() =>
-              void confirmDialog("Delete this board for everyone? This cannot be undone.", {
-                title: "Delete board",
-                confirmLabel: "Delete board",
-                danger: true,
-              }).then((ok) => {
+              void confirmDialog(
+                local
+                  ? "Delete this board from this device? It exists nowhere else."
+                  : "Delete this board for everyone? This cannot be undone.",
+                { title: "Delete board", confirmLabel: "Delete board", danger: true },
+              ).then((ok) => {
                 if (!ok) return;
                 canvasApi.deleteBoard(board.id).then(closeBoard).catch(fail);
               })
@@ -1397,11 +2454,115 @@ export function BoardRoom() {
           {error}
         </p>
       )}
+      {finding && (
+        <BoardFind
+          elements={all}
+          onGo={(id) => {
+            setSelected(new Set([id]));
+            const el = useCanvas.getState().elements[id];
+            // Centre it but keep the zoom: F is for framing, find is for
+            // walking through matches without the view leaping about.
+            if (el) jumpTo(el.x + el.w / 2, el.y + el.h / 2);
+          }}
+          onReplace={replaceInElements}
+          onClose={() => setFinding(false)}
+        />
+      )}
+
+      {/* Always shown: the strip is how a second page gets made. */}
+      <div className="wf-board-pages">
+          {pages.map((p) => (
+            <button
+              key={p.id}
+              className={`wf-board-page ${p.id === activePage ? "active" : ""}`}
+              onClick={() => setActivePage(p.id)}
+              onDoubleClick={() => setRenamingPage(p.id)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setMenu({
+                  x: e.clientX,
+                  y: e.clientY,
+                  items: [
+                    {
+                      label: "Rename page",
+                      icon: <Pencil size={14} />,
+                      onClick: () => setRenamingPage(p.id),
+                    },
+                    {
+                      label: "Delete page",
+                      icon: <Trash2 size={14} />,
+                      danger: true,
+                      disabled: pages.length <= 1,
+                      onClick: () => void deletePage(p.id),
+                    },
+                  ],
+                });
+              }}
+            >
+              {renamingPage === p.id ? (
+                <input
+                  autoFocus
+                  defaultValue={p.name}
+                  maxLength={60}
+                  onClick={(e) => e.stopPropagation()}
+                  onBlur={(e) => {
+                    renamePage(p.id, e.target.value);
+                    setRenamingPage(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") setRenamingPage(null);
+                  }}
+                />
+              ) : (
+                p.name
+              )}
+            </button>
+          ))}
+        <button className="wf-board-page-add" title="Add a page" onClick={addPage}>
+          <Plus size={14} />
+        </button>
+      </div>
 
       <div
         ref={surfaceRef}
         className={`wf-board wf-board-tool-${tool}`}
+        style={backgroundStyle(background)}
         onPointerDown={onSurfaceDown}
+        onContextMenu={(e) => {
+          // Right-clicking the board itself: the actions that need no element.
+          e.preventDefault();
+          setMenu({
+            x: e.clientX,
+            y: e.clientY,
+            items: [
+              {
+                label: "Paste",
+                icon: <ClipboardPaste size={14} />,
+                disabled: lastCopy.length === 0,
+                onClick: () => void pasteElements(lastCopy, { mode: "center" }).catch(fail),
+              },
+              {
+                label: "Select all",
+                icon: <MousePointer2 size={14} />,
+                onClick: () =>
+                  setSelected(
+                    new Set(
+                      Object.values(useCanvas.getState().elements)
+                        .filter((item) => item.kind !== "connector")
+                        .map((item) => item.id),
+                    ),
+                  ),
+              },
+              {
+                label: "Fit to screen",
+                icon: <Maximize2 size={14} />,
+                onClick: () => focusOn(new Set()),
+              },
+            ],
+          });
+        }}
         onPointerMove={(e) => broadcastCursor(e.clientX, e.clientY)}
         onWheel={(e) => zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.08 : 1 / 1.08)}
       >
@@ -1412,7 +2573,7 @@ export function BoardRoom() {
           {frames.map((el) => (
             <div
               key={el.id}
-              className={`wf-el wf-el-frame ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
+              className={`wf-el wf-el-frame ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""} ${isLocked(el) ? "locked" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
@@ -1421,8 +2582,10 @@ export function BoardRoom() {
                 zIndex: Z_BAND_FRAME + el.z,
                 background: FRAME_COLORS[el.color]?.bg,
                 borderColor: FRAME_COLORS[el.color]?.border,
+                borderRadius: textStyle(el.style).radius,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
+              onContextMenu={(e) => openElementMenu(e, el)}
               onDoubleClick={() => beginEditing(el)}
             >
               <ElementText
@@ -1432,8 +2595,34 @@ export function BoardRoom() {
                 onDraft={(text) => autosaveText(el, text)}
                 className="wf-el-frame-label"
               />
-              {selected.has(el.id) && selected.size === 1 && (
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
+              )}
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && canRound(el) && (
+                <span
+                  className="wf-el-radius"
+                  title="Drag to round the corners"
+                  style={{ left: radiusHandleAt(el), top: radiusHandleAt(el) }}
+                  onPointerDown={(e) => onRadiusDown(e, el)}
+                />
+              )}
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && (
+                <>
+                  {SIDES.map((side) => (
+                    <button
+                      key={side}
+                      className={`wf-el-spawn ${side}`}
+                      title="Add a linked element this way"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void spawnLinked(el, side).catch(fail);
+                      }}
+                    >
+                      <ArrowRight size={12} />
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           ))}
@@ -1456,33 +2645,67 @@ export function BoardRoom() {
                 cs.to_anchor === "auto"
                   ? clipToRect(to, fromCenter)
                   : anchorPoint(to, cs.to_anchor);
-              const angleDeg = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180) / Math.PI;
+              const geo = connectorGeometry(
+                p1,
+                sideOf(from, p1, cs.from_anchor),
+                p2,
+                sideOf(to, p2, cs.to_anchor),
+                cs.route,
+              );
               const capped = Math.hypot(p2.x - p1.x, p2.y - p1.y) >= 1;
+              const isSelected = selected.has(c.id);
+              // Stroke goes through inline style, never a presentation
+              // attribute: `.wf-link`'s CSS would win over the attribute. When
+              // selected, leave it off so the accent color shows through.
+              const stroke = isSelected ? undefined : FRAME_COLORS[cs.color]?.border;
               return (
                 <g key={c.id}>
-                  <line
+                  <path
                     className="wf-link-hit"
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
+                    d={geo.d}
+                    fill="none"
                     onPointerDown={(e) => {
                       e.stopPropagation();
                       setSelected(new Set([c.id]));
                     }}
+                    onContextMenu={(e) => openElementMenu(e, c)}
                   />
-                  <line
-                    className={`wf-link ${selected.has(c.id) ? "selected" : ""}`}
-                    x1={p1.x}
-                    y1={p1.y}
-                    x2={p2.x}
-                    y2={p2.y}
+                  <path
+                    className={`wf-link ${isSelected ? "selected" : ""}`}
+                    d={geo.d}
+                    fill="none"
+                    style={{ stroke, strokeWidth: cs.width }}
                     strokeDasharray={cs.dash ? "7 5" : undefined}
                   />
                   {capped && (
-                    <ConnectorCap kind={cs.start_cap} at={p1} angleDeg={angleDeg + 180} />
+                    <ConnectorCap
+                      kind={cs.start_cap}
+                      at={p1}
+                      angleDeg={geo.startAngle + 180}
+                      color={stroke}
+                    />
                   )}
-                  {capped && <ConnectorCap kind={cs.end_cap} at={p2} angleDeg={angleDeg} />}
+                  {capped && (
+                    <ConnectorCap
+                      kind={cs.end_cap}
+                      at={p2}
+                      angleDeg={geo.endAngle}
+                      color={stroke}
+                    />
+                  )}
+                  {cs.label && (
+                    <foreignObject
+                      x={geo.labelAt.x - 90}
+                      y={geo.labelAt.y - 16}
+                      width={180}
+                      height={32}
+                      className="wf-link-label-wrap"
+                    >
+                      <div className="wf-link-label-box">
+                        <span className="wf-link-label">{cs.label}</span>
+                      </div>
+                    </foreignObject>
+                  )}
                 </g>
               );
             })}
@@ -1491,7 +2714,7 @@ export function BoardRoom() {
           {bodies.map((el) => (
             <div
               key={el.id}
-              className={`wf-el wf-el-${el.kind} ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""}`}
+              className={`wf-el wf-el-${el.kind} ${selected.has(el.id) ? "selected" : ""} ${connectFrom === el.id ? "connect-from" : ""} ${isLocked(el) ? "locked" : ""}`}
               style={{
                 left: el.x,
                 top: el.y,
@@ -1499,14 +2722,16 @@ export function BoardRoom() {
                 height: el.h,
                 zIndex: Z_BAND_BODY + el.z,
                 background: el.kind === "sticky" ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow) : undefined,
+                borderRadius: textStyle(el.style).radius,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
-              onDoubleClick={() =>
-                el.kind !== "image" &&
-                el.kind !== "link" &&
-                el.kind !== "document" &&
-                beginEditing(el)
-              }
+              onContextMenu={(e) => openElementMenu(e, el)}
+              onDoubleClick={() => {
+                if (el.kind === "sketch") setSketching({ el });
+                else if (el.kind !== "image" && el.kind !== "link" && el.kind !== "document") {
+                  beginEditing(el);
+                }
+              }}
             >
               {el.kind === "image" ? (
                 <CanvasImage el={el} />
@@ -1514,6 +2739,8 @@ export function BoardRoom() {
                 <LinkCard url={el.text} />
               ) : el.kind === "document" ? (
                 <CanvasDocCard payload={el.text} />
+              ) : el.kind === "sketch" ? (
+                <SketchBody el={el} />
               ) : el.kind === "shape" ? (
                 <>
                   <ShapeBody el={el} />
@@ -1534,8 +2761,34 @@ export function BoardRoom() {
                   className={el.kind === "sticky" ? "wf-el-sticky-text" : "wf-el-text-text"}
                 />
               )}
-              {selected.has(el.id) && selected.size === 1 && (
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && (
                 <span className="wf-el-resize" onPointerDown={(e) => onResizeDown(e, el)} />
+              )}
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && canRound(el) && (
+                <span
+                  className="wf-el-radius"
+                  title="Drag to round the corners"
+                  style={{ left: radiusHandleAt(el), top: radiusHandleAt(el) }}
+                  onPointerDown={(e) => onRadiusDown(e, el)}
+                />
+              )}
+              {selected.has(el.id) && selected.size === 1 && !isLocked(el) && (
+                <>
+                  {SIDES.map((side) => (
+                    <button
+                      key={side}
+                      className={`wf-el-spawn ${side}`}
+                      title="Add a linked element this way"
+                      onPointerDown={(e) => e.stopPropagation()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void spawnLinked(el, side).catch(fail);
+                      }}
+                    >
+                      <ArrowRight size={12} />
+                    </button>
+                  ))}
+                </>
               )}
               {/* Images: mid-edge handles crop (the corner still scales). */}
               {selected.has(el.id) && selected.size === 1 && el.kind === "image" && (
@@ -1614,19 +2867,23 @@ export function BoardRoom() {
               />
             )}
             {selectedEl && selectedEl.kind === "sticky" && (
-              <>
-                {Object.entries(STICKY_COLORS).map(([key, css]) => (
-                  <button
-                    key={key}
-                    className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
-                    style={{ background: css }}
-                    title={key}
-                    onClick={() => {
-                      applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color");
-                    }}
-                  />
-                ))}
-              </>
+              <ColorMenu
+                title="Note color"
+                current={selectedEl.color || "yellow"}
+                colors={Object.entries(STICKY_COLORS).map(([key, css]) => ({ key, css }))}
+                onPick={(key) =>
+                  applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color")
+                }
+              />
+            )}
+            {selectedEl && selectedEl.kind === "sketch" && (
+              <button
+                className="wf-icon"
+                title="Edit sketch"
+                onClick={() => setSketching({ el: selectedEl })}
+              >
+                <Pencil size={15} />
+              </button>
             )}
             {selectedEl && selectedEl.kind === "image" && (
               <ImageControls
@@ -1659,24 +2916,18 @@ export function BoardRoom() {
                     <PaintBucket size={15} />
                   </button>
                 )}
-                <button
-                  className={`wf-board-swatch wf-board-swatch-none ${selectedEl.color === "" ? "active" : ""}`}
-                  title={selectedEl.kind === "frame" ? "No fill" : "Default outline"}
-                  onClick={() => {
-                    applyPatchWithHistory(selectedEl, { color: "" }, "Change color");
-                  }}
+                <ColorMenu
+                  title={selectedEl.kind === "frame" ? "Frame color" : "Shape color"}
+                  current={selectedEl.color}
+                  colors={[
+                    { key: "", css: "" },
+                    ...Object.entries(FRAME_COLORS).map(([key, css]) => ({
+                      key,
+                      css: css.border,
+                    })),
+                  ]}
+                  onPick={(key) => applyPatchWithHistory(selectedEl, { color: key }, "Change color")}
                 />
-                {Object.entries(FRAME_COLORS).map(([key, css]) => (
-                  <button
-                    key={key}
-                    className={`wf-board-swatch ${selectedEl.color === key ? "active" : ""}`}
-                    style={{ background: css.border }}
-                    title={key}
-                    onClick={() => {
-                      applyPatchWithHistory(selectedEl, { color: key }, "Change color");
-                    }}
-                  />
-                ))}
               </>
             )}
             {selectedEl &&
@@ -1747,6 +2998,9 @@ export function BoardRoom() {
               </span>
             )}
           </span>
+          <button title="Add sketch" onClick={() => setSketching({ el: null })}>
+            <Pencil size={17} />
+          </button>
           <ToolButton
             tool="connect"
             active={tool}
@@ -1794,6 +3048,45 @@ export function BoardRoom() {
           </div>
         )}
       </div>
+      {menu && (
+        <div
+          className="wf-context-menu"
+          style={{
+            left: Math.max(8, Math.min(menu.x, window.innerWidth - 220)),
+            top: Math.max(8, Math.min(menu.y, window.innerHeight - (menu.items.length * 34 + 24))),
+          }}
+          onPointerDown={(e) => e.stopPropagation()}
+          onContextMenu={(e) => e.preventDefault()}
+        >
+          {menu.items.map((item, i) =>
+            item === null ? (
+              <span key={i} className="wf-context-sep" />
+            ) : (
+              <button
+                key={i}
+                className={item.danger ? "wf-danger" : ""}
+                disabled={item.disabled}
+                onClick={() => {
+                  setMenu(null);
+                  item.onClick();
+                }}
+              >
+                <span className="wf-context-check">{item.checked && <Check size={13} />}</span>
+                <span className="wf-context-icon">{item.icon}</span>
+                <span className="wf-context-label">{item.label}</span>
+              </button>
+            ),
+          )}
+        </div>
+      )}
+
+      {sketching && (
+        <SketchPad
+          initial={sketching.el ? parseSketch(sketching.el.text) : null}
+          onCancel={() => setSketching(null)}
+          onDone={(data) => saveSketch(data, sketching.el)}
+        />
+      )}
     </div>
   );
 }
@@ -2065,6 +3358,191 @@ function TextStyleControls({
   );
 }
 
+/**
+ * Board background: a color, or an image and how it lies on the surface.
+ * Writes the whole background back as one JSON blob, so "no color and no
+ * image" collapses to an empty string and the board returns to its default.
+ */
+function BackgroundMenu({
+  background,
+  local,
+  onChange,
+  onError,
+}: {
+  background: BoardBackground;
+  local: boolean;
+  onChange: (style: string) => void;
+  onError: (e: unknown) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  const write = (next: BoardBackground) => {
+    const cleaned: BoardBackground = {};
+    if (next.color) cleaned.color = next.color;
+    if (next.image !== undefined) {
+      cleaned.image = next.image;
+      cleaned.fit = next.fit ?? "cover";
+    }
+    onChange(Object.keys(cleaned).length === 0 ? "" : JSON.stringify(cleaned));
+  };
+
+  const upload = async (file: File) => {
+    setUploading(true);
+    try {
+      // Same split as a pasted picture: stored beside the board on this
+      // device, or uploaded as an attachment everyone in the group can see.
+      const image = local ? await saveLocalImage(file) : (await uploadBlob(file, file.name)).id;
+      write({ ...background, image });
+    } catch (e) {
+      onError(e);
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <span className="wf-board-menuwrap" onPointerDown={(e) => e.stopPropagation()}>
+      <button
+        title="Board background"
+        className={open ? "active" : ""}
+        onClick={() => setOpen((o) => !o)}
+      >
+        <Palette size={16} />
+      </button>
+      {open && (
+        <div className="wf-board-menu wf-board-bg-menu">
+          <div className="wf-board-bg-colors">
+            {BG_COLORS.map((c) => (
+              <button
+                key={c.label}
+                title={c.label}
+                className={`wf-board-bg-swatch ${(background.color ?? "") === (c.value ?? "") ? "active" : ""}`}
+                style={c.value ? { background: c.value } : undefined}
+                onClick={() => write({ ...background, color: c.value })}
+              >
+                {!c.value && <Ban size={13} />}
+              </button>
+            ))}
+            <label className="wf-board-bg-swatch wf-board-bg-custom" title="Custom color">
+              <Pipette size={13} />
+              <input
+                type="color"
+                value={background.color ?? "#1d1f27"}
+                onChange={(e) => write({ ...background, color: e.target.value })}
+              />
+            </label>
+          </div>
+
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void upload(file);
+              e.target.value = "";
+            }}
+          />
+          <div className="wf-board-bg-row">
+            <button onClick={() => fileRef.current?.click()} disabled={uploading}>
+              <ImagePlus size={14} />{" "}
+              {uploading
+                ? "Uploading…"
+                : background.image !== undefined
+                  ? "Replace image"
+                  : "Add image"}
+            </button>
+            {background.image !== undefined && (
+              <button className="wf-danger" onClick={() => write({ color: background.color })}>
+                Remove
+              </button>
+            )}
+          </div>
+          {background.image !== undefined && (
+            <div className="wf-board-bg-fits">
+              {BG_FITS.map((f) => (
+                <button
+                  key={f.id}
+                  className={(background.fit ?? "cover") === f.id ? "active" : ""}
+                  onClick={() => write({ ...background, fit: f.id })}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
+/**
+ * One swatch that opens the palette, rather than the whole palette sitting in
+ * the toolbar — the same shape as the text-color control next to it.
+ */
+function ColorMenu({
+  colors,
+  current,
+  title,
+  onPick,
+}: {
+  colors: { key: string; css: string }[];
+  current: string;
+  title: string;
+  onPick: (key: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  const active = colors.find((c) => c.key === current) ?? colors[0];
+  // An entry with no css is the "no fill / default" one, drawn as a slashed
+  // ring rather than a color.
+  const swatch = (css: string) => `wf-board-swatch ${css ? "" : "wf-board-swatch-none"}`;
+  return (
+    <span className="wf-board-menuwrap" onPointerDown={(e) => e.stopPropagation()}>
+      <button className={open ? "active" : ""} title={title} onClick={() => setOpen((o) => !o)}>
+        <span
+          className={`${swatch(active?.css ?? "")} wf-board-swatch-current`}
+          style={active?.css ? { background: active.css } : undefined}
+        />
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <span className="wf-board-menu wf-board-menu-colors">
+          {colors.map((c) => (
+            <button
+              key={c.key}
+              className={`${swatch(c.css)} ${c.key === current ? "active" : ""}`}
+              style={c.css ? { background: c.css } : undefined}
+              title={c.key || "None"}
+              onClick={() => {
+                onPick(c.key);
+                setOpen(false);
+              }}
+            />
+          ))}
+        </span>
+      )}
+    </span>
+  );
+}
+
 /** Anchor + line-style controls shown while a connector is selected. */
 function ConnectorControls({
   connector,
@@ -2076,8 +3554,37 @@ function ConnectorControls({
   const cs = connStyle(connector.text);
   const anchors: ConnAnchor[] = ["auto", "top", "right", "bottom", "left"];
   const cycleCap = (v: ConnCap) => CAP_CYCLE[(CAP_CYCLE.indexOf(v) + 1) % CAP_CYCLE.length];
+  const nextWidth = () =>
+    CONN_WIDTHS[(CONN_WIDTHS.findIndex((w) => w >= cs.width) + 1) % CONN_WIDTHS.length];
   return (
     <>
+      {CONN_ROUTES.map((r) => (
+        <button
+          key={r.id}
+          title={r.title}
+          className={cs.route === r.id ? "active" : ""}
+          onClick={() => onChange({ ...cs, route: r.id })}
+        >
+          <r.icon size={15} />
+        </button>
+      ))}
+      <button
+        title={`Line weight: ${cs.width} (click to change)`}
+        onClick={() => onChange({ ...cs, width: nextWidth() })}
+      >
+        <span className="wf-conn-weight" style={{ height: Math.max(2, cs.width) }} />
+      </button>
+      <ColorMenu
+        title="Line color"
+        current={cs.color}
+        colors={[
+          { key: "", css: "" },
+          ...Object.entries(FRAME_COLORS).map(([key, css]) => ({ key, css: css.border })),
+        ]}
+        onPick={(key) => onChange({ ...cs, color: key })}
+      />
+      <ConnectorLabel value={cs.label} onCommit={(label) => onChange({ ...cs, label })} />
+      <span className="wf-board-toolbar-sep" />
       <button
         title={`Start decoration: ${cs.start_cap} (click to change)`}
         className="wf-conn-cap"
@@ -2125,6 +3632,36 @@ function ConnectorControls({
   );
 }
 
+
+/** Words on a connector. Committed on blur or Enter so a typed label is one
+ *  undo step rather than one per keystroke. */
+function ConnectorLabel({
+  value,
+  onCommit,
+}: {
+  value: string;
+  onCommit: (label: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+  return (
+    <input
+      className="wf-conn-label-input"
+      placeholder="Label…"
+      value={draft}
+      maxLength={120}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => draft !== value && onCommit(draft.trim())}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        if (e.key === "Escape") {
+          setDraft(value);
+          e.currentTarget.blur();
+        }
+      }}
+    />
+  );
+}
 
 /** Stable per-user cursor colour when they have no accent set. */
 const CURSOR_COLORS = ["#c96f4a", "#5a9e6f", "#5d8fc9", "#a878c9", "#c9a44a", "#c96f9a", "#4aa8a0"];

@@ -204,7 +204,9 @@ pub fn router(state: AppState) -> Router {
         )
         .route(
             "/api/v1/boards/{id}",
-            get(canvas::board_detail).delete(canvas::delete_board),
+            get(canvas::board_detail)
+                .patch(canvas::update_board)
+                .delete(canvas::delete_board),
         )
         .route("/api/v1/boards/{id}/elements", post(canvas::create_element))
         .route("/api/v1/boards/{id}/cursor", post(canvas::board_cursor))

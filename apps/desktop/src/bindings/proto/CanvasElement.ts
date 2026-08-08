@@ -11,6 +11,10 @@ export type CanvasElement = { id: number, board_id: number, kind: string, x: num
  */
 z: number, text: string, 
 /**
+ * Which page of the board this sits on; 0 is the first page.
+ */
+page: number, 
+/**
  * Sticky color key (e.g. "yellow"); empty for other kinds.
  */
 color: string, 

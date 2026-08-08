@@ -245,6 +245,14 @@ export function webBackend(): Backend {
     localdocRead: notOnWeb("Local documents"),
     localdocWrite: notOnWeb("Local documents"),
     localdocDelete: notOnWeb("Local documents"),
+    localdocHistoryRead: notOnWeb("Local documents"),
+    localdocHistoryWrite: notOnWeb("Local documents"),
+    localboardList: async () => [],
+    localboardRead: notOnWeb("Local boards"),
+    localboardWrite: notOnWeb("Local boards"),
+    localboardDelete: notOnWeb("Local boards"),
+    localmediaWrite: notOnWeb("Local boards"),
+    localmediaPrune: async () => {},
     apiFetch,
     uploadAttachment: async ({ dataBase64, fileName }) => {
       if (!dataBase64) {

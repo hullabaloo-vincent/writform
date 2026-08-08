@@ -33,11 +33,26 @@ fn docs_dir(app: &tauri::AppHandle) -> Result<std::path::PathBuf, CmdError> {
 
 /// Ids are client-generated UUIDs — lowercase hex + dashes only, so they
 /// are filename-safe by construction and can't traverse.
-fn doc_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, CmdError> {
+fn validate_id(id: &str) -> Result<(), CmdError> {
     if id.is_empty() || id.len() > 64 || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return Err(CmdError::new("bad_id", "invalid local document id"));
     }
+    Ok(())
+}
+
+fn doc_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, CmdError> {
+    validate_id(id)?;
     Ok(docs_dir(app)?.join(format!("{id}.json")))
+}
+
+/// Version history lives in a `history/` subfolder next to the documents, so
+/// a folder backup carries the revisions along with the text. `localdoc_list`
+/// only looks at `*.json` files, so the subfolder never reads as a document.
+fn history_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, CmdError> {
+    validate_id(id)?;
+    let dir = docs_dir(app)?.join("history");
+    std::fs::create_dir_all(&dir).map_err(|e| CmdError::new("io", e.to_string()))?;
+    Ok(dir.join(format!("{id}.json")))
 }
 
 #[tauri::command]
@@ -96,5 +111,38 @@ pub fn localdoc_write(app: tauri::AppHandle, id: String, content: String) -> Res
 
 #[tauri::command]
 pub fn localdoc_delete(app: tauri::AppHandle, id: String) -> Result<(), CmdError> {
+    // History is derived data: a failure to remove it must not leave the
+    // caller thinking the document survived.
+    if let Ok(path) = history_path(&app, &id) {
+        let _ = std::fs::remove_file(path);
+    }
     std::fs::remove_file(doc_path(&app, &id)?).map_err(|e| CmdError::new("io", e.to_string()))
+}
+
+/// The document's saved revisions, as the JSON array the webview wrote.
+/// Empty string when a document has no history yet — the common case on
+/// first open, and not an error.
+#[tauri::command]
+pub fn localdoc_history_read(app: tauri::AppHandle, id: String) -> Result<String, CmdError> {
+    match std::fs::read_to_string(history_path(&app, &id)?) {
+        Ok(raw) => Ok(raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(CmdError::new("io", e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub fn localdoc_history_write(
+    app: tauri::AppHandle,
+    id: String,
+    content: String,
+) -> Result<(), CmdError> {
+    if content.len() > MAX_DOC_BYTES {
+        return Err(CmdError::new(
+            "too_large",
+            "local document history exceeds the 16 MB limit",
+        ));
+    }
+    std::fs::write(history_path(&app, &id)?, content)
+        .map_err(|e| CmdError::new("io", e.to_string()))
 }

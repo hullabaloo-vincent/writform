@@ -350,6 +350,14 @@ export function DocumentsView() {
           icon: <FileText size={14} />,
           onClick: () => void useLocalDocs.getState().open(d.id).catch(fail),
         },
+        {
+          label: "Version history",
+          icon: <History size={14} />,
+          onClick: () => {
+            useLocalDocs.setState({ pendingPanel: "history" });
+            void useLocalDocs.getState().open(d.id).catch(fail);
+          },
+        },
         ...(offline
           ? []
           : [

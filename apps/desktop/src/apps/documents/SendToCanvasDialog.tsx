@@ -79,6 +79,8 @@ export function SendToCanvasDialog({
     try {
       await canvasApi.createElement(boardId, {
         kind: "document",
+        // Lands on the board's first page; the picker doesn't know pages.
+        page: 0,
         x: 120,
         y: 120,
         w: 420,

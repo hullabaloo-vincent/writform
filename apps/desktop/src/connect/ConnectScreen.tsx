@@ -182,7 +182,8 @@ export function ConnectScreen() {
             className="wf-connect-offline"
             onClick={() => useSession.getState().goOffline()}
           >
-            Work offline — notes, local documents, and your portable profile, no server needed
+            Work offline — notes, local documents, canvas boards, and your portable profile, no
+            server needed
           </button>
         )}
 

@@ -11,6 +11,8 @@ export const canvasApp: WritformApp = {
     name: "Canvas",
     icon: <Presentation size={20} />,
     permissions: ["ui", "commands", "net", "events"],
+    // Boards on this device need no server; group boards appear when connected.
+    offline: true,
   },
   activate(ctx) {
     ctx.ui.registerMainView(() => <CanvasView />);

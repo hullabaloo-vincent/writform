@@ -2,7 +2,7 @@ import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Download, HardDrive, ListTree, Share2, Trash2 } from "lucide-react";
+import { Download, HardDrive, History, ListTree, Share2, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Toolbar, WfImage } from "../../editor/RichEditor";
@@ -14,8 +14,10 @@ import { FindBar } from "./FindBar";
 import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
+import { useAutoRevisions, saveLocalVersion } from "./history";
 import { useSwipe } from "../../lib/useSwipe";
 import { activeLocalProvider, useLocalDocs } from "./local";
+import { LocalHistoryPanel } from "./LocalHistoryPanel";
 import { OutlinePanel } from "./OutlinePanel";
 import { ShareLocalDialog } from "./ShareLocalDialog";
 
@@ -42,14 +44,14 @@ function LocalEditorInner({
   const rename = useLocalDocs((s) => s.rename);
   const setFormat = useLocalDocs((s) => s.setFormat);
   const remove = useLocalDocs((s) => s.remove);
-  const [outline, setOutline] = useState(false);
+  const [panel, setPanel] = useState<"none" | "history" | "outline">("none");
   const [exportOpen, setExportOpen] = useState(false);
   const [finding, setFinding] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const offline = useSession((s) => s.phase === "offline");
-  // Same as the server editor: swipe right dismisses the outline overlay.
-  const panelSwipe = useSwipe({ onRight: () => setOutline(false) });
+  // Same as the server editor: swipe right dismisses an open panel.
+  const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
 
   const extensions = useMemo(
     () => [
@@ -65,7 +67,22 @@ function LocalEditorInner({
     [],
   );
 
-  const editor = useEditor({ extensions, editable: true });
+  const editor = useEditor({
+    extensions,
+    editable: true,
+    editorProps: { attributes: { spellcheck: "true" } },
+  });
+
+  useAutoRevisions(editor, (json) => saveLocalVersion(meta.id, json));
+
+  // Honor "open with this panel" from the list's Version history entry.
+  useEffect(() => {
+    const requested = useLocalDocs.getState().pendingPanel;
+    if (requested) {
+      setPanel(requested);
+      useLocalDocs.setState({ pendingPanel: null });
+    }
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -105,9 +122,16 @@ function LocalEditorInner({
         </span>
         <span className="wf-statusbar-spacer" />
         <button
+          title="Document history"
+          className={panel === "history" ? "active" : ""}
+          onClick={() => setPanel(panel === "history" ? "none" : "history")}
+        >
+          <History size={16} />
+        </button>
+        <button
           title="Outline"
-          className={outline ? "active" : ""}
-          onClick={() => setOutline((o) => !o)}
+          className={panel === "outline" ? "active" : ""}
+          onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
         >
           <ListTree size={16} />
         </button>
@@ -191,7 +215,8 @@ function LocalEditorInner({
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
         </div>
-        {outline && editor && <OutlinePanel editor={editor} />}
+        {panel === "history" && <LocalHistoryPanel docId={meta.id} editor={editor} />}
+        {panel === "outline" && editor && <OutlinePanel editor={editor} />}
       </div>
 
       {shareOpen && <ShareLocalDialog meta={meta} onClose={() => setShareOpen(false)} />}

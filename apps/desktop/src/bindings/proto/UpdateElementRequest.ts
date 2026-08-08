@@ -3,4 +3,8 @@
 /**
  * Partial update; omitted fields keep their value (last write wins).
  */
-export type UpdateElementRequest = { x: number | null, y: number | null, w: number | null, h: number | null, z: number | null, text: string | null, color: string | null, style: string | null, };
+export type UpdateElementRequest = { 
+/**
+ * Moves the element to another page.
+ */
+page: number | null, x: number | null, y: number | null, w: number | null, h: number | null, z: number | null, text: string | null, color: string | null, style: string | null, };

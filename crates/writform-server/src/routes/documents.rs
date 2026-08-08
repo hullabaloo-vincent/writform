@@ -37,6 +37,10 @@ const MAX_AWARENESS_BYTES: usize = 8 * 1024;
 const MAX_SNAPSHOT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_THREAD_CONTENT: usize = 4000;
 const AUTO_SNAPSHOT_INTERVAL_MS: i64 = 60_000;
+/// Automatic revisions kept per document. Clients cut one at every pause in
+/// the writing, so an unbounded tail would grow a full copy of the document
+/// per writing minute. Named versions and drafts are never pruned.
+const MAX_AUTO_VERSIONS: i64 = 200;
 /// Compact once this many update rows sit above the merged state.
 const COMPACT_AFTER: i64 = 200;
 /// Update rows kept below `last_seq` after compaction so `?since=` catch-up
@@ -984,6 +988,22 @@ pub async fn snapshot(
     .bind(now)
     .fetch_one(&state.pool)
     .await?;
+    if kind == "auto" {
+        sqlx::query(
+            "DELETE FROM document_versions
+             WHERE doc_id = ? AND kind = 'auto' AND id NOT IN (
+                 SELECT id FROM document_versions
+                 WHERE doc_id = ? AND kind = 'auto'
+                 ORDER BY created_at DESC, id DESC LIMIT ?
+             )",
+        )
+        .bind(doc_id)
+        .bind(doc_id)
+        .bind(MAX_AUTO_VERSIONS)
+        .execute(&state.pool)
+        .await?;
+    }
+
     let row: VersionRow = sqlx::query_as(&format!("{VERSION_SELECT} WHERE v.id = ?"))
         .bind(id)
         .fetch_one(&state.pool)

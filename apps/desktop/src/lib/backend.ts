@@ -126,6 +126,22 @@ export interface Backend {
   localdocRead(id: string): Promise<string>;
   localdocWrite(id: string, content: string): Promise<void>;
   localdocDelete(id: string): Promise<void>;
+  /** Saved revisions of one local document; empty string when it has none. */
+  localdocHistoryRead(id: string): Promise<string>;
+  localdocHistoryWrite(id: string, content: string): Promise<void>;
+
+  /** Canvas boards stored on this device (meta only; elements stay on disk). */
+  localboardList(): Promise<{ id: string; name: string; updated_at: number }[]>;
+  /** Raw JSON payload of one local board (schema owned by the client). */
+  localboardRead(id: string): Promise<string>;
+  localboardWrite(id: string, content: string): Promise<void>;
+  localboardDelete(id: string): Promise<void>;
+  /** Store a pasted picture for a local board. The bytes travel as a raw IPC
+   *  body and are written to disk verbatim — base64 would inflate a photo by
+   *  a third for no gain, and the render path reads the file directly. */
+  localmediaWrite(mediaId: string, bytes: ArrayBuffer): Promise<void>;
+  /** Delete stored pictures no board references any more. */
+  localmediaPrune(keep: string[]): Promise<void>;
   apiFetch(method: string, path: string, body?: unknown): Promise<ApiResponse>;
   uploadAttachment(opts: {
     dataBase64?: string;
@@ -211,6 +227,18 @@ function tauriBackend(): Backend {
     localdocRead: (id) => invoke("localdoc_read", { id }),
     localdocWrite: (id, content) => invoke("localdoc_write", { id, content }),
     localdocDelete: (id) => invoke("localdoc_delete", { id }),
+    localdocHistoryRead: (id) => invoke("localdoc_history_read", { id }),
+    localdocHistoryWrite: (id, content) => invoke("localdoc_history_write", { id, content }),
+    localboardList: () => invoke("localboard_list"),
+    localboardRead: (id) => invoke("localboard_read", { id }),
+    localboardWrite: (id, content) => invoke("localboard_write", { id, content }),
+    localboardDelete: (id) => invoke("localboard_delete", { id }),
+    localmediaWrite: async (mediaId, bytes) => {
+      // Raw body, not a JSON argument: the bytes go across untouched.
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      await raw("localmedia_write", bytes, { headers: { "x-media": mediaId } });
+    },
+    localmediaPrune: (keep) => invoke("localmedia_prune", { keep }),
     apiFetch: (method, path, body) => invoke("api_fetch", { method, path, body: body ?? null }),
     uploadAttachment: ({ dataBase64, filePath, fileName }) =>
       invoke("upload_attachment", {

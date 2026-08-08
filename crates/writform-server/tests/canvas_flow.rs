@@ -333,6 +333,135 @@ async fn canvas_end_to_end() {
     assert_eq!(detail.elements.len(), 1);
     assert!(detail.elements.iter().all(|e| e.id != connector.id));
 
+    // Pages: an element carries the page it sits on, defaulting to the first,
+    // and can be moved to another.
+    assert_eq!(sticky.page, 0, "elements default to the first page");
+    let second: CanvasElement = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/boards/{}/elements", board.id),
+            Some(json!({
+                "kind": "sticky", "page": 2, "x": 10.0, "y": 10.0, "w": 100.0, "h": 100.0,
+                "text": "on page two", "color": "blue", "from_id": null, "to_id": null
+            })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(second.page, 2);
+    let moved: CanvasElement = server
+        .req(
+            reqwest::Method::PATCH,
+            &alice.token,
+            &format!("/elements/{}", second.id),
+            Some(json!({"page": 0})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(moved.page, 0, "an element can be moved between pages");
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/elements/{}", second.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+
+    // A sketch keeps its strokes in `text`, so it gets a far bigger budget
+    // than prose does — while prose stays capped.
+    let points = (0..2000)
+        .map(|i| i.to_string())
+        .collect::<Vec<_>>()
+        .join(",");
+    let sketch_text = format!(
+        r##"{{"v":1,"box":{{"x":0,"y":0,"w":900,"h":620}},"strokes":[{{"c":"#f2f2f7","s":4,"p":[{points}]}}]}}"##
+    );
+    assert!(
+        sketch_text.len() > 4000,
+        "must exceed the prose cap to matter"
+    );
+    let sketch: CanvasElement = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/boards/{}/elements", board.id),
+            Some(json!({
+                "kind": "sketch", "x": 40.0, "y": 40.0, "w": 320.0, "h": 240.0,
+                "text": sketch_text, "color": "", "from_id": null, "to_id": null
+            })),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(sketch.kind, "sketch");
+    assert_eq!(sketch.text, sketch_text, "strokes survive the round trip");
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/boards/{}/elements", board.id),
+            Some(json!({
+                "kind": "sticky", "x": 0.0, "y": 0.0, "w": 100.0, "h": 100.0,
+                "text": "x".repeat(4001), "color": "yellow", "from_id": null, "to_id": null
+            })),
+        )
+        .await;
+    assert_eq!(res.status(), 400, "prose is still capped at 4000");
+    // Editing a sketch sends the whole stroke set back through PATCH.
+    let res = server
+        .req(
+            reqwest::Method::PATCH,
+            &alice.token,
+            &format!("/elements/{}", sketch.id),
+            Some(json!({"text": format!("{sketch_text} ")})),
+        )
+        .await;
+    assert!(res.status().is_success(), "a sketch may be edited");
+
+    // The background is board contents: any member may set it, outsiders may
+    // not, and it survives a re-read.
+    assert_eq!(board.style, "", "a new board has no background");
+    let updated: CanvasBoard = server
+        .req(
+            reqwest::Method::PATCH,
+            &bob.token,
+            &format!("/boards/{}", board.id),
+            Some(json!({"style": r##"{"color":"#12131a"}"##})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(updated.style, r##"{"color":"#12131a"}"##);
+    let detail: BoardDetail = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            &format!("/boards/{}", board.id),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(detail.board.style, r##"{"color":"#12131a"}"##);
+    let res = server
+        .req(
+            reqwest::Method::PATCH,
+            &mallory.token,
+            &format!("/boards/{}", board.id),
+            Some(json!({"style": ""})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
     // Bob (member, not admin, not creator) cannot delete the board…
     let res = server
         .req(

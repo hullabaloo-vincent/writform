@@ -2816,6 +2816,57 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
   border-bottom: 1px solid var(--wf-border);
 }
 
+/* Page tabs: a thin strip between the header and the board itself. */
+.wf-board-pages {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  overflow-x: auto;
+  border-bottom: 1px solid var(--wf-border);
+  scrollbar-width: none;
+}
+
+.wf-board-pages::-webkit-scrollbar {
+  display: none;
+}
+
+.wf-board-page {
+  flex: 0 0 auto;
+  min-height: 26px;
+  padding: 0 12px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--wf-radius-pill);
+}
+
+.wf-board-page.active {
+  color: var(--wf-text);
+  background: var(--wf-bg-raised);
+  border-color: var(--wf-border);
+}
+
+.wf-board-page input {
+  width: 110px;
+  padding: 1px 6px;
+  font-size: 12px;
+}
+
+.wf-board-page-add {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  color: var(--wf-text-dim);
+  background: transparent;
+  border: none;
+}
+
 .wf-board-error {
   margin: 8px 16px;
   cursor: pointer;
@@ -2873,6 +2924,47 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
   stroke: var(--wf-accent);
 }
 
+/* Connector label: an HTML pill inside a foreignObject, so it reads in the
+   app's own type instead of raw SVG text with no background. */
+.wf-link-label-wrap {
+  overflow: visible;
+  pointer-events: none;
+}
+
+.wf-link-label-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+/* The pill sits on the board, hiding the line it straddles. */
+.wf-link-label {
+  max-width: 100%;
+  padding: 2px 8px;
+  background: var(--wf-bg);
+  border-radius: var(--wf-radius-pill);
+  color: var(--wf-text);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-conn-weight {
+  display: block;
+  width: 16px;
+  background: currentColor;
+  border-radius: 2px;
+}
+
+.wf-conn-label-input {
+  width: 96px;
+  padding: 3px 8px;
+  font-size: 12px;
+}
+
 .wf-link-hit {
   stroke: transparent;
   stroke-width: 14;
@@ -2886,15 +2978,25 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
   cursor: move;
 }
 
+/* The ring sits just outside the element and follows its corner radius, so
+   selecting a rounded note or frame doesn't box it in square corners. */
 .wf-el.selected {
   outline: 2px solid var(--wf-accent);
+  outline-offset: 2px;
 }
 
 .wf-el.connect-from {
   outline: 2px dashed var(--wf-accent);
+  outline-offset: 2px;
+}
+
+/* Locked: still clickable (that's how it gets unlocked), never draggable. */
+.wf-el.locked {
+  cursor: default;
 }
 
 .wf-el-sticky {
+  border-radius: 16px;
   box-shadow: 0 3px 10px rgba(0, 0, 0, 0.35);
   padding: 12px;
 }
@@ -2927,7 +3029,7 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
 
 .wf-el-frame {
   border: 1.5px solid var(--wf-border);
-  border-radius: 10px;
+  border-radius: 20px;
   background: rgba(255, 255, 255, 0.02);
   cursor: move;
 }
@@ -2976,14 +3078,82 @@ textarea.wf-el-edit {
   cursor: nwse-resize;
 }
 
+/* Quick-create arrows: one per side of a lone selection, pointing outward.
+   Click one for a new element already wired to this one. */
+.wf-el-spawn {
+  position: absolute;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  padding: 0;
+  color: #fff;
+  background: var(--wf-accent);
+  border: none;
+  border-radius: var(--wf-radius-pill);
+  opacity: 0.55;
+  transition: opacity 0.12s;
+  z-index: 3;
+}
+
+.wf-el-spawn:hover {
+  opacity: 1;
+}
+
+.wf-el-spawn.top {
+  left: 50%;
+  top: -34px;
+  transform: translateX(-50%) rotate(-90deg);
+}
+
+.wf-el-spawn.bottom {
+  left: 50%;
+  bottom: -34px;
+  transform: translateX(-50%) rotate(90deg);
+}
+
+.wf-el-spawn.left {
+  top: 50%;
+  left: -34px;
+  transform: translateY(-50%) rotate(180deg);
+}
+
+.wf-el-spawn.right {
+  top: 50%;
+  right: -34px;
+  transform: translateY(-50%);
+}
+
+/* Corner-radius handle: a hollow dot sitting inside the top-left corner, on
+   the radius it controls — drag it away from the corner to round it off.
+   `left`/`top` come from the element; the margins centre it on that point. */
+.wf-el-radius {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  margin: -6px 0 0 -6px;
+  background: var(--wf-bg-raised);
+  border: 2px solid var(--wf-accent);
+  border-radius: var(--wf-radius-pill);
+  cursor: nwse-resize;
+  z-index: 3;
+}
+
 /* Clips cropped images to the element box; the element div itself must NOT
    clip, or the selection handles hanging outside it would vanish. */
+/* `inherit` so a custom corner radius on the element clips the picture with
+   it; the fallback keeps the old look when no radius is set. */
 .wf-el-imgwrap {
   position: absolute;
   inset: 0;
   overflow: hidden;
-  border-radius: var(--wf-radius-md);
+  border-radius: inherit;
   pointer-events: none;
+}
+
+.wf-el-image {
+  border-radius: var(--wf-radius-md);
 }
 
 /* Shape elements: an SVG outline stretching with the box, label centered.
@@ -2995,12 +3165,109 @@ textarea.wf-el-edit {
   pointer-events: none;
 }
 
+/* Sketch ink fills its element and scales with it. Never name this
+   `wf-el-sketch`: that is the element div's own class. */
+.wf-el-sketch-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* --- sketch pad --- */
+
+.wf-sketch-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(920px, 94vw);
+}
+
+.wf-sketch-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+/* min-height on the base button rule would stretch these into ovals. */
+.wf-sketch-ink {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-pill);
+  cursor: pointer;
+}
+
+.wf-sketch-ink.active {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 2px;
+}
+
+/* Square by construction: the base button rule sets min-height: 30px, which
+   silently wins over a smaller `height` and left the widest nib's dot
+   overflowing an off-square box. */
+.wf-sketch-nib {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+}
+
+.wf-sketch-nib span {
+  display: block;
+  /* Never let flex sizing squash the dot out of round. */
+  flex: 0 0 auto;
+  border-radius: var(--wf-radius-pill);
+}
+
+.wf-sketch-nib.active {
+  background: var(--wf-accent);
+}
+
+/* Matching the viewBox's proportions keeps the drawing area edge to edge, so
+   there are no dead bands beside it. touch-action keeps a finger drawing
+   instead of scrolling the dialog. */
+.wf-sketch-surface {
+  width: 100%;
+  aspect-ratio: 900 / 620;
+  max-height: 62vh;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  touch-action: none;
+  cursor: crosshair;
+}
+
+.wf-sketch-surface.erasing {
+  cursor: cell;
+}
+
+.wf-sketch-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+
 /* fill is inherited from the svg root's inline style (outline vs filled) —
    setting it here would override that, since child rules beat inheritance. */
 .wf-el-shape-svg ellipse,
 .wf-el-shape-svg polygon,
+.wf-el-shape-svg path,
 .wf-el-shape-svg rect {
   stroke-width: 2;
+  stroke-linejoin: round;
 }
 
 .wf-el-shape-text {
@@ -3127,6 +3394,19 @@ textarea.wf-el-shape-text {
   outline: 2px solid var(--wf-accent);
 }
 
+/* The swatch inside a color menu's trigger is a label, not a target: it must
+   not swallow the click that opens the menu. */
+.wf-board-swatch-current {
+  width: 18px !important;
+  height: 18px !important;
+  /* Without this it's a flex item that shrinks on the horizontal axis only,
+     which turns the circle into an oval. */
+  flex: 0 0 auto;
+  aspect-ratio: 1;
+  pointer-events: none;
+  border: 1px solid var(--wf-border);
+}
+
 /* "No fill" swatch: hollow ring with a diagonal slash. */
 .wf-board-swatch-none {
   background:
@@ -3177,6 +3457,80 @@ textarea.wf-el-shape-text {
 .wf-board-menuwrap {
   position: relative;
   display: inline-flex;
+}
+
+/* Background picker: anchored under the header button, so it opens inward
+   from the right edge rather than off the window. */
+.wf-board-menu.wf-board-bg-menu {
+  left: auto;
+  right: 0;
+  flex-direction: column;
+  gap: 8px;
+  width: 232px;
+  padding: 10px;
+}
+
+.wf-board-bg-colors {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+}
+
+.wf-board-bg-swatch {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 26px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  cursor: pointer;
+}
+
+.wf-board-bg-swatch.active {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
+}
+
+/* The native color input is the whole swatch; the pipette sits on top. */
+.wf-board-bg-custom input[type="color"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.wf-board-bg-row {
+  display: flex;
+  gap: 6px;
+}
+
+.wf-board-bg-row button {
+  flex: 1;
+  justify-content: center;
+}
+
+.wf-board-bg-fits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wf-board-bg-fits button.active {
+  background: var(--wf-accent);
+  color: #fff;
+}
+
+.wf-board-bg-note {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wf-text-dim);
 }
 
 .wf-board-menu {
@@ -3569,6 +3923,18 @@ textarea.wf-el-shape-text {
   padding: 5px 10px;
 }
 
+/* The board's bar carries a replace field too, so its inputs give way on
+   narrow windows rather than pushing the buttons off the edge. */
+.wf-board-find {
+  flex-wrap: wrap;
+}
+
+.wf-board-find input {
+  flex: 1 1 140px;
+  min-width: 0;
+  width: auto;
+}
+
 .wf-find-count {
   min-width: 44px;
   font-size: 12px;
@@ -3640,6 +4006,9 @@ textarea.wf-el-shape-text {
   min-height: 11in;
   padding: 0.86in 1in 1in 1.5in;
   caret-color: #17171b;
+  /* Tab inserts a real tab character; 8 columns (the CSS default) is a
+     chasm on a letter-size page. */
+  tab-size: 4;
 }
 
 .wf-doc-content .ProseMirror::selection,
@@ -4308,10 +4677,15 @@ textarea.wf-el-shape-text {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
 }
 
+/* justify-content is spelled out because the base `button` rule centers its
+   contents, which left every row in the menu centred and no two labels
+   starting at the same x. */
 .wf-context-menu button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
+  width: 100%;
   padding: 7px 10px;
   border: none;
   background: transparent;
@@ -4319,8 +4693,45 @@ textarea.wf-el-shape-text {
   text-align: left;
 }
 
+/* Fixed columns for the tick and the icon, so every label lines up whether
+   or not the row has either. */
+.wf-context-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--wf-text-dim);
+}
+
+.wf-context-label {
+  flex: 1 1 auto;
+}
+
 .wf-context-menu button:hover {
   background: var(--wf-bg);
+}
+
+/* Tick column: keeps every label on one line whether or not it's checked. */
+.wf-context-check {
+  display: inline-flex;
+  flex: 0 0 auto;
+  justify-content: center;
+  width: 14px;
+  color: var(--wf-accent);
+}
+
+.wf-context-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--wf-border);
+}
+
+.wf-context-menu button:disabled,
+.wf-context-menu button:disabled:hover {
+  background: transparent;
+  opacity: 0.45;
+  cursor: default;
 }
 
 .wf-context-menu button.wf-danger:hover {
@@ -6256,6 +6667,12 @@ input[type="checkbox"] {
     height: 26px;
     right: -13px;
     bottom: -13px;
+  }
+  /* Same for the corner-radius dot — a fingertip needs more than 11px. */
+  .wf-el-radius {
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
   }
   .wf-el-crop.n,
   .wf-el-crop.s {

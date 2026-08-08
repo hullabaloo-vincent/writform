@@ -16,6 +16,9 @@ pub struct CanvasBoard {
     pub group_id: GroupId,
     pub creator: UserRef,
     pub name: String,
+    /// Background JSON (color / image attachment / fit); empty = default.
+    #[serde(default)]
+    pub style: String,
     #[ts(type = "number")]
     pub created_at: UnixMillis,
 }
@@ -38,6 +41,10 @@ pub struct CanvasElement {
     #[ts(type = "number")]
     pub z: i64,
     pub text: String,
+    /// Which page of the board this sits on; 0 is the first page.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub page: i64,
     /// Sticky color key (e.g. "yellow"); empty for other kinds.
     pub color: String,
     /// Text styling JSON (size/bold/italic/underline/align/list); empty = defaults.
@@ -65,10 +72,21 @@ pub struct CreateBoardRequest {
     pub name: String,
 }
 
+/// Board-level settings. Only the background travels here today.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct UpdateBoardRequest {
+    pub style: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct CreateElementRequest {
     pub kind: String,
+    /// Page to place it on; omitted means the board's first page.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub page: Option<i64>,
     pub x: f64,
     pub y: f64,
     pub w: f64,
@@ -87,6 +105,10 @@ pub struct CreateElementRequest {
 #[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct UpdateElementRequest {
+    /// Moves the element to another page.
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub page: Option<i64>,
     pub x: Option<f64>,
     pub y: Option<f64>,
     pub w: Option<f64>,

@@ -2,4 +2,8 @@
 import type { GroupId } from "./GroupId";
 import type { UserRef } from "./UserRef";
 
-export type CanvasBoard = { id: number, group_id: GroupId, creator: UserRef, name: string, created_at: number, };
+export type CanvasBoard = { id: number, group_id: GroupId, creator: UserRef, name: string, 
+/**
+ * Background JSON (color / image attachment / fit); empty = default.
+ */
+style: string, created_at: number, };
