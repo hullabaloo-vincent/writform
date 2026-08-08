@@ -1476,7 +1476,7 @@ body,
 .wf-cmd-menu,
 .wf-emote-picker,
 .wf-react-picker,
-.wf-selection-toolbar,
+.wf-selection-toolbar-wrap,
 .wf-doc-export-menu {
   animation: wf-modal-in 0.12s ease-out;
 }
@@ -2952,6 +2952,72 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
   white-space: nowrap;
 }
 
+/* Forces the controls after it onto their own row inside the wrapping
+   selection toolbar. */
+.wf-toolbar-break {
+  flex: 1 0 100%;
+  height: 0;
+}
+
+/* The line between the two end controls, so the row reads ◀ — ▶. */
+.wf-conn-run {
+  padding: 0 2px;
+  color: var(--wf-text-dim);
+}
+
+/* A vertical list of choices, unlike the swatch grid the color menu uses. */
+.wf-board-menu-list {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 156px;
+}
+
+.wf-board-menu-list button {
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 10px;
+  background: transparent;
+  border: none;
+}
+
+.wf-board-menu-list button:hover {
+  background: var(--wf-bg);
+}
+
+.wf-board-menu-list button.active {
+  color: var(--wf-accent);
+}
+
+/* Note opacity, inside the colour menu since that's what it acts on. A range
+   input, so the toolbar's focus guard has to let it through — see the
+   `input, select, textarea` exception on mousedown. */
+.wf-board-opacity-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--wf-text-dim);
+  white-space: nowrap;
+}
+
+.wf-board-opacity {
+  flex: 1 1 auto;
+  width: 96px;
+  height: 20px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  accent-color: var(--wf-accent);
+  cursor: pointer;
+}
+
+.wf-board-opacity-value {
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
 .wf-conn-weight {
   display: block;
   width: 16px;
@@ -3125,14 +3191,15 @@ textarea.wf-el-edit {
   transform: translateY(-50%);
 }
 
-/* Corner-radius handle: a hollow dot sitting inside the top-left corner, on
-   the radius it controls — drag it away from the corner to round it off.
-   `left`/`top` come from the element; the margins centre it on that point. */
+/* Corner-radius handle: a hollow dot on the top-left corner, opposite the
+   scale grip. It sits OUTSIDE the box on purpose — riding the radius inside
+   the corner put it on top of the element's first line of text. */
 .wf-el-radius {
   position: absolute;
+  left: -6px;
+  top: -6px;
   width: 11px;
   height: 11px;
-  margin: -6px 0 0 -6px;
   background: var(--wf-bg-raised);
   border: 2px solid var(--wf-accent);
   border-radius: var(--wf-radius-pill);
@@ -3375,6 +3442,53 @@ textarea.wf-el-shape-text {
   text-align: center;
 }
 
+/* View controls — zoom and snap — in the bottom-left corner, opposite the
+   minimap and clear of the tools: these act on the board, not on what you
+   are drawing. */
+.wf-board-viewbar {
+  position: absolute;
+  left: 14px;
+  bottom: 18px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 5px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-lg);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.wf-board-viewbar button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0;
+  color: var(--wf-text-dim);
+  background: transparent;
+  border: none;
+}
+
+.wf-board-viewbar button:hover {
+  color: var(--wf-text);
+  background: var(--wf-bg);
+}
+
+.wf-board-viewbar button.active {
+  color: var(--wf-accent);
+}
+
+/* Two classes, to outrank the fixed-size rule above it. Tabular figures so
+   the panel doesn't twitch as the percentage changes. */
+.wf-board-viewbar .wf-board-zoom {
+  width: auto;
+  padding: 0 4px;
+  font-variant-numeric: tabular-nums;
+}
+
 .wf-board-history-count {
   min-width: 30px;
   color: var(--wf-text-dim);
@@ -3533,6 +3647,21 @@ textarea.wf-el-shape-text {
   color: var(--wf-text-dim);
 }
 
+.wf-board-bg-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  cursor: pointer;
+}
+
+.wf-board-bg-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+}
+
 .wf-board-menu {
   position: absolute;
   top: calc(100% + 8px);
@@ -3569,8 +3698,21 @@ textarea.wf-el-shape-text {
 }
 
 .wf-board-menu-colors {
-  gap: 6px;
+  gap: 8px;
   align-items: center;
+}
+
+.wf-board-menu-swatches {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* With a control beneath them, the swatches become the popover's top row. */
+.wf-board-menu-colors.has-foot {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px;
 }
 
 /* The shape picker hangs off the BOTTOM toolbar, so it opens upward. */
@@ -6273,26 +6415,51 @@ textarea.wf-el-shape-text {
  * bottom bar, so the controls sit where you are working and the global bar
  * keeps a stable width.
  */
-.wf-selection-toolbar {
+/* The toolbar and the delete button are peers: delete is its own panel to
+   the right, centred against however many rows the toolbar grows to. */
+.wf-selection-toolbar-wrap {
   position: absolute;
   z-index: 30;
   display: flex;
   align-items: center;
+  gap: 8px;
+  max-width: min(620px, calc(100% - 24px));
+  /* Centred on the selection, sitting just above its top edge. */
+  transform: translate(-50%, -100%);
+}
+
+.wf-selection-toolbar-wrap.below {
+  transform: translate(-50%, 0);
+}
+
+.wf-selection-toolbar {
+  display: flex;
+  align-items: center;
   gap: 4px;
-  max-width: min(560px, calc(100% - 24px));
+  min-width: 0;
   flex-wrap: wrap;
+  /* Rows centre on each other, so a wrapped second row sits under the first
+     rather than hanging off its left edge. */
   justify-content: center;
   padding: 5px 7px;
   background: var(--wf-bg-raised);
   border: 1px solid var(--wf-border);
   border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
-  /* Centred on the selection, sitting just above its top edge. */
-  transform: translate(-50%, -100%);
 }
 
-.wf-selection-toolbar.below {
-  transform: translate(-50%, 0);
+.wf-selection-delete {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  min-height: 0;
+  padding: 0;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 .wf-selection-toolbar button {
@@ -6309,6 +6476,14 @@ textarea.wf-el-shape-text {
 /* Swatches stay circular at the smaller toolbar height. */
 .wf-selection-toolbar .wf-board-swatch {
   height: 22px !important;
+}
+
+/* …and so does a colour menu's trigger swatch, which is smaller. Without
+   this the rule above sets its height alone and the circle becomes an oval:
+   a descendant selector outranks the single-class rule that sizes it. */
+.wf-selection-toolbar .wf-board-swatch-current {
+  width: 18px !important;
+  height: 18px !important;
 }
 
 /* ================= mobile (phones / the web client) ================= */
@@ -6670,9 +6845,10 @@ input[type="checkbox"] {
   }
   /* Same for the corner-radius dot — a fingertip needs more than 11px. */
   .wf-el-radius {
+    left: -11px;
+    top: -11px;
     width: 22px;
     height: 22px;
-    margin: -11px 0 0 -11px;
   }
   .wf-el-crop.n,
   .wf-el-crop.s {
@@ -6733,5 +6909,10 @@ input[type="checkbox"] {
   .wf-board-toolbar {
     max-width: calc(100vw - 16px);
     flex-wrap: wrap;
+  }
+  /* Tucked closer to the corner so it clears the wrapped tool rows. */
+  .wf-board-viewbar {
+    left: 8px;
+    bottom: 8px;
   }
 }

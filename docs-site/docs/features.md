@@ -115,7 +115,8 @@ rotate/flip), **link cards** with server-fetched previews, and live
 **document references** (a whole document or a selection, kept in sync as
 it's edited). Multi-select with shift-click or shift-drag; moving a frame
 moves what's inside it; note, frame and shape fills are translucent, so
-overlapping them layers the color instead of hiding what's underneath;
+overlapping them layers the color instead of hiding what's underneath — and
+a selected note has an opacity slider of its own;
 snap-to-grid toggle, and holding shift while
 dragging a resize handle keeps the element's proportions; per-element text
 formatting
@@ -169,10 +170,11 @@ all of them at once — a Replace All is a single undo step. Link cards,
 images, and document cards aren't searched: their text holds a URL, an
 attachment, or a document reference rather than prose.
 
-**Background**: the palette button in the board header sets a background
-color, or an image you upload — filled, fitted, stretched, tiled, or
-centered. It's part of the board, so everyone in the group sees it, and
-undo covers it like any other change.
+**Background**: the palette button in the board header dresses the page
+you're on — a background color, or an image you upload (filled, fitted,
+stretched, tiled, or centered) — and can turn the dot grid off. Each page
+keeps its own, everyone in the group sees it, and undo covers it like any
+other change.
 
 **Boards on this device**: the canvas list has an "On this device" section
 for boards stored on your computer, never on the server — the same tools,

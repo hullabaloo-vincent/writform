@@ -141,16 +141,27 @@ function LinkCard({ url }: { url: string }) {
   );
 }
 
-/** Note fills carry alpha so overlapping notes read as stacked layers rather
- *  than one hiding the other — kept high enough that the note's dark text
- *  stays legible over a dark board or a background image. */
-const STICKY_COLORS: Record<string, string> = {
-  yellow: "rgba(232, 212, 120, 0.75)",
-  pink: "rgba(232, 154, 176, 0.75)",
-  blue: "rgba(138, 182, 232, 0.75)",
-  green: "rgba(147, 211, 162, 0.75)",
-  purple: "rgba(183, 163, 234, 0.75)",
+/** Note fills are kept as bare channels so each note can choose its own
+ *  alpha. They start translucent so overlapping notes read as stacked layers
+ *  rather than one hiding the other, at a level that keeps the note's dark
+ *  text legible over a dark board or a background image. */
+const STICKY_RGB: Record<string, string> = {
+  yellow: "232, 212, 120",
+  pink: "232, 154, 176",
+  blue: "138, 182, 232",
+  green: "147, 211, 162",
+  purple: "183, 163, 234",
 };
+
+const NOTE_ALPHA = 0.75;
+
+const stickyColor = (key: string, alpha = NOTE_ALPHA) =>
+  `rgba(${STICKY_RGB[key] ?? STICKY_RGB.yellow}, ${alpha})`;
+
+/** The palette as swatches, at the default alpha. */
+const STICKY_COLORS: Record<string, string> = Object.fromEntries(
+  Object.keys(STICKY_RGB).map((key) => [key, stickyColor(key)]),
+);
 
 /** Soft translucent frame fills (Freeform-style); "" = plain frame. */
 const FRAME_COLORS: Record<string, { bg: string; border: string }> = {
@@ -190,6 +201,8 @@ interface TextStyle {
   radius?: number;
   /** Locked: still selectable and stylable, but it won't move or resize. */
   locked?: boolean;
+  /** Note fill opacity, 0–1; undefined means the palette's own level. */
+  opacity?: number;
 }
 
 
@@ -668,7 +681,6 @@ function ConnectorCap({
 }
 
 const CAP_CYCLE: ConnCap[] = ["none", "arrow", "dot"];
-const CAP_LABEL: Record<ConnCap, string> = { none: "—", arrow: "▶", dot: "●" };
 
 interface Viewport {
   tx: number;
@@ -716,6 +728,8 @@ interface BoardBackground {
   color?: string;
   image?: number | string;
   fit?: BgFit;
+  /** false hides the dot grid; undefined leaves it on. */
+  grid?: boolean;
 }
 
 const BG_FITS: { id: BgFit; label: string }[] = [
@@ -742,6 +756,9 @@ const BG_COLORS: { label: string; value?: string }[] = [
 interface BoardPage {
   id: number;
   name: string;
+  /** Each page dresses itself; unset falls back to the board-wide value a
+   *  board may already carry from before backgrounds were per page. */
+  bg?: BoardBackground;
 }
 
 /** Everything the board's single `style` column holds. */
@@ -759,9 +776,13 @@ function parseBoardStyle(raw: string): BoardStyle {
   }
 }
 
-function parseBackground(raw: string): BoardBackground {
-  const { color, image, fit } = parseBoardStyle(raw);
-  return { color, image, fit };
+/** The background of one page: its own, or the board-wide one it inherits. */
+function pageBackground(raw: string, pageId: number): BoardBackground {
+  const style = parseBoardStyle(raw);
+  const own = style.pages?.find((p) => p.id === pageId)?.bg;
+  if (own) return own;
+  const { color, image, fit, grid } = style;
+  return { color, image, fit, grid };
 }
 
 /** Every board has at least one page, whether or not it says so. */
@@ -774,6 +795,9 @@ function boardPages(raw: string): BoardPage[] {
 function backgroundStyle(bg: BoardBackground): CSSProperties {
   const style: CSSProperties = {};
   if (bg.color) style.backgroundColor = bg.color;
+  // The dots ARE the stylesheet's background-image, so hiding them and
+  // setting a picture are the same switch.
+  if (bg.grid === false && bg.image === undefined) style.backgroundImage = "none";
   if (bg.image !== undefined) {
     const fit = bg.fit ?? "cover";
     style.backgroundImage = `url("${imageSrc({ text: String(bg.image) })}")`;
@@ -820,19 +844,6 @@ const defaultRadius = (el: CanvasElement): number =>
 const canRound = (el: CanvasElement): boolean =>
   !["connector", "shape"].includes(el.kind);
 
-/** How far from the corner the radius handle may travel. It rides the radius
- *  it controls, but only this far: on a large element half the shorter side
- *  is hundreds of pixels, and a handle drifting toward the middle reads as a
- *  loose dot rather than a corner control. */
-const RADIUS_HANDLE_MAX = 26;
-
-const radiusHandleAt = (el: CanvasElement): number => {
-  const radius = textStyle(el.style).radius ?? defaultRadius(el);
-  return Math.max(
-    7,
-    Math.min(radius, RADIUS_HANDLE_MAX, Math.min(el.w, el.h) / 2 - 6),
-  );
-};
 
 function minZ(elements: Record<number, CanvasElement>): number {
   let z = 0;
@@ -1463,7 +1474,7 @@ export function BoardRoom() {
   const local = isLocalBoard(board.id);
   const group = groups.find((g) => g.id === board.group_id);
   const canDelete = local || (me && (board.creator.id === me.id || group?.my_role === "admin"));
-  const background = parseBackground(board.style);
+  const background = pageBackground(board.style, activePage);
 
   const writeBoardStyle = async (style: string) => {
     const current = useCanvas.getState().board;
@@ -1642,14 +1653,27 @@ export function BoardRoom() {
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
 
-  const applyBackground = (style: string) => {
+  /**
+   * Dress the page you're on. The whole style column is rewritten each time,
+   * so this MUST start from what's already there — an earlier version built
+   * a fresh object from the background alone and took every page but the
+   * first down with it.
+   */
+  const applyBackground = (bg: BoardBackground) => {
     const before = board.style;
-    if (before === style) return;
-    void writeBoardStyle(style).catch(fail);
+    const current = parseBoardStyle(before);
+    const next = JSON.stringify({
+      ...current,
+      pages: boardPages(before).map((p) =>
+        p.id === activePage ? { ...p, bg: Object.keys(bg).length > 0 ? bg : undefined } : p,
+      ),
+    });
+    if (next === before) return;
+    void writeBoardStyle(next).catch(fail);
     pushHistory({
-      label: "Board background",
+      label: "Page background",
       undo: () => writeBoardStyle(before),
-      redo: () => writeBoardStyle(style),
+      redo: () => writeBoardStyle(next),
     });
   };
 
@@ -2602,7 +2626,6 @@ export function BoardRoom() {
                 <span
                   className="wf-el-radius"
                   title="Drag to round the corners"
-                  style={{ left: radiusHandleAt(el), top: radiusHandleAt(el) }}
                   onPointerDown={(e) => onRadiusDown(e, el)}
                 />
               )}
@@ -2721,7 +2744,10 @@ export function BoardRoom() {
                 width: el.w,
                 height: el.h,
                 zIndex: Z_BAND_BODY + el.z,
-                background: el.kind === "sticky" ? (STICKY_COLORS[el.color] ?? STICKY_COLORS.yellow) : undefined,
+                background:
+                  el.kind === "sticky"
+                    ? stickyColor(el.color, textStyle(el.style).opacity ?? NOTE_ALPHA)
+                    : undefined,
                 borderRadius: textStyle(el.style).radius,
               }}
               onPointerDown={(e) => onElementDown(e, el)}
@@ -2768,7 +2794,6 @@ export function BoardRoom() {
                 <span
                   className="wf-el-radius"
                   title="Drag to round the corners"
-                  style={{ left: radiusHandleAt(el), top: radiusHandleAt(el) }}
                   onPointerDown={(e) => onRadiusDown(e, el)}
                 />
               )}
@@ -2847,16 +2872,24 @@ export function BoardRoom() {
 
         {selectionBox && (
           <div
-            className={`wf-selection-toolbar ${selectionBox.below ? "below" : ""}`}
+            className={`wf-selection-toolbar-wrap ${selectionBox.below ? "below" : ""}`}
             style={{
               left: Math.max(8, Math.min(selectionBox.left, window.innerWidth - 228)),
               top: selectionBox.top,
             }}
             // Keep the board from panning, and keep focus where it is so
-            // formatting an element mid-edit doesn't close its text editor.
+            // formatting an element mid-edit doesn't close its text editor —
+            // except on the toolbar's own fields, which need the focus this
+            // would deny them (a text box you can't click into, a select that
+            // won't open).
             onPointerDown={(e) => e.stopPropagation()}
-            onMouseDown={(e) => e.preventDefault()}
+            onMouseDown={(e) => {
+              if (!(e.target as HTMLElement).closest("input, select, textarea")) {
+                e.preventDefault();
+              }
+            }}
           >
+            <div className="wf-selection-toolbar">
             {selectedEl && selectedEl.kind === "connector" && (
               <ConnectorControls
                 connector={selectedEl}
@@ -2873,6 +2906,37 @@ export function BoardRoom() {
                 colors={Object.entries(STICKY_COLORS).map(([key, css]) => ({ key, css }))}
                 onPick={(key) =>
                   applyPatchWithHistory(selectedEl, { color: key }, "Change sticky color")
+                }
+                footer={
+                  <OpacitySlider
+                    value={Math.round((textStyle(selectedEl.style).opacity ?? NOTE_ALPHA) * 100)}
+                    onPreview={(percent) =>
+                      patchLocal(selectedEl.id, {
+                        style: JSON.stringify({
+                          ...textStyle(selectedEl.style),
+                          opacity: percent / 100,
+                        }),
+                      })
+                    }
+                    onCommit={(from, to) => {
+                      if (from === to) return;
+                      // Both ends are built explicitly: by now the element's
+                      // own style holds the previewed value, so it can't
+                      // stand in for "before".
+                      const styleAt = (percent: number) =>
+                        JSON.stringify({
+                          ...textStyle(selectedEl.style),
+                          opacity: percent / 100,
+                        });
+                      void commitPatch(selectedEl.id, { style: styleAt(to) }).catch(fail);
+                      recordPatch(
+                        selectedEl.id,
+                        { style: styleAt(from) },
+                        { style: styleAt(to) },
+                        "Note opacity",
+                      );
+                    }}
+                  />
                 }
               />
             )}
@@ -2942,21 +3006,29 @@ export function BoardRoom() {
                 }}
               />
             )}
+            </div>
+
+            {/* Its own panel beside the toolbar, centred against it however
+                many rows the controls take. */}
             {selected.size > 0 && (
-              <>
-                {selectedEl && <span className="wf-board-toolbar-sep" />}
-                <button
-                  title="Delete element"
-                  onClick={() => deleteSelected(selected)}
-                >
-                  <Trash2 size={17} />
-                </button>
-              </>
+              <button
+                className="wf-selection-delete"
+                title={selected.size > 1 ? `Delete ${selected.size} elements` : "Delete element"}
+                onClick={() => deleteSelected(selected)}
+              >
+                <Trash2 size={17} />
+              </button>
             )}
           </div>
         )}
 
-        <Minimap elements={elements} view={view} surfaceRef={surfaceRef} onJump={jumpTo} />
+        {/* The page in view, so the map matches what's on screen. */}
+        <Minimap
+          elements={Object.fromEntries(all.map((el) => [el.id, el]))}
+          view={view}
+          surfaceRef={surfaceRef}
+          onJump={jumpTo}
+        />
 
         <div className="wf-board-toolbar" onPointerDown={(e) => e.stopPropagation()}>
           <ToolButton tool="select" active={tool} set={setTool} title="Select / pan">
@@ -3020,14 +3092,27 @@ export function BoardRoom() {
             <Redo2 size={17} />
           </button>
           <span className="wf-board-history-count" title="Canvas history keeps the last 15 actions">{undoStack.current.length}/15</span>
-          <span className="wf-board-toolbar-sep" />
+        </div>
+
+        {/* View controls live in the corner, away from the tools: they act on
+            the board itself rather than on what you're drawing. */}
+        <div className="wf-board-viewbar" onPointerDown={(e) => e.stopPropagation()}>
           <button title="Zoom out" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.2)}>
-            <ZoomOut size={17} />
+            <ZoomOut size={16} />
           </button>
-          <span className="wf-board-zoom">{Math.round(view.scale * 100)}%</span>
+          <button
+            className="wf-board-zoom"
+            title="Reset zoom to 100%"
+            // Through zoomAt, so it settles around the middle of the view
+            // instead of yanking whatever you were looking at off-screen.
+            onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1 / viewRef.current.scale)}
+          >
+            {Math.round(view.scale * 100)}%
+          </button>
           <button title="Zoom in" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1.2)}>
-            <ZoomIn size={17} />
+            <ZoomIn size={16} />
           </button>
+          <span className="wf-board-toolbar-sep" />
           <button
             title={snap ? "Snap to grid: on" : "Snap to grid: off"}
             className={snap ? "active" : ""}
@@ -3037,7 +3122,7 @@ export function BoardRoom() {
               localStorage.setItem("wf-canvas-snap", next ? "on" : "off");
             }}
           >
-            <Grid3x3 size={17} />
+            <Grid3x3 size={16} />
           </button>
         </div>
         {tool === "connect" && (
@@ -3371,7 +3456,7 @@ function BackgroundMenu({
 }: {
   background: BoardBackground;
   local: boolean;
-  onChange: (style: string) => void;
+  onChange: (bg: BoardBackground) => void;
   onError: (e: unknown) => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -3392,7 +3477,8 @@ function BackgroundMenu({
       cleaned.image = next.image;
       cleaned.fit = next.fit ?? "cover";
     }
-    onChange(Object.keys(cleaned).length === 0 ? "" : JSON.stringify(cleaned));
+    if (next.grid === false) cleaned.grid = false;
+    onChange(cleaned);
   };
 
   const upload = async (file: File) => {
@@ -3420,6 +3506,7 @@ function BackgroundMenu({
       </button>
       {open && (
         <div className="wf-board-menu wf-board-bg-menu">
+          <span className="wf-board-bg-note">This page</span>
           <div className="wf-board-bg-colors">
             {BG_COLORS.map((c) => (
               <button
@@ -3481,6 +3568,15 @@ function BackgroundMenu({
               ))}
             </div>
           )}
+
+          <label className="wf-board-bg-toggle">
+            <input
+              type="checkbox"
+              checked={background.grid !== false}
+              onChange={(e) => write({ ...background, grid: e.target.checked ? undefined : false })}
+            />
+            Dot grid
+          </label>
         </div>
       )}
     </span>
@@ -3496,11 +3592,14 @@ function ColorMenu({
   current,
   title,
   onPick,
+  footer,
 }: {
   colors: { key: string; css: string }[];
   current: string;
   title: string;
   onPick: (key: string) => void;
+  /** Extra control under the swatches — opacity, for a note's fill. */
+  footer?: React.ReactNode;
 }) {
   const [open, setOpen] = useState(false);
   useEffect(() => {
@@ -3524,26 +3623,67 @@ function ColorMenu({
         <ChevronDown size={12} />
       </button>
       {open && (
-        <span className="wf-board-menu wf-board-menu-colors">
-          {colors.map((c) => (
-            <button
-              key={c.key}
-              className={`${swatch(c.css)} ${c.key === current ? "active" : ""}`}
-              style={c.css ? { background: c.css } : undefined}
-              title={c.key || "None"}
-              onClick={() => {
-                onPick(c.key);
-                setOpen(false);
-              }}
-            />
-          ))}
+        <span className={`wf-board-menu wf-board-menu-colors ${footer ? "has-foot" : ""}`}>
+          <span className="wf-board-menu-swatches">
+            {colors.map((c) => (
+              <button
+                key={c.key}
+                className={`${swatch(c.css)} ${c.key === current ? "active" : ""}`}
+                style={c.css ? { background: c.css } : undefined}
+                title={c.key || "None"}
+                onClick={() => {
+                  onPick(c.key);
+                  setOpen(false);
+                }}
+              />
+            ))}
+          </span>
+          {footer}
         </span>
       )}
     </span>
   );
 }
 
-/** Anchor + line-style controls shown while a connector is selected. */
+/** A dropdown of choices, shaped like the color menu next to it. */
+function PickerMenu({
+  title,
+  trigger,
+  children,
+}: {
+  title: string;
+  trigger: React.ReactNode;
+  children: (close: () => void) => React.ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setOpen(false);
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+  return (
+    <span className="wf-board-menuwrap" onPointerDown={(e) => e.stopPropagation()}>
+      <button className={open ? "active" : ""} title={title} onClick={() => setOpen((o) => !o)}>
+        {trigger}
+        <ChevronDown size={12} />
+      </button>
+      {open && (
+        <span className="wf-board-menu wf-board-menu-list">{children(() => setOpen(false))}</span>
+      )}
+    </span>
+  );
+}
+
+/** An arrow at the start of a line points back the way it came. */
+const capLabel = (kind: ConnCap, end: "start" | "end") =>
+  kind === "arrow" ? (end === "start" ? "\u25C0" : "\u25B6") : kind === "dot" ? "\u25CF" : "\u2014";
+
+/**
+ * Connector controls, in two rows: how the line looks on top, and what
+ * happens at each end below — laid out left cap, line, right cap, so the row
+ * reads the way the connector is drawn.
+ */
 function ConnectorControls({
   connector,
   onChange,
@@ -3554,25 +3694,51 @@ function ConnectorControls({
   const cs = connStyle(connector.text);
   const anchors: ConnAnchor[] = ["auto", "top", "right", "bottom", "left"];
   const cycleCap = (v: ConnCap) => CAP_CYCLE[(CAP_CYCLE.indexOf(v) + 1) % CAP_CYCLE.length];
-  const nextWidth = () =>
-    CONN_WIDTHS[(CONN_WIDTHS.findIndex((w) => w >= cs.width) + 1) % CONN_WIDTHS.length];
+  const route = CONN_ROUTES.find((r) => r.id === cs.route) ?? CONN_ROUTES[0];
+  const weightName = (w: number) => (w <= 1.5 ? "Thin" : w <= 3 ? "Medium" : "Thick");
   return (
     <>
-      {CONN_ROUTES.map((r) => (
-        <button
-          key={r.id}
-          title={r.title}
-          className={cs.route === r.id ? "active" : ""}
-          onClick={() => onChange({ ...cs, route: r.id })}
-        >
-          <r.icon size={15} />
-        </button>
-      ))}
-      <button
-        title={`Line weight: ${cs.width} (click to change)`}
-        onClick={() => onChange({ ...cs, width: nextWidth() })}
+      <PickerMenu title="Line style" trigger={<route.icon size={15} />}>
+        {(close) =>
+          CONN_ROUTES.map((r) => (
+            <button
+              key={r.id}
+              className={cs.route === r.id ? "active" : ""}
+              onClick={() => {
+                onChange({ ...cs, route: r.id });
+                close();
+              }}
+            >
+              <r.icon size={15} /> {r.title}
+            </button>
+          ))
+        }
+      </PickerMenu>
+      <PickerMenu
+        title="Line weight"
+        trigger={<span className="wf-conn-weight" style={{ height: Math.max(2, cs.width) }} />}
       >
-        <span className="wf-conn-weight" style={{ height: Math.max(2, cs.width) }} />
+        {(close) =>
+          CONN_WIDTHS.map((w) => (
+            <button
+              key={w}
+              className={cs.width === w ? "active" : ""}
+              onClick={() => {
+                onChange({ ...cs, width: w });
+                close();
+              }}
+            >
+              <span className="wf-conn-weight" style={{ height: w }} /> {weightName(w)}
+            </button>
+          ))
+        }
+      </PickerMenu>
+      <button
+        title={cs.dash ? "Dashed (click for solid)" : "Solid (click for dashed)"}
+        className={cs.dash ? "active" : ""}
+        onClick={() => onChange({ ...cs, dash: !cs.dash })}
+      >
+        {cs.dash ? "\u2505" : "\u2014"}
       </button>
       <ColorMenu
         title="Line color"
@@ -3584,13 +3750,16 @@ function ConnectorControls({
         onPick={(key) => onChange({ ...cs, color: key })}
       />
       <ConnectorLabel value={cs.label} onCommit={(label) => onChange({ ...cs, label })} />
-      <span className="wf-board-toolbar-sep" />
+
+      {/* Everything about the two ends, on its own row and in the order the
+          line runs: start cap, the line, end cap. */}
+      <span className="wf-toolbar-break" />
       <button
         title={`Start decoration: ${cs.start_cap} (click to change)`}
         className="wf-conn-cap"
         onClick={() => onChange({ ...cs, start_cap: cycleCap(cs.start_cap) })}
       >
-        {CAP_LABEL[cs.start_cap]}
+        {capLabel(cs.start_cap, "start")}
       </button>
       <select
         title="Start attaches to this side"
@@ -3603,13 +3772,7 @@ function ConnectorControls({
           </option>
         ))}
       </select>
-      <button
-        title={cs.dash ? "Dashed (click for solid)" : "Solid (click for dashed)"}
-        className={cs.dash ? "active" : ""}
-        onClick={() => onChange({ ...cs, dash: !cs.dash })}
-      >
-        {cs.dash ? "┅" : "—"}
-      </button>
+      <span className="wf-conn-run">—</span>
       <select
         title="End attaches to this side"
         value={cs.to_anchor}
@@ -3626,12 +3789,56 @@ function ConnectorControls({
         className="wf-conn-cap"
         onClick={() => onChange({ ...cs, end_cap: cycleCap(cs.end_cap) })}
       >
-        {CAP_LABEL[cs.end_cap]}
+        {capLabel(cs.end_cap, "end")}
       </button>
     </>
   );
 }
 
+/**
+ * Note opacity. Dragging repaints locally so it's live under the cursor;
+ * only the release reaches the server and the undo stack, so a drag is one
+ * step rather than one per pixel.
+ */
+function OpacitySlider({
+  value,
+  onPreview,
+  onCommit,
+}: {
+  value: number;
+  onPreview: (percent: number) => void;
+  onCommit: (from: number, to: number) => void;
+}) {
+  const [live, setLive] = useState(value);
+  const start = useRef(value);
+  useEffect(() => setLive(value), [value]);
+  const commit = () => onCommit(start.current, live);
+  return (
+    <label className="wf-board-opacity-row">
+      <span>Opacity</span>
+      <input
+        className="wf-board-opacity"
+      type="range"
+      min={20}
+      max={100}
+      step={5}
+      title={`Note opacity: ${live}%`}
+      value={live}
+      onFocus={() => (start.current = live)}
+      onPointerDown={() => (start.current = live)}
+      onChange={(e) => {
+        const next = Number(e.target.value);
+        setLive(next);
+        onPreview(next);
+      }}
+        onPointerUp={commit}
+        onKeyUp={commit}
+        onBlur={commit}
+      />
+      <span className="wf-board-opacity-value">{live}%</span>
+    </label>
+  );
+}
 
 /** Words on a connector. Committed on blur or Enter so a typed label is one
  *  undo step rather than one per keystroke. */
