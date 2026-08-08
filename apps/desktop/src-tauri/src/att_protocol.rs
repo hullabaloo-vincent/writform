@@ -2,7 +2,10 @@
 //! images while every byte still travels over the pinned TLS client.
 //!
 //! URL shape: `writform-att://attachment/<id>` (the webview can't pin certs,
-//! so it never fetches from the server directly).
+//! so it never fetches from the server directly). Windows is the exception:
+//! WebView2 refuses bare custom schemes, so Tauri serves this same handler
+//! from `http(s)://writform-att.localhost/attachment/<id>` there — the kind
+//! moves from the URI's host into its first path segment.
 
 use tauri::http::{header, Response, StatusCode};
 use tauri::Manager;
@@ -44,11 +47,21 @@ pub fn handle(
             );
         };
 
+        // Normalise the two platform shapes to (kind, rest): macOS/Linux
+        // carry the kind as the host (`writform-att://attachment/1`), Windows
+        // as the first path segment (`http://writform-att.localhost/attachment/1`).
+        let host = uri.host().unwrap_or_default();
+        let path = uri.path().trim_start_matches('/');
+        let (kind, rest) = if host.ends_with(".localhost") || host == "localhost" {
+            path.split_once('/').unwrap_or((path, ""))
+        } else {
+            (host, path)
+        };
+
         // `localboard/<media>`: a picture this device owns, read straight off
         // disk. No server, no account — offline boards keep their images.
-        if uri.host() == Some("localboard") {
-            let media = uri.path().trim_start_matches('/');
-            let Some(bytes) = crate::localboards::media_bytes(&app, media) else {
+        if kind == "localboard" {
+            let Some(bytes) = crate::localboards::media_bytes(&app, rest) else {
                 return respond_err(responder, StatusCode::NOT_FOUND);
             };
             return responder.respond(
@@ -65,9 +78,9 @@ pub fn handle(
             );
         }
 
-        // Path is /<id>; host is "attachment".
-        let id = uri.path().trim_start_matches('/');
-        if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
+        // `attachment/<id>`: fetched from the server over the pinned client.
+        let id = rest;
+        if kind != "attachment" || id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
             return respond_err(responder, StatusCode::BAD_REQUEST);
         }
 

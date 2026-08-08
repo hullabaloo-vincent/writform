@@ -19,7 +19,7 @@ import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { CreateElementRequest } from "../../bindings/proto/CreateElementRequest";
 import type { UpdateElementRequest } from "../../bindings/proto/UpdateElementRequest";
 import type { UserRef } from "../../bindings/proto/UserRef";
-import { attachmentUrl, backend } from "../../lib/backend";
+import { attachmentUrl, attProtocolUrl, backend } from "../../lib/backend";
 import { useSession } from "../../stores/session";
 
 const SAVE_MS = 600;
@@ -70,7 +70,7 @@ export async function saveLocalImage(blob: Blob): Promise<string> {
  *  server attachment. */
 export function imageSrc(el: { text: string }): string {
   if (el.text.startsWith(LOCAL_MEDIA)) {
-    return `writform-att://localboard/${el.text.slice(LOCAL_MEDIA.length)}`;
+    return attProtocolUrl(`localboard/${el.text.slice(LOCAL_MEDIA.length)}`);
   }
   return attachmentUrl(Number(el.text));
 }

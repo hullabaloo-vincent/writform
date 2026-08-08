@@ -955,7 +955,11 @@ export function BoardRoom() {
       if (!surface || !target || !surface.contains(target)) return;
       // Toolbars and the minimap sit inside the surface but are controls,
       // not canvas — fingers there must not count toward a pinch.
-      if (target.closest(".wf-board-toolbar, .wf-selection-toolbar, .wf-minimap, .wf-minimap-toggle"))
+      if (
+        target.closest(
+          ".wf-board-toolbar, .wf-selection-toolbar-wrap, .wf-minimap, .wf-minimap-toggle, .wf-board-viewbar",
+        )
+      )
         return;
       touchPts.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (touchPts.current.size === 2) beginPinch();
@@ -1849,6 +1853,14 @@ export function BoardRoom() {
       const wy = (py - v.ty) / v.scale;
       return { scale, tx: px - wx * scale, ty: py - wy * scale };
     });
+  };
+
+  /** The view bar's zoom, anchored at the middle of the board itself — the
+   *  window's centre drifts well below it on phones, where the header, page
+   *  strip and wrapped tool bar all take height from the board. */
+  const zoomFromCenter = (factor: number) => {
+    const rect = surfaceRef.current?.getBoundingClientRect();
+    if (rect) zoomAt(rect.left + rect.width / 2, rect.top + rect.height / 2, factor);
   };
 
   const placeElement = (kind: "sticky" | "text" | "frame" | "shape", x: number, y: number) => {
@@ -3097,7 +3109,7 @@ export function BoardRoom() {
         {/* View controls live in the corner, away from the tools: they act on
             the board itself rather than on what you're drawing. */}
         <div className="wf-board-viewbar" onPointerDown={(e) => e.stopPropagation()}>
-          <button title="Zoom out" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1 / 1.2)}>
+          <button title="Zoom out" onClick={() => zoomFromCenter(1 / 1.2)}>
             <ZoomOut size={16} />
           </button>
           <button
@@ -3105,11 +3117,11 @@ export function BoardRoom() {
             title="Reset zoom to 100%"
             // Through zoomAt, so it settles around the middle of the view
             // instead of yanking whatever you were looking at off-screen.
-            onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1 / viewRef.current.scale)}
+            onClick={() => zoomFromCenter(1 / viewRef.current.scale)}
           >
             {Math.round(view.scale * 100)}%
           </button>
-          <button title="Zoom in" onClick={() => zoomAt(innerWidth / 2, innerHeight / 2, 1.2)}>
+          <button title="Zoom in" onClick={() => zoomFromCenter(1.2)}>
             <ZoomIn size={16} />
           </button>
           <span className="wf-board-toolbar-sep" />
@@ -3926,9 +3938,13 @@ function Minimap({
   surfaceRef: React.RefObject<HTMLDivElement | null>;
   onJump: (worldX: number, worldY: number) => void;
 }) {
-  const [collapsed, setCollapsed] = useState(
-    () => localStorage.getItem("wf-canvas-minimap") === "off",
-  );
+  const [collapsed, setCollapsed] = useState(() => {
+    const saved = localStorage.getItem("wf-canvas-minimap");
+    if (saved !== null) return saved === "off";
+    // No expressed preference: phones start with the map tucked away — at
+    // that size it covers a real share of the board.
+    return window.matchMedia("(max-width: 767px)").matches;
+  });
   const bounds = contentBounds(elements);
   if (!bounds) return null;
 

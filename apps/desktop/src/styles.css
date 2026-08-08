@@ -6910,9 +6910,24 @@ input[type="checkbox"] {
     max-width: calc(100vw - 16px);
     flex-wrap: wrap;
   }
-  /* Tucked closer to the corner so it clears the wrapped tool rows. */
+  /* The wrapped tool bar spans the whole bottom edge on phones, straight
+     through the corner the view bar lives in — so here it moves to the
+     board's top-left instead of fighting for the same pixels. */
   .wf-board-viewbar {
+    top: 8px;
     left: 8px;
-    bottom: 8px;
+    bottom: auto;
+  }
+  /* A popover anchored to a header button can hang off a phone screen (the
+     header wraps, so the palette button may sit anywhere). The background
+     menu becomes a bottom sheet instead. */
+  .wf-board-menu.wf-board-bg-menu {
+    position: fixed;
+    top: auto;
+    left: 8px;
+    right: 8px;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+    width: auto;
+    z-index: 80;
   }
 }

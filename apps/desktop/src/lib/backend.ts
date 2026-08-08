@@ -320,16 +320,32 @@ export const isDevPreview = !inTauri && import.meta.env.DEV;
 /** True in the browser web client served by writform-server. */
 export const isWeb = !inTauri && !import.meta.env.DEV;
 
+/**
+ * URL into the app's custom `writform-att` protocol, in the shape THIS
+ * platform's webview can actually load. macOS and Linux take the scheme
+ * as-is; Windows' WebView2 refuses bare custom schemes, so Tauri serves the
+ * same handler from `http(s)://writform-att.localhost` there — matching the
+ * page's own protocol, hence location.protocol.
+ */
+export function attProtocolUrl(path: string): string {
+  return navigator.userAgent.includes("Windows")
+    ? `${location.protocol}//writform-att.localhost/${path}`
+    : `writform-att://${path}`;
+}
+
 /** URL for an attachment, valid on the current platform. Desktop rides the
- *  pinned `writform-att://` protocol; the web client fetches same-origin
+ *  pinned `writform-att` protocol; the web client fetches same-origin
  *  (authenticated by the path-scoped cookie for <img>-style loads). */
 export function attachmentUrl(id: number): string {
-  return inTauri ? `writform-att://attachment/${id}` : `/api/v1/attachments/${id}`;
+  return inTauri ? attProtocolUrl(`attachment/${id}`) : `/api/v1/attachments/${id}`;
 }
 
 /** Documents store attachment image URLs written by whichever platform made
- *  them; re-point either scheme at the current platform's at render time. */
+ *  them; re-point any known shape at the current platform's at render time. */
 export function normalizeAttachmentSrc(src: string): string {
-  const m = /^(?:writform-att:\/\/attachment|\/api\/v1\/attachments)\/(\d+)$/.exec(src);
+  const m =
+    /^(?:writform-att:\/\/attachment|https?:\/\/writform-att\.localhost\/attachment|\/api\/v1\/attachments)\/(\d+)$/.exec(
+      src,
+    );
   return m ? attachmentUrl(Number(m[1])) : src;
 }
