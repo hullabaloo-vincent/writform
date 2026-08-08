@@ -32,7 +32,7 @@
     "lucide-react": "^1.25.0",
     "mammoth": "^1.12.0",
     "marked": "^18.0.6",
-    "pdfjs-dist": "^6.1.200",
+    "pdfjs-dist": "^6.2.108",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "y-protocols": "^1.0.7",
