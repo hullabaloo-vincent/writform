@@ -970,6 +970,10 @@ export function BoardRoom() {
   viewRef.current = view;
   /** Live page for []-dep effects (paste, drop) — state would go stale. */
   const activePageRef = useRef(0);
+  /** Last broadcast world position, reused by the presence heartbeat. */
+  const lastCursorPos = useRef({ x: 0, y: 0 });
+  /** Sketch element this client has open in the pad, advertised to peers. */
+  const editingSketchRef = useRef<number | null>(null);
   // Must live above the `!board` early return: hooks cannot be conditional.
   const lastCursorSent = useRef(0);
   /** Text an edit began with — autosave rewrites `el.text` mid-edit, so this
@@ -1781,6 +1785,60 @@ export function BoardRoom() {
     };
   }, []);
 
+  // Presence heartbeat: cursor frames double as "who's on which page" and
+  // "who's inside which sketch", and the store prunes them after 8 quiet
+  // seconds — so keep them alive while idle.
+  useEffect(() => {
+    const beat = setInterval(() => {
+      const boardId = useCanvas.getState().board?.id;
+      if (boardId === undefined) return;
+      const { x, y } = lastCursorPos.current;
+      void canvasApi
+        .cursor(boardId, x, y, activePageRef.current, editingSketchRef.current)
+        .catch(() => {});
+    }, 4000);
+    return () => clearInterval(beat);
+  }, []);
+
+  // Switching pages announces itself right away, so the page tabs' presence
+  // dots don't lag a heartbeat behind.
+  useEffect(() => {
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const { x, y } = lastCursorPos.current;
+    void canvasApi
+      .cursor(boardId, x, y, activePage, editingSketchRef.current)
+      .catch(() => {});
+  }, [activePage]);
+
+  // Opening/closing the sketch pad advertises the soft lock immediately.
+  useEffect(() => {
+    editingSketchRef.current = sketching?.el?.id ?? null;
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const { x, y } = lastCursorPos.current;
+    void canvasApi
+      .cursor(boardId, x, y, activePageRef.current, editingSketchRef.current)
+      .catch(() => {});
+  }, [sketching]);
+
+  /** Open a sketch for drawing — unless a peer already has it open (their
+   *  cursor frames advertise it; entries expire in seconds if they vanish). */
+  const openSketch = (el: CanvasElement | null) => {
+    if (el) {
+      const busy = Object.values(useCanvas.getState().cursors).find(
+        (c) => c.editing === el.id,
+      );
+      if (busy) {
+        setError(
+          `${busy.user.display_name ?? busy.user.username} is drawing on this sketch right now — try again in a moment.`,
+        );
+        return;
+      }
+    }
+    setSketching({ el });
+  };
+
   if (!board) return <div className="wf-sessions-empty">Loading…</div>;
   const local = isLocalBoard(board.id);
   const group = groups.find((g) => g.id === board.group_id);
@@ -1933,7 +1991,7 @@ export function BoardRoom() {
         ? {
             label: el.kind === "sketch" ? "Edit sketch" : "Edit text",
             icon: <Pencil size={14} />,
-            onClick: () => (el.kind === "sketch" ? setSketching({ el }) : beginEditing(el)),
+            onClick: () => (el.kind === "sketch" ? openSketch(el) : beginEditing(el)),
           }
         : undefined,
       null,
@@ -2032,7 +2090,10 @@ export function BoardRoom() {
     if (now - lastCursorSent.current < 50) return; // ~20/s
     lastCursorSent.current = now;
     const { x, y } = toWorld(clientX, clientY);
-    void canvasApi.cursor(boardId, x, y).catch(() => {});
+    lastCursorPos.current = { x, y };
+    void canvasApi
+      .cursor(boardId, x, y, activePageRef.current, editingSketchRef.current)
+      .catch(() => {});
   };
 
   /** Centre the viewport on a world point (used by the minimap). */
@@ -2362,12 +2423,9 @@ export function BoardRoom() {
       }
     }
 
-    // Bring the grabbed element to front once per grab.
-    const top = maxZ(all);
-    if (el.z < top) {
-      patchLocal(el.id, { z: top + 1 });
-      canvasApi.updateElement(el.id, { z: top + 1 }).catch(() => {});
-    }
+    // Clicking never reorders: stacking only changes through the explicit
+    // (and undoable) Bring to front / Send to back actions. The old
+    // bump-on-grab silently rewrote z for everyone on every click.
 
     // Drag to move, throttled sync while moving, final patch on release.
     const origins = new Map<number, { x: number; y: number }>();
@@ -2958,6 +3016,27 @@ export function BoardRoom() {
               ) : (
                 p.name
               )}
+              {(() => {
+                // Who's over there: peers' cursor frames carry their page.
+                const here = Object.values(cursors).filter((c) => c.page === p.id);
+                if (here.length === 0) return null;
+                const names = here
+                  .map((c) => c.user.display_name ?? c.user.username)
+                  .join(", ");
+                return (
+                  <span
+                    className="wf-page-presence"
+                    title={`On this page: ${names}`}
+                    style={
+                      here.length === 1 && here[0].user.accent_color
+                        ? { background: here[0].user.accent_color }
+                        : undefined
+                    }
+                  >
+                    {here.length > 1 ? here.length : ""}
+                  </span>
+                );
+              })()}
             </button>
           ))}
         <button className="wf-board-page-add" title="Add a page" onClick={addPage}>
@@ -3181,7 +3260,7 @@ export function BoardRoom() {
               onPointerDown={(e) => onElementDown(e, el)}
               onContextMenu={(e) => openElementMenu(e, el)}
               onDoubleClick={() => {
-                if (el.kind === "sketch") setSketching({ el });
+                if (el.kind === "sketch") openSketch(el);
                 else if (el.kind !== "image" && el.kind !== "link" && el.kind !== "document") {
                   beginEditing(el);
                 }
@@ -3268,8 +3347,12 @@ export function BoardRoom() {
           )}
 
           {/* Peers' pointers live in world space so they track the board as
-              you pan and zoom; the counter-scale keeps them a constant size. */}
-          {Object.values(cursors).map((c) => (
+              you pan and zoom; the counter-scale keeps them a constant size.
+              Pages are separate spaces — only same-page cursors render (the
+              page tabs carry the "someone's over there" signal instead). */}
+          {Object.values(cursors)
+            .filter((c) => c.page === activePage)
+            .map((c) => (
             <div
               key={c.user.id}
               className="wf-cursor"
@@ -3388,7 +3471,7 @@ export function BoardRoom() {
               <button
                 className="wf-icon"
                 title="Edit sketch"
-                onClick={() => setSketching({ el: selectedEl })}
+                onClick={() => openSketch(selectedEl)}
               >
                 <Pencil size={15} />
               </button>
@@ -3576,7 +3659,7 @@ export function BoardRoom() {
               </span>
             )}
           </span>
-          <button title="Add sketch" onClick={() => setSketching({ el: null })}>
+          <button title="Add sketch" onClick={() => openSketch(null)}>
             <Pencil size={17} />
           </button>
           <ToolButton

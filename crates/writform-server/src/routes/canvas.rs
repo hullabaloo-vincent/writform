@@ -532,6 +532,13 @@ pub async fn delete_element(
 pub struct CursorRequest {
     pub x: f64,
     pub y: f64,
+    /// Page the sender is viewing (page id from the board's style metadata).
+    #[serde(default)]
+    pub page: Option<i64>,
+    /// Sketch element the sender has open for drawing, if any — peers use it
+    /// as a soft "someone's already in here" lock.
+    #[serde(default)]
+    pub editing: Option<i64>,
 }
 
 pub async fn board_cursor(
@@ -563,6 +570,8 @@ pub async fn board_cursor(
             "user": perms::user_ref(auth.user_id, username, display_name, avatar, accent),
             "x": req.x,
             "y": req.y,
+            "page": req.page.unwrap_or(0),
+            "editing": req.editing,
         }),
     );
     Ok(StatusCode::NO_CONTENT)

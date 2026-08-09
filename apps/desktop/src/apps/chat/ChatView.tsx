@@ -769,7 +769,7 @@ function VoiceSection({ groupId, isAdmin }: { groupId: number; isAdmin: boolean 
                       accentColor={u.accent_color}
                       size={16}
                     />
-                    {u.display_name ?? u.username}
+                    <span className="wf-occupant-name">{u.display_name ?? u.username}</span>
                     {hasCamera && <Video size={12} className="wf-voice-media-badge" />}
                     {hasScreen && <MonitorUp size={12} className="wf-voice-media-badge" />}
                     {inMyRoom && !isMe && (

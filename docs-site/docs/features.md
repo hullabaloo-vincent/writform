@@ -99,7 +99,9 @@ Groups work like small Discord servers: channels, invites, roles.
 - **Uploads**: attach, paste, or drag & drop images.
 - **Presence**: online / busy / invisible, shown next to every name.
 - **Profile cards**: click anyone's name or avatar for their bio, accent
-  color, and status.
+  color, and status — with a **Message** button for friends (straight into
+  your conversation) and **Add friend** / **Accept friend request** for
+  everyone else.
 - **Moderation**: authors and group admins can delete messages; admins can
   kick members, rename and delete channels, and delete the whole group
   (gear next to the group name → Delete group — erases its channels,
@@ -159,7 +161,9 @@ moves as one — click again to pick a single element out of the group,
 the plus, double-click a tab to rename it, right-click for rename and delete
 (deleting takes its contents with it, and undo brings both back). Each page
 is its own space — what you draw, select, or fit to screen belongs to the
-page you're on.
+page you're on. Peers' live cursors appear only on the page you share with
+them; a dot on a page tab (their accent color, or a count) shows someone is
+working over there.
 
 **Linking as you go**: select an element and four arrows appear around it.
 Click one and you get a new element on that side, already connected and ready
@@ -171,7 +175,9 @@ eraser to rub out strokes you've drawn, undo a stroke at a time, then insert
 it onto the board. Sketches stay editable: double-click
 one (or use the pencil on its toolbar) to reopen the pad and keep drawing.
 They're stored as strokes rather than as a picture, so they stay sharp at any
-zoom, resize cleanly, and work on a board with no server behind it.
+zoom, resize cleanly, and work on a board with no server behind it. One
+person draws at a time: while someone has a sketch open, others trying to
+edit it are told who's in there instead of silently overwriting each other.
 
 **Copy and paste**: ⌘/Ctrl-C, X, V and D copy, cut, paste and duplicate the
 selection, and ⌘/Ctrl-A selects everything on the board. A connector with

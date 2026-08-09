@@ -5227,18 +5227,33 @@ textarea.wf-el-shape-text {
 }
 
 /* Per-person volume in the sidebar occupant row, shown on hover. */
+/* Constant geometry, opacity-only reveal — the same recipe as the stage
+   tiles. Animating width reflowed the row under the pointer on unhover
+   (expand/jitter), and the collapsed width:0 also left the slider invisible
+   on touch, where hover-none forces opacity 1. */
 .wf-occupant-volume {
-  width: 0;
+  width: 64px;
+  flex: 0 0 auto;
   margin-left: auto;
   opacity: 0;
   height: 12px;
-  transition: opacity 0.12s;
+  transition: opacity 0.15s;
   accent-color: var(--wf-accent);
+  pointer-events: none;
 }
 
 .wf-voice-occupants li:hover .wf-occupant-volume {
-  width: 64px;
   opacity: 1;
+  pointer-events: auto;
+}
+
+/* Reserved slider space must squeeze the name, not the row. */
+.wf-occupant-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Camera/screen chips on occupants of the room you're in. */
@@ -6896,6 +6911,7 @@ input[type="checkbox"] {
   .wf-occupant-volume,
   .wf-stage-volume {
     opacity: 1;
+    pointer-events: auto;
   }
   .wf-notes-title svg {
     opacity: 1;
@@ -7230,6 +7246,36 @@ input[type="checkbox"] {
   height: 16px;
   vertical-align: -3px;
   margin: 0;
+}
+
+/* ---- profile card actions ---- */
+
+.wf-profile-actions {
+  display: flex;
+  gap: 8px;
+  margin: 10px 0 2px;
+}
+
+/* ---- page presence dot on board page tabs ---- */
+
+/* A peer's accent-colored dot (or a count when several people are there).
+   The base button rule's min-height must be beaten for the tiny circle. */
+.wf-board-page .wf-page-presence {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 10px;
+  height: 10px;
+  min-height: 0;
+  margin-left: 6px;
+  padding: 0 2px;
+  border-radius: var(--wf-radius-pill);
+  background: var(--wf-accent);
+  color: #fff;
+  font-size: 8.5px;
+  font-weight: 700;
+  line-height: 1;
 }
 
 /* ---- release notes in Settings → Application ---- */

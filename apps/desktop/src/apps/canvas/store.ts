@@ -13,6 +13,10 @@ export interface RemoteCursor {
   user: UserRef;
   x: number;
   y: number;
+  /** Page the peer is viewing (their marker only renders on that page). */
+  page: number;
+  /** Sketch element they have open for drawing, if any. */
+  editing: number | null;
   /** Local clock stamp of the last frame, for expiry. */
   seen_at: number;
 }
@@ -135,11 +139,25 @@ export function installCanvasWsHandler(): () => void {
     const state = useCanvas.getState();
 
     if (kind === "canvas.cursor") {
-      const c = data as { board_id: number; user: UserRef; x: number; y: number };
+      const c = data as {
+        board_id: number;
+        user: UserRef;
+        x: number;
+        y: number;
+        page?: number;
+        editing?: number | null;
+      };
       const me = useSession.getState().session?.user.id;
       // Our own cursor is drawn by the OS; only peers get a marker.
       if (c.board_id === state.activeBoardId && c.user.id !== me) {
-        state.applyCursor({ user: c.user, x: c.x, y: c.y, seen_at: Date.now() });
+        state.applyCursor({
+          user: c.user,
+          x: c.x,
+          y: c.y,
+          page: c.page ?? 0,
+          editing: c.editing ?? null,
+          seen_at: Date.now(),
+        });
       }
     } else if (kind === "canvas.element.created" || kind === "canvas.element.updated") {
       state.applyElement(data as CanvasElement);

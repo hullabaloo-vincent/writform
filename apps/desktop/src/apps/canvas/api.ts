@@ -70,11 +70,19 @@ export const canvasApi = {
     local.deleteElement(elementId);
     return null;
   },
-  /** Ephemeral cursor broadcast; fire-and-forget, never persisted. */
-  cursor: async (boardId: number, x: number, y: number) =>
+  /** Ephemeral cursor broadcast; fire-and-forget, never persisted. Carries
+   *  the page in view (page presence) and the sketch being drawn on, if any
+   *  (a soft edit lock for peers). */
+  cursor: async (
+    boardId: number,
+    x: number,
+    y: number,
+    page = 0,
+    editing: number | null = null,
+  ) =>
     isLocalBoard(boardId)
       ? null
-      : api<null>("POST", `/api/v1/boards/${boardId}/cursor`, { x, y }),
+      : api<null>("POST", `/api/v1/boards/${boardId}/cursor`, { x, y, page, editing }),
   linkPreview: (url: string) =>
     api<LinkPreview>("GET", `/api/v1/link-preview?url=${encodeURIComponent(url)}`),
 };
