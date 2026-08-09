@@ -1587,6 +1587,15 @@ export function BoardRoom() {
     if (!live.some((p) => p.id === activePage)) setActivePage(live[0].id);
   }, [board?.style, activePage]);
 
+  // Selections don't cross pages: landing on a page drops whatever was
+  // picked on the last one, or its floating toolbar would linger for
+  // elements that are no longer even rendered.
+  useEffect(() => {
+    setSelected(new Set());
+    setEditing(null);
+    setConnectFrom(null);
+  }, [activePage]);
+
   // Any press outside the context menu dismisses it; so does Escape.
   useEffect(() => {
     if (!menu) return;

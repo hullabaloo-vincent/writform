@@ -7256,6 +7256,13 @@ input[type="checkbox"] {
   margin: 10px 0 2px;
 }
 
+/* Some kinds (document cards, link cards) offer no per-element controls —
+   every toolbar child is conditional, so the panel can be genuinely empty.
+   Hide the empty pill; the delete button beside it stays. */
+.wf-selection-toolbar:empty {
+  display: none;
+}
+
 /* ---- page presence dot on board page tabs ---- */
 
 /* A peer's accent-colored dot (or a count when several people are there).
