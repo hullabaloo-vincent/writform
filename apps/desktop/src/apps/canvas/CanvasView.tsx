@@ -1,5 +1,5 @@
-import { HardDrive } from "lucide-react";
-import { useEffect, useState } from "react";
+import { HardDrive, Upload } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
 import { isCmdError, isWeb } from "../../lib/backend";
@@ -8,6 +8,8 @@ import { GroupChip } from "../chat/GroupChip";
 import { useChat } from "../chat/store";
 import { canvasApi } from "./api";
 import { BoardRoom } from "./BoardRoom";
+import type { ImportDest } from "./boardFile";
+import { ImportBoardDialog } from "./ImportBoardDialog";
 import { useLocalBoards, type LocalBoardMeta } from "./local";
 import { useCanvas } from "./store";
 
@@ -39,6 +41,9 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
   const [creating, setCreating] = useState<"group" | "local" | null>(null);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [importJob, setImportJob] = useState<{ file: File; dest: ImportDest } | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const pendingDest = useRef<ImportDest>({ kind: "local" });
 
   useEffect(() => {
     if (groupId !== null) void loadBoards(groupId).catch(() => {});
@@ -54,6 +59,28 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
       useCanvas.getState().closeBoard();
       fail(e);
     });
+
+  const pickImport = (dest: ImportDest) => {
+    pendingDest.current = dest;
+    fileRef.current?.click();
+  };
+
+  const onImportFile = (files: FileList | null) => {
+    const file = files?.[0];
+    if (!file) return;
+    setError(null);
+    const lower = file.name.toLowerCase();
+    if (lower.endsWith(".pdf") && isWeb) {
+      // Same tier as the notes vault: reconstruction runs on the desktop app.
+      setError("PDF import needs the desktop app.");
+      return;
+    }
+    if (!lower.endsWith(".pdf") && !lower.endsWith(".wfboard")) {
+      setError("Import a .pdf (FigJam / Freeform export) or a .wfboard file.");
+      return;
+    }
+    setImportJob({ file, dest: pendingDest.current });
+  };
 
   const createBoard = () => {
     if (groupId === null || !name.trim()) return;
@@ -144,6 +171,13 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
                 + New board
               </button>
             )}
+            <button
+              className="wf-session-card wf-session-new"
+              title="Import a board file or a FigJam / Freeform PDF export"
+              onClick={() => pickImport({ kind: "group", groupId })}
+            >
+              <Upload size={15} /> Import board
+            </button>
           </div>
         </>
       )}
@@ -170,8 +204,40 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
                 + New local board
               </button>
             )}
+            <button
+              className="wf-session-card wf-session-new"
+              title="Import a board file or a FigJam / Freeform PDF export"
+              onClick={() => pickImport({ kind: "local" })}
+            >
+              <Upload size={15} /> Import board
+            </button>
           </div>
         </section>
+      )}
+
+      <input
+        ref={fileRef}
+        type="file"
+        hidden
+        // PDF reconstruction is desktop-only; the web client takes .wfboard.
+        accept={isWeb ? ".wfboard" : ".pdf,application/pdf,.wfboard"}
+        onChange={(e) => {
+          onImportFile(e.target.files);
+          e.target.value = "";
+        }}
+      />
+      {importJob && (
+        <ImportBoardDialog
+          file={importJob.file}
+          dest={importJob.dest}
+          onDone={(boardId) => {
+            const job = importJob;
+            setImportJob(null);
+            if (boardId === null) return;
+            if (job.dest.kind === "group") void loadBoards(job.dest.groupId).catch(() => {});
+            open(boardId);
+          }}
+        />
       )}
     </div>
   );

@@ -67,6 +67,8 @@ pub fn handle(
             return responder.respond(
                 Response::builder()
                     .status(StatusCode::OK)
+                    // <img> loads skip CORS; fetch() (board export) does not.
+                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                     .header(header::CONTENT_TYPE, sniff_image(&bytes))
                     // Media ids are unique per picture, so this never goes stale.
                     .header(
@@ -110,6 +112,7 @@ pub fn handle(
                     Ok(bytes) => responder.respond(
                         Response::builder()
                             .status(StatusCode::OK)
+                            .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
                             .header(header::CONTENT_TYPE, mime)
                             .header(
                                 header::CACHE_CONTROL,

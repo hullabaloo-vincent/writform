@@ -7,6 +7,8 @@
  * elements. Images and exact typography are intentionally not imported.
  */
 
+import { loadPdfjs } from "../../../lib/pdfjs";
+
 export interface ImportedPdfParagraph {
   text: string;
   element?: string;
@@ -35,44 +37,8 @@ interface PositionedText {
   height: number;
 }
 
-/**
- * Older WKWebViews expose ReadableStream#getReader without making streams
- * async-iterable. PDF.js uses `for await` in getTextContent, so add the
- * standards-compatible iterator before loading PDF.js.
- */
-function ensureReadableStreamAsyncIterator(): void {
-  const Stream = globalThis.ReadableStream;
-  if (!Stream) return;
-  const streamPrototype = Stream.prototype as unknown as Record<symbol, unknown>;
-  if (typeof streamPrototype[Symbol.asyncIterator] === "function") return;
-
-  Object.defineProperty(Stream.prototype, Symbol.asyncIterator, {
-    configurable: true,
-    writable: true,
-    value: async function* <T>(this: ReadableStream<T>) {
-      const reader = this.getReader();
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) return;
-          yield value;
-        }
-      } finally {
-        reader.releaseLock();
-      }
-    },
-  });
-}
-
 export async function pdfToDocument(data: ArrayBuffer): Promise<ImportedPdfDocument> {
-  ensureReadableStreamAsyncIterator();
-
-  // The legacy build supplies Promise.withResolvers and other compatibility
-  // shims needed by the macOS desktop webview. It is still lazily bundled.
-  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const workerUrl = (await import("pdfjs-dist/legacy/build/pdf.worker.min.mjs?url")).default;
-  pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-
+  const pdfjs = await loadPdfjs();
   const loadingTask = pdfjs.getDocument({ data: new Uint8Array(data) });
   try {
     const doc = await loadingTask.promise;

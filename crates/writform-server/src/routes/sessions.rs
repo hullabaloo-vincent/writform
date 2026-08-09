@@ -610,7 +610,7 @@ pub async fn stop_prompt(
             .fetch_one(&state.pool)
             .await?;
     let grace_end = now_millis() + STOP_GRACE_MS;
-    if ends_at.map_or(true, |t| t > grace_end) {
+    if ends_at.is_none_or(|t| t > grace_end) {
         // First Stop: schedule the end instead of cutting writers off. The
         // existing timer machinery does the rest — and a stale earlier timer
         // firing later is harmless because end_prompt_inner no-ops on an

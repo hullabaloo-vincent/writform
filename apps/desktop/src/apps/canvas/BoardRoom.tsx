@@ -30,6 +30,7 @@ import {
   Copy,
   CopyPlus,
   CornerDownRight,
+  Download,
   Heart,
   Lock,
   Scissors,
@@ -64,7 +65,7 @@ import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import { isCmdError } from "../../lib/backend";
 import { uploadBlob } from "../../lib/upload";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useChat } from "../chat/store";
 import { CanvasDocCard } from "../documents/CanvasDocCard";
@@ -145,7 +146,7 @@ function LinkCard({ url }: { url: string }) {
  *  alpha. They start translucent so overlapping notes read as stacked layers
  *  rather than one hiding the other, at a level that keeps the note's dark
  *  text legible over a dark board or a background image. */
-const STICKY_RGB: Record<string, string> = {
+export const STICKY_RGB: Record<string, string> = {
   yellow: "232, 212, 120",
   pink: "232, 154, 176",
   blue: "138, 182, 232",
@@ -164,7 +165,7 @@ const STICKY_COLORS: Record<string, string> = Object.fromEntries(
 );
 
 /** Soft translucent frame fills (Freeform-style); "" = plain frame. */
-const FRAME_COLORS: Record<string, { bg: string; border: string }> = {
+export const FRAME_COLORS: Record<string, { bg: string; border: string }> = {
   orange: { bg: "rgba(232, 147, 60, 0.28)", border: "rgba(232, 147, 60, 0.75)" },
   purple: { bg: "rgba(150, 117, 190, 0.28)", border: "rgba(150, 117, 190, 0.75)" },
   green: { bg: "rgba(139, 190, 120, 0.28)", border: "rgba(139, 190, 120, 0.75)" },
@@ -262,7 +263,7 @@ const FONT_OPTIONS: { value: TextStyle["font"]; label: string }[] = [
 ];
 
 /** Text color swatches; undefined (default) inherits the element's color. */
-const TEXT_COLORS: { css: string; name: string }[] = [
+export const TEXT_COLORS: { css: string; name: string }[] = [
   { css: "#eceaf2", name: "Light" },
   { css: "#1d1c22", name: "Ink" },
   { css: "#e05b5b", name: "Red" },
@@ -2460,6 +2461,31 @@ export function BoardRoom() {
         >
           <Search size={16} />
         </button>
+        <button
+          title="Export board (.wfboard)"
+          onClick={() =>
+            // Lazy: the export path carries JSZip. Exports the store's own
+            // state — fetching detail for a local board would reopen its
+            // session underneath this very view.
+            void import("./boardFile")
+              .then(({ exportBoard }) =>
+                exportBoard(board, Object.values(useCanvas.getState().elements)),
+              )
+              .then((r) =>
+                toast(
+                  `Exported ${r.fileName} to ${r.where}${
+                    r.skippedMedia
+                      ? ` — ${r.skippedMedia} image${r.skippedMedia === 1 ? "" : "s"} skipped`
+                      : ""
+                  }`,
+                  "success",
+                ),
+              )
+              .catch(fail)
+          }
+        >
+          <Download size={16} />
+        </button>
         <BackgroundMenu
           background={background}
           local={local}
@@ -3015,6 +3041,28 @@ export function BoardRoom() {
                 onChange={(st) => {
                   const style = JSON.stringify(st);
                   applyPatchWithHistory(selectedEl, { style }, "Format text");
+                }}
+              />
+            )}
+            {/* Multi-selection: recolor every selected element's text at
+                once — one undo step (imported boards arrive with many). */}
+            {selected.size > 1 && (
+              <ColorMenu
+                title="Text color for everything selected"
+                current=""
+                colors={[
+                  { key: "", css: "" },
+                  ...TEXT_COLORS.map((c) => ({ key: c.css, css: c.css })),
+                ]}
+                onPick={(key) => {
+                  const ids = new Set(
+                    [...selected].filter((id) => {
+                      const el = useCanvas.getState().elements[id];
+                      // Kinds that show prose; pictures and links have none.
+                      return el !== undefined && ["sticky", "text", "shape"].includes(el.kind);
+                    }),
+                  );
+                  styleEach(ids, (s) => ({ ...s, textColor: key || undefined }), "Text color");
                 }}
               />
             )}

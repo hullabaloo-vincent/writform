@@ -123,7 +123,8 @@ formatting
 (bold/italic/underline, size, alignment, bullets, four typefaces, text
 colors); connectors run straight, at right angles or as a smooth curve, with per-side
 anchors, line weight and color, dashed styles, arrow/dot ends, and a label
-that rides the middle of the line. Everything syncs live.
+that rides the middle of the line. Selecting several elements offers a text
+color for all of them at once. Everything syncs live.
 
 **Pages**: a board is a stack of pages, listed above the canvas. Add one with
 the plus, double-click a tab to rename it, right-click for rename and delete
@@ -175,6 +176,19 @@ you're on — a background color, or an image you upload (filled, fitted,
 stretched, tiled, or centered) — and can turn the dot grid off. Each page
 keeps its own, everyone in the group sees it, and undo covers it like any
 other change.
+
+**Export & import boards**: the download button in a board's header saves it
+as a `.wfboard` file — the board's pages, elements, connectors and pictures,
+self-contained. Import one from the board list into a group or onto this
+device; the round trip is lossless, which also makes it the way to publish a
+board from this device to a group, or move boards between servers. The board
+list also imports **FigJam and Freeform PDF exports** (desktop app only):
+since a PDF stores drawings rather than board structure, the import
+reconstructs it — pictures become image elements, small text cards become
+notes, larger cards become tinted frames holding their photos and text where
+they were laid out, and each imported page keeps the export's white paper so
+its black text reads as it did — editable, but approximate; card colors map
+to the board palette, and freehand ink and decorations don't survive.
 
 **Boards on this device**: the canvas list has an "On this device" section
 for boards stored on your computer, never on the server — the same tools,
