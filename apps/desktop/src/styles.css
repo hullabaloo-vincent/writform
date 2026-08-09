@@ -217,6 +217,16 @@ body,
   color: var(--wf-text);
 }
 
+/* The shell is an app, not a page: every pane scrolls itself, so the
+   document must never scroll. Without this, anything poking 1px past the
+   viewport (absolute affordances, mobile's 100dvh shell vs the layout
+   viewport's 100%) grows a window-level scrollbar and the app sits
+   un-flush with the window edge. */
+html,
+body {
+  overflow: hidden;
+}
+
 /* ---- shell layout ---- */
 
 .wf-shell {
@@ -573,10 +583,18 @@ body,
   border-top-color: #e0a03c;
 }
 
+/* Centering via auto margins, not place-items: the document no longer
+   scrolls, so on a window shorter than the card this pane must scroll —
+   and auto margins collapse to 0 under overflow (keeping the card's top
+   reachable) where `center` would clip both ends. */
 .wf-connect {
   display: grid;
-  place-items: center;
   height: 100%;
+  overflow-y: auto;
+}
+
+.wf-connect > .wf-connect-card {
+  margin: auto;
 }
 
 .wf-connect-card {
@@ -7292,12 +7310,18 @@ input[type="checkbox"] {
 }
 
 /* Zero-width chrome: the toolbar is a nowrap overflow-x row, so the button
-   must occupy exactly the box the plain span did or the row overflows. */
+   must occupy exactly the box the plain span did or the row overflows.
+   Selector carries `.wf-editor-toolbar button` weight deliberately — that
+   rule fixes every toolbar button at a 28px grid square and would otherwise
+   win (same specificity family as the base-button traps). */
+.wf-editor-toolbar button.wf-doc-stats-btn,
 .wf-doc-stats-btn {
   display: inline-flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 3px;
+  width: auto;
+  height: auto;
   min-height: 0;
   padding: 0;
   border: none;
@@ -7307,7 +7331,9 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+.wf-editor-toolbar button.wf-doc-stats-btn:hover,
 .wf-doc-stats-btn:hover {
+  background: transparent;
   color: var(--wf-text);
   text-decoration: underline dotted;
   text-underline-offset: 3px;
