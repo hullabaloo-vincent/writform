@@ -143,6 +143,14 @@ pub fn router(state: AppState) -> Router {
             "/api/v1/messages/{id}",
             patch(messages::edit_message).delete(messages::delete_message),
         )
+        .route("/api/v1/messages/search", get(messages::search_messages))
+        .route("/api/v1/channels/{id}/read", put(messages::mark_read))
+        .route("/api/v1/me/reads", get(messages::my_reads))
+        .route(
+            "/api/v1/messages/{id}/pin",
+            put(messages::pin_message).delete(messages::unpin_message),
+        )
+        .route("/api/v1/channels/{id}/pins", get(messages::list_pins))
         .route("/api/v1/friends", get(friends::list_friends))
         .route("/api/v1/friends/{user_id}", delete(friends::remove_friend))
         .route(

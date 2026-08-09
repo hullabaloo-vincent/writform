@@ -1,7 +1,15 @@
 import {
   AlignCenter,
+  AlignCenterHorizontal,
+  AlignCenterVertical,
+  AlignEndHorizontal,
+  AlignEndVertical,
+  AlignHorizontalSpaceBetween,
   AlignLeft,
   AlignRight,
+  AlignStartHorizontal,
+  AlignStartVertical,
+  AlignVerticalSpaceBetween,
   Bold,
   Check,
   Circle,
@@ -31,6 +39,7 @@ import {
   CopyPlus,
   CornerDownRight,
   Download,
+  Group,
   Heart,
   Lock,
   Scissors,
@@ -54,6 +63,7 @@ import {
   Trash2,
   Type,
   Underline,
+  Ungroup,
   Undo2,
   Redo2,
   ZoomIn,
@@ -63,7 +73,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
-import { isCmdError } from "../../lib/backend";
+import { backend, isCmdError } from "../../lib/backend";
 import { uploadBlob } from "../../lib/upload";
 import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -204,6 +214,8 @@ interface TextStyle {
   locked?: boolean;
   /** Note fill opacity, 0–1; undefined means the palette's own level. */
   opacity?: number;
+  /** Group membership: elements sharing this id select and move together. */
+  group?: string;
 }
 
 
@@ -836,6 +848,55 @@ function patchLocal(id: number, patch: Partial<CanvasElement>) {
 
 const isLocked = (el: CanvasElement): boolean => textStyle(el.style).locked === true;
 
+const elGroup = (el: CanvasElement): string | undefined => textStyle(el.style).group;
+
+/** One alignment line another element offers: its value on the snap axis
+ *  plus its extent on the cross axis (for drawing the guide). */
+interface SnapLine {
+  v: number;
+  a: number;
+  b: number;
+}
+
+/** Edges and centres of every other element on the page, gathered once at
+ *  drag start so each pointer move is a plain scan. */
+function buildSnapTargets(
+  all: Record<number, CanvasElement>,
+  exclude: Set<number>,
+  page: number,
+): { xs: SnapLine[]; ys: SnapLine[] } {
+  const xs: SnapLine[] = [];
+  const ys: SnapLine[] = [];
+  for (const el of Object.values(all)) {
+    if (exclude.has(el.id) || el.kind === "connector" || (el.page ?? 0) !== page) continue;
+    for (const v of [el.x, el.x + el.w / 2, el.x + el.w]) {
+      xs.push({ v, a: el.y, b: el.y + el.h });
+    }
+    for (const v of [el.y, el.y + el.h / 2, el.y + el.h]) {
+      ys.push({ v, a: el.x, b: el.x + el.w });
+    }
+  }
+  return { xs, ys };
+}
+
+/** Closest target within the threshold for any of the moving edges. */
+function bestSnap(
+  edges: number[],
+  lines: SnapLine[],
+  threshold: number,
+): { delta: number; line: SnapLine } | null {
+  let best: { delta: number; line: SnapLine } | null = null;
+  for (const edge of edges) {
+    for (const line of lines) {
+      const delta = line.v - edge;
+      if (Math.abs(delta) <= threshold && (best === null || Math.abs(delta) < Math.abs(best.delta))) {
+        best = { delta, line };
+      }
+    }
+  }
+  return best;
+}
+
 /** Mirrors the per-kind corner radius in styles.css, so the radius handle
  *  starts where the element already looks rounded. Keep the two in step. */
 const defaultRadius = (el: CanvasElement): number =>
@@ -887,6 +948,11 @@ export function BoardRoom() {
     return () => window.removeEventListener("pointerdown", close);
   }, [shapeMenu]);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  /** Smart-guide lines shown while a drag is snapped to a neighbour. */
+  const [guides, setGuides] = useState<{
+    v: { x: number; y1: number; y2: number }[];
+    h: { y: number; x1: number; x2: number }[];
+  } | null>(null);
   const [marquee, setMarquee] = useState<{ x1: number; y1: number; x2: number; y2: number } | null>(
     null,
   );
@@ -902,6 +968,8 @@ export function BoardRoom() {
 
   const viewRef = useRef(view);
   viewRef.current = view;
+  /** Live page for []-dep effects (paste, drop) — state would go stale. */
+  const activePageRef = useRef(0);
   // Must live above the `!board` early return: hooks cannot be conditional.
   const lastCursorSent = useRef(0);
   /** Text an edit began with — autosave rewrites `el.text` mid-edit, so this
@@ -1204,10 +1272,20 @@ export function BoardRoom() {
     }
 
     const idMap = new Map<number, number>();
+    // Groups arrive intact but under fresh ids, so a pasted copy never welds
+    // itself onto the group it was copied from.
+    const groupMap = new Map<string, string>();
     const created: CanvasElement[] = [];
     for (const el of bodies) {
+      const st = textStyle(el.style);
+      let style = el.style;
+      if (st.group) {
+        if (!groupMap.has(st.group)) groupMap.set(st.group, crypto.randomUUID());
+        style = JSON.stringify({ ...st, group: groupMap.get(st.group) });
+      }
       const made = await canvasApi.createElement(boardId, {
         ...createRequest(el, null, null),
+        style,
         x: snapv(el.x + dx),
         y: snapv(el.y + dy),
       });
@@ -1288,6 +1366,141 @@ export function BoardRoom() {
     });
   };
 
+  // NOTE: everything below up to the keyboard effect is referenced from
+  // window-level handlers, so it must live ABOVE the `if (!board)` return.
+  const patchEach = (
+    ids: Set<number>,
+    patchFor: (el: CanvasElement, index: number) => Partial<CanvasElement>,
+    label: string,
+  ) => {
+    const source = useCanvas.getState().elements;
+    const after: { id: number; patch: Partial<CanvasElement> }[] = [];
+    const before: { id: number; patch: Partial<CanvasElement> }[] = [];
+    [...ids]
+      .map((id) => source[id])
+      .filter(Boolean)
+      .forEach((el, index) => {
+        const patch = patchFor(el, index);
+        const prev: Partial<CanvasElement> = {};
+        for (const key of Object.keys(patch) as (keyof CanvasElement)[]) {
+          (prev as Record<string, unknown>)[key] = el[key];
+        }
+        if (JSON.stringify(prev) === JSON.stringify(patch)) return;
+        after.push({ id: el.id, patch });
+        before.push({ id: el.id, patch: prev });
+      });
+    if (after.length === 0) return;
+    const apply = async (list: typeof after) => {
+      for (const item of list) await commitPatch(resolveId(item.id), item.patch);
+    };
+    void apply(after).catch(fail);
+    pushHistory({ label, undo: () => apply(before), redo: () => apply(after) });
+  };
+
+  const styleEach = (ids: Set<number>, change: (st: TextStyle) => TextStyle, label: string) =>
+    patchEach(ids, (el) => ({ style: JSON.stringify(change(textStyle(el.style))) }), label);
+
+  /** Weld the selection into a group (a fresh id every time — regrouping a
+   *  superset absorbs the old groups). Connectors follow their ends anyway. */
+  const groupSelection = (ids: Set<number>) => {
+    const source = useCanvas.getState().elements;
+    const bodyIds = new Set(
+      [...ids].filter((id) => source[id] && source[id].kind !== "connector"),
+    );
+    if (bodyIds.size < 2) return;
+    const gid = crypto.randomUUID();
+    styleEach(bodyIds, (s) => ({ ...s, group: gid }), "Group");
+  };
+
+  const ungroupSelection = (ids: Set<number>) => {
+    styleEach(ids, (s) => ({ ...s, group: undefined }), "Ungroup");
+  };
+
+  /** Grow a selection to whole groups — clicking or lassoing part of a
+   *  group always takes all of it. */
+  const expandToGroups = (ids: Set<number>): Set<number> => {
+    const source = useCanvas.getState().elements;
+    const groupsIn = new Set<string>();
+    for (const id of ids) {
+      const el = source[id];
+      const g = el ? elGroup(el) : undefined;
+      if (g) groupsIn.add(g);
+    }
+    if (groupsIn.size === 0) return ids;
+    const next = new Set(ids);
+    for (const el of Object.values(source)) {
+      if (el.kind === "connector" || (el.page ?? 0) !== activePage) continue;
+      const g = elGroup(el);
+      if (g && groupsIn.has(g)) next.add(el.id);
+    }
+    return next;
+  };
+
+  const alignSelection = (
+    mode: "left" | "hcenter" | "right" | "top" | "vcenter" | "bottom",
+  ) => {
+    const source = useCanvas.getState().elements;
+    const els = [...selected]
+      .map((id) => source[id])
+      .filter(
+        (el): el is CanvasElement => Boolean(el) && el.kind !== "connector" && !isLocked(el),
+      );
+    if (els.length < 2) return;
+    const x1 = Math.min(...els.map((e) => e.x));
+    const x2 = Math.max(...els.map((e) => e.x + e.w));
+    const y1 = Math.min(...els.map((e) => e.y));
+    const y2 = Math.max(...els.map((e) => e.y + e.h));
+    patchEach(
+      new Set(els.map((e) => e.id)),
+      (el) => {
+        switch (mode) {
+          case "left":
+            return { x: Math.round(x1) };
+          case "hcenter":
+            return { x: Math.round((x1 + x2) / 2 - el.w / 2) };
+          case "right":
+            return { x: Math.round(x2 - el.w) };
+          case "top":
+            return { y: Math.round(y1) };
+          case "vcenter":
+            return { y: Math.round((y1 + y2) / 2 - el.h / 2) };
+          case "bottom":
+            return { y: Math.round(y2 - el.h) };
+        }
+      },
+      "Align",
+    );
+  };
+
+  /** Even out the gaps between elements, keeping the outermost two put. */
+  const distributeSelection = (axis: "h" | "v") => {
+    const source = useCanvas.getState().elements;
+    const els = [...selected]
+      .map((id) => source[id])
+      .filter(
+        (el): el is CanvasElement => Boolean(el) && el.kind !== "connector" && !isLocked(el),
+      );
+    if (els.length < 3) return;
+    const sorted = [...els].sort((a, b) => (axis === "h" ? a.x - b.x : a.y - b.y));
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const span =
+      axis === "h" ? last.x + last.w - first.x : last.y + last.h - first.y;
+    const total = sorted.reduce((n, e) => n + (axis === "h" ? e.w : e.h), 0);
+    const gap = (span - total) / (sorted.length - 1);
+    const targets = new Map<number, number>();
+    let cursor = axis === "h" ? first.x : first.y;
+    for (const el of sorted) {
+      targets.set(el.id, Math.round(cursor));
+      cursor += (axis === "h" ? el.w : el.h) + gap;
+    }
+    patchEach(
+      new Set(sorted.map((e) => e.id)),
+      (el) => (axis === "h" ? { x: targets.get(el.id)! } : { y: targets.get(el.id)! }),
+      "Distribute",
+    );
+  };
+
   // Keyboard history and deletion (unless typing).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -1324,6 +1537,12 @@ export function BoardRoom() {
         if (selected.size > 0) {
           void pasteElements(copyPayload(selected), { mode: "offset", dx: 24, dy: 24 }).catch(fail);
         }
+        return;
+      }
+      if (mod && key === "g") {
+        e.preventDefault();
+        if (e.shiftKey) ungroupSelection(selected);
+        else groupSelection(selected);
         return;
       }
       if (e.key !== "Delete" && e.key !== "Backspace") return;
@@ -1379,6 +1598,67 @@ export function BoardRoom() {
     };
   }, [menu]);
 
+  // Sync the page ref during render, like viewRef above.
+  activePageRef.current = activePage;
+
+  /** Place a picture on the board — pasted or dropped. Sized at its own
+   *  aspect capped at 480px, centred on `at` (or the view). A board on this
+   *  device keeps the bytes beside it; a group board uploads an attachment. */
+  const placeImageBlob = (file: Blob, at?: { x: number; y: number }) => {
+    const boardId = useCanvas.getState().board?.id;
+    if (boardId === undefined) return;
+    const spot = at ?? centerOfView();
+    const makeAt = (ref: string, w: number, h: number) => {
+      canvasApi
+        .createElement(boardId, {
+          kind: "image",
+          page: activePageRef.current,
+          x: snapv(Math.round(spot.x - w / 2)),
+          y: snapv(Math.round(spot.y - h / 2)),
+          w,
+          h,
+          text: ref,
+          color: "",
+          style: "",
+          from_id: null,
+          to_id: null,
+        })
+        .then((el) => {
+          useCanvas.getState().applyElement(el);
+          setSelected(new Set([el.id]));
+          recordCreate(el, "Add image");
+        })
+        .catch(fail);
+    };
+    const place = (ref: string) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, 480 / Math.max(img.width, img.height));
+        makeAt(
+          ref,
+          Math.max(60, Math.round(img.width * scale)),
+          Math.max(60, Math.round(img.height * scale)),
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        makeAt(ref, 320, 240);
+      };
+      img.src = url;
+    };
+    if (isLocalBoard(boardId)) {
+      void saveLocalImage(file).then(place).catch(fail);
+    } else {
+      void uploadBlob(file, file instanceof File ? file.name : "pasted.png")
+        .then((meta) => place(String(meta.id)))
+        .catch(fail);
+    }
+  };
+  const placeImageRef = useRef(placeImageBlob);
+  placeImageRef.current = placeImageBlob;
+
   // Paste onto the board: images become image elements, URLs become link
   // cards, other text becomes a sticky — placed at the viewport center.
   useEffect(() => {
@@ -1395,7 +1675,7 @@ export function BoardRoom() {
       canvasApi
         .createElement(boardId, {
           kind,
-          page: activePage,
+          page: activePageRef.current,
           x: snapv(x - w / 2),
           y: snapv(y - h / 2),
           w,
@@ -1421,38 +1701,7 @@ export function BoardRoom() {
       const file = item?.getAsFile();
       if (file) {
         e.preventDefault();
-        const boardId = useCanvas.getState().board?.id;
-        if (boardId === undefined) return;
-        // Place at the picture's own aspect ratio, capped at 480px on the
-        // long edge.
-        const place = (ref: string) => {
-          const img = new window.Image();
-          const url = URL.createObjectURL(file);
-          img.onload = () => {
-            URL.revokeObjectURL(url);
-            const scale = Math.min(1, 480 / Math.max(img.width, img.height));
-            create(
-              "image",
-              ref,
-              Math.max(60, Math.round(img.width * scale)),
-              Math.max(60, Math.round(img.height * scale)),
-            );
-          };
-          img.onerror = () => {
-            URL.revokeObjectURL(url);
-            create("image", ref, 320, 240);
-          };
-          img.src = url;
-        };
-        // A board on this device keeps its pictures beside it; a group board
-        // uploads them as attachments so everyone else can see them.
-        if (isLocalBoard(boardId)) {
-          void saveLocalImage(file).then(place).catch(fail);
-        } else {
-          void uploadBlob(file, "pasted.png")
-            .then((meta) => place(String(meta.id)))
-            .catch(fail);
-        }
+        placeImageRef.current(file);
         return;
       }
       const text = e.clipboardData?.getData("text/plain")?.trim();
@@ -1473,6 +1722,63 @@ export function BoardRoom() {
     window.addEventListener("paste", onPaste);
     return () => window.removeEventListener("paste", onPaste);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Drop an image file straight onto the board, landing under the cursor.
+  // Tauri intercepts OS file drags (the webview never gets HTML5 drop events
+  // for them), so this is the desktop path; onDrop on the surface covers the
+  // browser client. Everything live is read through refs — the listener
+  // outlives many renders.
+  useEffect(() => {
+    if (!("__TAURI_INTERNALS__" in window)) return;
+    const MIME: Record<string, string> = {
+      png: "image/png",
+      jpg: "image/jpeg",
+      jpeg: "image/jpeg",
+      gif: "image/gif",
+      webp: "image/webp",
+      svg: "image/svg+xml",
+    };
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void import("@tauri-apps/api/webview").then(({ getCurrentWebview }) =>
+      getCurrentWebview()
+        .onDragDropEvent((event) => {
+          if (event.payload.type !== "drop") return;
+          if (useCanvas.getState().board === null) return;
+          const rect = surfaceRef.current?.getBoundingClientRect();
+          if (!rect) return;
+          // Physical pixels → CSS pixels → world coordinates.
+          const cx = event.payload.position.x / window.devicePixelRatio;
+          const cy = event.payload.position.y / window.devicePixelRatio;
+          if (cx < rect.left || cx > rect.right || cy < rect.top || cy > rect.bottom) return;
+          const v = viewRef.current;
+          const at = { x: (cx - rect.left - v.tx) / v.scale, y: (cy - rect.top - v.ty) / v.scale };
+          event.payload.paths.forEach((path, i) => {
+            const name = path.split(/[/\\]/).pop() ?? "image";
+            const type = MIME[name.split(".").pop()?.toLowerCase() ?? ""];
+            if (!type) return; // not a picture — boards only take images
+            void backend
+              .readDroppedFile(path)
+              .then(({ data_base64 }) => {
+                const bytes = Uint8Array.from(atob(data_base64), (c) => c.charCodeAt(0));
+                placeImageRef.current(new File([bytes], name, { type }), {
+                  x: at.x + i * 24,
+                  y: at.y + i * 24,
+                });
+              })
+              .catch(() => {});
+          });
+        })
+        .then((fn) => {
+          if (cancelled) fn();
+          else unlisten = fn;
+        }),
+    );
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   if (!board) return <div className="wf-sessions-empty">Loading…</div>;
@@ -1527,38 +1833,6 @@ export function BoardRoom() {
   };
 
   /** Patch every element of a selection as one undoable step. */
-  const patchEach = (
-    ids: Set<number>,
-    patchFor: (el: CanvasElement, index: number) => Partial<CanvasElement>,
-    label: string,
-  ) => {
-    const source = useCanvas.getState().elements;
-    const after: { id: number; patch: Partial<CanvasElement> }[] = [];
-    const before: { id: number; patch: Partial<CanvasElement> }[] = [];
-    [...ids]
-      .map((id) => source[id])
-      .filter(Boolean)
-      .forEach((el, index) => {
-        const patch = patchFor(el, index);
-        const prev: Partial<CanvasElement> = {};
-        for (const key of Object.keys(patch) as (keyof CanvasElement)[]) {
-          (prev as Record<string, unknown>)[key] = el[key];
-        }
-        if (JSON.stringify(prev) === JSON.stringify(patch)) return;
-        after.push({ id: el.id, patch });
-        before.push({ id: el.id, patch: prev });
-      });
-    if (after.length === 0) return;
-    const apply = async (list: typeof after) => {
-      for (const item of list) await commitPatch(resolveId(item.id), item.patch);
-    };
-    void apply(after).catch(fail);
-    pushHistory({ label, undo: () => apply(before), redo: () => apply(after) });
-  };
-
-  const styleEach = (ids: Set<number>, change: (st: TextStyle) => TextStyle, label: string) =>
-    patchEach(ids, (el) => ({ style: JSON.stringify(change(textStyle(el.style))) }), label);
-
   const reorder = (ids: Set<number>, dir: "front" | "back") => {
     const source = useCanvas.getState().elements;
     const top = maxZ(source);
@@ -1638,6 +1912,21 @@ export function BoardRoom() {
             (s) => ({ ...s, radius: (s.radius ?? 16) > 0 ? 0 : 16 }),
             "Round corners",
           ),
+      },
+      {
+        label: "Group",
+        icon: <Group size={14} />,
+        disabled: ids.size < 2,
+        onClick: () => groupSelection(ids),
+      },
+      {
+        label: "Ungroup",
+        icon: <Ungroup size={14} />,
+        disabled: ![...ids].some((id) => {
+          const o = useCanvas.getState().elements[id];
+          return o !== undefined && elGroup(o) !== undefined;
+        }),
+        onClick: () => ungroupSelection(ids),
       },
       editable ? null : undefined,
       editable
@@ -1779,9 +2068,11 @@ export function BoardRoom() {
       h: sameKind ? el.h : 140,
       text: "",
       color: sameKind ? el.color : "yellow",
-      // Carry the look across, but never the lock — a new element you can't
-      // move would be baffling.
-      style: sameKind ? JSON.stringify({ ...textStyle(el.style), locked: undefined }) : "",
+      // Carry the look across, but never the lock (a new element you can't
+      // move would be baffling) nor the group (it's a fresh thing).
+      style: sameKind
+        ? JSON.stringify({ ...textStyle(el.style), locked: undefined, group: undefined })
+        : "",
       from_id: null,
       to_id: null,
     });
@@ -1933,10 +2224,11 @@ export function BoardRoom() {
         const [ly, hy] = [Math.min(rect.y1, rect.y2), Math.max(rect.y1, rect.y2)];
         const hit = new Set<number>();
         for (const el of Object.values(useCanvas.getState().elements)) {
-          if (el.kind === "connector") continue;
+          if (el.kind === "connector" || (el.page ?? 0) !== activePage) continue;
           if (el.x < hx && el.x + el.w > lx && el.y < hy && el.y + el.h > ly) hit.add(el.id);
         }
-        setSelected(hit);
+        // Lassoing part of a group takes the whole group.
+        setSelected(expandToGroups(hit));
       };
       gestureCancels.current.add(cancel);
       window.addEventListener("pointermove", onMove);
@@ -2010,26 +2302,52 @@ export function BoardRoom() {
       return;
     }
     e.preventDefault(); // stops native image drag + text selection
-    // Shift-click toggles membership without dragging.
+    const all = useCanvas.getState().elements;
+    // The element's group members (page-scoped), when it has a group.
+    const gId = elGroup(el);
+    const members = gId
+      ? new Set(
+          Object.values(all)
+            .filter(
+              (o) =>
+                o.kind !== "connector" &&
+                (o.page ?? 0) === activePage &&
+                elGroup(o) === gId,
+            )
+            .map((o) => o.id),
+        )
+      : null;
+    // Shift-click toggles membership without dragging — whole groups at once.
     if (e.shiftKey) {
       setSelected((prev) => {
         const next = new Set(prev);
-        if (next.has(el.id)) next.delete(el.id);
-        else next.add(el.id);
+        const unit = members ?? new Set([el.id]);
+        if (next.has(el.id)) for (const id of unit) next.delete(id);
+        else for (const id of unit) next.add(id);
         return next;
       });
       return;
     }
-    // Click on an unselected element selects just it; a selected one keeps
-    // the group so the whole selection drags together.
-    const dragSet = new Set(selected.has(el.id) ? selected : [el.id]);
-    if (!selected.has(el.id)) setSelected(new Set([el.id]));
+    // Click on an unselected element selects it — or its whole group. When
+    // the group is already exactly the selection, a second click narrows to
+    // the one element under the pointer (Freeform-style).
+    let base: Set<number>;
+    if (selected.has(el.id)) {
+      const groupIsSelection =
+        members !== null &&
+        members.size > 1 &&
+        selected.size === members.size &&
+        [...members].every((id) => selected.has(id));
+      base = groupIsSelection ? new Set([el.id]) : selected;
+    } else {
+      base = members ?? new Set([el.id]);
+    }
+    const dragSet = new Set(base);
+    if (base !== selected) setSelected(new Set(base));
     if (editing !== null && editing !== el.id) setEditing(null);
     // Locked elements still select — that's how you reach the unlock item —
     // but grabbing one never starts a drag.
     if (isLocked(el)) return;
-
-    const all = useCanvas.getState().elements;
     // A frame carries everything whose center sits inside it.
     for (const id of [...dragSet]) {
       const f = all[id];
@@ -2062,16 +2380,74 @@ export function BoardRoom() {
     const startWorld = toWorld(e.clientX, e.clientY);
     const last = new Map<number, { x: number; y: number }>(origins);
     let lastSent = 0;
+    // Smart guides: neighbours' edges and centres, gathered once per grab,
+    // plus the moving selection's bounding box at its origin.
+    const snapTargets = buildSnapTargets(all, new Set(origins.keys()), activePage);
+    let bx1 = Infinity;
+    let by1 = Infinity;
+    let bx2 = -Infinity;
+    let by2 = -Infinity;
+    for (const id of origins.keys()) {
+      const item = all[id];
+      if (!item) continue;
+      bx1 = Math.min(bx1, item.x);
+      by1 = Math.min(by1, item.y);
+      bx2 = Math.max(bx2, item.x + item.w);
+      by2 = Math.max(by2, item.y + item.h);
+    }
     const onMove = (ev: PointerEvent) => {
       if (ev.pointerId !== e.pointerId) return;
       const now = toWorld(ev.clientX, ev.clientY);
-      const dx = now.x - startWorld.x;
-      const dy = now.y - startWorld.y;
+      let dx = now.x - startWorld.x;
+      let dy = now.y - startWorld.y;
+      // Snap the selection's edges/centre to a neighbour's when close enough
+      // (a constant screen distance, whatever the zoom). An element snap
+      // outranks the grid on its axis — that's the alignment being offered.
+      const threshold = 6 / viewRef.current.scale;
+      const sx = bestSnap(
+        [bx1 + dx, (bx1 + bx2) / 2 + dx, bx2 + dx],
+        snapTargets.xs,
+        threshold,
+      );
+      const sy = bestSnap(
+        [by1 + dy, (by1 + by2) / 2 + dy, by2 + dy],
+        snapTargets.ys,
+        threshold,
+      );
+      if (sx) dx += sx.delta;
+      if (sy) dy += sy.delta;
+      setGuides(
+        sx || sy
+          ? {
+              v: sx
+                ? [
+                    {
+                      x: sx.line.v,
+                      y1: Math.min(sx.line.a, by1 + dy),
+                      y2: Math.max(sx.line.b, by2 + dy),
+                    },
+                  ]
+                : [],
+              h: sy
+                ? [
+                    {
+                      y: sy.line.v,
+                      x1: Math.min(sy.line.a, bx1 + dx),
+                      x2: Math.max(sy.line.b, bx2 + dx),
+                    },
+                  ]
+                : [],
+            }
+          : null,
+      );
       const t = Date.now();
       const send = t - lastSent > 120;
       if (send) lastSent = t;
       for (const [id, origin] of origins) {
-        const pos = { x: snapv(origin.x + dx), y: snapv(origin.y + dy) };
+        const pos = {
+          x: sx ? Math.round(origin.x + dx) : snapv(origin.x + dx),
+          y: sy ? Math.round(origin.y + dy) : snapv(origin.y + dy),
+        };
         last.set(id, pos);
         patchLocal(id, pos);
         if (send) canvasApi.updateElement(id, pos).catch(() => {});
@@ -2083,6 +2459,7 @@ export function BoardRoom() {
       // possibly one throttled sync ago) — no history entry.
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      setGuides(null);
       for (const [id, origin] of origins) {
         patchLocal(id, origin);
         canvasApi.updateElement(id, origin).catch(() => {});
@@ -2094,6 +2471,7 @@ export function BoardRoom() {
       gestureCancels.current.delete(cancel);
       window.removeEventListener("pointermove", onMove);
       window.removeEventListener("pointerup", onUp);
+      setGuides(null);
       for (const [id, pos] of last) {
         const origin = origins.get(id);
         // The element stays held until the server confirms this final
@@ -2591,6 +2969,18 @@ export function BoardRoom() {
         ref={surfaceRef}
         className={`wf-board wf-board-tool-${tool}`}
         style={backgroundStyle(background)}
+        // Browser client: HTML5 file drop (the desktop shell routes OS drags
+        // through Tauri's drag-drop event instead — see the effect above).
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) e.preventDefault();
+        }}
+        onDrop={(e) => {
+          const files = [...e.dataTransfer.files].filter((f) => f.type.startsWith("image/"));
+          if (files.length === 0) return;
+          e.preventDefault();
+          const at = toWorld(e.clientX, e.clientY);
+          files.forEach((f, i) => placeImageBlob(f, { x: at.x + i * 24, y: at.y + i * 24 }));
+        }}
         onPointerDown={onSurfaceDown}
         onContextMenu={(e) => {
           // Right-clicking the board itself: the actions that need no element.
@@ -2906,6 +3296,22 @@ export function BoardRoom() {
               </span>
             </div>
           ))}
+
+          {/* Smart-guide lines, in world space (the stage is transformed);
+              a 1×1 overflow-visible svg so negative coordinates still draw. */}
+          {guides && (
+            <svg
+              className="wf-board-guides"
+              style={{ strokeWidth: 1 / view.scale, zIndex: Z_BAND_CURSOR }}
+            >
+              {guides.v.map((g, i) => (
+                <line key={`v${i}`} x1={g.x} y1={g.y1 - 24} x2={g.x} y2={g.y2 + 24} />
+              ))}
+              {guides.h.map((g, i) => (
+                <line key={`h${i}`} x1={g.x1 - 24} y1={g.y} x2={g.x2 + 24} y2={g.y} />
+              ))}
+            </svg>
+          )}
         </div>
 
         {selectionBox && (
@@ -3043,6 +3449,46 @@ export function BoardRoom() {
                   applyPatchWithHistory(selectedEl, { style }, "Format text");
                 }}
               />
+            )}
+            {/* Multi-selection: line things up — align needs two elements,
+                distribute three. One undo step per action. */}
+            {selected.size > 1 && (
+              <PickerMenu title="Align & distribute" trigger={<AlignStartVertical size={15} />}>
+                {(close) => (
+                  <>
+                    <button onClick={() => { alignSelection("left"); close(); }}>
+                      <AlignStartVertical size={14} /> Align left
+                    </button>
+                    <button onClick={() => { alignSelection("hcenter"); close(); }}>
+                      <AlignCenterVertical size={14} /> Align center
+                    </button>
+                    <button onClick={() => { alignSelection("right"); close(); }}>
+                      <AlignEndVertical size={14} /> Align right
+                    </button>
+                    <button onClick={() => { alignSelection("top"); close(); }}>
+                      <AlignStartHorizontal size={14} /> Align top
+                    </button>
+                    <button onClick={() => { alignSelection("vcenter"); close(); }}>
+                      <AlignCenterHorizontal size={14} /> Align middle
+                    </button>
+                    <button onClick={() => { alignSelection("bottom"); close(); }}>
+                      <AlignEndHorizontal size={14} /> Align bottom
+                    </button>
+                    <button
+                      disabled={selected.size < 3}
+                      onClick={() => { distributeSelection("h"); close(); }}
+                    >
+                      <AlignHorizontalSpaceBetween size={14} /> Distribute horizontally
+                    </button>
+                    <button
+                      disabled={selected.size < 3}
+                      onClick={() => { distributeSelection("v"); close(); }}
+                    >
+                      <AlignVerticalSpaceBetween size={14} /> Distribute vertically
+                    </button>
+                  </>
+                )}
+              </PickerMenu>
             )}
             {/* Multi-selection: recolor every selected element's text at
                 once — one undo step (imported boards arrive with many). */}

@@ -1,11 +1,16 @@
 import type { Channel } from "../../bindings/proto/Channel";
+import type { ChannelRead } from "../../bindings/proto/ChannelRead";
 import type { Emote } from "../../bindings/proto/Emote";
 import type { Group } from "../../bindings/proto/Group";
 import type { Invite } from "../../bindings/proto/Invite";
 import type { Member } from "../../bindings/proto/Member";
 import type { Message } from "../../bindings/proto/Message";
 import type { PresenceSnapshot } from "../../bindings/proto/PresenceSnapshot";
+import type { SearchHit } from "../../bindings/proto/SearchHit";
 import { backend, type CmdError } from "../../lib/backend";
+
+/** Paths added after 0.9 — an older server 404s them with no body. */
+const NEWER_PATHS = /\/(read|reads|search|pin|pins)(\?|$)/;
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await backend.apiFetch(method, path, body);
@@ -13,6 +18,13 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
     const err = (res.body ?? {}) as Partial<CmdError>;
     // A bodyless 405 means the route isn't in the running server's router:
     // this client is newer than the (manually updated) self-hosted server.
+    // Brand-new PATHS come back as bodyless 404 instead — same story.
+    if (res.status === 404 && !err.message && NEWER_PATHS.test(path)) {
+      throw {
+        code: "server_outdated",
+        message: "the server is running an older subScribe version that doesn't support this yet — ask the host to update writform-server",
+      } satisfies CmdError;
+    }
     if (res.status === 405 && !err.message) {
       throw {
         code: "server_outdated",
@@ -88,4 +100,24 @@ export const chatApi = {
   kick: (groupId: number, userId: number) =>
     api<null>("DELETE", `/api/v1/groups/${groupId}/members/${userId}`),
   deleteMessage: (messageId: number) => api<null>("DELETE", `/api/v1/messages/${messageId}`),
+  /** Advance the server-side read marker (forward-only; other devices sync). */
+  markRead: (channelId: number, messageId: number) =>
+    api<null>("PUT", `/api/v1/channels/${channelId}/read`, { message_id: messageId }),
+  myReads: () => api<ChannelRead[]>("GET", "/api/v1/me/reads"),
+  search: (q: string, groupId?: number) =>
+    api<SearchHit[]>(
+      "GET",
+      `/api/v1/messages/search?q=${encodeURIComponent(q)}${
+        groupId !== undefined ? `&group_id=${groupId}` : ""
+      }`,
+    ),
+  /** A window of messages centred on one id (jumping to a hit or pin). */
+  messagesAround: (channelId: number, messageId: number) =>
+    api<Message[]>(
+      "GET",
+      `/api/v1/channels/${channelId}/messages?around=${messageId}&limit=80`,
+    ),
+  pin: (messageId: number) => api<null>("PUT", `/api/v1/messages/${messageId}/pin`),
+  unpin: (messageId: number) => api<null>("DELETE", `/api/v1/messages/${messageId}/pin`),
+  pins: (channelId: number) => api<Message[]>("GET", `/api/v1/channels/${channelId}/pins`),
 };

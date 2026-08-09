@@ -1,6 +1,6 @@
 import {
   Menu, FileText } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import type { DmChannel } from "../../bindings/proto/DmChannel";
 import type { Friend } from "../../bindings/proto/Friend";
@@ -17,7 +17,8 @@ import {
   toastError,
 } from "../../platform";
 import { chatApi } from "../chat/api";
-import { MessageRow } from "../chat/ChatView";
+import { MessageRow, PinsButton, TypingLine } from "../chat/ChatView";
+import { dayLabel, isNewDay } from "../chat/daySeparators";
 import { useChat } from "../chat/store";
 import { useFriends } from "./store";
 
@@ -95,6 +96,17 @@ export function FriendsView() {
   };
   useEffect(refresh, []);
   useEffect(() => onResync(refresh), []);
+
+  // The ⌘K palette can land here on a specific conversation.
+  const pendingDmPeer = useFriends((s) => s.pendingDmPeer);
+  useEffect(() => {
+    if (pendingDmPeer === null) return;
+    useFriends.getState().clearPendingDm();
+    void friendsApi
+      .openDm(pendingDmPeer)
+      .then(setDm)
+      .catch((e) => setError(isCmdError(e) ? e.message : String(e)));
+  }, [pendingDmPeer]);
 
   useEffect(
     () =>
@@ -285,6 +297,12 @@ function DmPane({ dm }: { dm: DmChannel }) {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages.length]);
 
+  // Reading the conversation advances the shared read marker, so other
+  // devices' unread state converges (server-synced, best-effort).
+  useEffect(() => {
+    if (messages.length > 0) useChat.getState().markRead(dm.channel_id);
+  }, [dm.channel_id, messages.length]);
+
   const submit = () => {
     const content = draft.trim();
     if (!content) return;
@@ -300,20 +318,37 @@ function DmPane({ dm }: { dm: DmChannel }) {
 
   return (
     <>
-      <header className="wf-chat-main-header">@ {dm.peer.display_name ?? dm.peer.username}</header>
+      <header className="wf-chat-main-header">
+        <span className="wf-chat-header-title">
+          @ {dm.peer.display_name ?? dm.peer.username}
+        </span>
+        <span className="wf-chat-header-tools">
+          <PinsButton channelId={dm.channel_id} authorOnly />
+        </span>
+      </header>
       <div className="wf-chat-messages" data-msg-scroll>
-        {messages.map((m, i) => (
-          <MessageRow
-            key={m.id}
-            message={m}
-            compact={messages[i - 1]?.author.id === m.author.id}
-            authorOnly
-            onReply={setReplyTo}
-            sharedNoteCard={(content) => <SharedNoteCard content={content} />}
-          />
-        ))}
+        {messages.map((m, i) => {
+          const newDay = isNewDay(messages[i - 1]?.created_at, m.created_at);
+          return (
+            <Fragment key={m.id}>
+              {newDay && (
+                <div className="wf-day-sep">
+                  <span>{dayLabel(m.created_at)}</span>
+                </div>
+              )}
+              <MessageRow
+                message={m}
+                compact={!newDay && messages[i - 1]?.author.id === m.author.id}
+                authorOnly
+                onReply={setReplyTo}
+                sharedNoteCard={(content) => <SharedNoteCard content={content} />}
+              />
+            </Fragment>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
+      <TypingLine channelId={dm.channel_id} />
       {replyTo && (
         <div className="wf-reply-chip">
           Replying to{" "}
@@ -335,7 +370,10 @@ function DmPane({ dm }: { dm: DmChannel }) {
           rows={1}
           placeholder={`Message @${dm.peer.username}`}
           value={draft}
-          onChange={(e) => setDraft(dm.channel_id, e.target.value)}
+          onChange={(e) => {
+            setDraft(dm.channel_id, e.target.value);
+            if (e.target.value) useChat.getState().sendTyping(dm.channel_id);
+          }}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();

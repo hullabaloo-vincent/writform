@@ -1,9 +1,12 @@
 import { FileText } from "lucide-react";
 
-import { onResync } from "../../platform";
+import { isWeb } from "../../lib/backend";
+import { onResync, usePlatform } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { documentsApi } from "./api";
 import { DocumentsView } from "./DocumentsView";
-import { activeProvider, installDocumentsWsHandler, useDocuments } from "./store";
+import { useLocalDocs } from "./local";
+import { activeProvider, installDocumentsWsHandler, openDocumentById, useDocuments } from "./store";
 
 export const documentsApp: WritformApp = {
   manifest: {
@@ -33,6 +36,41 @@ export const documentsApp: WritformApp = {
         void import("../../platform").then(({ usePlatform }) =>
           usePlatform.getState().setActiveApp("writform.documents"),
         );
+      },
+    });
+    // ⌘K quick switcher: server documents (title+content search) and
+    // on-device documents (title match).
+    ctx.palette.registerSource({
+      id: "documents.docs",
+      search: async (q) => {
+        const needle = q.toLowerCase();
+        const items = [];
+        const docs = await documentsApi.search(q).catch(() => []);
+        for (const { document } of docs.slice(0, 6)) {
+          items.push({
+            id: `doc-${document.id}`,
+            title: document.title || "Untitled",
+            subtitle: "Document",
+            run: () => void openDocumentById(document.id).catch(() => {}),
+          });
+        }
+        if (!isWeb) {
+          const local = useLocalDocs.getState();
+          if (!local.loaded) await local.load().catch(() => {});
+          for (const d of useLocalDocs.getState().items) {
+            if (!d.title.toLowerCase().includes(needle)) continue;
+            items.push({
+              id: `localdoc-${d.id}`,
+              title: d.title || "Untitled",
+              subtitle: "On this device",
+              run: async () => {
+                usePlatform.getState().setActiveApp("writform.documents");
+                await useLocalDocs.getState().open(d.id);
+              },
+            });
+          }
+        }
+        return items.slice(0, 8);
       },
     });
   },

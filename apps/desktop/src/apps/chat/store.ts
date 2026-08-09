@@ -5,6 +5,7 @@ import type { Emote } from "../../bindings/proto/Emote";
 import type { Group } from "../../bindings/proto/Group";
 import type { Member } from "../../bindings/proto/Member";
 import type { Message } from "../../bindings/proto/Message";
+import type { UserRef } from "../../bindings/proto/UserRef";
 import { backend } from "../../lib/backend";
 import { toastError } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -19,6 +20,13 @@ export interface OutboxEntry {
   attachmentIds: number[];
   replyToId: number | null;
   state: "sending" | "failed";
+}
+
+/** One entry of a channel's pin tally (bodies are fetched on demand).
+ *  `pinned_by` is only known from WS tallies, not the REST seed. */
+export interface PinInfo {
+  message_id: number;
+  pinned_by?: number;
 }
 
 interface ChatState {
@@ -36,6 +44,8 @@ interface ChatState {
 
   /** channel id → group id, for EVERY group (drives unread classification). */
   channelGroup: Record<number, number>;
+  /** channel id → name, for EVERY group (drives the ⌘K quick switcher). */
+  channelNames: Record<number, string>;
   /** Highest message id considered read per channel (persisted locally). */
   lastRead: Record<number, number>;
   /** Live unread counts per channel (this app run; local-only by design). */
@@ -50,6 +60,19 @@ interface ChatState {
   editingMessageId: number | null;
   /** Message the composer is replying to. */
   replyTo: Message | null;
+  /** Who's typing per channel; entries age out on a short TTL. */
+  typing: Record<number, { user: UserRef; until: number }[]>;
+  /** Pin tallies per channel (kept fresh by `channel.pins` events). */
+  pins: Record<number, PinInfo[]>;
+  /** Channels silenced on this device: no notifications, no badge counts. */
+  muted: Set<number>;
+  /** Read marker as it stood when the channel was opened — where the
+   *  "New messages" divider draws. */
+  divider: Record<number, number>;
+  /** Channels showing a jumped-to window instead of the live tail. */
+  detached: Set<number>;
+  /** Message to flash + centre after a jump. */
+  highlightId: number | null;
 
   loadGroups: () => Promise<void>;
   selectGroup: (groupId: number) => Promise<void>;
@@ -63,6 +86,13 @@ interface ChatState {
   setDraft: (channelId: number, text: string) => void;
   setEditing: (messageId: number | null) => void;
   setReplyTo: (message: Message | null) => void;
+  /** Tell the channel "I'm typing" (throttled; silent on old servers). */
+  sendTyping: (channelId: number) => void;
+  toggleMute: (channelId: number) => void;
+  /** Jump to a message: swap in a window around it and detach from the tail. */
+  openAround: (channelId: number, messageId: number) => Promise<void>;
+  /** Leave a jumped-to window and reload the live tail. */
+  reattach: (channelId: number) => void;
 }
 
 /** lastRead is per-server: message ids from different servers don't mix. */
@@ -96,11 +126,66 @@ function saveLastRead(lastRead: Record<number, number>) {
   }
 }
 
+/** Muted channels are per-server too, and purely device-local. */
+function mutedKey(): string | null {
+  const session = useSession.getState().session;
+  return session ? `wf-muted:${session.addr}` : null;
+}
+
+function loadMuted(): Set<number> {
+  const key = mutedKey();
+  if (!key) return new Set();
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    return new Set(Array.isArray(parsed) ? parsed.filter((v) => typeof v === "number") : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveMuted(muted: Set<number>) {
+  const key = mutedKey();
+  if (!key) return;
+  try {
+    localStorage.setItem(key, JSON.stringify([...muted]));
+  } catch {
+    // persistence is best-effort
+  }
+}
+
+/** Is this channel silenced on this device? (used by lib/notifications.ts) */
+export function isChannelMuted(channelId: number): boolean {
+  return useChat.getState().muted.has(channelId);
+}
+
 let outboxSeq = 1;
 /** Guards double unread-counting when a DM arrives via two rooms. */
 const countedIds = new Set<number>();
 /** In-flight older-page fetches, so scroll events don't stack requests. */
 const loadingOlder = new Set<number>();
+/** Last outbound typing signal per channel (client-side throttle). */
+const typingSentAt: Record<number, number> = {};
+/** Debounce timers + high-water marks for read-marker PUTs. */
+const readSyncTimers: Record<number, ReturnType<typeof setTimeout>> = {};
+const readSynced: Record<number, number> = {};
+
+/** Push the local read marker to the server, debounced per channel. The
+ *  server is forward-only, so firing blindly can never move it backwards;
+ *  failures (old server, offline) simply leave read state device-local. */
+function syncReadToServer(channelId: number): void {
+  const target = useChat.getState().lastRead[channelId];
+  if (!target || (readSynced[channelId] ?? 0) >= target) return;
+  clearTimeout(readSyncTimers[channelId]);
+  readSyncTimers[channelId] = setTimeout(() => {
+    const id = useChat.getState().lastRead[channelId];
+    if (!id || (readSynced[channelId] ?? 0) >= id) return;
+    readSynced[channelId] = id;
+    chatApi.markRead(channelId, id).catch(() => {
+      // Retry on the next markRead rather than looping here.
+      readSynced[channelId] = 0;
+    });
+  }, 800);
+}
 
 export const useChat = create<ChatState>((set, get) => ({
   groups: [],
@@ -113,6 +198,7 @@ export const useChat = create<ChatState>((set, get) => ({
   busy: new Set(),
   emotes: [],
   channelGroup: {},
+  channelNames: {},
   lastRead: {},
   unread: {},
   historyDone: {},
@@ -120,10 +206,16 @@ export const useChat = create<ChatState>((set, get) => ({
   outbox: [],
   editingMessageId: null,
   replyTo: null,
+  typing: {},
+  pins: {},
+  muted: new Set(),
+  divider: {},
+  detached: new Set(),
+  highlightId: null,
 
   loadGroups: async () => {
     const groups = await chatApi.myGroups();
-    set({ groups, lastRead: loadLastRead() });
+    set({ groups, lastRead: loadLastRead(), muted: loadMuted() });
     // Watch every group room for membership/presence/channel changes.
     await backend.wsSub(groups.map((g) => `group:${g.id}`));
     // Every channel room too — unread counting needs message.created from
@@ -132,14 +224,17 @@ export const useChat = create<ChatState>((set, get) => ({
       groups.map((g) => chatApi.channels(g.id).catch(() => [] as Channel[])),
     );
     const channelGroup: Record<number, number> = {};
+    const channelNames: Record<number, string> = {};
     const rooms: string[] = [];
     perGroup.flat().forEach((c) => {
       if (c.kind !== "text" || c.group_id === null) return;
       channelGroup[c.id] = c.group_id;
+      channelNames[c.id] = c.name ?? "";
       rooms.push(`channel:${c.id}`);
     });
-    set({ channelGroup });
+    set({ channelGroup, channelNames });
     if (rooms.length) await backend.wsSub(rooms);
+    await mergeServerReads();
 
     const { activeGroupId } = get();
     if (activeGroupId === null && groups.length > 0) {
@@ -175,9 +270,33 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   selectChannel: async (channelId) => {
-    set({ activeChannelId: channelId, replyTo: null, editingMessageId: null });
+    // The divider freezes where the read marker stood on entry, so the
+    // "New messages" line stays put while reading marks everything read.
+    const entryRead = get().lastRead[channelId] ?? 0;
+    set((s) => {
+      const detached = new Set(s.detached);
+      detached.delete(channelId);
+      return {
+        activeChannelId: channelId,
+        replyTo: null,
+        editingMessageId: null,
+        divider: { ...s.divider, [channelId]: entryRead },
+        detached,
+      };
+    });
     get().markRead(channelId);
     await backend.wsSub([`channel:${channelId}`]);
+    void chatApi
+      .pins(channelId)
+      .then((pinned) =>
+        set((s) => ({
+          pins: {
+            ...s.pins,
+            [channelId]: pinned.map((m) => ({ message_id: m.id })),
+          },
+        })),
+      )
+      .catch(() => {}); // older server — pins simply don't exist
     if (channelId in get().messages) return; // cached — WS keeps it current
     const history = await chatApi.messages(channelId);
     set((s) => ({
@@ -245,6 +364,9 @@ export const useChat = create<ChatState>((set, get) => ({
   },
 
   markRead: (channelId) => {
+    // A jumped-to window's newest message isn't "everything read" — the live
+    // tail may hold newer ones we've never even fetched.
+    if (get().detached.has(channelId)) return;
     set((s) => {
       const list = s.messages[channelId];
       const latest = list?.[list.length - 1]?.id;
@@ -258,6 +380,7 @@ export const useChat = create<ChatState>((set, get) => ({
       delete unread[channelId];
       return { lastRead, unread };
     });
+    syncReadToServer(channelId);
   },
 
   setDraft: (channelId, text) => {
@@ -272,7 +395,86 @@ export const useChat = create<ChatState>((set, get) => ({
 
   setEditing: (messageId) => set({ editingMessageId: messageId }),
   setReplyTo: (message) => set({ replyTo: message, editingMessageId: null }),
+
+  sendTyping: (channelId) => {
+    const now = Date.now();
+    if (now - (typingSentAt[channelId] ?? 0) < 2500) return;
+    typingSentAt[channelId] = now;
+    // Older servers answer bad_frame; either way nobody needs the result.
+    void backend.wsTyping(channelId).catch(() => {});
+  },
+
+  toggleMute: (channelId) => {
+    set((s) => {
+      const muted = new Set(s.muted);
+      if (muted.has(channelId)) muted.delete(channelId);
+      else muted.add(channelId);
+      saveMuted(muted);
+      return { muted };
+    });
+  },
+
+  openAround: async (channelId, messageId) => {
+    const window = await chatApi.messagesAround(channelId, messageId);
+    await backend.wsSub([`channel:${channelId}`]);
+    set((s) => {
+      const detached = new Set(s.detached);
+      detached.add(channelId);
+      return {
+        activeChannelId: channelId,
+        replyTo: null,
+        editingMessageId: null,
+        messages: { ...s.messages, [channelId]: window },
+        // The window has history on both sides; paging up still works.
+        historyDone: { ...s.historyDone, [channelId]: false },
+        detached,
+        highlightId: messageId,
+      };
+    });
+  },
+
+  reattach: (channelId) => {
+    set((s) => {
+      const detached = new Set(s.detached);
+      detached.delete(channelId);
+      const messages = { ...s.messages };
+      delete messages[channelId]; // drop the window; selectChannel refetches
+      return { detached, messages, highlightId: null };
+    });
+    void get().selectChannel(channelId);
+  },
 }));
+
+/** Overlay the server's read markers on the local cache (server wins; the
+ *  cache covers channels the server has no row for, and older servers). */
+async function mergeServerReads(): Promise<void> {
+  let reads;
+  try {
+    reads = await chatApi.myReads();
+  } catch {
+    return; // older server — read state stays device-local
+  }
+  useChat.setState((s) => {
+    const lastRead = { ...s.lastRead };
+    const unread = { ...s.unread };
+    for (const r of reads) {
+      lastRead[r.channel_id] = Math.max(lastRead[r.channel_id] ?? 0, r.last_read_message_id);
+      readSynced[r.channel_id] = Math.max(
+        readSynced[r.channel_id] ?? 0,
+        r.last_read_message_id,
+      );
+      if (
+        r.unread_count > 0 &&
+        r.channel_id !== s.activeChannelId &&
+        (unread[r.channel_id] ?? 0) < r.unread_count
+      ) {
+        unread[r.channel_id] = r.unread_count;
+      }
+    }
+    saveLastRead(lastRead);
+    return { lastRead, unread };
+  });
+}
 
 /** POST an outbox entry; success swaps it for the real message, failure keeps it. */
 async function deliver(entry: OutboxEntry): Promise<void> {
@@ -322,14 +524,17 @@ export async function resyncChat(): Promise<void> {
     groups.map((g) => chatApi.channels(g.id).catch(() => [] as Channel[])),
   );
   const channelGroup: Record<number, number> = {};
+  const channelNames: Record<number, string> = {};
   const rooms: string[] = [];
   perGroup.flat().forEach((c) => {
     if (c.kind !== "text" || c.group_id === null) return;
     channelGroup[c.id] = c.group_id;
+    channelNames[c.id] = c.name ?? "";
     rooms.push(`channel:${c.id}`);
   });
-  useChat.setState({ channelGroup });
+  useChat.setState({ channelGroup, channelNames });
   if (rooms.length) await backend.wsSub(rooms);
+  await mergeServerReads();
 
   if (state.activeGroupId !== null && groups.some((g) => g.id === state.activeGroupId)) {
     const [channels, members, presence, emotes] = await Promise.all([
@@ -373,7 +578,7 @@ export async function resyncChat(): Promise<void> {
 /** Count messages that arrived un-viewed (WS or resync catch-up). */
 function noteUnread(incoming: Message[]): void {
   const meId = useSession.getState().session?.user.id;
-  const { activeChannelId, channelGroup, lastRead } = useChat.getState();
+  const { activeChannelId, channelGroup, lastRead, muted } = useChat.getState();
   for (const message of incoming) {
     if (countedIds.has(message.id)) continue;
     countedIds.add(message.id);
@@ -385,13 +590,15 @@ function noteUnread(incoming: Message[]): void {
       message.channel_id === activeChannelId && document.hasFocus();
     if (isGroupChannel) {
       if (viewing) continue;
+      // Muted channels still count (the row shows a dot) — the badge
+      // rollups are what filter them out.
       useChat.setState((s) => ({
         unread: {
           ...s.unread,
           [message.channel_id]: (s.unread[message.channel_id] ?? 0) + 1,
         },
       }));
-    } else {
+    } else if (!muted.has(message.channel_id)) {
       // Not one of my group channels → a DM (they land in `user:{id}` rooms).
       useFriends.getState().noteIncoming(message.author.id);
     }
@@ -405,7 +612,21 @@ function noteUnread(incoming: Message[]): void {
 
 /** Apply WS events to the store. Installed once from the chat app. */
 export function installChatWsHandler(): () => void {
-  return backend.onWsEvent((event) => {
+  // Typing entries age out here — there is no "stopped typing" event.
+  const prune = setInterval(() => {
+    const { typing } = useChat.getState();
+    const now = Date.now();
+    let changed = false;
+    const next: typeof typing = {};
+    for (const [cid, list] of Object.entries(typing)) {
+      const keep = list.filter((t) => t.until > now);
+      if (keep.length !== list.length) changed = true;
+      if (keep.length > 0) next[Number(cid)] = keep;
+    }
+    if (changed) useChat.setState({ typing: next });
+  }, 1000);
+
+  const off = backend.onWsEvent((event) => {
     if (event.ev !== "event") return;
     const { kind, data } = event;
     const state = useChat.getState();
@@ -413,10 +634,23 @@ export function installChatWsHandler(): () => void {
     if (kind === "message.created") {
       const message = data as Message;
       useChat.setState((s) => {
+        // A jumped-to window must not grow a fake tail; unread still counts.
+        if (s.detached.has(message.channel_id)) return s;
         const existing = s.messages[message.channel_id] ?? [];
         if (existing.some((m) => m.id === message.id)) return s;
         return {
           messages: { ...s.messages, [message.channel_id]: [...existing, message] },
+        };
+      });
+      // Their message just landed — they're clearly done typing.
+      useChat.setState((s) => {
+        const list = s.typing[message.channel_id];
+        if (!list?.some((t) => t.user.id === message.author.id)) return s;
+        return {
+          typing: {
+            ...s.typing,
+            [message.channel_id]: list.filter((t) => t.user.id !== message.author.id),
+          },
         };
       });
       noteUnread([message]);
@@ -424,6 +658,45 @@ export function installChatWsHandler(): () => void {
       if (message.channel_id === state.activeChannelId && document.hasFocus()) {
         state.markRead(message.channel_id);
       }
+    } else if (kind === "chat.typing") {
+      const { channel_id, user } = data as { channel_id: number; user: UserRef };
+      const meId = useSession.getState().session?.user.id;
+      if (user.id !== meId) {
+        useChat.setState((s) => {
+          const list = (s.typing[channel_id] ?? []).filter((t) => t.user.id !== user.id);
+          return {
+            typing: {
+              ...s.typing,
+              [channel_id]: [...list, { user, until: Date.now() + 5000 }],
+            },
+          };
+        });
+      }
+    } else if (kind === "read.updated") {
+      // My own marker moved (this device's PUT echoing back, or another
+      // device of mine reading) — converge on the furthest point.
+      const { channel_id, last_read_message_id } = data as {
+        channel_id: number;
+        last_read_message_id: number;
+      };
+      readSynced[channel_id] = Math.max(readSynced[channel_id] ?? 0, last_read_message_id);
+      const meId = useSession.getState().session?.user.id;
+      useChat.setState((s) => {
+        if (last_read_message_id <= (s.lastRead[channel_id] ?? 0)) return s;
+        const lastRead = { ...s.lastRead, [channel_id]: last_read_message_id };
+        saveLastRead(lastRead);
+        const unread = { ...s.unread };
+        const list = s.messages[channel_id];
+        const remaining = list
+          ? list.filter((m) => m.id > last_read_message_id && m.author.id !== meId).length
+          : 0;
+        if (remaining > 0) unread[channel_id] = remaining;
+        else delete unread[channel_id];
+        return { lastRead, unread };
+      });
+    } else if (kind === "channel.pins") {
+      const { channel_id, pins } = data as { channel_id: number; pins: PinInfo[] };
+      useChat.setState((s) => ({ pins: { ...s.pins, [channel_id]: pins } }));
     } else if (kind === "message.deleted") {
       const { message_id, channel_id } = data as { message_id: number; channel_id: number };
       useChat.setState((s) => ({
@@ -456,6 +729,7 @@ export function installChatWsHandler(): () => void {
         const groupId = channel.group_id;
         useChat.setState((s) => ({
           channelGroup: { ...s.channelGroup, [channel.id]: groupId },
+          channelNames: { ...s.channelNames, [channel.id]: channel.name ?? "" },
         }));
         void backend.wsSub([`channel:${channel.id}`]);
       }
@@ -463,12 +737,15 @@ export function installChatWsHandler(): () => void {
       const channel = data as Channel;
       useChat.setState((s) => ({
         channels: s.channels.map((c) => (c.id === channel.id ? channel : c)),
+        channelNames: { ...s.channelNames, [channel.id]: channel.name ?? "" },
       }));
     } else if (kind === "channel.deleted") {
       const { channel_id } = data as { channel_id: number };
       useChat.setState((s) => {
         const channelGroup = { ...s.channelGroup };
         delete channelGroup[channel_id];
+        const channelNames = { ...s.channelNames };
+        delete channelNames[channel_id];
         const messages = { ...s.messages };
         delete messages[channel_id];
         const unread = { ...s.unread };
@@ -478,6 +755,7 @@ export function installChatWsHandler(): () => void {
         return {
           channels: s.channels.filter((c) => c.id !== channel_id),
           channelGroup,
+          channelNames,
           messages,
           unread,
           drafts,
@@ -507,12 +785,14 @@ export function installChatWsHandler(): () => void {
       useChat.setState((s) => {
         // Purge every cached trace of the group's channels.
         const channelGroup: Record<number, number> = {};
+        const channelNames = { ...s.channelNames };
         const messages = { ...s.messages };
         const unread = { ...s.unread };
         const drafts = { ...s.drafts };
         for (const [cidStr, gid] of Object.entries(s.channelGroup)) {
           const cid = Number(cidStr);
           if (gid === group_id) {
+            delete channelNames[cid];
             delete messages[cid];
             delete unread[cid];
             delete drafts[cid];
@@ -523,6 +803,7 @@ export function installChatWsHandler(): () => void {
         return {
           groups: s.groups.filter((g) => g.id !== group_id),
           channelGroup,
+          channelNames,
           messages,
           unread,
           drafts,
@@ -606,6 +887,10 @@ export function installChatWsHandler(): () => void {
       void state.loadGroups();
     }
   });
+  return () => {
+    clearInterval(prune);
+    off();
+  };
 }
 
 /** Re-fetch presence whenever the socket comes up. */

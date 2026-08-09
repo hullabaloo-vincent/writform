@@ -162,6 +162,8 @@ export interface Backend {
   requestMicrophoneAccess(): Promise<string>;
   wsSub(rooms: string[]): Promise<void>;
   wsUnsub(rooms: string[]): Promise<void>;
+  /** Ephemeral "typing in this channel" signal; dropped when the socket is down. */
+  wsTyping(channelId: number): Promise<void>;
   /** Subscribe to WS frames; returns an unsubscribe fn. */
   onWsEvent(handler: (event: WsEvent) => void): () => void;
   /** Connection up/down transitions of the socket; returns an unsubscribe fn. */
@@ -254,6 +256,7 @@ function tauriBackend(): Backend {
     requestCameraAccess: () => invoke("request_camera_access"),
     wsSub: (rooms) => invoke("ws_sub", { rooms }),
     wsUnsub: (rooms) => invoke("ws_unsub", { rooms }),
+    wsTyping: (channelId) => invoke("ws_typing", { channelId }),
     onWsEvent: (handler) => {
       let unlisten: (() => void) | null = null;
       let cancelled = false;

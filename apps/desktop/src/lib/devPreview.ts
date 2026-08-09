@@ -1050,6 +1050,7 @@ export function devPreviewBackend(): Backend {
     }),
     wsSub: async () => {},
     wsUnsub: async () => {},
+    wsTyping: async () => {},
     onWsEvent: (handler) => {
       wsHandlers.add(handler);
       return () => wsHandlers.delete(handler);

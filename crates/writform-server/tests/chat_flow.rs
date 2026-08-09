@@ -6,8 +6,9 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use tokio_tungstenite::tungstenite::Message as WsMsg;
 use writform_proto::api::AuthResponse;
-use writform_proto::chat::{Channel, Group, Invite, Message};
+use writform_proto::chat::{Channel, ChannelRead, Group, Invite, Message, SearchHit};
 use writform_proto::ws::{ClientFrame, ServerFrame};
+use writform_proto::ChannelId;
 use writform_server::routes;
 
 struct TestServer {
@@ -156,6 +157,59 @@ async fn next_frame(ws: &mut WsConn) -> ServerFrame {
             return serde_json::from_str(&text).unwrap();
         }
     }
+}
+
+/// Prove every frame already sent on this socket has been processed: frames
+/// process in order per connection, so an invalid Sub's `bad_room` error acks
+/// everything queued ahead of it.
+async fn fence(ws: &mut WsConn) {
+    let bad = serde_json::to_string(&ClientFrame::Sub {
+        rooms: vec!["nonsense".into()],
+    })
+    .unwrap();
+    ws.send(WsMsg::Text(bad.into())).await.unwrap();
+    loop {
+        if let ServerFrame::Error { code, .. } = next_frame(ws).await {
+            assert_eq!(code, "bad_room");
+            break;
+        }
+    }
+}
+
+/// Group with alice as admin and bob joined; returns it with #general.
+async fn setup_group(
+    server: &TestServer,
+    alice: &AuthResponse,
+    bob: &AuthResponse,
+) -> (Group, ChannelId) {
+    let group: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Writers"}))
+        .await;
+    let invite: Invite = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/invites", group.id.0),
+            json!({"expires_in_seconds": 3600, "max_uses": 5}),
+        )
+        .await;
+    let _: Group = server
+        .post_json(&bob.token, "/invites/redeem", json!({"code": invite.code}))
+        .await;
+    let channels: Vec<Channel> = server
+        .get_json(&alice.token, &format!("/groups/{}/channels", group.id.0))
+        .await;
+    let general = channels[0].id;
+    (group, general)
+}
+
+async fn send_msg(server: &TestServer, token: &str, channel: i64, text: &str) -> Message {
+    server
+        .post_json(
+            token,
+            &format!("/channels/{channel}/messages"),
+            json!({"content": text, "reply_to_id": null, "attachment_ids": []}),
+        )
+        .await
 }
 
 /// Wait for a specific event kind, skipping others (presence noise etc.).
@@ -775,4 +829,484 @@ async fn permanent_join_code_flow() {
         )
         .await;
     assert_eq!(res.status(), 400);
+}
+
+/// Typing fans out to the channel room, is throttled per socket, and a
+/// non-member's frame is dropped silently.
+#[tokio::test]
+async fn typing_indicator_fans_out() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let mallory = server.register("mallory").await;
+    let (_group, general) = setup_group(&server, &alice, &bob).await;
+
+    let mut alice_ws = ws_connect(&server, &alice.token, &[format!("channel:{}", general.0)]).await;
+
+    // Bob types; alice hears about it.
+    let mut bob_ws = ws_connect(&server, &bob.token, &[]).await;
+    let typing = serde_json::to_string(&ClientFrame::Typing {
+        channel_id: general,
+    })
+    .unwrap();
+    bob_ws
+        .send(WsMsg::Text(typing.clone().into()))
+        .await
+        .unwrap();
+    let ev = wait_for_event(&mut alice_ws, "chat.typing").await;
+    assert_eq!(ev["channel_id"], general.0);
+    assert_eq!(ev["user"]["username"], "bob");
+
+    // A second frame inside the 1s throttle is dropped, and mallory (not a
+    // member) never fans out. Fences prove both frames were processed before
+    // bob's message below, so counting up to it is sound.
+    bob_ws
+        .send(WsMsg::Text(typing.clone().into()))
+        .await
+        .unwrap();
+    fence(&mut bob_ws).await;
+    let mut mallory_ws = ws_connect(&server, &mallory.token, &[]).await;
+    mallory_ws.send(WsMsg::Text(typing.into())).await.unwrap();
+    fence(&mut mallory_ws).await;
+
+    let sent = send_msg(&server, &bob.token, general.0, "done typing").await;
+    let mut typing_events = 0;
+    loop {
+        match next_frame(&mut alice_ws).await {
+            ServerFrame::Event { kind, .. } if kind == "chat.typing" => typing_events += 1,
+            ServerFrame::Event { kind, data, .. } if kind == "message.created" => {
+                assert_eq!(data["id"], sent.id.0);
+                break;
+            }
+            _ => {}
+        }
+    }
+    assert_eq!(
+        typing_events, 0,
+        "throttled + non-member typing must not fan out"
+    );
+}
+
+/// Read markers: forward-only upsert, fan-out to the user's own room, unread
+/// counts that exclude own messages, and the permission boundary.
+#[tokio::test]
+async fn read_state_sync_and_forward_only() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let mallory = server.register("mallory").await;
+    let (group, general) = setup_group(&server, &alice, &bob).await;
+
+    let m1 = send_msg(&server, &bob.token, general.0, "one").await;
+    let m2 = send_msg(&server, &bob.token, general.0, "two").await;
+    let _m3 = send_msg(&server, &bob.token, general.0, "three").await;
+
+    // No marker yet → no rows.
+    let reads: Vec<ChannelRead> = server.get_json(&alice.token, "/me/reads").await;
+    assert!(reads.is_empty());
+
+    // Alice's second device hears the marker move (user room is automatic).
+    let mut alice_ws = ws_connect(&server, &alice.token, &[]).await;
+    let res = server
+        .client
+        .put(format!("{}/channels/{}/read", server.base, general.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"message_id": m2.id.0}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut alice_ws, "read.updated").await;
+    assert_eq!(ev["channel_id"], general.0);
+    assert_eq!(ev["last_read_message_id"], m2.id.0);
+
+    // One unread (bob's m3); alice's own later message never counts.
+    let _m4 = send_msg(&server, &alice.token, general.0, "my own reply").await;
+    let reads: Vec<ChannelRead> = server.get_json(&alice.token, "/me/reads").await;
+    assert_eq!(reads.len(), 1);
+    assert_eq!(reads[0].channel_id, general);
+    assert_eq!(reads[0].last_read_message_id, m2.id);
+    assert_eq!(reads[0].unread_count, 1);
+
+    // Forward-only: an older id from a lagging device changes nothing.
+    let res = server
+        .client
+        .put(format!("{}/channels/{}/read", server.base, general.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"message_id": m1.id.0}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let reads: Vec<ChannelRead> = server.get_json(&alice.token, "/me/reads").await;
+    assert_eq!(reads[0].last_read_message_id, m2.id);
+
+    // A message from a different channel is rejected.
+    let other: Channel = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/channels", group.id.0),
+            json!({"name": "other"}),
+        )
+        .await;
+    let elsewhere = send_msg(&server, &alice.token, other.id.0, "different room").await;
+    let res = server
+        .client
+        .put(format!("{}/channels/{}/read", server.base, general.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"message_id": elsewhere.id.0}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+
+    // Outsiders can't mark anything.
+    let res = server
+        .client
+        .put(format!("{}/channels/{}/read", server.base, general.0))
+        .bearer_auth(&mallory.token)
+        .json(&json!({"message_id": m1.id.0}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+}
+
+/// Search is scoped to the caller's groups and DMs, follows edits and
+/// deletes, honors the group filter, and `around=` returns a centred window.
+#[tokio::test]
+async fn message_search_scoped() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let mallory = server.register("mallory").await;
+    let (_g1, general) = setup_group(&server, &alice, &bob).await;
+
+    // A second group only alice belongs to.
+    let g2: Group = server
+        .post_json(&alice.token, "/groups", json!({"name": "Solo"}))
+        .await;
+    let chans: Vec<Channel> = server
+        .get_json(&alice.token, &format!("/groups/{}/channels", g2.id.0))
+        .await;
+    let solo = chans[0].id;
+
+    let hit = send_msg(&server, &alice.token, general.0, "the quick brown fox").await;
+    let _ = send_msg(&server, &alice.token, solo.0, "quick silver thoughts").await;
+
+    // Bob sees only the shared group's hit; the snippet marks the match.
+    let hits: Vec<SearchHit> = server
+        .get_json(&bob.token, "/messages/search?q=quick")
+        .await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].message_id, hit.id);
+    assert!(
+        hits[0].snippet.contains("<<quick>>"),
+        "snippet: {}",
+        hits[0].snippet
+    );
+
+    // Alice sees both; the group filter narrows.
+    let hits: Vec<SearchHit> = server
+        .get_json(&alice.token, "/messages/search?q=quick")
+        .await;
+    assert_eq!(hits.len(), 2);
+    let hits: Vec<SearchHit> = server
+        .get_json(
+            &alice.token,
+            &format!("/messages/search?q=quick&group_id={}", g2.id.0),
+        )
+        .await;
+    assert_eq!(hits.len(), 1);
+
+    // Mallory shares nothing with anyone → zero hits.
+    let hits: Vec<SearchHit> = server
+        .get_json(&mallory.token, "/messages/search?q=quick")
+        .await;
+    assert!(hits.is_empty());
+
+    // Edits re-index; deletes drop out.
+    let res = server
+        .client
+        .patch(format!("{}/messages/{}", server.base, hit.id.0))
+        .bearer_auth(&alice.token)
+        .json(&json!({"content": "slow snail prose"}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let hits: Vec<SearchHit> = server
+        .get_json(&bob.token, "/messages/search?q=quick")
+        .await;
+    assert!(hits.is_empty());
+    let hits: Vec<SearchHit> = server
+        .get_json(&bob.token, "/messages/search?q=snail")
+        .await;
+    assert_eq!(hits.len(), 1);
+    let res = server
+        .client
+        .delete(format!("{}/messages/{}", server.base, hit.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let hits: Vec<SearchHit> = server
+        .get_json(&bob.token, "/messages/search?q=snail")
+        .await;
+    assert!(hits.is_empty());
+
+    // around= lands the anchor mid-window with context on both sides.
+    let mut ids = Vec::new();
+    for i in 0..5 {
+        ids.push(
+            send_msg(&server, &bob.token, general.0, &format!("filler {i}"))
+                .await
+                .id,
+        );
+    }
+    let window: Vec<Message> = server
+        .get_json(
+            &alice.token,
+            &format!(
+                "/channels/{}/messages?around={}&limit=4",
+                general.0, ids[2].0
+            ),
+        )
+        .await;
+    let pos = window
+        .iter()
+        .position(|m| m.id == ids[2])
+        .expect("anchor in window");
+    assert!(pos >= 1, "context before the anchor");
+    assert!(pos + 1 < window.len(), "context after the anchor");
+}
+
+/// Pins: author-or-admin permission, convergent tally fan-out, newest-first
+/// listing, soft-delete cleanup, and the per-channel cap.
+#[tokio::test]
+async fn pinned_messages_flow() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let mallory = server.register("mallory").await;
+    let (_group, general) = setup_group(&server, &alice, &bob).await;
+
+    let m1 = send_msg(&server, &alice.token, general.0, "alice's opener").await;
+    let m2 = send_msg(&server, &bob.token, general.0, "bob's gem").await;
+
+    // A member can't pin someone else's message; the author can.
+    let res = server
+        .client
+        .put(format!("{}/messages/{}/pin", server.base, m1.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+    let mut alice_ws = ws_connect(&server, &alice.token, &[format!("channel:{}", general.0)]).await;
+    let res = server
+        .client
+        .put(format!("{}/messages/{}/pin", server.base, m2.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut alice_ws, "channel.pins").await;
+    assert_eq!(ev["channel_id"], general.0);
+    assert_eq!(ev["pins"].as_array().unwrap().len(), 1);
+
+    // The admin can pin anyone's.
+    let res = server
+        .client
+        .put(format!("{}/messages/{}/pin", server.base, m1.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut alice_ws, "channel.pins").await;
+    assert_eq!(ev["pins"].as_array().unwrap().len(), 2);
+
+    // Outsiders can neither pin nor list.
+    let res = server
+        .client
+        .put(format!("{}/messages/{}/pin", server.base, m1.id.0))
+        .bearer_auth(&mallory.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+    let res = server
+        .client
+        .get(format!("{}/channels/{}/pins", server.base, general.0))
+        .bearer_auth(&mallory.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 403);
+
+    // Newest pin first.
+    let pins: Vec<Message> = server
+        .get_json(&bob.token, &format!("/channels/{}/pins", general.0))
+        .await;
+    assert_eq!(pins.len(), 2);
+    assert_eq!(pins[0].id, m1.id);
+
+    // Unpin shrinks the tally; deleting a pinned message unpins it too.
+    let res = server
+        .client
+        .delete(format!("{}/messages/{}/pin", server.base, m2.id.0))
+        .bearer_auth(&bob.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut alice_ws, "channel.pins").await;
+    assert_eq!(ev["pins"].as_array().unwrap().len(), 1);
+    let res = server
+        .client
+        .delete(format!("{}/messages/{}", server.base, m1.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 204);
+    let ev = wait_for_event(&mut alice_ws, "channel.pins").await;
+    assert_eq!(ev["pins"].as_array().unwrap().len(), 0);
+    let pins: Vec<Message> = server
+        .get_json(&bob.token, &format!("/channels/{}/pins", general.0))
+        .await;
+    assert!(pins.is_empty());
+
+    // The 50-pin cap: fill the channel and hit the wall.
+    for i in 0..50 {
+        let m = send_msg(&server, &alice.token, general.0, &format!("pin {i}")).await;
+        let res = server
+            .client
+            .put(format!("{}/messages/{}/pin", server.base, m.id.0))
+            .bearer_auth(&alice.token)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(res.status(), 204, "pin {i}");
+    }
+    let overflow = send_msg(&server, &alice.token, general.0, "one too many").await;
+    let res = server
+        .client
+        .put(format!("{}/messages/{}/pin", server.base, overflow.id.0))
+        .bearer_auth(&alice.token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 400);
+}
+
+/// Custom group emotes as reactions: the stored value is the literal
+/// `:name:` token, unknown names are rejected, and DMs (no group) stay
+/// unicode-only.
+#[tokio::test]
+async fn custom_emote_reactions() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    let (group, general) = setup_group(&server, &alice, &bob).await;
+
+    // Admin uploads a tiny PNG and creates the :party: emote.
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10, 0, 0])
+            .file_name("party.png"),
+    );
+    let att: serde_json::Value = server
+        .client
+        .post(format!("{}/attachments", server.base))
+        .bearer_auth(&alice.token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let _: serde_json::Value = server
+        .post_json(
+            &alice.token,
+            &format!("/groups/{}/emotes", group.id.0),
+            json!({"name": "party", "attachment_id": att["id"]}),
+        )
+        .await;
+
+    let sent = send_msg(&server, &alice.token, general.0, "we shipped").await;
+
+    // Bob reacts with the group emote; the tally carries the literal token.
+    let res = server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": ":party:"}),
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    let history: Vec<Message> = server
+        .get_json(&alice.token, &format!("/channels/{}/messages", general.0))
+        .await;
+    assert_eq!(history[0].reactions[0].emoji, ":party:");
+
+    // Unknown emotes and plain text stay rejected.
+    let res = server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": ":nope:"}),
+        )
+        .await;
+    assert_eq!(res.status(), 400);
+    let res = server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", sent.id.0),
+            json!({"emoji": "lgtm"}),
+        )
+        .await;
+    assert_eq!(res.status(), 400);
+
+    // DMs have no group, so emote reactions don't exist there…
+    let req: serde_json::Value = server
+        .post_json(
+            &alice.token,
+            "/friends/requests",
+            json!({"username": "bob"}),
+        )
+        .await;
+    let _: serde_json::Value = server
+        .post_json(
+            &bob.token,
+            &format!("/friends/requests/{}/accept", req["id"]),
+            json!({}),
+        )
+        .await;
+    let dm: serde_json::Value = server
+        .post_json(&alice.token, &format!("/dms/{}", bob.user.id.0), json!({}))
+        .await;
+    let dm_channel = dm["channel_id"].as_i64().unwrap();
+    let dm_msg = send_msg(&server, &alice.token, dm_channel, "hi bob").await;
+    let res = server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", dm_msg.id.0),
+            json!({"emoji": ":party:"}),
+        )
+        .await;
+    assert_eq!(res.status(), 400);
+    // …while unicode still works.
+    let res = server
+        .post_json_raw(
+            &bob.token,
+            &format!("/messages/{}/reactions", dm_msg.id.0),
+            json!({"emoji": "🎉"}),
+        )
+        .await;
+    assert_eq!(res.status(), 204);
 }

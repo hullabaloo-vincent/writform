@@ -78,6 +78,26 @@ export interface ChatCommand {
   run(args: string, ctx: ChatCommandContext): void | Promise<void>;
 }
 
+/** One quick-switcher result: a place the ⌘K palette can jump to. */
+export interface PaletteItem {
+  /** Unique within its source. */
+  id: string;
+  title: string;
+  /** Small qualifier after the title (a group, folder, or kind). */
+  subtitle?: string;
+  run(): void | Promise<void>;
+}
+
+/** An app-contributed search source for the command palette. */
+export interface PaletteSource {
+  /** Unique id, conventionally `${appId}.${what}`. */
+  id: string;
+  appId: string;
+  /** Results for a trimmed, non-empty query. Keep it fast and small —
+   *  the palette debounces, but every source runs on each keystroke. */
+  search(query: string): Promise<PaletteItem[]>;
+}
+
 /**
  * The API handed to an app's `activate`. For core apps this is a direct
  * in-process object; for third-party plugins the same shape is served through
@@ -101,6 +121,10 @@ export interface AppContext {
   chat: {
     /** Register a `/name` slash command available in chat composers. */
     registerCommand(cmd: Omit<ChatCommand, "appId">): () => void;
+  };
+  palette: {
+    /** Contribute a quick-switcher source to the ⌘K palette. */
+    registerSource(source: Omit<PaletteSource, "appId">): () => void;
   };
 }
 

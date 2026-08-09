@@ -25,6 +25,7 @@ import { confirmDialog, Modal } from "../../platform";
 import { useSession } from "../../stores/session";
 import { friendsApi } from "../friends/FriendsView";
 import { renderMarkdown } from "./markdown";
+import { useNotesPending } from "./pending";
 
 interface NoteMeta {
   name: string;
@@ -65,6 +66,14 @@ export function NotesView() {
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(loadViewMode);
   const [helpOpen, setHelpOpen] = useState(false);
+
+  // The ⌘K palette can land here on a specific note.
+  const pendingName = useNotesPending((s) => s.name);
+  useEffect(() => {
+    if (pendingName === null) return;
+    setActive(pendingName);
+    useNotesPending.getState().clear();
+  }, [pendingName]);
 
   const refresh = useCallback(
     () => backend.vaultList().then(setNotes).catch(() => {}),

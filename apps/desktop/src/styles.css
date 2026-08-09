@@ -1000,9 +1000,26 @@ body,
 }
 
 .wf-chat-main-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 12px 16px;
   border-bottom: 1px solid var(--wf-border);
   font-weight: 600;
+}
+
+.wf-chat-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-chat-header-tools {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .wf-chat-messages {
@@ -6966,4 +6983,446 @@ input[type="checkbox"] {
     width: auto;
     z-index: 80;
   }
+}
+
+/* ---- chat finishing pass: typing, day separators, unread divider,
+        search, pins, per-channel mute ---- */
+
+/* Fixed-height strip so the composer doesn't hop when typing starts/stops. */
+.wf-typing-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 16px;
+  font-size: 11.5px;
+  color: var(--wf-text-dim);
+}
+
+.wf-typing-dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.wf-typing-dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: wf-typing-bounce 1.2s infinite ease-in-out;
+}
+
+.wf-typing-dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.wf-typing-dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes wf-typing-bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  30% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+.wf-day-sep {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 16px 0 4px;
+  color: var(--wf-text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wf-day-sep::before,
+.wf-day-sep::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--wf-border);
+}
+
+.wf-unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 2px;
+  color: var(--wf-danger);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.wf-unread-divider::before,
+.wf-unread-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--wf-danger);
+  opacity: 0.6;
+}
+
+/* Jumped-to message: brief flash so the eye lands on it. */
+.wf-msg.highlight {
+  animation: wf-msg-flash 2.2s ease-out;
+  border-radius: var(--wf-radius-sm);
+}
+
+@keyframes wf-msg-flash {
+  0%,
+  55% {
+    background: color-mix(in srgb, var(--wf-accent) 18%, transparent);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* Muted channels: dimmed row, slashed bell, dot instead of a count. */
+.wf-chat-channel.muted {
+  opacity: 0.55;
+}
+
+.wf-muted-bell {
+  margin-left: 6px;
+  flex: 0 0 auto;
+}
+
+.wf-unread-dot {
+  margin-left: auto;
+  width: 7px;
+  height: 7px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: var(--wf-text-dim);
+}
+
+/* Header search / pins popovers share one shell. */
+.wf-chat-search {
+  position: relative;
+  display: inline-flex;
+}
+
+.wf-chat-search-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(360px, calc(100vw - 24px));
+  max-height: min(430px, 60vh);
+  padding: 10px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: wf-modal-in 0.12s ease-out;
+  font-weight: 400;
+}
+
+.wf-pins-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wf-text-dim);
+}
+
+.wf-chat-search-hits {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+/* Result rows are buttons full of prose: undo the chip centering. */
+.wf-chat-search-hits button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-height: 0;
+  padding: 6px 8px;
+  text-align: left;
+  white-space: normal;
+  background: transparent;
+  border-color: transparent;
+}
+
+.wf-chat-search-hits button:hover {
+  background: var(--wf-bg);
+}
+
+.wf-search-hit-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--wf-text-dim);
+}
+
+.wf-search-hit-snippet {
+  font-size: 12.5px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.wf-search-hit-snippet mark {
+  background: color-mix(in srgb, var(--wf-accent) 35%, transparent);
+  color: inherit;
+  border-radius: 3px;
+  padding: 0 1px;
+}
+
+.wf-pin-remove {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px;
+  border-radius: var(--wf-radius-sm);
+  color: var(--wf-text-dim);
+}
+
+.wf-pin-remove:hover {
+  color: var(--wf-danger);
+}
+
+/* Reaction picker grows a wrapping emote grid below the quick row. */
+.wf-react-picker {
+  flex-wrap: wrap;
+  max-width: 264px;
+}
+
+.wf-react-option .wf-emote {
+  height: 18px;
+  vertical-align: middle;
+  margin: 0;
+}
+
+.wf-reaction-emoji .wf-emote {
+  height: 16px;
+  vertical-align: -3px;
+  margin: 0;
+}
+
+/* ---- release notes in Settings → Application ---- */
+
+.wf-release-notes-wrap {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg);
+  max-width: 560px;
+}
+
+.wf-release-notes-wrap h4 {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.wf-release-notes {
+  font-size: 13px;
+  line-height: 1.5;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.wf-release-notes h1,
+.wf-release-notes h2,
+.wf-release-notes h3 {
+  font-size: 13.5px;
+  margin: 10px 0 4px;
+}
+
+.wf-release-notes ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.wf-release-notes code {
+  font-size: 12px;
+}
+
+/* ---- focus mode + word goals ---- */
+
+/* Immersive: the shell chrome steps out; the active view has the window. */
+.wf-shell.immersive .wf-rail,
+.wf-shell.immersive .wf-statusbar,
+.wf-shell.immersive .wf-panel-right,
+.wf-shell.immersive .wf-reconnect-banner {
+  display: none;
+}
+
+/* In focus mode the document's own header/toolbar fade until hovered, so
+   the page is all there is — but touch has no hover, so they stay put. */
+.wf-doc-room.focusing .wf-doc-header,
+.wf-doc-room.focusing .wf-doc-toolbar {
+  opacity: 0.18;
+  transition: opacity 0.25s ease;
+}
+
+.wf-doc-room.focusing .wf-doc-header:hover,
+.wf-doc-room.focusing .wf-doc-header:focus-within,
+.wf-doc-room.focusing .wf-doc-toolbar:hover,
+.wf-doc-room.focusing .wf-doc-toolbar:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .wf-doc-room.focusing .wf-doc-header,
+  .wf-doc-room.focusing .wf-doc-toolbar {
+    opacity: 1;
+  }
+}
+
+/* The word count becomes a quiet button when it carries a goal. */
+.wf-doc-goal-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Zero-width chrome: the toolbar is a nowrap overflow-x row, so the button
+   must occupy exactly the box the plain span did or the row overflows. */
+.wf-doc-stats-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  min-height: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: inherit;
+  color: inherit;
+  white-space: nowrap;
+}
+
+.wf-doc-stats-btn:hover {
+  color: var(--wf-text);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+.wf-goal-bar {
+  width: 100%;
+  height: 3px;
+  border-radius: var(--wf-radius-pill);
+  background: var(--wf-border);
+  overflow: hidden;
+}
+
+.wf-goal-bar > span {
+  display: block;
+  height: 100%;
+  background: var(--wf-accent);
+  border-radius: inherit;
+}
+
+/* Fixed, positioned from the trigger at open: the toolbar it lives in is an
+   overflow-x scroll container, which would clip an absolute popover. */
+.wf-goal-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+  animation: wf-modal-in 0.12s ease-out;
+  white-space: nowrap;
+}
+
+.wf-goal-pop label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--wf-text-dim);
+}
+
+.wf-goal-pop input {
+  width: 110px;
+}
+
+/* ---- keyboard shortcuts overlay ---- */
+
+.wf-shortcuts {
+  width: min(680px, calc(100vw - 32px));
+}
+
+.wf-shortcuts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 18px 28px;
+  margin-top: 6px;
+}
+
+.wf-shortcuts-grid h4 {
+  margin: 0 0 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--wf-text-dim);
+}
+
+.wf-shortcuts-grid ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.wf-shortcuts-grid li {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.wf-shortcut-keys {
+  display: inline-flex;
+  gap: 3px;
+  flex: 0 0 92px;
+  justify-content: flex-end;
+}
+
+.wf-shortcut-keys kbd {
+  padding: 1px 6px;
+  border-radius: var(--wf-radius-sm);
+  border: 1px solid var(--wf-border);
+  background: var(--wf-bg);
+  font-family: inherit;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ---- canvas smart guides ---- */
+
+/* World-space overlay: 1×1 with visible overflow, so lines at any
+   coordinate (negative included) still draw. Stroke width is set inline
+   (1 / zoom) to stay hairline at every scale. */
+.wf-board-guides {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1px;
+  height: 1px;
+  overflow: visible;
+  pointer-events: none;
+  stroke: var(--wf-accent);
 }

@@ -5,9 +5,11 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:window:allow-set-badge-count",
     "notification:default",
     "opener:default",
     "process:default",
-    "updater:default"
+    "updater:default",
+    "window-state:default"
   ]
 }

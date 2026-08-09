@@ -1,8 +1,12 @@
 import { Presentation } from "lucide-react";
 
-import { onResync } from "../../platform";
+import { isWeb } from "../../lib/backend";
+import { onResync, usePlatform } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { useChat } from "../chat/store";
+import { canvasApi } from "./api";
 import { CanvasView } from "./CanvasView";
+import { useLocalBoards } from "./local";
 import { installCanvasWsHandler, useCanvas } from "./store";
 
 export const canvasApp: WritformApp = {
@@ -31,6 +35,52 @@ export const canvasApp: WritformApp = {
         void import("../../platform").then(({ usePlatform }) =>
           usePlatform.getState().setActiveApp("writform.canvas"),
         );
+      },
+    });
+    // ⌘K quick switcher: boards in every group, plus boards on this device.
+    ctx.palette.registerSource({
+      id: "canvas.boards",
+      search: async (q) => {
+        const needle = q.toLowerCase();
+        const items = [];
+        const groups = useChat.getState().groups;
+        const lists = await Promise.all(
+          groups.map((g) =>
+            canvasApi.boards(g.id).then(
+              (boards) => boards.map((board) => ({ board, group: g })),
+              () => [],
+            ),
+          ),
+        );
+        for (const { board, group } of lists.flat()) {
+          if (!board.name.toLowerCase().includes(needle)) continue;
+          items.push({
+            id: `board-${board.id}`,
+            title: board.name,
+            subtitle: group.name,
+            run: async () => {
+              usePlatform.getState().setActiveApp("writform.canvas");
+              await useCanvas.getState().openBoard(board.id);
+            },
+          });
+        }
+        if (!isWeb) {
+          const local = useLocalBoards.getState();
+          if (!local.loaded) await local.load().catch(() => {});
+          for (const b of useLocalBoards.getState().items) {
+            if (!b.name.toLowerCase().includes(needle)) continue;
+            items.push({
+              id: `board-${b.id}`,
+              title: b.name,
+              subtitle: "On this device",
+              run: async () => {
+                usePlatform.getState().setActiveApp("writform.canvas");
+                await useCanvas.getState().openBoard(b.id);
+              },
+            });
+          }
+        }
+        return items.slice(0, 8);
       },
     });
   },

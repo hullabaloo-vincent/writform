@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
 import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
@@ -12,6 +12,7 @@ import { countWordsInDocJson } from "../../lib/wordCount";
 import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "../chat/api";
+import { dayLabel, isNewDay } from "../chat/daySeparators";
 import { GroupChip } from "../chat/GroupChip";
 import { MessageText } from "../chat/MessageText";
 import { useChat } from "../chat/store";
@@ -455,6 +456,12 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
         <span>Your writing</span>
         <span className="wf-session-meta">
           {words.toLocaleString()} {words === 1 ? "word" : "words"}
+          {(() => {
+            // Sprint pace, once a minute has passed (earlier numbers are noise).
+            if (words === 0 || prompt.started_at == null) return "";
+            const mins = (Date.now() - prompt.started_at) / 60_000;
+            return mins >= 1 ? ` · ~${Math.round(words / mins)} wpm` : "";
+          })()}
           {" · "}
           {status === "saving" ? "saving…" : status === "saved" ? "saved ✓" : "autosaves"}
         </span>
@@ -498,17 +505,24 @@ function SessionChat({ channelId }: { channelId: number }) {
     <>
       <header className="wf-session-chat-header">Session chat</header>
       <div className="wf-session-chat-messages" data-msg-scroll>
-        {messages.map((m) => (
-          <div key={m.id} className="wf-msg">
-            <div className="wf-msg-meta">
-              <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
-            </div>
-            {m.content && (
-              <div className="wf-msg-content">
-                <MessageText text={m.content} />
+        {messages.map((m, i) => (
+          <Fragment key={m.id}>
+            {isNewDay(messages[i - 1]?.created_at, m.created_at) && (
+              <div className="wf-day-sep">
+                <span>{dayLabel(m.created_at)}</span>
               </div>
             )}
-          </div>
+            <div className="wf-msg">
+              <div className="wf-msg-meta">
+                <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
+              </div>
+              {m.content && (
+                <div className="wf-msg-content">
+                  <MessageText text={m.content} />
+                </div>
+              )}
+            </div>
+          </Fragment>
         ))}
         <div ref={bottomRef} />
       </div>

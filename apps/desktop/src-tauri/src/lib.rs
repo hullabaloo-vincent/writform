@@ -31,6 +31,9 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        // Remember window size/position across launches (tauri.conf.json's
+        // 1280×800 stays the first-run default).
+        .plugin(tauri_plugin_window_state::Builder::new().build())
         .manage(ConnectionManager::default())
         .manage(host::HostManager::default())
         .manage(Arc::new(WsManager::default()))
@@ -76,6 +79,7 @@ pub fn run() {
             commands::connect::reset_password,
             wsclient::ws_sub,
             wsclient::ws_unsub,
+            wsclient::ws_typing,
             vault::vault_list,
             vault::vault_read,
             vault::vault_write,

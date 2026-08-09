@@ -151,6 +151,13 @@ class WebWs {
     if (this.connected) this.ws?.send(JSON.stringify({ op: "unsub", d: { rooms } }));
   }
 
+  typing(channelId: number) {
+    // Fire-and-forget; a down socket just means nobody hears it.
+    if (this.connected) {
+      this.ws?.send(JSON.stringify({ op: "typing", d: { channel_id: channelId } }));
+    }
+  }
+
   onEvent(h: (e: WsEvent) => void) {
     this.eventHandlers.add(h);
     return () => void this.eventHandlers.delete(h);
@@ -294,6 +301,7 @@ export function webBackend(): Backend {
     requestCameraAccess: async () => "authorized",
     wsSub: async (rooms) => ws.sub(rooms),
     wsUnsub: async (rooms) => ws.unsub(rooms),
+    wsTyping: async (channelId) => ws.typing(channelId),
     onWsEvent: (handler) => ws.onEvent(handler),
     onWsStatus: (handler) => ws.onStatus(handler),
     vaultList: async () => [],

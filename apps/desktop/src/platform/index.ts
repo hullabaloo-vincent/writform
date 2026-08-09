@@ -14,6 +14,8 @@ export type {
   AppManifest,
   AppPermission,
   Command,
+  PaletteItem,
+  PaletteSource,
   SlotContribution,
   SlotName,
   WritformApp,

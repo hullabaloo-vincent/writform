@@ -1,4 +1,6 @@
 import {
+  Bell,
+  BellOff,
   ImageIcon,
   LayoutGrid,
   Menu,
@@ -8,8 +10,11 @@ import {
   MonitorUp,
   PenLine,
   PhoneOff,
+  Pin,
+  PinOff,
   Plus,
   Reply,
+  Search,
   Settings as SettingsIcon,
   SmilePlus,
   Trash2,
@@ -18,10 +23,11 @@ import {
   VideoOff,
   Volume2,
 } from "lucide-react";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { Message } from "../../bindings/proto/Message";
+import type { SearchHit } from "../../bindings/proto/SearchHit";
 import { attachmentUrl, isCmdError } from "../../lib/backend";
 import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
@@ -38,6 +44,7 @@ import {
 } from "../../platform";
 import { useSession } from "../../stores/session";
 import { chatApi } from "./api";
+import { dayLabel, isNewDay } from "./daySeparators";
 import { MessageText } from "./MessageText";
 import { useChat, type OutboxEntry } from "./store";
 import { VideoStage } from "./VideoStage";
@@ -234,11 +241,13 @@ function GroupList() {
   const selectGroup = useChat((s) => s.selectGroup);
   const unread = useChat((s) => s.unread);
   const channelGroup = useChat((s) => s.channelGroup);
+  const muted = useChat((s) => s.muted);
   const [adding, setAdding] = useState(false);
 
   const groupUnread = (groupId: number) =>
     Object.entries(unread).reduce(
-      (n, [cid, count]) => (channelGroup[Number(cid)] === groupId ? n + count : n),
+      (n, [cid, count]) =>
+        channelGroup[Number(cid)] === groupId && !muted.has(Number(cid)) ? n + count : n,
       0,
     );
 
@@ -526,6 +535,8 @@ function ChannelList() {
   const activeChannelId = useChat((s) => s.activeChannelId);
   const selectChannel = useChat((s) => s.selectChannel);
   const unread = useChat((s) => s.unread);
+  const muted = useChat((s) => s.muted);
+  const toggleMute = useChat((s) => s.toggleMute);
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
   const group = groups.find((g) => g.id === activeGroupId);
@@ -600,52 +611,77 @@ function ChannelList() {
                 </form>
               );
             }
+            const isMuted = muted.has(c.id);
             return (
-              <div key={c.id} className="wf-chat-channel-row">
+              <div
+                key={c.id}
+                className="wf-chat-channel-row"
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  toggleMute(c.id);
+                }}
+              >
                 <button
                   className={`wf-chat-channel ${c.id === activeChannelId ? "active" : ""} ${
                     count > 0 ? "unread" : ""
-                  }`}
+                  } ${isMuted ? "muted" : ""}`}
                   onClick={() => void selectChannel(c.id)}
                 >
                   # {c.name}
-                  {count > 0 && (
-                    <span className="wf-unread-pill">{count > 99 ? "99+" : count}</span>
-                  )}
+                  {isMuted && <BellOff size={11} className="wf-muted-bell" />}
+                  {count > 0 &&
+                    (isMuted ? (
+                      <span className="wf-unread-dot" />
+                    ) : (
+                      <span className="wf-unread-pill">{count > 99 ? "99+" : count}</span>
+                    ))}
                 </button>
-                {isAdmin && (
-                  <span className="wf-chat-channel-tools">
-                    <button
-                      className="wf-icon"
-                      title="Rename channel"
-                      onClick={() => {
-                        setRenameDraft(c.name ?? "");
-                        setRenamingId(c.id);
-                      }}
-                    >
-                      <PenLine size={12} />
-                    </button>
-                    <button
-                      className="wf-icon"
-                      title="Delete channel"
-                      onClick={() =>
-                        void confirmDialog(
-                          `Delete #${c.name} and all its messages for everyone? This cannot be undone.`,
-                          { title: "Delete channel", confirmLabel: "Delete", danger: true },
-                        ).then((ok) => {
-                          if (ok) {
-                            void chatApi.deleteChannel(c.id).catch((e: unknown) => {
-                              const m = (e as { message?: string }).message;
-                              toastError(m ? `Couldn't delete the channel: ${m}` : "Couldn't delete the channel.");
-                            });
-                          }
-                        })
-                      }
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </span>
-                )}
+                <span className="wf-chat-channel-tools">
+                  <button
+                    className="wf-icon"
+                    title={
+                      isMuted
+                        ? "Unmute channel"
+                        : "Mute channel — no notifications or badges on this device"
+                    }
+                    onClick={() => toggleMute(c.id)}
+                  >
+                    {isMuted ? <Bell size={12} /> : <BellOff size={12} />}
+                  </button>
+                  {isAdmin && (
+                    <>
+                      <button
+                        className="wf-icon"
+                        title="Rename channel"
+                        onClick={() => {
+                          setRenameDraft(c.name ?? "");
+                          setRenamingId(c.id);
+                        }}
+                      >
+                        <PenLine size={12} />
+                      </button>
+                      <button
+                        className="wf-icon"
+                        title="Delete channel"
+                        onClick={() =>
+                          void confirmDialog(
+                            `Delete #${c.name} and all its messages for everyone? This cannot be undone.`,
+                            { title: "Delete channel", confirmLabel: "Delete", danger: true },
+                          ).then((ok) => {
+                            if (ok) {
+                              void chatApi.deleteChannel(c.id).catch((e: unknown) => {
+                                const m = (e as { message?: string }).message;
+                                toastError(m ? `Couldn't delete the channel: ${m}` : "Couldn't delete the channel.");
+                              });
+                            }
+                          })
+                        }
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </>
+                  )}
+                </span>
               </div>
             );
           })}
@@ -924,6 +960,242 @@ function MemberList() {
   );
 }
 
+/** "X is typing…" strip above a composer. Always rendered at fixed height so
+ *  the composer doesn't hop when someone starts or stops. */
+export function TypingLine({ channelId }: { channelId: number }) {
+  const entries = useChat((s) => s.typing[channelId]);
+  const meId = useSession((s) => s.session?.user.id);
+  const names = (entries ?? [])
+    .filter((t) => t.user.id !== meId)
+    .map((t) => t.user.display_name ?? t.user.username);
+  let text = "";
+  if (names.length === 1) text = `${names[0]} is typing`;
+  else if (names.length === 2) text = `${names[0]} and ${names[1]} are typing`;
+  else if (names.length > 2) text = "Several people are typing";
+  return (
+    <div className="wf-typing-line" aria-live="polite">
+      {text && (
+        <>
+          <span className="wf-typing-dots" aria-hidden>
+            <i />
+            <i />
+            <i />
+          </span>
+          {text}…
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Highlighted search snippet: the server wraps matches in << >> markers
+ *  (always plain text — never HTML). */
+function SnippetText({ text }: { text: string }) {
+  const parts = text.split(/<<|>>/);
+  return (
+    <>
+      {parts.map((p, i) => (i % 2 === 1 ? <mark key={i}>{p}</mark> : <span key={i}>{p}</span>))}
+    </>
+  );
+}
+
+/** Header search across every channel of the active group. */
+function ChatSearch() {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hits, setHits] = useState<SearchHit[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const activeGroupId = useChat((s) => s.activeGroupId);
+  const channels = useChat((s) => s.channels);
+  const seq = useRef(0);
+  const rootRef = useRef<HTMLSpanElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const query = q.trim();
+    if (query.length < 2) {
+      setHits([]);
+      setError(null);
+      return;
+    }
+    const mySeq = ++seq.current;
+    const t = setTimeout(() => {
+      chatApi
+        .search(query, activeGroupId ?? undefined)
+        .then((res) => {
+          if (seq.current !== mySeq) return;
+          setHits(res);
+          setError(null);
+        })
+        .catch((e) => {
+          if (seq.current !== mySeq) return;
+          setError(isCmdError(e) ? e.message : "Search failed.");
+        });
+    }, 250);
+    return () => clearTimeout(t);
+  }, [q, open, activeGroupId]);
+
+  const jump = (hit: SearchHit) => {
+    setOpen(false);
+    setQ("");
+    setHits([]);
+    void useChat
+      .getState()
+      .openAround(hit.channel_id, hit.message_id)
+      .catch(() => toastError("Couldn't open that message."));
+  };
+
+  return (
+    <span className="wf-chat-search" ref={rootRef}>
+      <button
+        className="wf-icon"
+        title="Search messages in this group"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <Search size={14} />
+      </button>
+      {open && (
+        <div className="wf-chat-search-pop" onPointerDown={(e) => e.stopPropagation()}>
+          <input
+            autoFocus
+            placeholder="Search this group…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setOpen(false);
+              if (e.key === "Enter" && hits[0]) jump(hits[0]);
+            }}
+          />
+          {error && <p className="wf-connect-error">{error}</p>}
+          <div className="wf-chat-search-hits">
+            {hits.map((h) => (
+              <button key={h.message_id} onClick={() => jump(h)}>
+                <span className="wf-search-hit-meta">
+                  #{h.channel_name ?? channels.find((c) => c.id === h.channel_id)?.name ?? "?"}
+                  {" · "}
+                  {h.author.display_name ?? h.author.username}
+                </span>
+                <span className="wf-search-hit-snippet">
+                  <SnippetText text={h.snippet} />
+                </span>
+              </button>
+            ))}
+            {q.trim().length >= 2 && hits.length === 0 && !error && (
+              <p className="wf-friend-dim">No matches.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </span>
+  );
+}
+
+/** Pin count + popover of pinned messages; click one to jump to it. */
+export function PinsButton({
+  channelId,
+  authorOnly = false,
+}: {
+  channelId: number;
+  /** DMs have no admin — only your own pins offer removal. */
+  authorOnly?: boolean;
+}) {
+  const tally = useChat((s) => s.pins[channelId]);
+  const groups = useChat((s) => s.groups);
+  const activeGroupId = useChat((s) => s.activeGroupId);
+  const me = useSession((s) => s.session?.user);
+  const isAdmin =
+    !authorOnly && groups.find((g) => g.id === activeGroupId)?.my_role === "admin";
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState<Message[] | null>(null);
+  const rootRef = useRef<HTMLSpanElement>(null);
+  const count = tally?.length ?? 0;
+
+  useEffect(() => {
+    if (!open) return;
+    setPinned(null);
+    chatApi
+      .pins(channelId)
+      .then(setPinned)
+      .catch(() => setPinned([]));
+    const close = (e: PointerEvent) => {
+      if (!rootRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    window.addEventListener("pointerdown", close);
+    return () => window.removeEventListener("pointerdown", close);
+  }, [open, channelId]);
+
+  return (
+    <span className="wf-chat-search" ref={rootRef}>
+      <button className="wf-icon" title="Pinned messages" onClick={() => setOpen((v) => !v)}>
+        <Pin size={14} />
+        {count > 0 && <span className="wf-btn-badge">{count > 99 ? "99+" : count}</span>}
+      </button>
+      {open && (
+        <div className="wf-chat-search-pop" onPointerDown={(e) => e.stopPropagation()}>
+          <header className="wf-pins-header">Pinned messages</header>
+          {pinned === null ? (
+            <p className="wf-friend-dim">Loading…</p>
+          ) : pinned.length === 0 ? (
+            <p className="wf-friend-dim">
+              Nothing pinned yet — pin a message from its hover actions.
+            </p>
+          ) : (
+            <div className="wf-chat-search-hits">
+              {pinned.map((m) => (
+                <button
+                  key={m.id}
+                  onClick={() => {
+                    setOpen(false);
+                    void useChat
+                      .getState()
+                      .openAround(channelId, m.id)
+                      .catch(() => toastError("Couldn't open that message."));
+                  }}
+                >
+                  <span className="wf-search-hit-meta">
+                    {m.author.display_name ?? m.author.username}
+                    {" · "}
+                    {new Date(m.created_at).toLocaleDateString()}
+                    {(me?.id === m.author.id || isAdmin) && (
+                      <span
+                        className="wf-pin-remove"
+                        title="Unpin"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void chatApi
+                            .unpin(m.id)
+                            .then(() =>
+                              setPinned((l) => l?.filter((x) => x.id !== m.id) ?? null),
+                            )
+                            .catch(() => toastError("Couldn't unpin the message."));
+                        }}
+                      >
+                        <PinOff size={12} />
+                      </span>
+                    )}
+                  </span>
+                  <span className="wf-search-hit-snippet">
+                    {(m.content ?? "").slice(0, 120)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </span>
+  );
+}
+
 const NO_MESSAGES: Message[] = [];
 const NO_OUTBOX: OutboxEntry[] = [];
 
@@ -944,6 +1216,15 @@ function MessagePane() {
   const setReplyTo = useChat((s) => s.setReplyTo);
   const channels = useChat((s) => s.channels);
   const channel = channels.find((c) => c.id === activeChannelId);
+  const divider = useChat((s) =>
+    s.activeChannelId !== null ? s.divider[s.activeChannelId] : undefined,
+  );
+  const isDetached = useChat(
+    (s) => s.activeChannelId !== null && s.detached.has(s.activeChannelId),
+  );
+  const highlightId = useChat((s) => s.highlightId);
+  const reattach = useChat((s) => s.reattach);
+  const meId = useSession((s) => s.session?.user.id);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   /** Whether the user is (visually) at the bottom of the list. */
@@ -951,6 +1232,13 @@ function MessagePane() {
   /** Set before a prepend so the next layout pass restores the position. */
   const restore = useRef<{ height: number; top: number } | null>(null);
   const [showJump, setShowJump] = useState(false);
+
+  // First message of "what's new since I was last here" — the divider draws
+  // above it, and opening the channel lands there instead of the bottom.
+  const dividerBefore =
+    divider !== undefined && divider > 0
+      ? messages.find((m) => m.id > divider && m.author.id !== meId)?.id
+      : undefined;
 
   useEffect(() => {
     atBottom.current = true;
@@ -974,6 +1262,41 @@ function MessagePane() {
     }
   }, [messages.length, outbox.length, activeChannelId]);
 
+  // On first render of a channel's history, land on the unread divider when
+  // there is one (declared after the follow-bottom effect so it wins).
+  const scrolledFor = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (activeChannelId === null || !loaded) return;
+    if (scrolledFor.current === activeChannelId) return;
+    scrolledFor.current = activeChannelId;
+    if (dividerBefore !== undefined) {
+      const el = document.getElementById(`wf-msg-${dividerBefore}`);
+      if (el) {
+        el.scrollIntoView({ block: "center", behavior: "instant" });
+        atBottom.current = false;
+      }
+    }
+  }, [activeChannelId, loaded, dividerBefore]);
+
+  // After a jump (search hit, pin) centre and flash the target message.
+  const scrolledHighlight = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (highlightId === null) {
+      scrolledHighlight.current = null;
+      return;
+    }
+    if (scrolledHighlight.current !== highlightId) {
+      const el = document.getElementById(`wf-msg-${highlightId}`);
+      if (el) {
+        scrolledHighlight.current = highlightId;
+        el.scrollIntoView({ block: "center", behavior: "instant" });
+        atBottom.current = false;
+      }
+    }
+    const t = setTimeout(() => useChat.setState({ highlightId: null }), 2200);
+    return () => clearTimeout(t);
+  }, [highlightId, messages]);
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el || activeChannelId === null) return;
@@ -993,6 +1316,11 @@ function MessagePane() {
   };
 
   const jumpToLatest = () => {
+    if (isDetached && activeChannelId !== null) {
+      // Leave the jumped-to window: drop it and reload the live tail.
+      reattach(activeChannelId);
+      return;
+    }
     atBottom.current = true;
     setShowJump(false);
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
@@ -1001,7 +1329,15 @@ function MessagePane() {
 
   return (
     <>
-      <header className="wf-chat-main-header"># {channel?.name}</header>
+      <header className="wf-chat-main-header">
+        <span className="wf-chat-header-title"># {channel?.name}</span>
+        {activeChannelId !== null && (
+          <span className="wf-chat-header-tools">
+            <ChatSearch />
+            <PinsButton channelId={activeChannelId} />
+          </span>
+        )}
+      </header>
       <div className="wf-chat-messages" data-msg-scroll ref={scrollRef} onScroll={onScroll}>
         {loaded && messages.length > 0 && historyDone[activeChannelId] && (
           <p className="wf-chat-history-start">This is the beginning of #{channel?.name}.</p>
@@ -1009,25 +1345,44 @@ function MessagePane() {
         {!loaded ? (
           <SkeletonRows rows={7} avatar />
         ) : (
-          messages.map((m, i) => (
-            <MessageRow
-              key={m.id}
-              message={m}
-              compact={messages[i - 1]?.author.id === m.author.id}
-              onReply={setReplyTo}
-            />
-          ))
+          messages.map((m, i) => {
+            const newDay = isNewDay(messages[i - 1]?.created_at, m.created_at);
+            return (
+              <Fragment key={m.id}>
+                {newDay && (
+                  <div className="wf-day-sep">
+                    <span>{dayLabel(m.created_at)}</span>
+                  </div>
+                )}
+                {m.id === dividerBefore && (
+                  <div className="wf-unread-divider">
+                    <span>New messages</span>
+                  </div>
+                )}
+                <MessageRow
+                  message={m}
+                  compact={
+                    !newDay &&
+                    m.id !== dividerBefore &&
+                    messages[i - 1]?.author.id === m.author.id
+                  }
+                  onReply={setReplyTo}
+                />
+              </Fragment>
+            );
+          })
         )}
         {outbox.map((o) => (
           <PendingRow key={o.key} entry={o} />
         ))}
         <div ref={bottomRef} />
       </div>
-      {showJump && (
+      {(showJump || isDetached) && (
         <button className="wf-jump-latest" onClick={jumpToLatest}>
-          New messages ↓
+          {isDetached ? "Back to latest ↓" : "New messages ↓"}
         </button>
       )}
+      {activeChannelId !== null && <TypingLine channelId={activeChannelId} />}
       <Composer />
     </>
   );
@@ -1074,6 +1429,9 @@ export function MessageActions({
   const groups = useChat((s) => s.groups);
   const activeGroupId = useChat((s) => s.activeGroupId);
   const setEditing = useChat((s) => s.setEditing);
+  const isPinned = useChat(
+    (s) => s.pins[message.channel_id]?.some((p) => p.message_id === message.id) ?? false,
+  );
   const group = groups.find((g) => g.id === activeGroupId);
   const canDelete =
     me && (message.author.id === me.id || (!authorOnly && group?.my_role === "admin"));
@@ -1110,6 +1468,7 @@ export function MessageActions({
           </button>
           {pickerOpen && (
             <ReactionPicker
+              allowCustom={!authorOnly}
               onPick={(emoji) => {
                 setPickerOpen(false);
                 void chatApi.react(message.id, emoji).catch(() => toastError("Reaction didn't go through."));
@@ -1118,6 +1477,19 @@ export function MessageActions({
             />
           )}
         </span>
+      )}
+      {canDelete && (
+        <button
+          className="wf-icon"
+          title={isPinned ? "Unpin message" : "Pin message"}
+          onClick={() =>
+            void (isPinned ? chatApi.unpin(message.id) : chatApi.pin(message.id)).catch((e) =>
+              toastError(isCmdError(e) ? e.message : "Couldn't pin the message."),
+            )
+          }
+        >
+          {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+        </button>
       )}
       {canDelete && (
         <button
@@ -1146,11 +1518,15 @@ const QUICK_REACTIONS = ["\u{1F44D}", "\u{2764}\u{FE0F}", "\u{1F602}", "\u{1F389
 function ReactionPicker({
   onPick,
   onClose,
+  allowCustom = false,
 }: {
   onPick: (emoji: string) => void;
   onClose: () => void;
+  /** Offer the active group's custom emotes (never in DMs — no group). */
+  allowCustom?: boolean;
 }) {
   const ref = useRef<HTMLSpanElement>(null);
+  const emotes = useChat((s) => s.emotes);
   const [below, setBelow] = useState(false);
 
   useEffect(() => {
@@ -1186,8 +1562,33 @@ function ReactionPicker({
           {emoji}
         </button>
       ))}
+      {allowCustom &&
+        emotes.map((e) => (
+          <button
+            key={e.id}
+            className="wf-react-option"
+            title={`:${e.name}:`}
+            onClick={() => onPick(`:${e.name}:`)}
+          >
+            <img className="wf-emote" src={attSrc(e.attachment_id)} alt={`:${e.name}:`} />
+          </button>
+        ))}
     </span>
   );
+}
+
+/** A reaction's face: a group emote image when the emoji is a known
+ *  `:name:` token, otherwise the literal (unicode) string. */
+function ReactionEmoji({ emoji }: { emoji: string }) {
+  const emotes = useChat((s) => s.emotes);
+  const m = /^:([a-z0-9_]{1,32}):$/.exec(emoji);
+  const emote = m ? emotes.find((e) => e.name === m[1]) : undefined;
+  if (emote) {
+    return (
+      <img className="wf-emote" src={attSrc(emote.attachment_id)} alt={emoji} title={emoji} />
+    );
+  }
+  return <>{emoji}</>;
 }
 
 /** Reaction pills under a message; clicking toggles your own reaction. */
@@ -1207,7 +1608,9 @@ function MessageReactions({ message }: { message: Message }) {
             ).catch(() => toastError("Reaction didn't go through."))
           }
         >
-          <span className="wf-reaction-emoji">{r.emoji}</span>
+          <span className="wf-reaction-emoji">
+            <ReactionEmoji emoji={r.emoji} />
+          </span>
           {r.count}
         </button>
       ))}
@@ -1406,6 +1809,7 @@ export function MessageRow({
   sharedNoteCard?: (content: string) => React.ReactNode;
 }) {
   const editing = useChat((s) => s.editingMessageId === message.id);
+  const highlighted = useChat((s) => s.highlightId === message.id);
   // Touch has no hover: tapping the message reveals its action row (one
   // message at a time — tapping anywhere else closes it again).
   const [touchActive, setTouchActive] = useState(false);
@@ -1435,7 +1839,9 @@ export function MessageRow({
   return (
     <div
       ref={rootRef}
-      className={`wf-msg ${compact ? "compact" : ""} ${touchActive ? "actions-open" : ""}`}
+      className={`wf-msg ${compact ? "compact" : ""} ${touchActive ? "actions-open" : ""} ${
+        highlighted ? "highlight" : ""
+      }`}
       id={`wf-msg-${message.id}`}
       onClick={onTapReveal}
     >
@@ -1769,7 +2175,12 @@ function Composer() {
           rows={1}
           placeholder={`Message #${channel?.name ?? ""}`}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (e.target.value && activeChannelId !== null) {
+              useChat.getState().sendTyping(activeChannelId);
+            }
+          }}
           onPaste={(e) => {
             const item = [...e.clipboardData.items].find((i) => i.type.startsWith("image/"));
             const file = item?.getAsFile();

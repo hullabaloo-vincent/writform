@@ -12,14 +12,20 @@ interface FriendsState {
   activeDmPeerId: number | null;
   /** Unread DM counts keyed by peer user id. */
   dmUnread: Record<number, number>;
+  /** Peer whose conversation should open next (set by the ⌘K palette;
+   *  FriendsView consumes and clears it on mount or change). */
+  pendingDmPeer: number | null;
 
   setActiveDmPeer: (peerId: number | null) => void;
   noteIncoming: (peerId: number) => void;
+  requestDm: (peerId: number) => void;
+  clearPendingDm: () => void;
 }
 
 export const useFriends = create<FriendsState>((set, get) => ({
   activeDmPeerId: null,
   dmUnread: {},
+  pendingDmPeer: null,
 
   setActiveDmPeer: (peerId) =>
     set((s) => {
@@ -34,4 +40,7 @@ export const useFriends = create<FriendsState>((set, get) => ({
     if (get().activeDmPeerId === peerId && document.hasFocus()) return;
     set((s) => ({ dmUnread: { ...s.dmUnread, [peerId]: (s.dmUnread[peerId] ?? 0) + 1 } }));
   },
+
+  requestDm: (peerId) => set({ pendingDmPeer: peerId }),
+  clearPendingDm: () => set({ pendingDmPeer: null }),
 }));

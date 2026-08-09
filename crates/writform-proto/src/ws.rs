@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
-use crate::{UnixMillis, UserId, WritingSessionId};
+use crate::{ChannelId, UnixMillis, UserId, WritingSessionId};
 
 /// client → server frames.
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -26,6 +26,12 @@ pub enum ClientFrame {
     Ping {
         #[ts(type = "number")]
         client_time: UnixMillis,
+    },
+    /// Ephemeral "I'm typing" signal; the server fans out `chat.typing` to
+    /// the channel room. The one client→server op besides subscriptions —
+    /// fire-and-forget state this frequent would be wasteful over REST.
+    Typing {
+        channel_id: ChannelId,
     },
 }
 

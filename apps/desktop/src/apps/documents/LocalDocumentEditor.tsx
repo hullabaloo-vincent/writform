@@ -2,13 +2,23 @@ import Collaboration from "@tiptap/extension-collaboration";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { Download, HardDrive, History, ListTree, Share2, Trash2 } from "lucide-react";
+import {
+  Download,
+  Focus as FocusIcon,
+  HardDrive,
+  History,
+  ListTree,
+  MoveVertical,
+  Share2,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Toolbar, WfImage } from "../../editor/RichEditor";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { DocumentStats, ElementSelect, TitleEditor } from "./DocumentEditor";
+import { useFocusMode, useTypewriterScroll } from "./focus";
 import { exportDocument } from "./export";
 import { FindBar } from "./FindBar";
 import { DocElement } from "./formats/DocElement";
@@ -95,9 +105,19 @@ function LocalEditorInner({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
+  useTypewriterScroll(editor, focus && typewriter);
+  const toggleFocus = () => {
+    if (!focus) {
+      setPanel("none");
+      setFinding(false);
+    }
+    setFocus(!focus);
+  };
+
   if (!provider) return null;
   return (
-    <div className="wf-doc-room">
+    <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
       <header className="wf-session-room-header wf-doc-header">
         <button onClick={close}>←</button>
         <TitleEditor
@@ -135,6 +155,22 @@ function LocalEditorInner({
         >
           <ListTree size={16} />
         </button>
+        <button
+          title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
+          className={focus ? "active" : ""}
+          onClick={toggleFocus}
+        >
+          <FocusIcon size={16} />
+        </button>
+        {focus && (
+          <button
+            title="Typewriter scrolling — keep the line you're writing centred"
+            className={typewriter ? "active" : ""}
+            onClick={() => setTypewriter(!typewriter)}
+          >
+            <MoveVertical size={16} />
+          </button>
+        )}
         <div className="wf-doc-export-wrap">
           <button
             title="Export document"
@@ -202,7 +238,9 @@ function LocalEditorInner({
             richBlocks={meta.format === "none"}
             allowImages={false}
             leading={<ElementSelect editor={editor} format={meta.format} />}
-            trailing={<DocumentStats editor={editor} format={meta.format} />}
+            trailing={
+              <DocumentStats editor={editor} format={meta.format} goalKey={`local:${meta.id}`} />
+            }
           />
         </div>
       )}

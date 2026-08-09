@@ -5,6 +5,7 @@ import type {
   AppManifest,
   ChatCommand,
   Command,
+  PaletteSource,
   SlotContribution,
   SlotName,
   WritformApp,
@@ -19,11 +20,19 @@ interface PlatformState {
   commands: Record<string, Command>;
   /** Chat slash commands by name (no leading slash). */
   chatCommands: Record<string, ChatCommand>;
+  /** Quick-switcher search sources for the ⌘K palette, by source id. */
+  paletteSources: Record<string, PaletteSource>;
   activeAppId: string | null;
   /** Dock-rail badge counts per app id (0/absent = no badge). */
   badges: Record<string, number>;
+  /** The ⌘/ keyboard-shortcuts overlay (also opened from the palette). */
+  shortcutsOpen: boolean;
+  /** Focus mode: the shell chrome (rail, statusbar, panels) is hidden. */
+  immersive: boolean;
   setActiveApp: (appId: string) => void;
   setAppBadge: (appId: string, count: number) => void;
+  setShortcutsOpen: (open: boolean) => void;
+  setImmersive: (on: boolean) => void;
 }
 
 export const usePlatform = create<PlatformState>((set) => ({
@@ -33,13 +42,20 @@ export const usePlatform = create<PlatformState>((set) => ({
   slots: {},
   commands: {},
   chatCommands: {},
+  paletteSources: {},
   activeAppId: null,
   badges: {},
-  setActiveApp: (appId) => set({ activeAppId: appId }),
+  shortcutsOpen: false,
+  immersive: false,
+  // Switching apps always leaves focus mode — immersive chrome belongs to
+  // the view that asked for it.
+  setActiveApp: (appId) => set({ activeAppId: appId, immersive: false }),
   setAppBadge: (appId, count) =>
     set((s) =>
       (s.badges[appId] ?? 0) === count ? s : { badges: { ...s.badges, [appId]: count } },
     ),
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
+  setImmersive: (on) => set({ immersive: on }),
 }));
 
 function addSlotContribution(slot: SlotName, contribution: SlotContribution): () => void {
@@ -118,6 +134,20 @@ function makeContext(manifest: AppManifest): AppContext {
           usePlatform.setState((s) => {
             const { [name]: _removed, ...chatCommands } = s.chatCommands;
             return { chatCommands };
+          });
+        };
+      },
+    },
+    palette: {
+      registerSource(source) {
+        const full: PaletteSource = { ...source, appId: manifest.id };
+        usePlatform.setState((s) => ({
+          paletteSources: { ...s.paletteSources, [full.id]: full },
+        }));
+        return () => {
+          usePlatform.setState((s) => {
+            const { [full.id]: _removed, ...paletteSources } = s.paletteSources;
+            return { paletteSources };
           });
         };
       },

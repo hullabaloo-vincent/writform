@@ -6,7 +6,8 @@ A session lives in a group channel and holds **multiple prompts**. Anyone in
 the group can create a session; each prompt can be started, timed
 (10 seconds to 24 hours), and stopped early by its creator or a group admin.
 
-- While a prompt runs, your writing **autosaves** and stays private.
+- While a prompt runs, your writing **autosaves** and stays private — the
+  word count shows your sprint pace (≈ words per minute) as you go.
 - When it ends, everyone's writing is revealed side by side.
 - The prompt editor and your writing area have a full formatting toolbar
   (headings, lists, quotes, inline code, images).
@@ -33,6 +34,11 @@ Google-Docs-style collaborative writing, separate from timed sessions.
 - **Spellcheck** underlines as you type, and Tab indents rather than
   jumping focus out of the page: inside a list it indents the item, in a
   writing format it cycles the element type.
+- **Focus mode** (the target button, Esc leaves): the app chrome steps
+  away and it's just you and the page — with optional **typewriter
+  scrolling** that keeps the line you're writing vertically centred.
+- **Word-count goals**: click the word count to set a target; progress
+  rides under the count as a thin bar, per document, on this device.
 - **Folders**: organize your documents; move a document between folders,
   rename or delete a folder (its documents stay put).
 - **Search**: full-text — matches titles and document content.
@@ -74,6 +80,20 @@ Groups work like small Discord servers: channels, invites, roles.
   fenced ``` blocks, links.
 - **@mentions and #channel references**: `@username` pings and highlights;
   `#channel` links and jumps.
+- **Read state that follows you**: what you've read syncs through the
+  server, so unread counts agree across your devices. Opening a channel
+  lands on a "New messages" divider where you left off, and messages are
+  grouped under day separators (Today, Yesterday, …).
+- **Typing indicators**: a quiet "…is typing" line above the composer, in
+  channels and DMs.
+- **Search**: the magnifier in the channel header searches every channel in
+  the group — full text. Click a hit and you land on that message in
+  context, highlighted.
+- **Pinned messages**: pin from a message's hover actions (your own, or any
+  as an admin); the pin in the header counts them, lists them, and jumps.
+- **Reactions** can use the group's custom emotes as well as emoji.
+- **Mute a channel**: the bell on a channel row (or a right-click) silences
+  its notifications and badges on this device; unread shows as a quiet dot.
 - **Custom emotes** per group (admins add them via the emote picker) —
   type `:name:` anywhere.
 - **Uploads**: attach, paste, or drag & drop images.
@@ -110,7 +130,8 @@ bandwidth).
 Shared storyboards per group: sticky notes, text, **shapes** (rectangle,
 ellipse, diamond, triangle, star, heart — with centered labels and
 colorable outlines, hollow or filled),
-colored frames, connectors, pasted **images** (croppable from any edge, with
+colored frames, connectors, pasted or **dropped images** (drag a file onto
+the board and it lands under the cursor; croppable from any edge, with
 rotate/flip), **link cards** with server-fetched previews, and live
 **document references** (a whole document or a selection, kept in sync as
 it's edited). Multi-select with shift-click or shift-drag; moving a frame
@@ -125,6 +146,14 @@ colors); connectors run straight, at right angles or as a smooth curve, with per
 anchors, line weight and color, dashed styles, arrow/dot ends, and a label
 that rides the middle of the line. Selecting several elements offers a text
 color for all of them at once. Everything syncs live.
+
+**Lining things up**: drag an element near a neighbor and **smart guides**
+appear — accent lines when edges or centers align, with a gentle snap
+(they outrank the dot grid on the axis they match). A multi-selection's
+toolbar has an **align & distribute** menu (left/center/right, top/middle/
+bottom, even out the gaps). **⌘G groups** a selection so it selects and
+moves as one — click again to pick a single element out of the group,
+⌘⇧G ungroups, and copies of a group stay grouped on their own.
 
 **Pages**: a board is a stack of pages, listed above the canvas. Add one with
 the plus, double-click a tab to rename it, right-click for rename and delete
@@ -204,6 +233,19 @@ group boards.
 A local, Obsidian-compatible markdown vault with `[[wiki-links]]` and
 backlinks. Share a note snapshot to a friend over DM; they can save it into
 their own vault.
+
+## Getting around
+
+- **⌘K** (Ctrl+K) is the quick switcher: type a few letters and jump to any
+  channel, group, document, board, note, or conversation — or run a
+  command.
+- **⌘/** shows a keyboard-shortcut cheat sheet.
+- The desktop window remembers its size and position between launches, and
+  unread counts appear on the app's dock icon (macOS/Linux) — the installed
+  web app badges its icon too.
+- The desktop app quietly checks for updates a few seconds after launch and
+  mentions a waiting one; Settings → Application shows the release notes
+  before you install.
 
 ## Notifications
 

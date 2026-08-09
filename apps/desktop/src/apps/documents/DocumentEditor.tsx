@@ -6,18 +6,21 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   CloudOff,
   Download,
+  Focus as FocusIcon,
   History,
   ListTree,
   MessageSquare,
+  MoveVertical,
   Presentation,
   Share2,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { isCmdError } from "../../lib/backend";
 import { useSwipe } from "../../lib/useSwipe";
 import { countWords, readingTime } from "../../lib/wordCount";
+import { loadGoal, noteGoalProgress, saveGoal } from "../../lib/writingGoals";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
@@ -28,6 +31,7 @@ import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
+import { useFocusMode, useTypewriterScroll } from "./focus";
 import { exportDocument } from "./export";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
@@ -201,8 +205,21 @@ function EditorInner({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
+  useTypewriterScroll(editor, focus && typewriter);
+  // Word goals are per-device; the key carries the server so ids don't mix.
+  const addr = useSession((s) => s.session?.addr);
+  const goalKey = `${addr ?? "server"}:${meta.id}`;
+  const toggleFocus = () => {
+    if (!focus) {
+      setPanel("none");
+      setFinding(false);
+    }
+    setFocus(!focus);
+  };
+
   return (
-    <div className="wf-doc-room">
+    <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
       <header className="wf-session-room-header wf-doc-header">
         <button onClick={state.closeDocument}>←</button>
         <TitleEditor
@@ -268,6 +285,22 @@ function EditorInner({
         >
           <ListTree size={16} />
         </button>
+        <button
+          title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
+          className={focus ? "active" : ""}
+          onClick={toggleFocus}
+        >
+          <FocusIcon size={16} />
+        </button>
+        {focus && (
+          <button
+            title="Typewriter scrolling — keep the line you're writing centred"
+            className={typewriter ? "active" : ""}
+            onClick={() => setTypewriter(!typewriter)}
+          >
+            <MoveVertical size={16} />
+          </button>
+        )}
         <div className="wf-doc-export-wrap">
           <button title="Export document" className={exportOpen ? "active" : ""} onClick={() => setExportOpen((open) => !open)}>
             <Download size={16} />
@@ -334,7 +367,7 @@ function EditorInner({
                 )}
               </>
             }
-            trailing={<DocumentStats editor={editor} format={format} />}
+            trailing={<DocumentStats editor={editor} format={format} goalKey={goalKey} />}
           />
         </div>
       )}
@@ -429,8 +462,21 @@ export function ElementSelect({ editor, format }: { editor: Editor; format: stri
   );
 }
 
-export function DocumentStats({ editor, format }: { editor: Editor; format: string }) {
+export function DocumentStats({
+  editor,
+  format,
+  goalKey,
+}: {
+  editor: Editor;
+  format: string;
+  /** When set, the count is clickable and carries a word-count goal. */
+  goalKey?: string;
+}) {
   const [, bump] = useState(0);
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [goal, setGoal] = useState<number | null>(() => (goalKey ? loadGoal(goalKey) : null));
+  const wrapRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => setGoal(goalKey ? loadGoal(goalKey) : null), [goalKey]);
   useEffect(() => {
     const update = () => bump((n) => n + 1);
     editor.on("transaction", update);
@@ -441,11 +487,105 @@ export function DocumentStats({ editor, format }: { editor: Editor; format: stri
 
   const words = countWords(editor.getText());
   const blocks = editor.state.doc.childCount;
-  return (
-    <span className="wf-doc-stats">
-      {words.toLocaleString()} {words === 1 ? "word" : "words"}
+  useEffect(() => {
+    if (goalKey && goal !== null) noteGoalProgress(goalKey, words, goal);
+  }, [goalKey, goal, words]);
+
+  const body = (
+    <>
+      {words.toLocaleString()}
+      {goal !== null && ` / ${goal.toLocaleString()}`} {words === 1 && goal === null ? "word" : "words"}
       {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
       {format === "screenplay" && ` · ${blocks} elements`}
+    </>
+  );
+  if (!goalKey) return <span className="wf-doc-stats">{body}</span>;
+  // The popover is position:fixed, anchored from the trigger's rect at open —
+  // the toolbar is an overflow-x scroll row that would clip anything absolute.
+  const anchor = goalOpen ? wrapRef.current?.getBoundingClientRect() : undefined;
+  return (
+    <span className="wf-doc-stats wf-doc-goal-wrap" ref={wrapRef}>
+      <button
+        className="wf-doc-stats-btn"
+        title={goal !== null ? "Word-count goal — click to change" : "Set a word-count goal"}
+        onClick={() => setGoalOpen((v) => !v)}
+      >
+        {body}
+        {goal !== null && (
+          <span className="wf-goal-bar" aria-hidden>
+            <span style={{ width: `${Math.min(100, Math.round((words / goal) * 100))}%` }} />
+          </span>
+        )}
+      </button>
+      {goalOpen && anchor && (
+        <GoalPopover
+          style={{
+            top: anchor.bottom + 8,
+            right: Math.max(8, window.innerWidth - anchor.right),
+          }}
+          current={goal}
+          onPick={(n) => {
+            saveGoal(goalKey, n);
+            setGoal(n);
+            setGoalOpen(false);
+          }}
+          onClose={() => setGoalOpen(false)}
+        />
+      )}
+    </span>
+  );
+}
+
+function GoalPopover({
+  current,
+  onPick,
+  onClose,
+  style,
+}: {
+  current: number | null;
+  onPick: (n: number | null) => void;
+  onClose: () => void;
+  style?: React.CSSProperties;
+}) {
+  const [draft, setDraft] = useState(current === null ? "" : String(current));
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    const close = (e: PointerEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    // Deferred so the click that opened the popover doesn't close it.
+    const t = setTimeout(() => window.addEventListener("pointerdown", close), 0);
+    return () => {
+      clearTimeout(t);
+      window.removeEventListener("pointerdown", close);
+    };
+  }, [onClose]);
+  const commit = () => {
+    const n = Math.floor(Number(draft));
+    onPick(Number.isFinite(n) && n > 0 ? n : null);
+  };
+  return (
+    <span className="wf-goal-pop" ref={ref} style={style}>
+      <label>
+        Word goal
+        <input
+          type="number"
+          min={1}
+          step={50}
+          placeholder="e.g. 1500"
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") commit();
+            if (e.key === "Escape") onClose();
+          }}
+        />
+      </label>
+      <button className="wf-primary" onClick={commit}>
+        Set
+      </button>
+      {current !== null && <button onClick={() => onPick(null)}>Clear</button>}
     </span>
   );
 }

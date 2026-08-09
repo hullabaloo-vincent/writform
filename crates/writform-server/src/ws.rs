@@ -163,6 +163,9 @@ async fn handle_socket(state: AppState, socket: WebSocket) {
     });
 
     // Reader loop: subscriptions + pings.
+    // Per-socket typing throttle: at most one fan-out per channel per second,
+    // whatever the client sends.
+    let mut typing_last: HashMap<i64, i64> = HashMap::new();
     while let Some(Ok(msg)) = stream.next().await {
         let WsMessage::Text(text) = msg else { continue };
         let Ok(frame) = serde_json::from_str::<ClientFrame>(&text) else {
@@ -196,6 +199,20 @@ async fn handle_socket(state: AppState, socket: WebSocket) {
             }
             ClientFrame::Unsub { rooms } => {
                 state.ws.set_rooms(conn_id, &[], &rooms);
+            }
+            ClientFrame::Typing { channel_id } => {
+                let now = now_millis();
+                let last = typing_last.get(&channel_id.0).copied().unwrap_or(0);
+                // No-access frames drop silently: typing is ephemeral and an
+                // error frame would only feed a probe.
+                if now - last >= 1_000
+                    && perms::require_channel_access(&state.pool, channel_id, user_id)
+                        .await
+                        .is_ok()
+                {
+                    typing_last.insert(channel_id.0, now);
+                    broadcast_typing(&state, channel_id, user_id).await;
+                }
             }
         }
     }
@@ -325,6 +342,31 @@ fn send_error(state: &AppState, conn_id: ConnId, code: &str, message: &str) {
             code: code.into(),
             message: message.into(),
         },
+    );
+}
+
+/// (username, display_name, avatar_attachment_id, accent_color)
+type UserRow = (String, Option<String>, Option<i64>, Option<String>);
+
+/// Ephemeral `chat.typing` fan-out. There is no "stopped typing" frame —
+/// receivers age entries out on a short TTL.
+async fn broadcast_typing(state: &AppState, channel: ChannelId, user: UserId) {
+    let row: Option<UserRow> = sqlx::query_as(
+        "SELECT username, display_name, avatar_attachment_id, accent_color FROM users WHERE id = ?",
+    )
+    .bind(user.0)
+    .fetch_optional(&state.pool)
+    .await
+    .ok()
+    .flatten();
+    let Some((username, display_name, avatar, accent)) = row else {
+        return;
+    };
+    let user_ref = perms::user_ref(user, username, display_name, avatar, accent);
+    state.ws.broadcast(
+        &format!("channel:{}", channel.0),
+        "chat.typing",
+        serde_json::json!({ "channel_id": channel.0, "user": user_ref }),
     );
 }
 

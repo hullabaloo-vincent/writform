@@ -8,7 +8,9 @@ import {
   ShieldCheck,
   UserRound,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import DOMPurify from "dompurify";
+import { marked } from "marked";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { AdminStats } from "../../bindings/proto/AdminStats";
 import type { AdminUser } from "../../bindings/proto/AdminUser";
@@ -26,6 +28,7 @@ import {
   type SavedServer,
 } from "../../lib/backend";
 import { applyPortableProfile } from "../../lib/portableProfile";
+import { checkForUpdate, type AvailableUpdate } from "../../lib/updates";
 import { CameraError, getCameraStream } from "../../lib/camera";
 import { MicrophoneError, getMicrophoneStream } from "../../lib/microphone";
 import { uploadBlob } from "../../lib/upload";
@@ -1071,9 +1074,8 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
   const [status, setStatus] = useState<
     "idle" | "checking" | "up_to_date" | "available" | "installing" | "installed"
   >("idle");
-  const updateRef = useRef<{ version: string; downloadAndInstall: () => Promise<void> } | null>(
-    null,
-  );
+  const updateRef = useRef<AvailableUpdate | null>(null);
+  const [notes, setNotes] = useState<string | null>(null);
 
   useEffect(() => {
     if (!inTauri) return;
@@ -1086,13 +1088,13 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
     setStatus("checking");
     onError(null);
     try {
-      const { check } = await import("@tauri-apps/plugin-updater");
-      const update = await check();
+      const update = await checkForUpdate();
       if (!update) {
         setStatus("up_to_date");
         return;
       }
       updateRef.current = update;
+      setNotes(update.body);
       setStatus("available");
     } catch (e) {
       onError(`update check failed: ${isCmdError(e) ? e.message : String(e)}`);
@@ -1152,8 +1154,24 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
           )}
         </div>
       )}
+      {status === "available" && notes && (
+        <div className="wf-release-notes-wrap">
+          <h4>What's new in {updateRef.current?.version}</h4>
+          <ReleaseNotes markdown={notes} />
+        </div>
+      )}
     </section>
   );
+}
+
+/** Release notes from the GitHub release body — sanitized before rendering
+ *  (the body is repo-authored markdown, but it still goes through DOMPurify). */
+function ReleaseNotes({ markdown }: { markdown: string }) {
+  const html = useMemo(
+    () => DOMPurify.sanitize(marked.parse(markdown, { async: false })),
+    [markdown],
+  );
+  return <div className="wf-release-notes" dangerouslySetInnerHTML={{ __html: html }} />;
 }
 
 function AdminTab({ onError }: { onError: (e: string | null) => void }) {

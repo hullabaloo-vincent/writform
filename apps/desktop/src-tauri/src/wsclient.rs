@@ -174,6 +174,19 @@ pub fn ws_sub(
     Ok(())
 }
 
+/// Fire-and-forget typing signal. Not queued: if the socket is down there is
+/// nobody to tell, and the signal is stale by reconnect time anyway.
+#[tauri::command]
+pub fn ws_typing(
+    manager: tauri::State<'_, Arc<WsManager>>,
+    channel_id: i64,
+) -> Result<(), CmdError> {
+    manager.send(ClientFrame::Typing {
+        channel_id: writform_proto::ChannelId(channel_id),
+    });
+    Ok(())
+}
+
 #[tauri::command]
 pub fn ws_unsub(
     manager: tauri::State<'_, Arc<WsManager>>,

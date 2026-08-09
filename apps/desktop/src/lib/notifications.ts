@@ -12,6 +12,7 @@ import { backend } from "./backend";
  */
 
 import { notifAllowed } from "./notifPrefs";
+import { isChannelMuted } from "../apps/chat/store";
 import { useFriends } from "../apps/friends/store";
 
 const inTauri = "__TAURI_INTERNALS__" in window;
@@ -75,6 +76,7 @@ export function installNotifications(): () => void {
     if (kind === "message.created") {
       const msg = data as MessageLike;
       if (msg.author.id === me.id) return;
+      if (isChannelMuted(msg.channel_id)) return;
       const author = msg.author.display_name ?? msg.author.username;
 
       if (room === `user:${me.id}`) {

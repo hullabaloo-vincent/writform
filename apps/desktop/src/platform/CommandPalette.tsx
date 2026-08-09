@@ -1,21 +1,77 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import type { PaletteItem } from "./types";
 import { executeCommand, usePlatform } from "./registry";
 
-/** Cmd/Ctrl+K command palette listing every registered command. */
+interface JumpEntry {
+  item: PaletteItem;
+  appId: string;
+}
+
+/** Cmd/Ctrl+K palette: jump to a channel, document, board, or note by name,
+ *  or run any registered command — one box for "take me to" and "do". */
 export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState(0);
+  const [jumps, setJumps] = useState<JumpEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  const seq = useRef(0);
   const commands = usePlatform((s) => s.commands);
+  const sources = usePlatform((s) => s.paletteSources);
   const apps = usePlatform((s) => s.apps);
 
-  const matches = useMemo(() => {
+  // Ask every registered source, debounced; a stale query's answers are
+  // dropped rather than raced into the list.
+  useEffect(() => {
+    const q = query.trim();
+    if (!open || q.length < 2) {
+      setJumps([]);
+      return;
+    }
+    const mySeq = ++seq.current;
+    const t = setTimeout(() => {
+      void Promise.all(
+        Object.values(sources).map((src) =>
+          src.search(q).then(
+            (items) => items.slice(0, 8).map((item) => ({ item, appId: src.appId })),
+            () => [] as JumpEntry[],
+          ),
+        ),
+      ).then((groups) => {
+        if (seq.current !== mySeq) return;
+        setJumps(groups.flat());
+        setSelected(0);
+      });
+    }, 120);
+    return () => clearTimeout(t);
+  }, [open, query, sources]);
+
+  const entries = useMemo(() => {
     const q = query.trim().toLowerCase();
-    const all = Object.values(commands);
-    return q ? all.filter((c) => c.title.toLowerCase().includes(q) || c.id.includes(q)) : all;
-  }, [commands, query]);
+    const places = jumps.map(({ item, appId }) => ({
+      key: `jump:${appId}:${item.id}`,
+      title: item.title,
+      hint: item.subtitle ?? apps[appId]?.name ?? appId,
+      run: item.run,
+    }));
+    const cmds = Object.values(commands)
+      .filter((c) => !q || c.title.toLowerCase().includes(q) || c.id.includes(q))
+      .map((c) => ({
+        key: `cmd:${c.id}`,
+        title: c.title,
+        hint: apps[c.appId]?.name ?? c.appId,
+        run: () => executeCommand(c.id),
+      }));
+    const shortcuts = {
+      key: "builtin:shortcuts",
+      title: "Keyboard shortcuts",
+      hint: "Help",
+      run: () => usePlatform.getState().setShortcutsOpen(true),
+    };
+    const builtin = !q || shortcuts.title.toLowerCase().includes(q) ? [shortcuts] : [];
+    return [...places, ...cmds, ...builtin];
+  }, [commands, apps, query, jumps]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -23,6 +79,7 @@ export function CommandPalette() {
         e.preventDefault();
         setOpen((o) => !o);
         setQuery("");
+        setJumps([]);
         setSelected(0);
       } else if (e.key === "Escape") {
         setOpen(false);
@@ -38,9 +95,9 @@ export function CommandPalette() {
 
   if (!open) return null;
 
-  const run = (id: string) => {
+  const run = (entry: (typeof entries)[number]) => {
     setOpen(false);
-    void executeCommand(id);
+    void entry.run();
   };
 
   return (
@@ -49,30 +106,30 @@ export function CommandPalette() {
         <input
           ref={inputRef}
           value={query}
-          placeholder="Type a command…"
+          placeholder="Jump to a place, or run a command…"
           onChange={(e) => {
             setQuery(e.target.value);
             setSelected(0);
           }}
           onKeyDown={(e) => {
-            if (e.key === "ArrowDown") setSelected((i) => Math.min(i + 1, matches.length - 1));
+            if (e.key === "ArrowDown") setSelected((i) => Math.min(i + 1, entries.length - 1));
             else if (e.key === "ArrowUp") setSelected((i) => Math.max(i - 1, 0));
-            else if (e.key === "Enter" && matches[selected]) run(matches[selected].id);
+            else if (e.key === "Enter" && entries[selected]) run(entries[selected]);
           }}
         />
         <ul>
-          {matches.map((c, i) => (
+          {entries.map((entry, i) => (
             <li
-              key={c.id}
+              key={entry.key}
               className={i === selected ? "selected" : ""}
               onMouseEnter={() => setSelected(i)}
-              onClick={() => run(c.id)}
+              onClick={() => run(entry)}
             >
-              <span>{c.title}</span>
-              <span className="wf-palette-app">{apps[c.appId]?.name ?? c.appId}</span>
+              <span>{entry.title}</span>
+              <span className="wf-palette-app">{entry.hint}</span>
             </li>
           ))}
-          {matches.length === 0 && <li className="wf-palette-empty">No matching commands</li>}
+          {entries.length === 0 && <li className="wf-palette-empty">No matches</li>}
         </ul>
       </div>
     </div>

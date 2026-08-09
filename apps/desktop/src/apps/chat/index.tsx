@@ -32,8 +32,12 @@ export const chatApp: WritformApp = {
     installUnreadFocusSync();
     installVoiceWsHandler();
     // Dock badges: total group-channel unread on Chat, DM unread on Friends.
+    // Muted channels keep their counts but never reach a badge.
     useChat.subscribe((s) => {
-      const total = Object.values(s.unread).reduce((n, c) => n + c, 0);
+      const total = Object.entries(s.unread).reduce(
+        (n, [cid, c]) => (s.muted.has(Number(cid)) ? n : n + c),
+        0,
+      );
       usePlatform.getState().setAppBadge("writform.chat", total);
     });
     useFriends.subscribe((s) => {
@@ -74,6 +78,44 @@ export const chatApp: WritformApp = {
         void import("../../platform").then(({ usePlatform }) =>
           usePlatform.getState().setActiveApp("writform.chat"),
         );
+      },
+    });
+    // ⌘K quick switcher: groups and every text channel across all groups.
+    ctx.palette.registerSource({
+      id: "chat.places",
+      search: async (q) => {
+        const s = useChat.getState();
+        const needle = q.toLowerCase();
+        const items = [];
+        for (const g of s.groups) {
+          if (!g.name.toLowerCase().includes(needle)) continue;
+          items.push({
+            id: `group-${g.id}`,
+            title: g.name,
+            subtitle: "Group",
+            run: async () => {
+              usePlatform.getState().setActiveApp("writform.chat");
+              await useChat.getState().selectGroup(g.id);
+            },
+          });
+        }
+        for (const [cidStr, name] of Object.entries(s.channelNames)) {
+          if (!name.toLowerCase().includes(needle)) continue;
+          const cid = Number(cidStr);
+          const gid = s.channelGroup[cid];
+          items.push({
+            id: `channel-${cid}`,
+            title: `# ${name}`,
+            subtitle: s.groups.find((g) => g.id === gid)?.name,
+            run: async () => {
+              usePlatform.getState().setActiveApp("writform.chat");
+              const chat = useChat.getState();
+              if (chat.activeGroupId !== gid) await chat.selectGroup(gid);
+              await chat.selectChannel(cid);
+            },
+          });
+        }
+        return items;
       },
     });
   },

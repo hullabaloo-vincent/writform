@@ -2,10 +2,12 @@ import { LogIn, LogOut, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { backend, isWeb } from "../lib/backend";
+import { announceUpdateOnLaunch } from "../lib/updates";
 import { useSession } from "../stores/session";
 import { Avatar } from "./Avatar";
 import { CommandPalette } from "./CommandPalette";
 import { usePlatform } from "./registry";
+import { ShortcutsOverlay } from "./ShortcutsOverlay";
 import { Slot } from "./Slot";
 
 /** Slim banner while the server socket is down; resync clears it on its own. */
@@ -109,6 +111,7 @@ export function AppShell() {
   const badges = usePlatform((s) => s.badges);
   const offline = useSession((s) => s.phase === "offline");
   const leaveOffline = useSession((s) => s.leaveOffline);
+  const immersive = usePlatform((s) => s.immersive);
 
   // Offline: only apps that work without a server appear in the dock.
   // Browser client: desktop-only apps (notes vault, plugins) are hidden.
@@ -125,10 +128,38 @@ export function AppShell() {
     }
   }, [offline, activeAppId, apps, mainViewApps, setActiveApp]);
 
+  // A few seconds after launch, mention a waiting update (desktop only;
+  // installing stays a deliberate act in Settings).
+  useEffect(() => {
+    const t = setTimeout(() => void announceUpdateOnLaunch(), 6000);
+    return () => clearTimeout(t);
+  }, []);
+
+  // Mirror the in-app unread total onto the OS: the dock badge on
+  // macOS/Linux, the PWA badge in the browser. Windows' overlay icon needs
+  // an icon asset, so it silently no-ops there for now.
+  useEffect(() => {
+    const total = Object.values(badges).reduce((n, c) => n + c, 0);
+    if ("__TAURI_INTERNALS__" in window) {
+      void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
+        getCurrentWindow()
+          .setBadgeCount(total > 0 ? total : undefined)
+          .catch(() => {}),
+      );
+    } else {
+      const nav = navigator as Navigator & {
+        setAppBadge?: (n?: number) => Promise<void>;
+        clearAppBadge?: () => Promise<void>;
+      };
+      if (total > 0) void nav.setAppBadge?.(total).catch(() => {});
+      else void nav.clearAppBadge?.().catch(() => {});
+    }
+  }, [badges]);
+
   const activeView = activeAppId ? mainViews[activeAppId] : undefined;
 
   return (
-    <div className="wf-shell">
+    <div className={`wf-shell ${immersive ? "immersive" : ""}`}>
       {!offline && <ReconnectBanner />}
       <div className="wf-body">
         <nav className="wf-rail">
@@ -172,6 +203,7 @@ export function AppShell() {
         {offline ? <OfflineStatus /> : <SessionStatus />}
       </footer>
       <CommandPalette />
+      <ShortcutsOverlay />
     </div>
   );
 }

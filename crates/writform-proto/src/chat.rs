@@ -225,6 +225,42 @@ pub struct CreateEmoteRequest {
     pub attachment_id: AttachmentId,
 }
 
+/// `PUT /api/v1/channels/{id}/read` — advance the caller's read marker.
+/// Forward-only: an older id than the stored marker is ignored.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct MarkReadRequest {
+    pub message_id: MessageId,
+}
+
+/// One row of `GET /api/v1/me/reads`: where the caller's read marker sits in
+/// a channel, plus how many later messages from OTHERS are waiting.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ChannelRead {
+    pub channel_id: ChannelId,
+    pub last_read_message_id: MessageId,
+    #[ts(type = "number")]
+    pub unread_count: i64,
+    #[ts(type = "number")]
+    pub updated_at: UnixMillis,
+}
+
+/// One `GET /api/v1/messages/search` hit. `snippet` is plain text with
+/// matches wrapped in `<<` `>>` markers — never HTML.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SearchHit {
+    pub message_id: MessageId,
+    pub channel_id: ChannelId,
+    pub group_id: Option<GroupId>,
+    pub channel_name: Option<String>,
+    pub author: UserRef,
+    pub snippet: String,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+}
+
 /// Online user ids for a group (REST snapshot; deltas arrive via
 /// `presence.update` WS events).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
