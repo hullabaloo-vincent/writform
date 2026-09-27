@@ -6,8 +6,9 @@
 node_modules/
 dist/
 
-# Tauri
-apps/desktop/src-tauri/gen/
+# Tauri (gen/apple is the committed iOS project — its own .gitignore
+# excludes build products; only the regenerated capability schemas stay out)
+apps/desktop/src-tauri/gen/schemas/
 
 # ts-rs default export dir (real bindings live in apps/desktop/src/bindings/proto)
 crates/writform-proto/bindings/

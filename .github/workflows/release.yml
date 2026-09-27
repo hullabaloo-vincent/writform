@@ -49,7 +49,7 @@ jobs:
       version: ${{ steps.next.outputs.version }}
       tag: v${{ steps.next.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: main
       - uses: dtolnay/rust-toolchain@stable
@@ -106,7 +106,7 @@ jobs:
     needs: bump
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.bump.outputs.tag }}
       - uses: docker/login-action@v3
@@ -126,7 +126,7 @@ jobs:
     needs: bump
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.bump.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
@@ -154,12 +154,12 @@ jobs:
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ needs.bump.outputs.tag }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
       - name: Install Tauri system deps (Linux)

@@ -6,6 +6,10 @@ FROM rust:1.90-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml rust-toolchain.toml ./
 COPY crates ./crates
+# The workspace manifest's [patch.crates-io] points at this path, and cargo
+# refuses to resolve at all when a patch target's manifest is unreadable —
+# even for crates the server never depends on.
+COPY vendor ./vendor
 # The desktop crate is a workspace member but not needed for the server image.
 RUN sed -i 's|"apps/desktop/src-tauri",||' Cargo.toml \
     && cargo build --release -p writform-server
