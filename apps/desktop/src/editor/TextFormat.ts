@@ -30,6 +30,14 @@ export const DOC_FONTS = [
 
 export const DOC_FONT_SIZES = [10, 11, 12, 14, 16, 18, 24] as const;
 
+/** Word-processor line-spacing multiples (data-line values; CSS maps each to
+ *  a visually equivalent line-height, exports map to real spacing). */
+export const DOC_LINE_SPACINGS = [1, 1.15, 1.3, 1.5, 2] as const;
+
+/** Space before/after a paragraph, in points. 0 is meaningful ("no space
+ *  after this one"); null falls back to the document default. */
+export const DOC_PARA_SPACES = [0, 4, 8, 12, 16, 24, 36] as const;
+
 export type DocAlign = "center" | "right" | "justify";
 
 export interface Typography {
@@ -39,14 +47,33 @@ export interface Typography {
   font: string | null;
   /** Point size; null = the format's own size. */
   size: number | null;
+  /** Line-spacing multiple; null = the format's own leading. */
+  line: number | null;
+  /** Space above the paragraph in points; null = format default. */
+  sa: number | null;
+  /** Space below the paragraph in points; null = format default. */
+  sb: number | null;
+  /** Oversized first letter set into the opening lines (book chapters). */
+  dropCap: true | null;
   /** Word's Ctrl+Enter semantics: the break belongs before this block. */
   pageBreakBefore: true | null;
 }
 
 const FONT_IDS = new Set<string>(DOC_FONTS.map((f) => f.id));
 const SIZES = new Set<number>(DOC_FONT_SIZES);
+const LINES = new Set<number>(DOC_LINE_SPACINGS);
+const SPACES = new Set<number>(DOC_PARA_SPACES);
 const ALIGNS = new Set(["center", "right", "justify"]);
-const TYPO_KEYS = ["align", "font", "size", "pageBreakBefore"] as const;
+const TYPO_KEYS = [
+  "align",
+  "font",
+  "size",
+  "line",
+  "sa",
+  "sb",
+  "dropCap",
+  "pageBreakBefore",
+] as const;
 
 interface TextFormatOptions {
   /** Bind ⌘⇧L/E/R/J + ⌘↩. Off for previews and non-Plain formats. */
@@ -91,6 +118,46 @@ export const TextFormat = Extension.create<TextFormatOptions>({
             },
             renderHTML: (attrs: { size?: number | null }) =>
               attrs.size ? { "data-size": String(attrs.size) } : {},
+          },
+          line: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const v = Number(el.getAttribute("data-line"));
+              return LINES.has(v) ? v : null;
+            },
+            renderHTML: (attrs: { line?: number | null }) =>
+              attrs.line ? { "data-line": String(attrs.line) } : {},
+          },
+          sa: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const raw = el.getAttribute("data-sa");
+              if (raw === null) return null;
+              const v = Number(raw);
+              return SPACES.has(v) ? v : null;
+            },
+            renderHTML: (attrs: { sa?: number | null }) =>
+              attrs.sa === null || attrs.sa === undefined ? {} : { "data-sa": String(attrs.sa) },
+          },
+          sb: {
+            default: null,
+            parseHTML: (el: HTMLElement) => {
+              const raw = el.getAttribute("data-sb");
+              if (raw === null) return null;
+              const v = Number(raw);
+              return SPACES.has(v) ? v : null;
+            },
+            renderHTML: (attrs: { sb?: number | null }) =>
+              attrs.sb === null || attrs.sb === undefined ? {} : { "data-sb": String(attrs.sb) },
+          },
+          dropCap: {
+            default: null,
+            // The continuation paragraph after Enter must not sprout its own
+            // giant initial.
+            keepOnSplit: false,
+            parseHTML: (el: HTMLElement) => (el.getAttribute("data-dropcap") ? true : null),
+            renderHTML: (attrs: { dropCap?: true | null }) =>
+              attrs.dropCap ? { "data-dropcap": "1" } : {},
           },
           pageBreakBefore: {
             default: null,
@@ -152,6 +219,23 @@ export function setDocFontSize(editor: Editor, size: number | null): boolean {
   return setTypography(editor, { size: size !== null && SIZES.has(size) ? size : null });
 }
 
+export function setDocLineSpacing(editor: Editor, line: number | null): boolean {
+  return setTypography(editor, { line: line !== null && LINES.has(line) ? line : null });
+}
+
+export function setDocSpaceAbove(editor: Editor, sa: number | null): boolean {
+  return setTypography(editor, { sa: sa !== null && SPACES.has(sa) ? sa : null });
+}
+
+export function setDocSpaceBelow(editor: Editor, sb: number | null): boolean {
+  return setTypography(editor, { sb: sb !== null && SPACES.has(sb) ? sb : null });
+}
+
+export function toggleDropCap(editor: Editor): boolean {
+  const cur = curTypography(editor).dropCap;
+  return setTypography(editor, { dropCap: cur ? null : true });
+}
+
 /** The selection's typography, for toolbar active states. */
 export function curTypography(editor: Editor): Typography {
   const p = editor.getAttributes("paragraph");
@@ -162,6 +246,10 @@ export function curTypography(editor: Editor): Typography {
     align: pick("align"),
     font: pick("font"),
     size: pick("size"),
+    line: pick("line"),
+    sa: pick("sa"),
+    sb: pick("sb"),
+    dropCap: pick("dropCap"),
     pageBreakBefore: pick("pageBreakBefore"),
   };
 }

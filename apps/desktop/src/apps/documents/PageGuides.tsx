@@ -1,34 +1,34 @@
-import { useEffect, useRef, useState } from "react";
+import type { PageLayoutResult } from "../../editor/Paginate";
 
 /**
- * Hairline + label every 11 inches of the sheet: an honest approximation of
- * print pagination (fonts and margins differ per export target, and explicit
- * page breaks don't reflow the sheet). The sheet's width is CSS-inch based,
- * so the 11in rhythm maps exactly to 96px/in regardless of window width.
- * Lives inside `.wf-page` (position: relative; overflow: hidden).
+ * The page-view overlay: for each boundary the paginator reports, a
+ * physical gap band (the app background showing "between" two sheets) with
+ * the next page's number set on the left — or, when a boundary falls
+ * inside a block too tall to push (`clean: false`), a hairline. Page 1
+ * gets a small corner label so the numbering reads as a sequence.
+ * Lives inside `.wf-page` (position: relative; overflow: hidden) and is
+ * entirely pointer-transparent.
  */
-export function PageGuides() {
-  const ref = useRef<HTMLDivElement>(null);
-  const [pages, setPages] = useState(1);
-
-  useEffect(() => {
-    const sheet = ref.current?.parentElement;
-    if (!sheet) return;
-    const measure = () =>
-      setPages(Math.max(1, Math.ceil(sheet.offsetHeight / (11 * 96))));
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(sheet);
-    return () => ro.disconnect();
-  }, []);
-
+export function PageGuides({ layout }: { layout: PageLayoutResult | null }) {
+  if (!layout) return null;
   return (
-    <div ref={ref} className="wf-page-guides" aria-hidden>
-      {Array.from({ length: pages - 1 }, (_, i) => (
-        <div key={i} className="wf-page-guide" style={{ top: `${(i + 1) * 11}in` }}>
-          Page {i + 2}
-        </div>
-      ))}
+    <div className="wf-page-guides" aria-hidden>
+      <span className="wf-page-num-first">Page 1</span>
+      {layout.bands.map((band) =>
+        band.clean ? (
+          <div
+            key={band.page}
+            className="wf-page-gap"
+            style={{ top: band.y, height: layout.gap }}
+          >
+            <span>Page {band.page}</span>
+          </div>
+        ) : (
+          <div key={band.page} className="wf-page-guide" style={{ top: band.y + layout.gap }}>
+            <span>Page {band.page}</span>
+          </div>
+        ),
+      )}
     </div>
   );
 }

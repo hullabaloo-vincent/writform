@@ -13,6 +13,7 @@ import {
   MoveVertical,
   Presentation,
   Share2,
+  SlidersHorizontal,
   SquareSplitVertical,
   Trash2,
 } from "lucide-react";
@@ -25,10 +26,19 @@ import { loadGoal, noteGoalProgress, saveGoal } from "../../lib/writingGoals";
 import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
+import { Paginate, reflowPagination, type PageLayoutResult, type PageSpec } from "../../editor/Paginate";
 import { Toolbar, WfImage } from "../../editor/RichEditor";
 import { TextFormat } from "../../editor/TextFormat";
 import { documentsApi } from "./api";
 import type { DocProvider } from "./collab";
+import {
+  onDocSettingsChange,
+  pageSpecFor,
+  readDocSettings,
+  settingsVars,
+  type DocSettings,
+} from "./docSettings";
+import { DocSettingsPanel } from "./DocSettingsPanel";
 import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
@@ -60,7 +70,7 @@ function caretColor(name: string): string {
   return CARET_COLORS[h % CARET_COLORS.length];
 }
 
-type Panel = "none" | "history" | "feedback" | "outline";
+type Panel = "none" | "history" | "feedback" | "outline" | "settings";
 
 export function DocumentEditor() {
   const meta = useDocuments((s) => s.meta);
@@ -159,6 +169,18 @@ function EditorInner({
   // open one away. Starts inside the editor text never trigger (editable).
   const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
 
+  // Per-document settings live in the doc's own Y.Map — they sync to every
+  // collaborator through the ordinary update stream.
+  const [docSettings, setDocSettings] = useState<DocSettings>(() =>
+    readDocSettings(provider.doc),
+  );
+  useEffect(
+    () => onDocSettingsChange(provider.doc, () => setDocSettings(readDocSettings(provider.doc))),
+    [provider],
+  );
+  const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
+  const specRef = useRef<PageSpec | null>(null);
+
   const extensions = useMemo(
     () => [
       StarterKit.configure({ undoRedo: false }),
@@ -168,6 +190,7 @@ function EditorInner({
       TextFormat.configure({ shortcuts: format === "none" }),
       formatKeymap(format),
       FeedbackHighlights,
+      Paginate.configure({ getSpec: () => specRef.current, onLayout: setPageLayout }),
       Collaboration.configure({ document: provider.doc }),
       CollaborationCaret.configure({
         provider: { awareness: provider.awareness },
@@ -201,7 +224,22 @@ function EditorInner({
   }, [provider]);
 
   useAutoRevisions(editor, (json) => documentsApi.snapshot(meta.id, json), !readonly);
-  useFeedbackDecorations(editor, provider, state.threads, panel === "feedback" || highlightsOn);
+  // Gated on the toggle alone: the panel-open OR made the highlighter
+  // button a no-op in the only place it exists (the open panel).
+  useFeedbackDecorations(editor, provider, state.threads, highlightsOn);
+
+  // Page view geometry: recompute whenever settings, format, or the toggle
+  // change; the plugin re-measures on its own for edits and resizes.
+  useEffect(() => {
+    specRef.current = pageGuides ? pageSpecFor(format, docSettings) : null;
+    if (editor) reflowPagination(editor);
+  }, [editor, pageGuides, docSettings, format]);
+
+  const sheetStyle = useMemo(() => {
+    const vars: Record<string, string> = format === "none" ? settingsVars(docSettings) : {};
+    if (pageGuides && pageLayout) vars["--wfd-fill"] = `${pageLayout.fill}px`;
+    return vars as React.CSSProperties;
+  }, [format, docSettings, pageGuides, pageLayout]);
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
   useEffect(() => {
@@ -296,7 +334,7 @@ function EditorInner({
           <ListTree size={16} />
         </button>
         <button
-          title="Page guides — approximate on-screen pages"
+          title="Page view — paginate the sheet into real pages"
           className={pageGuides ? "active" : ""}
           onClick={() => {
             const next = !pageGuides;
@@ -306,6 +344,15 @@ function EditorInner({
         >
           <SquareSplitVertical size={16} />
         </button>
+        {format === "none" && (
+          <button
+            title="Document settings — paper, margins, text"
+            className={panel === "settings" ? "active" : ""}
+            onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+        )}
         <button
           title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
           className={focus ? "active" : ""}
@@ -328,10 +375,16 @@ function EditorInner({
           </button>
           {exportOpen && editor && (
             <div className="wf-doc-export-menu">
-              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "pdf").catch((e) => state.setError(String(e))); }}>
+              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "pdf", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}>
                 Export PDF
               </button>
-              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "docx").catch((e) => state.setError(String(e))); }}>
+              <button
+                title="Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half"
+                onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "booklet", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}
+              >
+                Export booklet PDF
+              </button>
+              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "docx", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}>
                 Export Word (.docx)
               </button>
             </div>
@@ -389,7 +442,14 @@ function EditorInner({
                 )}
               </>
             }
-            trailing={<DocumentStats editor={editor} format={format} goalKey={goalKey} />}
+            trailing={
+              <DocumentStats
+                editor={editor}
+                format={format}
+                goalKey={goalKey}
+                pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+              />
+            }
           />
         </div>
       )}
@@ -398,11 +458,25 @@ function EditorInner({
 
       <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
-          <div className={`wf-page wf-fmt-${format}`}>
-            {pageGuides && <PageGuides />}
+          <div
+            className={`wf-page wf-fmt-${format}`}
+            style={sheetStyle}
+            data-paged={pageGuides ? "" : undefined}
+          >
+            {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />
           </div>
         </div>
+        {/* Panel state lives above the format-keyed remount, so a format
+            switch could otherwise leave a stale inspector open. */}
+        {panel === "settings" && format === "none" && (
+          <DocSettingsPanel
+            editor={editor}
+            ydoc={provider.doc}
+            settings={docSettings}
+            readonly={readonly}
+          />
+        )}
         {panel === "history" && <VersionHistoryPanel editor={editor} />}
         {panel === "feedback" && (
           <FeedbackPanel
@@ -500,11 +574,14 @@ export function DocumentStats({
   editor,
   format,
   goalKey,
+  pagesExact,
 }: {
   editor: Editor;
   format: string;
   /** When set, the count is clickable and carries a word-count goal. */
   goalKey?: string;
+  /** Page-view count from the paginator; null falls back to the estimate. */
+  pagesExact?: number | null;
 }) {
   const [, bump] = useState(0);
   const [goalOpen, setGoalOpen] = useState(false);
@@ -525,9 +602,10 @@ export function DocumentStats({
     if (goalKey && goal !== null) noteGoalProgress(goalKey, words, goal);
   }, [goalKey, goal, words]);
 
-  // The sheet is defined in CSS inches, so 96px/in maps exactly. On-screen
-  // pages only: export pagination uses different fonts and margins.
-  const pages = Math.max(1, Math.ceil(editor.view.dom.offsetHeight / (11 * 96)));
+  // Page view reports an exact block-level count; otherwise estimate from
+  // the sheet (CSS inches, so 96px/in maps exactly).
+  const pages =
+    pagesExact ?? Math.max(1, Math.ceil(editor.view.dom.offsetHeight / (11 * 96)));
 
   const body = (
     <>
@@ -537,7 +615,7 @@ export function DocumentStats({
       {format === "screenplay" && ` · ${blocks} elements`}
       {words > 0 && (
         <span title="On-screen pages — export pagination may differ">
-          {` · ~${pages} page${pages === 1 ? "" : "s"}`}
+          {` · ${pagesExact === null || pagesExact === undefined ? "~" : ""}${pages} page${pages === 1 ? "" : "s"}`}
         </span>
       )}
     </>

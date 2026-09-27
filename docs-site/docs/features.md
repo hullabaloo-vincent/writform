@@ -41,24 +41,39 @@ Google-Docs-style collaborative writing, separate from timed sessions.
   rides under the count as a thin bar, per document, on this device.
 - **Typography** (Plain format): set font (Times, Palatino, Sans,
   Typewriter, Comic Sans), size, and alignment — left, center, right,
-  justify (⌘⇧L/E/R/J) — on the selected paragraphs. Select-all restyles the
-  whole document; the scripted formats keep their own professional layouts.
-- **Page guides & breaks**: a toggle draws page boundaries over the
-  continuous scroll and the word count gains "~N pages" (on-screen estimate
-  — export pagination can differ). ⌘↩ inserts an explicit page break, which
-  exports as a real break in PDF and Word.
+  justify (⌘⇧L/E/R/J) — on the selected paragraphs, plus line spacing,
+  space before/after, and a **drop cap** for chapter openers (all in the
+  inspector). Select-all restyles the whole document; the scripted formats
+  keep their own professional layouts.
+- **Document inspector** (the sliders button, Plain format): Pages-style
+  settings saved *in* the document, so collaborators see the same layout.
+  Text tab: the full paragraph styles for the selection. Document tab:
+  paper size (US Letter, Half Letter, US Trade 6×9, A4, A5), margins, and
+  body-text defaults — font, size, line spacing, paragraph spacing, and a
+  first-line indent (set indent + 0 pt spacing for the classic book look).
+- **Page view**: the page toggle paginates the sheet into real pages —
+  physical gaps between them, page numbers on the left, the exact count in
+  the word-count bar. Paragraphs that would straddle a boundary move to
+  the next page, and ⌘↩'s explicit break starts a genuine new page, on
+  screen and in PDF/Word exports.
 - **Folders**: organize your documents; move a document between folders,
   rename or delete a folder (its documents stay put).
 - **Search**: full-text — matches titles and document content.
 - **Feedback threads**: select text and leave a comment anchored to it;
   threads track the text even as it moves, resolve/reopen, reply inline.
-  Highlights stay visible while you write (toggle in the panel header) —
+  The highlighter button in the panel header shows or hides the anchor
+  highlights in the text —
   and on-device documents have the same panel as **Notes**: comments to
   your future editing self, stored beside the document on this device.
 - **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into a
   new document. PDF import recovers structure, not just text: headings,
   bold/italic, centered lines, first-line indents, and paragraphs that
   continue across page boundaries.
+- **Booklet export**: beside the straight PDF, "Export booklet PDF"
+  imposes pages for saddle stitching — two per landscape sheet in fold
+  order (last+first, and so on). Print two-sided flipping on the short
+  edge, fold the stack in half, and it reads 1…N. Half Letter paper makes
+  a booklet that prints two-up on ordinary letter sheets.
 - **Export all**: back up every document you can see as Markdown + JSON —
   your writing is never locked in.
 - **Sharing**: private by default; the owner grants read or write access to

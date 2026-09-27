@@ -239,8 +239,8 @@ export function FeedbackPanel({
             className={`wf-icon ${highlightsOn ? "active" : ""}`}
             title={
               highlightsOn
-                ? "Highlights stay visible while writing — click to show them only here"
-                : "Show comment highlights while writing"
+                ? "Hide comment highlights in the text"
+                : "Show comment highlights in the text"
             }
             onClick={onToggleHighlights}
           >

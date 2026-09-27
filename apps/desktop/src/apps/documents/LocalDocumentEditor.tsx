@@ -11,15 +11,25 @@ import {
   ListTree,
   MoveVertical,
   Share2,
+  SlidersHorizontal,
   SquareSplitVertical,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
+import { Paginate, reflowPagination, type PageLayoutResult, type PageSpec } from "../../editor/Paginate";
 import { Toolbar, WfImage } from "../../editor/RichEditor";
 import { TextFormat } from "../../editor/TextFormat";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
+import {
+  onDocSettingsChange,
+  pageSpecFor,
+  readDocSettings,
+  settingsVars,
+  type DocSettings,
+} from "./docSettings";
+import { DocSettingsPanel } from "./DocSettingsPanel";
 import { DocumentStats, ElementSelect, TitleEditor } from "./DocumentEditor";
 import { FeedbackHighlights, useFeedbackDecorations } from "./FeedbackPanel";
 import { onLocalFeedbackChange, readLocalFeedback, type LocalThread } from "./feedbackLocal";
@@ -61,7 +71,9 @@ function LocalEditorInner({
   const rename = useLocalDocs((s) => s.rename);
   const setFormat = useLocalDocs((s) => s.setFormat);
   const remove = useLocalDocs((s) => s.remove);
-  const [panel, setPanel] = useState<"none" | "history" | "outline" | "feedback">("none");
+  const [panel, setPanel] = useState<"none" | "history" | "outline" | "feedback" | "settings">(
+    "none",
+  );
   const [threads, setThreads] = useState<LocalThread[]>([]);
   const [highlightsOn, setHighlightsOn] = useState(
     () => localStorage.getItem("wf-doc-feedback-hl") !== "off",
@@ -77,6 +89,21 @@ function LocalEditorInner({
   // Same as the server editor: swipe right dismisses an open panel.
   const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
 
+  // Settings live in the local Y.Doc's map — persisted inside the full-state
+  // save, and carried along when the doc is published to a server.
+  const [docSettings, setDocSettings] = useState<DocSettings>(() =>
+    readDocSettings(provider!.doc),
+  );
+  useEffect(() => {
+    if (!provider) return;
+    return onDocSettingsChange(provider.doc, () =>
+      setDocSettings(readDocSettings(provider.doc)),
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed remount per doc
+  }, []);
+  const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
+  const specRef = useRef<PageSpec | null>(null);
+
   const extensions = useMemo(
     () => [
       StarterKit.configure({ undoRedo: false }),
@@ -85,6 +112,7 @@ function LocalEditorInner({
       DocElement,
       TextFormat.configure({ shortcuts: meta.format === "none" }),
       FeedbackHighlights,
+      Paginate.configure({ getSpec: () => specRef.current, onLayout: setPageLayout }),
       formatKeymap(meta.format),
       Collaboration.configure({ document: provider!.doc }),
     ],
@@ -109,7 +137,22 @@ function LocalEditorInner({
     return onLocalFeedbackChange(reload);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed remount per doc
   }, []);
-  useFeedbackDecorations(editor, provider!, threads, panel === "feedback" || highlightsOn);
+  // Gated on the toggle alone — the panel-open OR made the highlighter
+  // button do nothing visible in the only place it exists.
+  useFeedbackDecorations(editor, provider!, threads, highlightsOn);
+
+  // Page view geometry (same contract as the server editor).
+  useEffect(() => {
+    specRef.current = pageGuides ? pageSpecFor(meta.format, docSettings) : null;
+    if (editor) reflowPagination(editor);
+  }, [editor, pageGuides, docSettings, meta.format]);
+
+  const sheetStyle = useMemo(() => {
+    const vars: Record<string, string> =
+      meta.format === "none" ? settingsVars(docSettings) : {};
+    if (pageGuides && pageLayout) vars["--wfd-fill"] = `${pageLayout.fill}px`;
+    return vars as React.CSSProperties;
+  }, [meta.format, docSettings, pageGuides, pageLayout]);
 
   // Honor "open with this panel" from the list's Version history entry.
   useEffect(() => {
@@ -192,7 +235,7 @@ function LocalEditorInner({
           <ListTree size={16} />
         </button>
         <button
-          title="Page guides — approximate on-screen pages"
+          title="Page view — paginate the sheet into real pages"
           className={pageGuides ? "active" : ""}
           onClick={() => {
             const next = !pageGuides;
@@ -202,6 +245,15 @@ function LocalEditorInner({
         >
           <SquareSplitVertical size={16} />
         </button>
+        {meta.format === "none" && (
+          <button
+            title="Document settings — paper, margins, text"
+            className={panel === "settings" ? "active" : ""}
+            onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+          >
+            <SlidersHorizontal size={16} />
+          </button>
+        )}
         <button
           title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
           className={focus ? "active" : ""}
@@ -231,19 +283,42 @@ function LocalEditorInner({
               <button
                 onClick={() => {
                   setExportOpen(false);
-                  void exportDocument(editor.getJSON(), meta.title, meta.format, "pdf").catch(
-                    (e) => setError(String(e)),
-                  );
+                  void exportDocument(
+                    editor.getJSON(),
+                    meta.title,
+                    meta.format,
+                    "pdf",
+                    meta.format === "none" ? docSettings : undefined,
+                  ).catch((e) => setError(String(e)));
                 }}
               >
                 Export PDF
               </button>
               <button
+                title="Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half"
                 onClick={() => {
                   setExportOpen(false);
-                  void exportDocument(editor.getJSON(), meta.title, meta.format, "docx").catch(
-                    (e) => setError(String(e)),
-                  );
+                  void exportDocument(
+                    editor.getJSON(),
+                    meta.title,
+                    meta.format,
+                    "booklet",
+                    meta.format === "none" ? docSettings : undefined,
+                  ).catch((e) => setError(String(e)));
+                }}
+              >
+                Export booklet PDF
+              </button>
+              <button
+                onClick={() => {
+                  setExportOpen(false);
+                  void exportDocument(
+                    editor.getJSON(),
+                    meta.title,
+                    meta.format,
+                    "docx",
+                    meta.format === "none" ? docSettings : undefined,
+                  ).catch((e) => setError(String(e)));
                 }}
               >
                 Export Word (.docx)
@@ -287,7 +362,12 @@ function LocalEditorInner({
             allowImages={false}
             leading={<ElementSelect editor={editor} format={meta.format} />}
             trailing={
-              <DocumentStats editor={editor} format={meta.format} goalKey={`local:${meta.id}`} />
+              <DocumentStats
+                editor={editor}
+                format={meta.format}
+                goalKey={`local:${meta.id}`}
+                pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+              />
             }
           />
         </div>
@@ -297,11 +377,23 @@ function LocalEditorInner({
 
       <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
-          <div className={`wf-page wf-fmt-${meta.format}`}>
-            {pageGuides && <PageGuides />}
+          <div
+            className={`wf-page wf-fmt-${meta.format}`}
+            style={sheetStyle}
+            data-paged={pageGuides ? "" : undefined}
+          >
+            {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
         </div>
+        {panel === "settings" && (
+          <DocSettingsPanel
+            editor={editor}
+            ydoc={provider.doc}
+            settings={docSettings}
+            readonly={false}
+          />
+        )}
         {panel === "feedback" && (
           <LocalFeedbackPanel
             docId={meta.id}

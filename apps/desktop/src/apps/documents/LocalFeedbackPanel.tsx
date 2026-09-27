@@ -82,8 +82,8 @@ export function LocalFeedbackPanel({
             className={`wf-icon ${highlightsOn ? "active" : ""}`}
             title={
               highlightsOn
-                ? "Highlights stay visible while writing — click to show them only here"
-                : "Show note highlights while writing"
+                ? "Hide note highlights in the text"
+                : "Show note highlights in the text"
             }
             onClick={onToggleHighlights}
           >

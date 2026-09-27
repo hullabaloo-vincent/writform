@@ -4216,10 +4216,13 @@ textarea.wf-el-shape-text {
   background: #292930;
 }
 
-/* Letter-size writing surface: 8.5 × 11 at the browser's 96dpi CSS inch. */
+/* The writing surface at the browser's 96dpi CSS inch. Geometry comes from
+   the document's settings via the --wfd-* variables (set inline on .wf-page
+   for the Plain format); the fallbacks are the original letter sheet, which
+   every scripted format keeps. */
 .wf-page {
-  width: min(8.5in, calc(100% - 16px));
-  min-height: 11in;
+  width: min(var(--wfd-w, 8.5in), calc(100% - 16px));
+  min-height: var(--wfd-h, 11in);
   margin: 0 auto;
   overflow: hidden;
   color: #202026;
@@ -4231,12 +4234,18 @@ textarea.wf-el-shape-text {
 }
 
 .wf-doc-content .ProseMirror {
-  min-height: 11in;
-  padding: 0.86in 1in 1in 1.5in;
+  min-height: var(--wfd-h, 11in);
+  padding: var(--wfd-mt, 0.86in) var(--wfd-mr, 1in) var(--wfd-mb, 1in) var(--wfd-ml, 1.5in);
   caret-color: #17171b;
   /* Tab inserts a real tab character; 8 columns (the CSS default) is a
      chasm on a letter-size page. */
   tab-size: 4;
+}
+
+/* Page view: the paginator supplies --wfd-fill so the last page reads as a
+   full sheet instead of stopping mid-page. */
+.wf-page[data-paged] .wf-doc-content .ProseMirror {
+  padding-bottom: calc(var(--wfd-mb, 1in) + var(--wfd-fill, 0px));
 }
 
 .wf-doc-content .ProseMirror::selection,
@@ -4318,13 +4327,22 @@ textarea.wf-el-shape-text {
 }
 
 .wf-fmt-none .ProseMirror {
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 12pt;
-  line-height: 1.65;
+  font-family: var(--wfd-font, Georgia, "Times New Roman", serif);
+  font-size: var(--wfd-size, 12pt);
+  line-height: var(--wfd-line, 1.65);
 }
 
 .wf-fmt-none .ProseMirror p {
-  margin: 0 0 0.85em;
+  margin: 0 0 var(--wfd-psp, 0.85em);
+  text-indent: var(--wfd-ind, 0);
+}
+
+/* First-line indents are body-paragraph typography: never list items,
+   never centered or right-set lines. */
+.wf-fmt-none .ProseMirror li p,
+.wf-fmt-none .ProseMirror [data-align="center"],
+.wf-fmt-none .ProseMirror [data-align="right"] {
+  text-indent: 0;
 }
 
 .wf-fmt-manuscript .ProseMirror p {
@@ -4373,8 +4391,8 @@ textarea.wf-el-shape-text {
   }
 
   .wf-doc-content .ProseMirror {
-    padding-right: clamp(24px, 8vw, 1in);
-    padding-left: clamp(32px, 12vw, 1.5in);
+    padding-right: clamp(24px, 8vw, var(--wfd-mr, 1in));
+    padding-left: clamp(32px, 12vw, var(--wfd-ml, 1.5in));
   }
 }
 
@@ -4642,6 +4660,16 @@ textarea.wf-el-shape-text {
   border-left: 3px solid var(--wf-accent);
   padding: 2px 8px;
   border-radius: 0 6px 6px 0;
+  /* Long anchors used to ride the button base's nowrap straight off the
+     card — clamp to two wrapped lines instead. */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  max-width: 100%;
 }
 
 .wf-doc-thread-excerpt:hover {
@@ -4697,9 +4725,13 @@ textarea.wf-el-shape-text {
 }
 
 .wf-doc-selection-compose blockquote {
-  max-height: 64px;
   margin: 0 0 8px;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
   overflow: hidden;
+  overflow-wrap: anywhere;
   color: var(--wf-text-dim);
   font-size: 12px;
   font-style: italic;
@@ -7989,15 +8021,319 @@ body {
   z-index: 1;
 }
 
+/* Physical gap between pages: a band of the desk background across the
+   sheet, edged so the two paper edges read as separate sheets. */
+.wf-page-gap {
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  background: #292930;
+  border-top: 1px solid rgba(0, 0, 0, 0.4);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.4);
+  box-shadow:
+    inset 0 10px 9px -7px rgba(0, 0, 0, 0.55),
+    inset 0 -8px 9px -7px rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+}
+
+.wf-page-gap span,
+.wf-page-guide span,
+.wf-page-num-first {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.wf-page-gap span {
+  margin-left: 14px;
+  color: rgba(255, 255, 255, 0.42);
+}
+
+/* Boundary inside a block too tall to push: hairline fallback. */
 .wf-page-guide {
   position: absolute;
   left: 0;
   right: 0;
   border-top: 1px dashed rgba(0, 0, 0, 0.22);
+}
+
+.wf-page-guide span {
+  display: inline-block;
+  margin: 2px 0 0 14px;
   color: rgba(0, 0, 0, 0.4);
-  font-size: 9px;
+}
+
+.wf-page-num-first {
+  position: absolute;
+  top: 8px;
+  left: 14px;
+  color: rgba(0, 0, 0, 0.32);
+}
+
+/* In page view the physical gap replaces the dashed break marker. */
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break] {
+  margin-top: 0;
+}
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break]::before {
+  display: none;
+}
+
+/* ---- paragraph spacing / line spacing / drop cap (TextFormat) ---- */
+
+.wf-fmt-none .ProseMirror [data-line="1"],
+.wf-rich-wrap .ProseMirror [data-line="1"] {
+  line-height: 1.2;
+}
+.wf-fmt-none .ProseMirror [data-line="1.15"],
+.wf-rich-wrap .ProseMirror [data-line="1.15"] {
+  line-height: 1.4;
+}
+.wf-fmt-none .ProseMirror [data-line="1.3"],
+.wf-rich-wrap .ProseMirror [data-line="1.3"] {
+  line-height: 1.55;
+}
+.wf-fmt-none .ProseMirror [data-line="1.5"],
+.wf-rich-wrap .ProseMirror [data-line="1.5"] {
+  line-height: 1.8;
+}
+.wf-fmt-none .ProseMirror [data-line="2"],
+.wf-rich-wrap .ProseMirror [data-line="2"] {
+  line-height: 2.4;
+}
+
+.wf-fmt-none .ProseMirror [data-sa="0"],
+.wf-rich-wrap .ProseMirror [data-sa="0"] { margin-top: 0; }
+.wf-fmt-none .ProseMirror [data-sa="4"],
+.wf-rich-wrap .ProseMirror [data-sa="4"] { margin-top: 4pt; }
+.wf-fmt-none .ProseMirror [data-sa="8"],
+.wf-rich-wrap .ProseMirror [data-sa="8"] { margin-top: 8pt; }
+.wf-fmt-none .ProseMirror [data-sa="12"],
+.wf-rich-wrap .ProseMirror [data-sa="12"] { margin-top: 12pt; }
+.wf-fmt-none .ProseMirror [data-sa="16"],
+.wf-rich-wrap .ProseMirror [data-sa="16"] { margin-top: 16pt; }
+.wf-fmt-none .ProseMirror [data-sa="24"],
+.wf-rich-wrap .ProseMirror [data-sa="24"] { margin-top: 24pt; }
+.wf-fmt-none .ProseMirror [data-sa="36"],
+.wf-rich-wrap .ProseMirror [data-sa="36"] { margin-top: 36pt; }
+
+.wf-fmt-none .ProseMirror [data-sb="0"],
+.wf-rich-wrap .ProseMirror [data-sb="0"] { margin-bottom: 0; }
+.wf-fmt-none .ProseMirror [data-sb="4"],
+.wf-rich-wrap .ProseMirror [data-sb="4"] { margin-bottom: 4pt; }
+.wf-fmt-none .ProseMirror [data-sb="8"],
+.wf-rich-wrap .ProseMirror [data-sb="8"] { margin-bottom: 8pt; }
+.wf-fmt-none .ProseMirror [data-sb="12"],
+.wf-rich-wrap .ProseMirror [data-sb="12"] { margin-bottom: 12pt; }
+.wf-fmt-none .ProseMirror [data-sb="16"],
+.wf-rich-wrap .ProseMirror [data-sb="16"] { margin-bottom: 16pt; }
+.wf-fmt-none .ProseMirror [data-sb="24"],
+.wf-rich-wrap .ProseMirror [data-sb="24"] { margin-bottom: 24pt; }
+.wf-fmt-none .ProseMirror [data-sb="36"],
+.wf-rich-wrap .ProseMirror [data-sb="36"] { margin-bottom: 36pt; }
+
+/* Chapter-opener drop cap. ::first-letter pulls leading punctuation in
+   with the initial, which is the classic book setting. */
+.wf-fmt-none .ProseMirror p[data-dropcap],
+.wf-rich-wrap .ProseMirror p[data-dropcap] {
+  text-indent: 0;
+}
+.wf-fmt-none .ProseMirror p[data-dropcap]::first-letter,
+.wf-rich-wrap .ProseMirror p[data-dropcap]::first-letter {
+  float: left;
+  font-size: 3.05em;
+  line-height: 0.83;
+  padding: 0.045em 0.09em 0 0;
   font-weight: 600;
-  letter-spacing: 0.06em;
-  text-align: right;
-  padding: 2px 10px 0 0;
+}
+
+/* ---- document inspector (Text / Document tabs) ---- */
+
+.wf-inspector-tabs {
+  gap: 4px;
+  padding: 8px 10px;
+}
+
+.wf-inspector-tabs button {
+  flex: 1;
+  height: 30px;
+  min-height: 30px;
+  font-size: 12.5px;
+  font-weight: 600;
+  border: 0;
+  background: transparent;
+  color: var(--wf-text-dim);
+}
+
+.wf-inspector-tabs button.active {
+  background: rgba(124, 108, 240, 0.16);
+  color: var(--wf-text);
+}
+
+.wf-inspector-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.wf-inspector-body section {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.wf-inspector-body h4 {
+  margin: 4px 0 1px;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--wf-text-dim);
+}
+
+.wf-inspector-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+}
+
+.wf-inspector-row select {
+  width: 140px;
+  flex-shrink: 0;
+  height: 28px;
+  min-height: 0;
+  font-size: 12px;
+}
+
+.wf-inspector-seg {
+  display: flex;
+  width: max-content;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  overflow: hidden;
+}
+
+.wf-inspector-seg button {
+  min-width: 46px;
+  height: 30px;
+  min-height: 30px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.wf-inspector-seg button + button {
+  border-left: 1px solid var(--wf-border);
+}
+
+.wf-inspector-seg button.active {
+  background: rgba(124, 108, 240, 0.18);
+}
+
+.wf-inspector-check {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 12.5px;
+  padding: 2px 0;
+}
+
+.wf-inspector-check > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wf-inspector-check small {
+  color: var(--wf-text-dim);
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.wf-inspector-check input {
+  margin-top: 3px;
+  flex-shrink: 0;
+}
+
+.wf-inspector-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.wf-inspector-stepper {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.wf-inspector-stepper-label {
+  font-size: 11px;
+  color: var(--wf-text-dim);
+}
+
+.wf-inspector-stepper-controls {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  overflow: hidden;
+}
+
+.wf-inspector-stepper-controls button {
+  width: 26px;
+  height: 100%;
+  min-height: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--wf-bg-raised);
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wf-inspector-stepper-controls > span {
+  flex: 1;
+  text-align: center;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.wf-inspector-dim {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wf-text-dim);
+}
+
+.wf-inspector-foot {
+  margin-top: auto;
+  padding-top: 12px;
+}
+
+/* Touch: roomier controls where fingers do the tapping. */
+@media (max-width: 767px) {
+  .wf-inspector-row select,
+  .wf-inspector-stepper-controls {
+    height: 34px;
+  }
+  .wf-inspector-stepper-controls button {
+    width: 32px;
+  }
+  .wf-inspector-tabs button,
+  .wf-inspector-seg button {
+    height: 34px;
+    min-height: 34px;
+  }
 }
