@@ -8,6 +8,7 @@
  */
 
 import type { User } from "../bindings/proto/User";
+import { noteAuthFailure } from "./backend";
 import type {
   ApiResponse,
   Backend,
@@ -20,21 +21,32 @@ import type {
 const TOKEN_KEY = "wf-web-token";
 const PROTOCOL_VERSION = 1;
 
+/** Un-remembered sessions live here only: gone when the tab closes. */
+let memToken: string | null = null;
+
 function token(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return memToken ?? localStorage.getItem(TOKEN_KEY);
 }
 
-function setToken(t: string | null) {
+function setToken(t: string | null, remember = true) {
   if (t === null) {
+    memToken = null;
     localStorage.removeItem(TOKEN_KEY);
     document.cookie = "wf_token=; Max-Age=0; Path=/api/v1/attachments; SameSite=Strict";
-  } else {
+  } else if (remember) {
+    memToken = null;
     localStorage.setItem(TOKEN_KEY, t);
     // Max-Age matters: without it this is a session cookie, and mobile
     // browsers end sessions aggressively — the localStorage token would
     // keep the app working while every <img> quietly 401s. 30 days
     // matches the server's session lifetime.
     document.cookie = `wf_token=${t}; Max-Age=2592000; Path=/api/v1/attachments; SameSite=Strict; Secure`;
+  } else {
+    // "Remember me" unchecked: token in memory, cookie for the browser
+    // session only — both die when the tab does.
+    memToken = t;
+    localStorage.removeItem(TOKEN_KEY);
+    document.cookie = `wf_token=${t}; Path=/api/v1/attachments; SameSite=Strict; Secure`;
   }
 }
 
@@ -68,6 +80,7 @@ async function apiFetch(method: string, path: string, body?: unknown): Promise<A
   } catch {
     parsed = null;
   }
+  noteAuthFailure(res.status, parsed);
   return { status: res.status, body: parsed };
 }
 
@@ -177,11 +190,16 @@ export function webBackend(): Backend {
       message: `${what} is only available in the desktop app`,
     } satisfies CmdError);
 
-  const auth = async (path: string, username: string, password: string): Promise<SessionInfo> => {
+  const auth = async (
+    path: string,
+    username: string,
+    password: string,
+    remember: boolean,
+  ): Promise<SessionInfo> => {
     const res = await apiFetch("POST", path, { username, password });
     if (res.status >= 400) throw errFrom(res);
     const { token: t, user } = res.body as { token: string; user: User };
-    setToken(t);
+    setToken(t, remember);
     ws.start();
     return { addr: location.host, user };
   };
@@ -202,8 +220,10 @@ export function webBackend(): Backend {
     trustServer: async () => {},
     listServers: async () => [],
     removeServer: async () => {},
-    login: (_addr, username, password) => auth("/api/v1/auth/login", username, password),
-    register: (_addr, username, password) => auth("/api/v1/auth/register", username, password),
+    login: (_addr, username, password, remember) =>
+      auth("/api/v1/auth/login", username, password, remember),
+    register: (_addr, username, password, remember) =>
+      auth("/api/v1/auth/register", username, password, remember),
     resetPassword: async (_addr, username, code, newPassword) => {
       const res = await apiFetch("POST", "/api/v1/auth/reset-password", {
         username,
@@ -219,18 +239,34 @@ export function webBackend(): Backend {
     },
     currentSession: async () => {
       const t = token();
-      if (!t) return null;
-      const res = await apiFetch("GET", "/api/v1/auth/me");
-      if (res.status >= 400) {
+      if (!t) return { session: null, reason: null, addr: null };
+      let res: ApiResponse;
+      try {
+        res = await apiFetch("GET", "/api/v1/auth/me");
+      } catch {
+        // Network down at boot: keep the token, report unreachable.
+        return { session: null, reason: "unreachable", addr: location.host };
+      }
+      if (res.status === 401) {
+        // The token itself is dead — forget it and say why.
         setToken(null);
-        return null;
+        return { session: null, reason: "expired", addr: location.host };
+      }
+      if (res.status >= 400 || res.status === 0) {
+        // Server hiccup (restart, proxy 502): keep the token for next time
+        // instead of silently logging the user out.
+        return { session: null, reason: "unreachable", addr: location.host };
       }
       // Re-mint the attachment cookie on every boot: the localStorage token
       // outlives it (browsers evict cookies independently), and without the
       // cookie every <img> 401s while the rest of the app works fine.
       setToken(t);
       ws.start();
-      return { addr: location.host, user: res.body as User };
+      return {
+        session: { addr: location.host, user: res.body as User },
+        reason: null,
+        addr: null,
+      };
     },
     hostStatus: async () => ({
       configured: false,
@@ -254,6 +290,8 @@ export function webBackend(): Backend {
     localdocDelete: notOnWeb("Local documents"),
     localdocHistoryRead: notOnWeb("Local documents"),
     localdocHistoryWrite: notOnWeb("Local documents"),
+    localdocFeedbackRead: notOnWeb("Local documents"),
+    localdocFeedbackWrite: notOnWeb("Local documents"),
     localboardList: async () => [],
     localboardRead: notOnWeb("Local boards"),
     localboardWrite: notOnWeb("Local boards"),

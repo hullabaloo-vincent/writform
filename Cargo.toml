@@ -6,6 +6,9 @@ members = [
     "crates/writform-server",
     "apps/desktop/src-tauri",
 ]
+# Vendored, not a member: workspace-wide clippy/fmt must not police
+# upstream code. See [patch.crates-io] at the bottom for why it exists.
+exclude = ["vendor/swift-rs"]
 
 [workspace.package]
 version = "1.0.1"
@@ -61,3 +64,12 @@ opt-level = 3
 opt-level = 3
 [profile.dev.package.aws-lc-rs]
 opt-level = 3
+
+# swift-rs 1.0.7 with one fix: Xcode 27's SwiftPM switched its default to the
+# "swiftbuild" engine, which re-orders compiler flags so swift-rs's iOS
+# cross-compile overrides lose to host-macOS defaults ('OpenGLES/EAGL.h'
+# errors inside AppKit when building tauri's Swift package). The vendored
+# copy passes `--build-system native` when the toolchain offers the choice.
+# Drop this patch once upstream swift-rs handles the new engine.
+[patch.crates-io]
+swift-rs = { path = "vendor/swift-rs" }

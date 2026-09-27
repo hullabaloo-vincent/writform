@@ -7,6 +7,7 @@ import type { Friend } from "../../bindings/proto/Friend";
 import type { FriendRequests } from "../../bindings/proto/FriendRequests";
 import type { Message } from "../../bindings/proto/Message";
 import { backend, isCmdError, type CmdError } from "../../lib/backend";
+import { haptic } from "../../lib/haptics";
 import { useSwipe } from "../../lib/useSwipe";
 import {
   Avatar,
@@ -177,7 +178,14 @@ export function FriendsView() {
               {requests.incoming.map((r) => (
                 <li key={r.id}>
                   <span className="wf-member-name">{r.from.display_name ?? r.from.username}</span>
-                  <button onClick={() => act(() => friendsApi.accept(r.id))}>✓</button>
+                  <button
+                    onClick={() => {
+                      haptic("success");
+                      act(() => friendsApi.accept(r.id));
+                    }}
+                  >
+                    ✓
+                  </button>
                   <button onClick={() => act(() => friendsApi.deleteRequest(r.id))}>×</button>
                 </li>
               ))}

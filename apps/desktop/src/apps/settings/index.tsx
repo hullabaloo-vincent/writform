@@ -20,6 +20,7 @@ import {
   attachmentUrl,
   backend,
   isCmdError,
+  isMobileApp,
   isWeb,
   type CmdError,
   type HostStatus,
@@ -1131,8 +1132,12 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
         subScribe {version ?? ""} — updates are downloaded from GitHub Releases and verified
         against the app's signing key before installing.
       </p>
-      {!inTauri ? (
-        <p className="wf-session-meta">Updates are only available in the desktop app.</p>
+      {!inTauri || isMobileApp ? (
+        <p className="wf-session-meta">
+          {isMobileApp
+            ? "On iPhone and iPad, updates arrive as new builds through the App Store, TestFlight, or Xcode."
+            : "Updates are only available in the desktop app."}
+        </p>
       ) : (
         <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
           {status === "available" ? (

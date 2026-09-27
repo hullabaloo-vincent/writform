@@ -81,11 +81,15 @@ function blockToMd(node: PmNode, indent: string): string | null {
     case "paragraph": {
       const text = inline(node.content);
       const element = node.attrs?.element as string | undefined;
+      // An explicit page break reads as a thematic break in Markdown; the
+      // alignment/font/size attributes have no Markdown form and drop (the
+      // lossless .json twin in the same zip keeps them).
+      const brk = node.attrs?.pageBreakBefore ? `${indent}---\n\n` : "";
       // Keep screenplay/stageplay structure legible in plain Markdown.
       if (element === "scene_heading" || element === "act_heading") {
-        return `${indent}**${text.toUpperCase()}**`;
+        return `${brk}${indent}**${text.toUpperCase()}**`;
       }
-      return indent + text;
+      return brk + indent + text;
     }
     case "heading": {
       const level = Math.min(6, Math.max(1, Number(node.attrs?.level ?? 1)));

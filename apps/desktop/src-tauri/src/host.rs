@@ -194,16 +194,18 @@ pub async fn start_impl(
     let fingerprint = started.fingerprint.clone();
     let addr = format!("127.0.0.1:{}", started.local_addr.port());
 
-    // Pin our own server for the local client — trust is implicit.
+    // Pin our own server for the local client — trust is implicit. A
+    // remembered session on the hosted server survives re-pinning.
+    let existing = conn.find(&addr);
     conn.upsert(SavedServer {
         addr,
         server_name: server_name.clone(),
         identity_hash,
         spki_hash,
         fingerprint: fingerprint.clone(),
-        last_username: conn
-            .find(&format!("127.0.0.1:{}", started.local_addr.port()))
-            .and_then(|s| s.last_username),
+        last_username: existing.as_ref().and_then(|s| s.last_username.clone()),
+        session_token: existing.as_ref().and_then(|s| s.session_token.clone()),
+        last_active_at: existing.as_ref().and_then(|s| s.last_active_at),
     });
 
     let actual_port = started.local_addr.port();

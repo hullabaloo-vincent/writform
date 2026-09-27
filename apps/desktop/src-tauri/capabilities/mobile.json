@@ -1,0 +1,7 @@
+{
+  "identifier": "mobile",
+  "description": "Mobile-only surfaces: touch feedback",
+  "windows": ["main"],
+  "platforms": ["iOS", "android"],
+  "permissions": ["haptics:default"]
+}

@@ -23,6 +23,13 @@ pub struct SavedServer {
     /// Human-checkable fingerprint shown at trust time.
     pub fingerprint: String,
     pub last_username: Option<String>,
+    /// Session token, stored only when the user checked "Remember me".
+    /// The server holds a 30-day sliding expiry; never the password.
+    #[serde(default)]
+    pub session_token: Option<String>,
+    /// Last successful auth on this server (ms) — picks the resume target.
+    #[serde(default)]
+    pub last_active_at: Option<i64>,
 }
 
 /// Result of a probe, held until the user accepts trust.

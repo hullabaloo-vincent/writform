@@ -46,6 +46,10 @@
       "minimumSystemVersion": "10.15",
       "signingIdentity": "-",
       "entitlements": "Entitlements.plist"
+    },
+    "iOS": {
+      "developmentTeam": "9S464GQ7LX",
+      "minimumSystemVersion": "15.0"
     }
   },
   "mainBinaryName": "writform-desktop"

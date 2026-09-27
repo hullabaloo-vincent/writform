@@ -29,6 +29,8 @@ type Step =
       lastUsername: string | null;
       defaultMode: "login" | "register";
       freshHost: boolean;
+      /** The remembered session was rejected — explain why they're here. */
+      expired: boolean;
     };
 
 export function ConnectScreen() {
@@ -45,31 +47,59 @@ export function ConnectScreen() {
     });
 
   useEffect(() => {
+    // A remembered session the server rejected: reopen that server's login
+    // with a notice instead of the generic first screen.
+    const { endReason, endAddr, clearEndReason } = useSession.getState();
+    const expired = endReason === "expired";
+    if (expired) clearEndReason();
+
     // The web client is served by its own server — no picking, no TOFU
     // ceremony; probe the origin and land on the login form.
     if (isWeb) {
-      void probe(location.host, { defaultMode: "login" });
+      void probe(location.host, { defaultMode: "login", expired });
       return;
     }
     void refresh().then(({ list, status }) => {
+      if (expired && endAddr !== null) {
+        const saved = list.find((s) => s.addr === endAddr);
+        if (saved) {
+          void probe(saved.addr, {
+            defaultMode: "login",
+            knownUsername: saved.last_username,
+            expired: true,
+          });
+          return;
+        }
+      }
       setStep(list.length === 0 && !status.configured ? { kind: "welcome" } : { kind: "pick" });
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps -- boot once; probe is stable
   }, []);
 
-  const probe = async (addr: string, opts?: { defaultMode?: "login" | "register"; freshHost?: boolean }) => {
+  const probe = async (
+    addr: string,
+    opts?: {
+      defaultMode?: "login" | "register";
+      freshHost?: boolean;
+      /** Bypass the stale `servers` closure when probing right after refresh. */
+      knownUsername?: string | null;
+      expired?: boolean;
+    },
+  ) => {
     setError(null);
     setStep({ kind: "probing", addr });
     try {
       const result = await backend.probeServer(addr);
       if (result.trust.status === "trusted") {
         const saved = servers.find((s) => s.addr === result.addr);
+        const lastUsername = opts?.knownUsername ?? saved?.last_username ?? null;
         setStep({
           kind: "auth",
           probe: result,
-          lastUsername: saved?.last_username ?? null,
-          defaultMode: opts?.defaultMode ?? (saved?.last_username ? "login" : "register"),
+          lastUsername,
+          defaultMode: opts?.defaultMode ?? (lastUsername ? "login" : "register"),
           freshHost: opts?.freshHost ?? false,
+          expired: opts?.expired ?? false,
         });
       } else {
         setStep({ kind: "trust", probe: result });
@@ -105,6 +135,7 @@ export function ConnectScreen() {
         lastUsername: null,
         defaultMode: "login",
         freshHost: false,
+        expired: false,
       });
     } catch (e) {
       setError(isCmdError(e) ? e.message : String(e));
@@ -211,6 +242,7 @@ export function ConnectScreen() {
             lastUsername={step.lastUsername}
             defaultMode={step.defaultMode}
             freshHost={step.freshHost}
+            expired={step.expired}
             onBack={() => setStep({ kind: "pick" })}
             onError={setError}
           />
@@ -442,6 +474,7 @@ function AuthForm({
   lastUsername,
   defaultMode,
   freshHost,
+  expired,
   onBack,
   onError,
 }: {
@@ -449,12 +482,14 @@ function AuthForm({
   lastUsername: string | null;
   defaultMode: "login" | "register";
   freshHost: boolean;
+  expired: boolean;
   onBack: () => void;
   onError: (msg: string | null) => void;
 }) {
   const [mode, setMode] = useState<"login" | "register" | "reset">(defaultMode);
   const [username, setUsername] = useState(lastUsername ?? "");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [resetCode, setResetCode] = useState("");
   const [resetDone, setResetDone] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -473,8 +508,8 @@ function AuthForm({
       } else {
         const session =
           mode === "login"
-            ? await backend.login(probe.addr, username, password)
-            : await backend.register(probe.addr, username, password);
+            ? await backend.login(probe.addr, username, password, remember)
+            : await backend.register(probe.addr, username, password, remember);
         setConnected(session);
         if (mode === "register") {
           // A brand-new account starts blank; offer the saved portable
@@ -527,6 +562,9 @@ function AuthForm({
       {resetDone && mode === "login" && (
         <p className="wf-connect-dim">Password changed — log in with your new password.</p>
       )}
+      {expired && mode === "login" && !resetDone && (
+        <p className="wf-connect-dim">Your session expired — log in again to continue.</p>
+      )}
       <div className="wf-auth-tabs">
         <button
           type="button"
@@ -574,6 +612,16 @@ function AuthForm({
         onChange={(e) => setPassword(e.target.value)}
         autoFocus={!!lastUsername}
       />
+      {mode !== "reset" && (
+        <label className="wf-remember">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+          />
+          Remember me on this device
+        </label>
+      )}
       <div className="wf-connect-row">
         <button type="button" onClick={onBack} disabled={busy}>
           Back

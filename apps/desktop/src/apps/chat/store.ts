@@ -46,6 +46,9 @@ interface ChatState {
   channelGroup: Record<number, number>;
   /** channel id → name, for EVERY group (drives the ⌘K quick switcher). */
   channelNames: Record<number, string>;
+  /** Writing-session side-chat channels. Their traffic renders inside the
+   *  open session, so it must never count as a DM or a channel unread. */
+  sessionChannelIds: Set<number>;
   /** Highest message id considered read per channel (persisted locally). */
   lastRead: Record<number, number>;
   /** Live unread counts per channel (this app run; local-only by design). */
@@ -199,6 +202,7 @@ export const useChat = create<ChatState>((set, get) => ({
   emotes: [],
   channelGroup: {},
   channelNames: {},
+  sessionChannelIds: new Set(),
   lastRead: {},
   unread: {},
   historyDone: {},
@@ -225,14 +229,20 @@ export const useChat = create<ChatState>((set, get) => ({
     );
     const channelGroup: Record<number, number> = {};
     const channelNames: Record<number, string> = {};
+    const sessionChannelIds = new Set<number>();
     const rooms: string[] = [];
     perGroup.flat().forEach((c) => {
-      if (c.kind !== "text" || c.group_id === null) return;
+      if (c.group_id === null) return;
+      if (c.kind === "session") {
+        sessionChannelIds.add(c.id);
+        return;
+      }
+      if (c.kind !== "text") return;
       channelGroup[c.id] = c.group_id;
       channelNames[c.id] = c.name ?? "";
       rooms.push(`channel:${c.id}`);
     });
-    set({ channelGroup, channelNames });
+    set({ channelGroup, channelNames, sessionChannelIds });
     if (rooms.length) await backend.wsSub(rooms);
     await mergeServerReads();
 
@@ -525,14 +535,20 @@ export async function resyncChat(): Promise<void> {
   );
   const channelGroup: Record<number, number> = {};
   const channelNames: Record<number, string> = {};
+  const sessionChannelIds = new Set<number>();
   const rooms: string[] = [];
   perGroup.flat().forEach((c) => {
-    if (c.kind !== "text" || c.group_id === null) return;
+    if (c.group_id === null) return;
+    if (c.kind === "session") {
+      sessionChannelIds.add(c.id);
+      return;
+    }
+    if (c.kind !== "text") return;
     channelGroup[c.id] = c.group_id;
     channelNames[c.id] = c.name ?? "";
     rooms.push(`channel:${c.id}`);
   });
-  useChat.setState({ channelGroup, channelNames });
+  useChat.setState({ channelGroup, channelNames, sessionChannelIds });
   if (rooms.length) await backend.wsSub(rooms);
   await mergeServerReads();
 
@@ -576,14 +592,28 @@ export async function resyncChat(): Promise<void> {
 }
 
 /** Count messages that arrived un-viewed (WS or resync catch-up). */
+/** Sessions app: registers a side-chat channel the moment a session opens,
+ *  covering sessions created after the group scan ran. */
+export function noteSessionChannel(channelId: number): void {
+  useChat.setState((s) =>
+    s.sessionChannelIds.has(channelId)
+      ? s
+      : { sessionChannelIds: new Set(s.sessionChannelIds).add(channelId) },
+  );
+}
+
 function noteUnread(incoming: Message[]): void {
   const meId = useSession.getState().session?.user.id;
-  const { activeChannelId, channelGroup, lastRead, muted } = useChat.getState();
+  const { activeChannelId, channelGroup, sessionChannelIds, lastRead, muted } =
+    useChat.getState();
   for (const message of incoming) {
     if (countedIds.has(message.id)) continue;
     countedIds.add(message.id);
     if (message.author.id === meId) continue;
     if ((lastRead[message.channel_id] ?? 0) >= message.id) continue;
+    // Session side-chats render inside the open session — never a DM,
+    // never a channel unread.
+    if (sessionChannelIds.has(message.channel_id)) continue;
 
     const isGroupChannel = message.channel_id in channelGroup;
     const viewing =
@@ -732,6 +762,8 @@ export function installChatWsHandler(): () => void {
           channelNames: { ...s.channelNames, [channel.id]: channel.name ?? "" },
         }));
         void backend.wsSub([`channel:${channel.id}`]);
+      } else if (channel.kind === "session") {
+        noteSessionChannel(channel.id);
       }
     } else if (kind === "channel.updated") {
       const channel = data as Channel;

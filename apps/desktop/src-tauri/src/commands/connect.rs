@@ -194,13 +194,26 @@ pub fn trust_impl(manager: &ConnectionManager, addr: String) -> CmdResult<()> {
         spki_hash: pending.spki_hash,
         fingerprint: pending.fingerprint,
         last_username: None,
+        session_token: None,
+        last_active_at: None,
     });
     Ok(())
 }
 
 #[tauri::command]
 pub fn list_servers(manager: State<'_, ConnectionManager>) -> Vec<SavedServer> {
-    manager.servers.lock().expect("poisoned").clone()
+    manager
+        .servers
+        .lock()
+        .expect("poisoned")
+        .iter()
+        // The token never crosses into the webview; the UI only needs to
+        // know the server can be resumed.
+        .map(|s| SavedServer {
+            session_token: None,
+            ..s.clone()
+        })
+        .collect()
 }
 
 #[tauri::command]
@@ -290,8 +303,9 @@ pub async fn login(
     addr: String,
     username: String,
     password: String,
+    remember: bool,
 ) -> CmdResult<SessionInfo> {
-    let info = login_impl(&manager, addr, username, password).await?;
+    let info = login_impl(&manager, addr, username, password, remember).await?;
     start_ws_for_active(app, &manager, &ws);
     Ok(info)
 }
@@ -301,6 +315,7 @@ pub async fn login_impl(
     addr: String,
     username: String,
     password: String,
+    remember: bool,
 ) -> CmdResult<SessionInfo> {
     let addr = normalize_addr(&addr)?;
     let device_label = hostname_label();
@@ -316,7 +331,7 @@ pub async fn login_impl(
         .expect("serializable"),
     )
     .await?;
-    finish_auth(manager, addr, username, auth)
+    finish_auth(manager, addr, username, auth, remember)
 }
 
 #[tauri::command]
@@ -327,8 +342,9 @@ pub async fn register(
     addr: String,
     username: String,
     password: String,
+    remember: bool,
 ) -> CmdResult<SessionInfo> {
-    let info = register_impl(&manager, addr, username, password).await?;
+    let info = register_impl(&manager, addr, username, password, remember).await?;
     start_ws_for_active(app, &manager, &ws);
     Ok(info)
 }
@@ -357,6 +373,7 @@ pub async fn register_impl(
     addr: String,
     username: String,
     password: String,
+    remember: bool,
 ) -> CmdResult<SessionInfo> {
     let addr = normalize_addr(&addr)?;
     let auth = auth_request(
@@ -370,7 +387,7 @@ pub async fn register_impl(
         .expect("serializable"),
     )
     .await?;
-    finish_auth(manager, addr, username, auth)
+    finish_auth(manager, addr, username, auth, remember)
 }
 
 fn finish_auth(
@@ -378,9 +395,14 @@ fn finish_auth(
     addr: String,
     username: String,
     auth: AuthResponse,
+    remember: bool,
 ) -> CmdResult<SessionInfo> {
     if let Some(mut saved) = manager.find(&addr) {
         saved.last_username = Some(username);
+        // Unchecking "Remember me" is a statement of intent: drop any token
+        // a previous login left behind.
+        saved.session_token = remember.then(|| auth.token.clone());
+        saved.last_active_at = Some(now_ms());
         manager.upsert(saved);
     }
     let client = pinned_client_for(manager, &addr)?;
@@ -405,6 +427,11 @@ pub async fn logout(
     ws.disconnect();
     let session = manager.active.lock().expect("poisoned").take();
     if let Some(s) = session {
+        // An explicit logout also forgets the remembered token.
+        if let Some(mut saved) = manager.find(&s.addr) {
+            saved.session_token = None;
+            manager.upsert(saved);
+        }
         // Best-effort server-side revocation; local logout succeeds regardless.
         let _ = s
             .client
@@ -416,9 +443,23 @@ pub async fn logout(
     Ok(())
 }
 
+/// What startup resume produced: a live session, or why there isn't one.
+/// `reason` is "expired" (stored token rejected — show the login with a
+/// notice) or "unreachable" (server down; the token is kept for next time).
+#[derive(Debug, Clone, Serialize)]
+pub struct ResumeResult {
+    pub session: Option<SessionInfo>,
+    pub reason: Option<String>,
+    pub addr: Option<String>,
+}
+
 #[tauri::command]
-pub fn current_session(manager: State<'_, ConnectionManager>) -> Option<SessionInfo> {
-    manager
+pub async fn current_session(
+    app: tauri::AppHandle,
+    manager: State<'_, ConnectionManager>,
+    ws: State<'_, std::sync::Arc<crate::wsclient::WsManager>>,
+) -> CmdResult<ResumeResult> {
+    let in_memory = manager
         .active
         .lock()
         .expect("poisoned")
@@ -426,7 +467,99 @@ pub fn current_session(manager: State<'_, ConnectionManager>) -> Option<SessionI
         .map(|s| SessionInfo {
             addr: s.addr.clone(),
             user: s.user.clone(),
-        })
+        });
+    if let Some(session) = in_memory {
+        return Ok(ResumeResult {
+            session: Some(session),
+            reason: None,
+            addr: None,
+        });
+    }
+
+    // Cold start: resume the most recently used server that kept a token.
+    let candidate = manager
+        .servers
+        .lock()
+        .expect("poisoned")
+        .iter()
+        .filter(|s| s.session_token.is_some())
+        .max_by_key(|s| s.last_active_at.unwrap_or(0))
+        .cloned();
+    let Some(saved) = candidate else {
+        return Ok(ResumeResult {
+            session: None,
+            reason: None,
+            addr: None,
+        });
+    };
+    let token = saved.session_token.clone().expect("filtered above");
+    let Ok(client) = pinned_client_for(&manager, &saved.addr) else {
+        return Ok(ResumeResult {
+            session: None,
+            reason: None,
+            addr: None,
+        });
+    };
+
+    let res = client
+        .get(format!("https://{}/api/v1/auth/me", saved.addr))
+        .bearer_auth(&token)
+        .send()
+        .await;
+    match res {
+        Ok(r) if r.status().is_success() => match r.json::<User>().await {
+            Ok(user) => {
+                let mut refreshed = saved.clone();
+                refreshed.last_active_at = Some(now_ms());
+                manager.upsert(refreshed);
+                let info = SessionInfo {
+                    addr: saved.addr.clone(),
+                    user: user.clone(),
+                };
+                *manager.active.lock().expect("poisoned") = Some(ActiveSession {
+                    addr: saved.addr,
+                    client,
+                    token,
+                    user,
+                });
+                start_ws_for_active(app, &manager, &ws);
+                Ok(ResumeResult {
+                    session: Some(info),
+                    reason: None,
+                    addr: None,
+                })
+            }
+            Err(_) => Ok(ResumeResult {
+                session: None,
+                reason: Some("unreachable".into()),
+                addr: Some(saved.addr),
+            }),
+        },
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            // The token is dead (expired or revoked) — forget it and tell the
+            // connect screen to open this server's login with a notice.
+            let mut cleared = saved.clone();
+            cleared.session_token = None;
+            manager.upsert(cleared);
+            Ok(ResumeResult {
+                session: None,
+                reason: Some("expired".into()),
+                addr: Some(saved.addr),
+            })
+        }
+        _ => Ok(ResumeResult {
+            session: None,
+            reason: Some("unreachable".into()),
+            addr: Some(saved.addr),
+        }),
+    }
+}
+
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("clock before epoch")
+        .as_millis() as i64
 }
 
 fn hostname_label() -> Option<String> {

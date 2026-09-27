@@ -20,8 +20,9 @@ import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
 import { rtfToText } from "./rtf";
 
 import { WfImage } from "../../../editor/RichEditor";
+import { TextFormat } from "../../../editor/TextFormat";
 
-const EXTENSIONS = [StarterKit, WfImage, DocElement];
+const EXTENSIONS = [StarterKit, WfImage, DocElement, TextFormat];
 const SEED_BATCH_JSON_BYTES = 48 * 1024;
 // Leave headroom under the server's 256 KiB decoded-update ceiling.
 const MAX_SEED_UPDATE_BYTES = 240 * 1024;
@@ -217,10 +218,43 @@ function paragraphsToDoc(paragraphs: string[]): JSONContent {
 function importedParagraphsToDoc(paragraphs: ImportedPdfParagraph[]): JSONContent {
   return {
     type: "doc",
-    content: paragraphs.map(({ text, element }) => ({
-      type: "paragraph",
-      attrs: element ? { element } : undefined,
-      content: text ? [{ type: "text", text }] : undefined,
-    })),
+    content: paragraphs.map((p) => {
+      // Styled runs (bold/italic are StarterKit marks; alignment is a
+      // TextFormat attribute) when the importer recovered them; the plain
+      // text path still serves the screenplay importer.
+      const inline: JSONContent[] = (
+        p.runs?.length
+          ? p.runs.map((r) => {
+              const marks = [
+                ...(r.bold ? [{ type: "bold" }] : []),
+                ...(r.italic ? [{ type: "italic" }] : []),
+              ];
+              return {
+                type: "text",
+                text: r.text,
+                ...(marks.length ? { marks } : {}),
+              } satisfies JSONContent;
+            })
+          : p.text
+            ? [{ type: "text", text: p.text }]
+            : []
+      ).filter((n) => (n.text ?? "").length > 0);
+
+      if (p.kind === "heading") {
+        return {
+          type: "heading",
+          attrs: { level: p.level ?? 1, ...(p.align ? { align: p.align } : {}) },
+          content: inline.length ? inline : undefined,
+        } satisfies JSONContent;
+      }
+      const attrs: Record<string, unknown> = {};
+      if (p.element) attrs.element = p.element;
+      if (p.align) attrs.align = p.align;
+      return {
+        type: "paragraph",
+        attrs: Object.keys(attrs).length ? attrs : undefined,
+        content: inline.length ? inline : undefined,
+      } satisfies JSONContent;
+    }),
   };
 }

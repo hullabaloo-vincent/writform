@@ -3,6 +3,10 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
   Bold,
   Code,
   Heading1,
@@ -14,6 +18,7 @@ import {
   Minus,
   Quote,
   Redo2,
+  SeparatorHorizontal,
   Strikethrough,
   Undo2,
 } from "lucide-react";
@@ -21,6 +26,16 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import { attachmentUrl, normalizeAttachmentSrc } from "../lib/backend";
 import { uploadBlob } from "../lib/upload";
+import {
+  curTypography,
+  DOC_FONT_SIZES,
+  DOC_FONTS,
+  setDocAlign,
+  setDocFont,
+  setDocFontSize,
+  TextFormat,
+  togglePageBreakBefore,
+} from "./TextFormat";
 
 /** Attachment images with the stored URL re-pointed at whichever platform
  *  is rendering (desktop protocol vs same-origin web path). */
@@ -55,10 +70,13 @@ export function RichEditor({
   toolbar?: boolean;
 }) {
   const editor = useEditor({
+    // TextFormat keeps this preview/prompt schema in step with the document
+    // editors — without it, RichDoc would silently drop typography attrs.
     extensions: [
       StarterKit,
       WfImage,
       Placeholder.configure({ placeholder: placeholder ?? "Write…" }),
+      TextFormat,
     ],
     content: value ?? undefined,
     editable,
@@ -94,6 +112,7 @@ export function Toolbar({
   trailing,
   richBlocks = true,
   allowImages = true,
+  typography = false,
 }: {
   editor: Editor;
   leading?: ReactNode;
@@ -101,6 +120,9 @@ export function Toolbar({
   richBlocks?: boolean;
   /** Off for local documents — image refs are server attachments. */
   allowImages?: boolean;
+  /** Paragraph typography controls (align/font/size/page break) — document
+   *  editors only, and only for the Plain format. */
+  typography?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -173,6 +195,79 @@ export function Toolbar({
             () => chain().toggleCode().run(),
             editor.isActive("code"),
           )}
+        </>
+      )}
+      {typography && (
+        <>
+          <span className="wf-toolbar-sep" />
+          {(() => {
+            const cur = curTypography(editor);
+            return (
+              <>
+                {btn(
+                  "Align left (⌘⇧L)",
+                  <AlignLeft size={15} />,
+                  () => setDocAlign(editor, "left"),
+                  cur.align === null,
+                )}
+                {btn(
+                  "Center (⌘⇧E)",
+                  <AlignCenter size={15} />,
+                  () => setDocAlign(editor, "center"),
+                  cur.align === "center",
+                )}
+                {btn(
+                  "Align right (⌘⇧R)",
+                  <AlignRight size={15} />,
+                  () => setDocAlign(editor, "right"),
+                  cur.align === "right",
+                )}
+                {btn(
+                  "Justify (⌘⇧J)",
+                  <AlignJustify size={15} />,
+                  () => setDocAlign(editor, "justify"),
+                  cur.align === "justify",
+                )}
+                {/* Native selects: no popover to position inside the
+                    overflow-x toolbar, and mousedown must NOT be prevented
+                    or they never open. */}
+                <select
+                  className="wf-doc-typo"
+                  title="Paragraph font"
+                  value={cur.font ?? ""}
+                  onChange={(e) => setDocFont(editor, e.target.value || null)}
+                >
+                  <option value="">Font</option>
+                  {DOC_FONTS.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  className="wf-doc-typo"
+                  title="Paragraph size"
+                  value={cur.size ?? ""}
+                  onChange={(e) =>
+                    setDocFontSize(editor, e.target.value ? Number(e.target.value) : null)
+                  }
+                >
+                  <option value="">Size</option>
+                  {DOC_FONT_SIZES.map((s) => (
+                    <option key={s} value={s}>
+                      {s} pt
+                    </option>
+                  ))}
+                </select>
+                {btn(
+                  "Page break before this paragraph (⌘↩ inserts one)",
+                  <SeparatorHorizontal size={15} />,
+                  () => togglePageBreakBefore(editor),
+                  cur.pageBreakBefore === true,
+                )}
+              </>
+            );
+          })()}
         </>
       )}
       {richBlocks && (

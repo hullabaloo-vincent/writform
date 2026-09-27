@@ -18,6 +18,13 @@
   --wf-radius-md: 11px;
   --wf-radius-lg: 15px;
   --wf-radius-pill: 999px;
+  /* Liquid-glass materials: translucent takes on the raised surface, mixed
+     from the theme tokens so a future light theme re-tints them for free.
+     thin = tools floating over the canvas, thick = dialogs and sheets. */
+  --wf-glass-thin: color-mix(in srgb, var(--wf-bg-raised) 55%, transparent);
+  --wf-glass: color-mix(in srgb, var(--wf-bg-raised) 68%, transparent);
+  --wf-glass-thick: color-mix(in srgb, var(--wf-bg-raised) 80%, transparent);
+  --wf-glass-border: rgba(255, 255, 255, 0.09);
 
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color-scheme: dark;
@@ -1939,7 +1946,11 @@ body {
 }
 
 .wf-session-chat-header {
-  padding: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 45px;
   font-weight: 600;
   border-bottom: 1px solid var(--wf-border);
 }
@@ -1951,12 +1962,16 @@ body {
 }
 
 .wf-session-chat-composer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 10px;
   border-top: 1px solid var(--wf-border);
 }
 
 .wf-session-chat-composer input {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
 }
 
 /* ---- friends app ---- */
@@ -7504,4 +7519,485 @@ input[type="checkbox"] {
   overflow: visible;
   pointer-events: none;
   stroke: var(--wf-accent);
+}
+
+/* ---- liquid glass materials ----
+   Floating chrome is a translucent layer that blurs whatever moves beneath
+   it, the way iOS and macOS system surfaces behave. Only elements that truly
+   overlay content get the treatment — glass over nothing reads as a dimmer
+   panel, so docked headers and sidebars keep their opaque paint. The
+   @supports gate leaves engines without backdrop-filter exactly as before,
+   and if color-mix is missing the translucent background is ignored while
+   the earlier opaque one stands. */
+
+@supports ((backdrop-filter: blur(2px)) or (-webkit-backdrop-filter: blur(2px))) {
+  /* Menus, pickers and transient popovers. */
+  .wf-context-menu,
+  .wf-status-menu,
+  .wf-cmd-menu,
+  .wf-emote-picker,
+  .wf-react-picker,
+  .wf-doc-export-menu,
+  .wf-chat-search-pop,
+  .wf-goal-pop,
+  .wf-board-menu,
+  .wf-toast {
+    background: var(--wf-glass);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    backdrop-filter: blur(20px) saturate(1.5);
+    border-color: var(--wf-glass-border);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 12px 36px rgba(0, 0, 0, 0.45);
+  }
+
+  /* Board tools float directly over the drawing — the thinnest glass, so
+     elements sliding past stay legible through the bar. */
+  .wf-board-toolbar,
+  .wf-board-viewbar,
+  .wf-selection-toolbar {
+    background: var(--wf-glass-thin);
+    -webkit-backdrop-filter: blur(16px) saturate(1.6);
+    backdrop-filter: blur(16px) saturate(1.6);
+    border-color: var(--wf-glass-border);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      0 8px 28px rgba(0, 0, 0, 0.35);
+  }
+
+  /* Large surfaces: dialogs, the palette, profile card, video window,
+     shortcuts overlay. Thickest tint keeps dense text readable. */
+  .wf-modal,
+  .wf-palette,
+  .wf-profile-card,
+  .wf-sketch-modal,
+  .wf-doc-version-modal,
+  .wf-shortcuts,
+  .wf-stage {
+    background: var(--wf-glass-thick);
+    -webkit-backdrop-filter: blur(28px) saturate(1.5);
+    backdrop-filter: blur(28px) saturate(1.5);
+    border-color: var(--wf-glass-border);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.07),
+      0 18px 56px rgba(0, 0, 0, 0.5);
+  }
+
+  /* Scrims gain depth of field: the app recedes behind open dialogs. */
+  .wf-modal-backdrop,
+  .wf-chat-side-scrim {
+    -webkit-backdrop-filter: blur(7px);
+    backdrop-filter: blur(7px);
+  }
+
+  /* Phone slide-overs are overlays there (plain columns on desktop), so
+     they become glass sheets over the page they slid across. */
+  @media (max-width: 767px) {
+    .wf-chat-side,
+    .wf-friends-side,
+    .wf-docs-nav,
+    .wf-session-chat,
+    .wf-doc-panel {
+      background: var(--wf-glass-thick);
+      -webkit-backdrop-filter: blur(30px) saturate(1.5);
+      backdrop-filter: blur(30px) saturate(1.5);
+    }
+  }
+}
+
+/* ---- native shell feel (iOS) ----
+   The web page must never behave like a web page: no rubber-banding the
+   whole app off its edges, no gray flash on taps, and no save-image callout
+   fighting long-press drags on the canvas. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Set by installKeyboardInset() in the native mobile shell, where the
+   embedded webview never resizes for the on-screen keyboard the way
+   Safari's dvh does; 0 everywhere else. */
+.wf-shell {
+  padding-bottom: var(--wf-kb-inset, 0px);
+}
+
+.wf-board-stage img {
+  -webkit-touch-callout: none;
+  -webkit-user-drag: none;
+}
+
+/* ---- native mobile shell ----
+   On phones the chrome stops being web furniture: the app rail becomes a
+   floating glass tab bar (icon + label, accent tint when active), the
+   statusbar a slim glass strip riding on top of it, and app content runs
+   full-bleed underneath both — each app's own column reserves clearance
+   with --wf-bc so its bottom-most controls stay reachable. --wf-bc also
+   subtracts the keyboard inset: when the keyboard is up the chrome is
+   covered anyway, so composers drop down to sit right on the keyboard. */
+
+.wf-rail-label {
+  display: none;
+}
+
+@keyframes wf-sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 767px) {
+  :root {
+    --wf-tabbar-total: calc(58px + env(safe-area-inset-bottom, 0px));
+    --wf-statusrow-h: 38px;
+    --wf-bc: max(
+      0px,
+      calc(var(--wf-tabbar-total) + var(--wf-statusrow-h) - var(--wf-kb-inset, 0px))
+    );
+  }
+
+  /* Reading sizes, not desktop-dense sizes. */
+  body {
+    font-size: 15px;
+  }
+  button {
+    font-size: 14px;
+  }
+
+  /* The tab bar: fixed to the bottom edge, glass, labels under icons. */
+  .wf-rail {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 80;
+    width: auto;
+    height: var(--wf-tabbar-total);
+    flex-direction: row;
+    align-items: stretch;
+    justify-content: space-around;
+    gap: 0;
+    padding: 5px 6px calc(5px + env(safe-area-inset-bottom, 0px));
+    border-right: none;
+    border-top: 1px solid var(--wf-glass-border);
+    background: var(--wf-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+  }
+  .wf-rail-item {
+    position: relative;
+    width: auto;
+    height: auto;
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 2px 2px 0;
+    font-size: 22px;
+    border-radius: 12px;
+    color: var(--wf-text-dim);
+  }
+  .wf-rail-item:hover {
+    background: transparent;
+  }
+  .wf-rail-item.active {
+    background: transparent;
+    outline: none;
+    color: var(--wf-accent);
+  }
+  .wf-rail-item .wf-btn-badge {
+    top: -2px;
+    right: calc(50% - 22px);
+  }
+  .wf-rail-label {
+    display: block;
+    font-size: 10px;
+    font-weight: 600;
+    line-height: 1;
+    letter-spacing: 0.01em;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wf-rail-connect {
+    margin-left: 0;
+  }
+
+  /* The status strip rides on the tab bar: one row, glass, side-scrolls. */
+  .wf-statusbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: var(--wf-tabbar-total);
+    z-index: 80;
+    height: var(--wf-statusrow-h);
+    min-height: 0;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 12px;
+    padding: 0 12px;
+    border-top: 1px solid var(--wf-glass-border);
+    background: var(--wf-glass);
+    -webkit-backdrop-filter: blur(24px) saturate(1.6);
+    backdrop-filter: blur(24px) saturate(1.6);
+  }
+  .wf-statusbar button {
+    min-height: 28px;
+    flex-shrink: 0;
+  }
+  .wf-status-menu {
+    bottom: calc(100% + 6px);
+  }
+
+  /* Every app column reserves chrome clearance for its bottom controls;
+     scrollable documents and the canvas visibly pass beneath the glass. */
+  .wf-chat,
+  .wf-session-room,
+  .wf-friends,
+  .wf-docs,
+  .wf-sessions,
+  .wf-documents,
+  .wf-plugins,
+  .wf-notes {
+    padding-bottom: var(--wf-bc);
+  }
+  .wf-settings-body {
+    padding-bottom: calc(24px + var(--wf-bc));
+  }
+  .wf-doc-scroll {
+    padding-bottom: calc(40px + var(--wf-bc));
+  }
+  .wf-docs-body {
+    padding-bottom: calc(60px + var(--wf-bc));
+  }
+  .wf-chat-side,
+  .wf-friends-side,
+  .wf-docs-nav,
+  .wf-session-chat {
+    padding-bottom: var(--wf-bc);
+  }
+  .wf-connect {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Canvas floating tools clear the chrome instead of hiding behind it. */
+  .wf-board-toolbar {
+    bottom: calc(var(--wf-bc) + 10px);
+  }
+  .wf-minimap {
+    bottom: calc(var(--wf-bc) + 10px);
+  }
+  .wf-board-menu.wf-board-bg-menu {
+    bottom: calc(var(--wf-bc) + 8px);
+  }
+
+  /* Dialogs become bottom sheets: full width, grabber, slide up, rounded
+     top — the profile card and every modal box inherit this shape. */
+  .wf-modal-backdrop {
+    place-items: end stretch;
+  }
+  .wf-modal-backdrop > * {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    margin: 0;
+    border-radius: 18px 18px 0 0;
+    border-bottom: none;
+    border-left: none;
+    border-right: none;
+    max-height: 86dvh;
+    overflow-y: auto;
+    padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px));
+    animation: wf-sheet-in 0.28s cubic-bezier(0.32, 0.72, 0.33, 1);
+  }
+  .wf-modal-backdrop > *::before {
+    content: "";
+    display: block;
+    width: 36px;
+    height: 5px;
+    margin: 2px auto 10px;
+    border-radius: var(--wf-radius-pill);
+    background: rgba(255, 255, 255, 0.22);
+  }
+}
+
+/* Touch: chrome is an app surface, not selectable text, and presses give
+   the little native dip instead of hover states that never fire. */
+@media (hover: none) {
+  .wf-rail,
+  .wf-statusbar,
+  .wf-board-toolbar,
+  .wf-board-viewbar,
+  .wf-selection-toolbar,
+  .wf-editor-toolbar,
+  .wf-chat-main-header {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  button:active:not(:disabled),
+  .wf-rail-item:active {
+    transform: scale(0.96);
+    transition: transform 0.06s;
+  }
+}
+
+/* Login "Remember me" row — quiet, between the fields and the buttons. */
+.wf-remember {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--wf-text-dim);
+  cursor: pointer;
+  user-select: none;
+}
+
+.wf-remember input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+  accent-color: var(--wf-accent);
+}
+
+/* ---- document typography (TextFormat paragraph attributes) ----
+   Scoped to the Plain-format page and to RichDoc previews; the scripted
+   formats (screenplay, manuscript…) keep their own conventions, so stale
+   attributes are simply outranked there instead of invalidated. */
+
+.wf-fmt-none .ProseMirror [data-align="center"],
+.wf-rich-wrap .ProseMirror [data-align="center"] {
+  text-align: center;
+}
+.wf-fmt-none .ProseMirror [data-align="right"],
+.wf-rich-wrap .ProseMirror [data-align="right"] {
+  text-align: right;
+}
+.wf-fmt-none .ProseMirror [data-align="justify"],
+.wf-rich-wrap .ProseMirror [data-align="justify"] {
+  text-align: justify;
+}
+
+.wf-fmt-none .ProseMirror [data-font="times"],
+.wf-rich-wrap .ProseMirror [data-font="times"] {
+  font-family: "Times New Roman", Times, serif;
+}
+.wf-fmt-none .ProseMirror [data-font="palatino"],
+.wf-rich-wrap .ProseMirror [data-font="palatino"] {
+  font-family: "Palatino Linotype", Palatino, "Book Antiqua", serif;
+}
+.wf-fmt-none .ProseMirror [data-font="sans"],
+.wf-rich-wrap .ProseMirror [data-font="sans"] {
+  font-family: -apple-system, "Segoe UI", Arial, sans-serif;
+}
+.wf-fmt-none .ProseMirror [data-font="mono"],
+.wf-rich-wrap .ProseMirror [data-font="mono"] {
+  font-family: "Courier Prime", "Courier New", Courier, monospace;
+}
+.wf-fmt-none .ProseMirror [data-font="comic"],
+.wf-rich-wrap .ProseMirror [data-font="comic"] {
+  font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", "Comic Neue", cursive;
+}
+
+.wf-fmt-none .ProseMirror [data-size="10"],
+.wf-rich-wrap .ProseMirror [data-size="10"] {
+  font-size: 10pt;
+}
+.wf-fmt-none .ProseMirror [data-size="11"],
+.wf-rich-wrap .ProseMirror [data-size="11"] {
+  font-size: 11pt;
+}
+.wf-fmt-none .ProseMirror [data-size="12"],
+.wf-rich-wrap .ProseMirror [data-size="12"] {
+  font-size: 12pt;
+}
+.wf-fmt-none .ProseMirror [data-size="14"],
+.wf-rich-wrap .ProseMirror [data-size="14"] {
+  font-size: 14pt;
+}
+.wf-fmt-none .ProseMirror [data-size="16"],
+.wf-rich-wrap .ProseMirror [data-size="16"] {
+  font-size: 16pt;
+}
+.wf-fmt-none .ProseMirror [data-size="18"],
+.wf-rich-wrap .ProseMirror [data-size="18"] {
+  font-size: 18pt;
+}
+.wf-fmt-none .ProseMirror [data-size="24"],
+.wf-rich-wrap .ProseMirror [data-size="24"] {
+  font-size: 24pt;
+}
+
+/* Explicit page break: semantic in every format, so it lives on the
+   generic content scopes. On screen it's a labeled dashed rule; in print
+   and export it's a real break. */
+.wf-doc-content .ProseMirror [data-page-break],
+.wf-rich .ProseMirror [data-page-break] {
+  break-before: page;
+  position: relative;
+  margin-top: 30px;
+}
+.wf-doc-content .ProseMirror [data-page-break]::before,
+.wf-rich .ProseMirror [data-page-break]::before {
+  content: "page break";
+  position: absolute;
+  top: -21px;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(124, 108, 240, 0.55);
+  color: rgba(124, 108, 240, 0.8);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  text-align: right;
+  line-height: 1.6;
+  pointer-events: none;
+}
+
+/* Toolbar font/size selects: compact chips beside the icon buttons. */
+.wf-editor-toolbar select.wf-doc-typo {
+  height: 28px;
+  min-height: 0;
+  padding: 0 6px;
+  font-size: 12px;
+  color: var(--wf-text);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  flex-shrink: 0;
+}
+
+/* ---- page guides (approximate on-screen pagination) ---- */
+
+.wf-page {
+  position: relative;
+}
+
+.wf-page-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.wf-page-guide {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: 1px dashed rgba(0, 0, 0, 0.22);
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: right;
+  padding: 2px 10px 0 0;
 }

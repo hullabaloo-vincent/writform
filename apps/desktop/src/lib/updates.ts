@@ -8,11 +8,14 @@ export interface AvailableUpdate {
   downloadAndInstall: () => Promise<void>;
 }
 
+import { isMobileApp } from "./backend";
+
 const inTauri = "__TAURI_INTERNALS__" in window;
 
-/** Look for a newer release; null = up to date (or not the desktop app). */
+/** Look for a newer release; null = up to date (or not the desktop app —
+ *  iOS/Android builds update through the store/Xcode, never in-app). */
 export async function checkForUpdate(): Promise<AvailableUpdate | null> {
-  if (!inTauri) return null;
+  if (!inTauri || isMobileApp) return null;
   const { check } = await import("@tauri-apps/plugin-updater");
   const update = await check();
   if (!update) return null;

@@ -13,6 +13,7 @@ import {
   MoveVertical,
   Presentation,
   Share2,
+  SquareSplitVertical,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +26,7 @@ import { confirmDialog } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
 import { Toolbar, WfImage } from "../../editor/RichEditor";
+import { TextFormat } from "../../editor/TextFormat";
 import { documentsApi } from "./api";
 import type { DocProvider } from "./collab";
 import { DocElement } from "./formats/DocElement";
@@ -32,6 +34,7 @@ import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
+import { PageGuides } from "./PageGuides";
 import { exportDocument } from "./export";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
@@ -146,6 +149,12 @@ function EditorInner({
   const { meta, myAccess, panel, setPanel } = state;
   const [exportOpen, setExportOpen] = useState(false);
   const [finding, setFinding] = useState(false);
+  const [highlightsOn, setHighlightsOn] = useState(
+    () => localStorage.getItem("wf-doc-feedback-hl") !== "off",
+  );
+  const [pageGuides, setPageGuides] = useState(
+    () => localStorage.getItem("wf-doc-pageguides") === "on",
+  );
   // Phones show panels as overlays over the page — swipe right pushes the
   // open one away. Starts inside the editor text never trigger (editable).
   const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
@@ -156,6 +165,7 @@ function EditorInner({
       WfImage,
       Placeholder.configure({ placeholder: "Write…" }),
       DocElement,
+      TextFormat.configure({ shortcuts: format === "none" }),
       formatKeymap(format),
       FeedbackHighlights,
       Collaboration.configure({ document: provider.doc }),
@@ -191,7 +201,7 @@ function EditorInner({
   }, [provider]);
 
   useAutoRevisions(editor, (json) => documentsApi.snapshot(meta.id, json), !readonly);
-  useFeedbackDecorations(editor, provider, state.threads, panel === "feedback");
+  useFeedbackDecorations(editor, provider, state.threads, panel === "feedback" || highlightsOn);
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
   useEffect(() => {
@@ -286,6 +296,17 @@ function EditorInner({
           <ListTree size={16} />
         </button>
         <button
+          title="Page guides — approximate on-screen pages"
+          className={pageGuides ? "active" : ""}
+          onClick={() => {
+            const next = !pageGuides;
+            setPageGuides(next);
+            localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+          }}
+        >
+          <SquareSplitVertical size={16} />
+        </button>
+        <button
           title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
           className={focus ? "active" : ""}
           onClick={toggleFocus}
@@ -357,6 +378,7 @@ function EditorInner({
           <Toolbar
             editor={editor}
             richBlocks={format === "none"}
+            typography={format === "none"}
             leading={
               <>
                 <ElementSelect editor={editor} format={format} />
@@ -377,11 +399,23 @@ function EditorInner({
       <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
           <div className={`wf-page wf-fmt-${format}`}>
+            {pageGuides && <PageGuides />}
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />
           </div>
         </div>
         {panel === "history" && <VersionHistoryPanel editor={editor} />}
-        {panel === "feedback" && <FeedbackPanel editor={editor} provider={provider} />}
+        {panel === "feedback" && (
+          <FeedbackPanel
+            editor={editor}
+            provider={provider}
+            highlightsOn={highlightsOn}
+            onToggleHighlights={() => {
+              const next = !highlightsOn;
+              setHighlightsOn(next);
+              localStorage.setItem("wf-doc-feedback-hl", next ? "on" : "off");
+            }}
+          />
+        )}
         {panel === "outline" && <OutlinePanel editor={editor} />}
       </div>
 
@@ -491,12 +525,21 @@ export function DocumentStats({
     if (goalKey && goal !== null) noteGoalProgress(goalKey, words, goal);
   }, [goalKey, goal, words]);
 
+  // The sheet is defined in CSS inches, so 96px/in maps exactly. On-screen
+  // pages only: export pagination uses different fonts and margins.
+  const pages = Math.max(1, Math.ceil(editor.view.dom.offsetHeight / (11 * 96)));
+
   const body = (
     <>
       {words.toLocaleString()}
       {goal !== null && ` / ${goal.toLocaleString()}`} {words === 1 && goal === null ? "word" : "words"}
       {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
       {format === "screenplay" && ` · ${blocks} elements`}
+      {words > 0 && (
+        <span title="On-screen pages — export pagination may differ">
+          {` · ~${pages} page${pages === 1 ? "" : "s"}`}
+        </span>
+      )}
     </>
   );
   if (!goalKey) return <span className="wf-doc-stats">{body}</span>;

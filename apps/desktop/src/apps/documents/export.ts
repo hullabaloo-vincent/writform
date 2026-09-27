@@ -1,20 +1,70 @@
 import type { JSONContent } from "@tiptap/core";
 import JSZip from "jszip";
 
+interface ExportRun {
+  text: string;
+  bold: boolean;
+  italic: boolean;
+}
+
 interface ExportBlock {
   type: string;
   element: string;
+  align: string;
+  font: string;
+  size: number;
+  pageBreakBefore: boolean;
+  runs: ExportRun[];
   text: string;
 }
 
+/** Flatten the doc to leaf blocks: list items become their own blocks with
+ *  literal markers (they used to concatenate — "apple","banana" exported as
+ *  "applebanana"), blockquote children flatten, and inline marks survive as
+ *  runs so DOCX can emit real bold/italic. */
 function blocksFromDoc(doc: JSONContent): ExportBlock[] {
-  const read = (node: JSONContent): string =>
-    `${node.text ?? ""}${(node.content ?? []).map(read).join("")}`;
-  return (doc.content ?? []).map((node) => ({
-    type: node.type ?? "paragraph",
-    element: String(node.attrs?.element ?? ""),
-    text: read(node),
-  }));
+  const runsOf = (node: JSONContent, bold: boolean, italic: boolean, out: ExportRun[]) => {
+    const b = bold || (node.marks ?? []).some((m) => m.type === "bold");
+    const i = italic || (node.marks ?? []).some((m) => m.type === "italic");
+    if (node.type === "hardBreak") out.push({ text: "\n", bold: b, italic: i });
+    if (node.text) out.push({ text: node.text, bold: b, italic: i });
+    for (const child of node.content ?? []) runsOf(child, b, i, out);
+  };
+
+  const out: ExportBlock[] = [];
+  const pushLeaf = (node: JSONContent, marker = "") => {
+    const runs: ExportRun[] = [];
+    if (marker) runs.push({ text: marker, bold: false, italic: false });
+    runsOf(node, false, false, runs);
+    out.push({
+      type: node.type ?? "paragraph",
+      element: String(node.attrs?.element ?? ""),
+      align: String(node.attrs?.align ?? ""),
+      font: String(node.attrs?.font ?? ""),
+      size: Number(node.attrs?.size ?? 0) || 0,
+      pageBreakBefore: Boolean(node.attrs?.pageBreakBefore),
+      runs,
+      text: runs.map((r) => r.text).join(""),
+    });
+  };
+  const expand = (node: JSONContent, marker = "") => {
+    if (node.type === "bulletList" || node.type === "orderedList") {
+      let n = 0;
+      for (const item of node.content ?? []) {
+        n += 1;
+        const itemMarker = node.type === "bulletList" ? "• " : `${n}. `;
+        (item.content ?? []).forEach((child, idx) =>
+          expand(child, idx === 0 ? itemMarker : "   "),
+        );
+      }
+    } else if (node.type === "blockquote") {
+      for (const child of node.content ?? []) expand(child, marker);
+    } else {
+      pushLeaf(node, marker);
+    }
+  };
+  for (const node of doc.content ?? []) expand(node);
+  return out;
 }
 
 function safeName(title: string): string {
@@ -55,10 +105,47 @@ function docxStyle(block: ExportBlock, format: string): string {
   return "Normal";
 }
 
+const DOCX_FONTS: Record<string, string> = {
+  times: "Times New Roman",
+  palatino: "Palatino",
+  sans: "Arial",
+  mono: "Courier New",
+  comic: "Comic Sans MS",
+};
+
 function paragraphXml(block: ExportBlock, format: string): string {
   const style = docxStyle(block, format);
-  const text = xmlEscape(block.text || " ");
-  return `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const props = [`<w:pStyle w:val="${style}"/>`];
+  if (block.pageBreakBefore) props.push("<w:pageBreakBefore/>");
+  const jc =
+    block.align === "center"
+      ? "center"
+      : block.align === "right"
+        ? "right"
+        : block.align === "justify"
+          ? "both"
+          : "";
+  if (jc) props.push(`<w:jc w:val="${jc}"/>`);
+
+  const face = DOCX_FONTS[block.font];
+  const runProps = (run: ExportRun) => {
+    const parts: string[] = [];
+    if (face) parts.push(`<w:rFonts w:ascii="${face}" w:hAnsi="${face}"/>`);
+    if (run.bold) parts.push("<w:b/>");
+    if (run.italic) parts.push("<w:i/>");
+    if (block.size) parts.push(`<w:sz w:val="${block.size * 2}"/>`);
+    return parts.length ? `<w:rPr>${parts.join("")}</w:rPr>` : "";
+  };
+  const runs = block.runs.length
+    ? block.runs
+    : [{ text: " ", bold: false, italic: false }];
+  const body = runs
+    .map(
+      (run) =>
+        `<w:r>${runProps(run)}<w:t xml:space="preserve">${xmlEscape(run.text || " ")}</w:t></w:r>`,
+    )
+    .join("");
+  return `<w:p><w:pPr>${props.join("")}</w:pPr>${body}</w:p>`;
 }
 
 export async function buildDocx(doc: JSONContent, title: string, format: string): Promise<Uint8Array> {
@@ -166,12 +253,21 @@ export function buildPdf(doc: JSONContent, title: string, format: string): Uint8
       else if (block.element === "transition") { x = 396; width = 144; }
       if (block.element === "scene_heading") { font = "F2"; before = 18; }
     } else if (block.type === "heading") { font = "F2"; size = 15; leading = 19; before = 15; }
+    // An explicit page break starts a fresh page (unless we're already at
+    // the top of one).
+    if (block.pageBreakBefore && y < 720) finish();
     const value = screenplay && ["scene_heading", "character", "transition"].includes(block.element) ? block.text.toUpperCase() : block.text;
     const lines = wrap(value, Math.max(8, Math.floor(width / (size * 0.6))));
     if (y - before - lines.length * leading < 60) finish();
     y -= before;
     for (const line of lines) {
-      commands.push(`BT /${font} ${size} Tf ${x} ${y.toFixed(1)} Td (${pdfEscape(line)}) Tj ET`);
+      // Alignment by x-shift with the writer's own monospace metric
+      // (0.6em/char). The Courier-only writer intentionally ignores the
+      // font/size paragraph attributes; justify degrades to left.
+      const slack = Math.max(0, width - line.length * size * 0.6);
+      const lineX =
+        block.align === "center" ? x + slack / 2 : block.align === "right" ? x + slack : x;
+      commands.push(`BT /${font} ${size} Tf ${lineX.toFixed(1)} ${y.toFixed(1)} Td (${pdfEscape(line)}) Tj ET`);
       y -= leading;
     }
   }

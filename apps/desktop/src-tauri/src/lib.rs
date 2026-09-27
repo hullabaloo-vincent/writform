@@ -26,14 +26,23 @@ pub fn run() {
         .install_default()
         .expect("install rustls crypto provider");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_notification::init());
+
+    // Desktop: self-update, relaunch, and remembering window size/position
+    // across launches (tauri.conf.json's 1280×800 stays the first-run
+    // default). None of these concepts exist on iOS/Android.
+    #[cfg(desktop)]
+    let builder = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        // Remember window size/position across launches (tauri.conf.json's
-        // 1280×800 stays the first-run default).
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::new().build());
+
+    #[cfg(mobile)]
+    let builder = builder.plugin(tauri_plugin_haptics::init());
+
+    builder
         .manage(ConnectionManager::default())
         .manage(host::HostManager::default())
         .manage(Arc::new(WsManager::default()))
@@ -98,6 +107,8 @@ pub fn run() {
             localdocs::localdoc_delete,
             localdocs::localdoc_history_read,
             localdocs::localdoc_history_write,
+            localdocs::localdoc_feedback_read,
+            localdocs::localdoc_feedback_write,
             localboards::localboard_list,
             localboards::localboard_read,
             localboards::localboard_write,

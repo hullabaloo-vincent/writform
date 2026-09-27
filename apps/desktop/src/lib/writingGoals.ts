@@ -1,5 +1,7 @@
 import { toast } from "../platform";
 
+import { haptic } from "./haptics";
+
 /**
  * Per-document word-count goals, kept on this device (localStorage). The key
  * carries the server address (or `local`) so ids from different servers never
@@ -33,5 +35,6 @@ const celebrated = new Set<string>();
 export function noteGoalProgress(docKey: string, words: number, target: number): void {
   if (words < target || celebrated.has(docKey)) return;
   celebrated.add(docKey);
+  haptic("success");
   toast(`Goal reached — ${target.toLocaleString()} words`);
 }

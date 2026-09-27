@@ -1,15 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for the main window",
+  "description": "Capability for the main window on every platform",
   "windows": ["main"],
-  "permissions": [
-    "core:default",
-    "core:window:allow-set-badge-count",
-    "notification:default",
-    "opener:default",
-    "process:default",
-    "updater:default",
-    "window-state:default"
-  ]
+  "permissions": ["core:default", "notification:default", "opener:default"]
 }

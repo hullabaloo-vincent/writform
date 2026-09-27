@@ -29,6 +29,7 @@ export function devPreviewBackend(): Backend {
   const localdocs = new Map<string, string>();
   const localdocTimes = new Map<string, number>();
   const localdocHistory = new Map<string, string>();
+  const localdocFeedback = new Map<string, string>();
   const localboards = new Map<string, string>();
   const localboardTimes = new Map<string, number>();
   let pending: SavedServer | null = null;
@@ -1197,7 +1198,7 @@ export function devPreviewBackend(): Backend {
       return session;
     },
     async register(addr, username) {
-      return this.login(addr, username, "");
+      return this.login(addr, username, "", true);
     },
     async resetPassword() {
       await delay(300);
@@ -1206,7 +1207,7 @@ export function devPreviewBackend(): Backend {
       session = null;
     },
     async currentSession() {
-      return session;
+      return { session, reason: null, addr: null };
     },
     async hostStatus() {
       return host;
@@ -1298,12 +1299,19 @@ export function devPreviewBackend(): Backend {
       localdocs.delete(id);
       localdocTimes.delete(id);
       localdocHistory.delete(id);
+      localdocFeedback.delete(id);
     },
     async localdocHistoryRead(id) {
       return localdocHistory.get(id) ?? "";
     },
     async localdocHistoryWrite(id, content) {
       localdocHistory.set(id, content);
+    },
+    async localdocFeedbackRead(id) {
+      return localdocFeedback.get(id) ?? "";
+    },
+    async localdocFeedbackWrite(id, content) {
+      localdocFeedback.set(id, content);
     },
     async localboardList() {
       return [...localboards.entries()]

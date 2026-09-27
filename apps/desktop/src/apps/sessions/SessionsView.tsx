@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/react";
-import { ChevronDown, ChevronRight, MessageSquare, Trash2 } from "lucide-react";
+import { ChevronDown, ChevronRight, MessageSquare, Plus, Trash2 } from "lucide-react";
 import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
@@ -9,12 +9,15 @@ import { isCmdError } from "../../lib/backend";
 import { notifyNow } from "../../lib/notifications";
 import { useSwipe } from "../../lib/useSwipe";
 import { countWordsInDocJson } from "../../lib/wordCount";
-import { confirmDialog, toast } from "../../platform";
+import { confirmDialog, toast, toastError } from "../../platform";
 import { useSession } from "../../stores/session";
+import type { Message } from "../../bindings/proto/Message";
+import { uploadBlob } from "../../lib/upload";
+import { haptic } from "../../lib/haptics";
 import { chatApi } from "../chat/api";
+import { MessageRow, PinsButton, TypingLine } from "../chat/ChatView";
 import { dayLabel, isNewDay } from "../chat/daySeparators";
 import { GroupChip } from "../chat/GroupChip";
-import { MessageText } from "../chat/MessageText";
 import { useChat } from "../chat/store";
 import { sessionApi } from "./api";
 import { useSessions } from "./store";
@@ -488,6 +491,10 @@ function SessionChat({ channelId }: { channelId: number }) {
   const messagesMap = useChat((s) => s.messages);
   const messages = messagesMap[channelId] ?? [];
   const [draft, setDraft] = useState("");
+  const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [uploads, setUploads] = useState<{ id: number; name: string }[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -501,45 +508,134 @@ function SessionChat({ channelId }: { channelId: number }) {
     bottomRef.current?.scrollIntoView({ behavior: "instant" });
   }, [messages.length]);
 
+  const addUpload = async (file: File) => {
+    setUploading(true);
+    try {
+      const meta = await uploadBlob(file, file.name);
+      setUploads((u) => [...u, { id: meta.id, name: meta.original_name ?? file.name }]);
+    } catch {
+      // upload failed — chip simply doesn't appear
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const submit = () => {
+    const content = draft.trim();
+    if (!content && uploads.length === 0) return;
+    const attachmentIds = uploads.map((u) => u.id);
+    const replyToId = replyTo?.id ?? null;
+    setDraft("");
+    setUploads([]);
+    setReplyTo(null);
+    haptic("light");
+    void chatApi.sendMessage(channelId, content, attachmentIds, replyToId).catch(() => {
+      // Put the text back so nothing is lost.
+      setDraft(content);
+      toastError("Message didn't send — your text is back in the box.");
+    });
+  };
+
   return (
     <>
-      <header className="wf-session-chat-header">Session chat</header>
+      <header className="wf-session-chat-header">
+        Session chat
+        <span className="wf-statusbar-spacer" />
+        <PinsButton channelId={channelId} authorOnly />
+      </header>
       <div className="wf-session-chat-messages" data-msg-scroll>
-        {messages.map((m, i) => (
-          <Fragment key={m.id}>
-            {isNewDay(messages[i - 1]?.created_at, m.created_at) && (
-              <div className="wf-day-sep">
-                <span>{dayLabel(m.created_at)}</span>
-              </div>
-            )}
-            <div className="wf-msg">
-              <div className="wf-msg-meta">
-                <span className="wf-msg-author">{m.author.display_name ?? m.author.username}</span>
-              </div>
-              {m.content && (
-                <div className="wf-msg-content">
-                  <MessageText text={m.content} />
+        {messages.map((m, i) => {
+          const newDay = isNewDay(messages[i - 1]?.created_at, m.created_at);
+          return (
+            <Fragment key={m.id}>
+              {newDay && (
+                <div className="wf-day-sep">
+                  <span>{dayLabel(m.created_at)}</span>
                 </div>
               )}
-            </div>
-          </Fragment>
-        ))}
+              {/* The real chat row: reactions, replies, edit/delete, and
+                  attachment rendering. authorOnly because admin checks and
+                  custom emotes key off the chat app's ACTIVE group, which
+                  this session's group need not be. */}
+              <MessageRow
+                message={m}
+                compact={!newDay && messages[i - 1]?.author.id === m.author.id}
+                authorOnly
+                onReply={setReplyTo}
+              />
+            </Fragment>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
+      <TypingLine channelId={channelId} />
+      {uploads.length > 0 && (
+        <div className="wf-upload-chips">
+          {uploads.map((u) => (
+            <span key={u.id} className="wf-upload-chip">
+              {u.name}
+              <button onClick={() => setUploads((list) => list.filter((x) => x.id !== u.id))}>
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      )}
+      {replyTo && (
+        <div className="wf-reply-chip">
+          Replying to{" "}
+          <strong>{replyTo.author.display_name ?? replyTo.author.username}</strong>
+          <span className="wf-reply-chip-text">{(replyTo.content ?? "").slice(0, 80)}</span>
+          <button className="wf-icon" title="Cancel reply" onClick={() => setReplyTo(null)}>
+            ×
+          </button>
+        </div>
+      )}
       <form
         className="wf-session-chat-composer"
         onSubmit={(e) => {
           e.preventDefault();
-          const content = draft.trim();
-          if (!content) return;
-          setDraft("");
-          void chatApi.sendMessage(channelId, content);
+          submit();
         }}
       >
         <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void addUpload(file);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          className="wf-composer-attach"
+          title="Attach image"
+          disabled={uploading}
+          onClick={() => fileRef.current?.click()}
+        >
+          {uploading ? "…" : <Plus size={16} />}
+        </button>
+        <input
           placeholder="chat while you write…"
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value);
+            if (e.target.value) useChat.getState().sendTyping(channelId);
+          }}
+          onPaste={(e) => {
+            const item = [...e.clipboardData.items].find((i) => i.type.startsWith("image/"));
+            const file = item?.getAsFile();
+            if (file) {
+              e.preventDefault();
+              void addUpload(file);
+            }
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Escape" && replyTo) setReplyTo(null);
+          }}
         />
       </form>
     </>

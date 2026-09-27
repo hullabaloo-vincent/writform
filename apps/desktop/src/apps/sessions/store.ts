@@ -4,6 +4,7 @@ import type { SessionDetail } from "../../bindings/proto/SessionDetail";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { backend, isCmdError } from "../../lib/backend";
 import { toast } from "../../platform";
+import { noteSessionChannel } from "../chat/store";
 import { sessionApi } from "./api";
 
 interface SessionsState {
@@ -36,7 +37,9 @@ export const useSessions = create<SessionsState>((set, get) => ({
     try {
       await backend.wsSub([`session:${sessionId}`]);
       const detail = await sessionApi.detail(sessionId);
-      // Also watch the side chat so it flows into the chat store's buckets.
+      // Also watch the side chat so it flows into the chat store's buckets —
+      // and register it so its traffic never counts as DM/channel unreads.
+      noteSessionChannel(detail.session.chat_channel_id);
       await backend.wsSub([`channel:${detail.session.chat_channel_id}`]);
       set({ detail });
     } catch (e) {
@@ -48,9 +51,14 @@ export const useSessions = create<SessionsState>((set, get) => ({
   },
 
   closeSession: () => {
-    const { activeSessionId } = get();
+    const { activeSessionId, detail } = get();
     if (activeSessionId !== null) {
       void backend.wsUnsub([`session:${activeSessionId}`]);
+    }
+    // The side-chat subscription used to leak here, feeding unread counts
+    // long after leaving the room.
+    if (detail !== null) {
+      void backend.wsUnsub([`channel:${detail.session.chat_channel_id}`]);
     }
     set({ activeSessionId: null, detail: null });
   },

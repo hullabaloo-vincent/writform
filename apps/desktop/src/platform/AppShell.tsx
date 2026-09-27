@@ -1,7 +1,8 @@
 import { LogIn, LogOut, WifiOff } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { backend, isWeb } from "../lib/backend";
+import { backend, isMobileApp, isWeb } from "../lib/backend";
+import { haptic } from "../lib/haptics";
 import { announceUpdateOnLaunch } from "../lib/updates";
 import { useSession } from "../stores/session";
 import { Avatar } from "./Avatar";
@@ -137,9 +138,11 @@ export function AppShell() {
 
   // Mirror the in-app unread total onto the OS: the dock badge on
   // macOS/Linux, the PWA badge in the browser. Windows' overlay icon needs
-  // an icon asset, so it silently no-ops there for now.
+  // an icon asset, so it silently no-ops there for now. iOS ties app-icon
+  // badges to delivered notifications, not windows — nothing to mirror.
   useEffect(() => {
     const total = Object.values(badges).reduce((n, c) => n + c, 0);
+    if (isMobileApp) return;
     if ("__TAURI_INTERNALS__" in window) {
       void import("@tauri-apps/api/window").then(({ getCurrentWindow }) =>
         getCurrentWindow()
@@ -172,9 +175,14 @@ export function AppShell() {
                 key={appId}
                 className={`wf-rail-item ${appId === activeAppId ? "active" : ""}`}
                 title={manifest.name}
-                onClick={() => setActiveApp(appId)}
+                onClick={() => {
+                  haptic("selection");
+                  setActiveApp(appId);
+                }}
               >
                 <span aria-hidden>{manifest.icon}</span>
+                {/* Tab label — hidden on desktop, shown on the phone tab bar. */}
+                <span className="wf-rail-label">{manifest.name}</span>
                 {badge > 0 && <span className="wf-btn-badge">{badge > 99 ? "99+" : badge}</span>}
               </button>
             );

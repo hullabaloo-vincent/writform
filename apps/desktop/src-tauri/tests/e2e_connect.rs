@@ -61,6 +61,7 @@ async fn tofu_trust_register_login_end_to_end() {
         addr_str.clone(),
         "alice".into(),
         "pass-word-1".into(),
+        false,
     )
     .await
     .unwrap_err();
@@ -73,6 +74,7 @@ async fn tofu_trust_register_login_end_to_end() {
         addr_str.clone(),
         "alice".into(),
         "pass-word-1".into(),
+        false,
     )
     .await
     .unwrap();
@@ -83,6 +85,7 @@ async fn tofu_trust_register_login_end_to_end() {
         addr_str.clone(),
         "alice".into(),
         "pass-word-1".into(),
+        true,
     )
     .await
     .unwrap();
@@ -98,6 +101,8 @@ async fn tofu_trust_register_login_end_to_end() {
         reloaded.find(&addr_str).unwrap().last_username,
         Some("alice".into())
     );
+    // "Remember me" on the last login persisted the session token.
+    assert!(reloaded.find(&addr_str).unwrap().session_token.is_some());
 }
 
 #[tokio::test]
@@ -118,6 +123,8 @@ async fn wrong_pin_is_rejected_and_identity_change_is_flagged() {
         spki_hash: "00".repeat(32),
         fingerprint: "dead-beef-dead-beef".into(),
         last_username: None,
+        session_token: None,
+        last_active_at: None,
     });
 
     // The pinned TLS handshake itself must refuse the connection.
@@ -126,6 +133,7 @@ async fn wrong_pin_is_rejected_and_identity_change_is_flagged() {
         addr_str.clone(),
         "alice".into(),
         "pass-word-1".into(),
+        false,
     )
     .await
     .unwrap_err();

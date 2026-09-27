@@ -7,7 +7,7 @@ import {
   relativePositionToAbsolutePosition,
   ySyncPluginKey,
 } from "@tiptap/y-tiptap";
-import { Check, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
+import { Check, Highlighter, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import * as Y from "yjs";
 
@@ -74,10 +74,17 @@ export function anchorsFromSelection(editor: Editor): SelectionAnchors | null {
   };
 }
 
+/** The anchored subset of a thread — server threads and local notes both
+ *  satisfy this shape, so the range/decoration helpers serve either. */
+export interface AnchoredThread {
+  anchor_b64: string | null;
+  head_b64: string | null;
+}
+
 /** Where a thread's anchored range sits in today's document, if resolvable. */
 export function resolveThreadRange(
   editor: Editor,
-  thread: DocumentThread,
+  thread: AnchoredThread,
 ): { from: number; to: number } | null {
   if (!thread.anchor_b64 || !thread.head_b64) return null;
   const ystate = ySyncPluginKey.getState(editor.state);
@@ -107,8 +114,8 @@ export function resolveThreadRange(
 /** Keep highlight decorations in sync with the open threads. */
 export function useFeedbackDecorations(
   editor: Editor | null,
-  provider: DocProvider,
-  threads: DocumentThread[],
+  provider: { doc: Y.Doc },
+  threads: (AnchoredThread & { id: number | string; resolved: boolean })[],
   enabled: boolean,
 ) {
   useEffect(() => {
@@ -153,9 +160,14 @@ export function useFeedbackDecorations(
 export function FeedbackPanel({
   editor,
   provider,
+  highlightsOn,
+  onToggleHighlights,
 }: {
   editor: Editor | null;
   provider: DocProvider;
+  /** Whether highlights stay visible after the panel closes. */
+  highlightsOn?: boolean;
+  onToggleHighlights?: () => void;
 }) {
   void provider;
   const docId = useDocuments((s) => s.activeDocId);
@@ -222,6 +234,19 @@ export function FeedbackPanel({
       <header className="wf-doc-panel-header">
         <h3>Feedback</h3>
         <span className="wf-statusbar-spacer" />
+        {onToggleHighlights && (
+          <button
+            className={`wf-icon ${highlightsOn ? "active" : ""}`}
+            title={
+              highlightsOn
+                ? "Highlights stay visible while writing — click to show them only here"
+                : "Show comment highlights while writing"
+            }
+            onClick={onToggleHighlights}
+          >
+            <Highlighter size={15} />
+          </button>
+        )}
         <button
           className="wf-icon"
           title={

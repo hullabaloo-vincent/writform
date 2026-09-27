@@ -39,13 +39,26 @@ Google-Docs-style collaborative writing, separate from timed sessions.
   scrolling** that keeps the line you're writing vertically centred.
 - **Word-count goals**: click the word count to set a target; progress
   rides under the count as a thin bar, per document, on this device.
+- **Typography** (Plain format): set font (Times, Palatino, Sans,
+  Typewriter, Comic Sans), size, and alignment — left, center, right,
+  justify (⌘⇧L/E/R/J) — on the selected paragraphs. Select-all restyles the
+  whole document; the scripted formats keep their own professional layouts.
+- **Page guides & breaks**: a toggle draws page boundaries over the
+  continuous scroll and the word count gains "~N pages" (on-screen estimate
+  — export pagination can differ). ⌘↩ inserts an explicit page break, which
+  exports as a real break in PDF and Word.
 - **Folders**: organize your documents; move a document between folders,
   rename or delete a folder (its documents stay put).
 - **Search**: full-text — matches titles and document content.
 - **Feedback threads**: select text and leave a comment anchored to it;
   threads track the text even as it moves, resolve/reopen, reply inline.
+  Highlights stay visible while you write (toggle in the panel header) —
+  and on-device documents have the same panel as **Notes**: comments to
+  your future editing self, stored beside the document on this device.
 - **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into a
-  new document (best-effort for PDF/Pages, which are text-only extractions).
+  new document. PDF import recovers structure, not just text: headings,
+  bold/italic, centered lines, first-line indents, and paragraphs that
+  continue across page boundaries.
 - **Export all**: back up every document you can see as Markdown + JSON —
   your writing is never locked in.
 - **Sharing**: private by default; the owner grants read or write access to
@@ -282,6 +295,29 @@ voice in a responsive layout. Use your browser's **Add to Home Screen** to insta
 the notes vault, on-device documents and boards, the portable profile,
 hosting, and plugins.
 
+## On iPhone and iPad
+
+subScribe also builds as a native iOS app (the same codebase through
+Tauri). Beyond the responsive layout the web client already has, the
+native app adds what a browser can't:
+
+- **Real notifications** through iOS, with permission asked the first
+  time something wants your attention.
+- **Haptics**: a tap when a message sends, a success thump when you
+  accept a friend request, a warning buzz when a sketch is locked by
+  someone else drawing on it.
+- **Voice keeps going** when you lock the phone or switch apps, like a
+  calls app.
+- **Liquid-glass chrome**: menus, toolbars, dialogs, and the phone's
+  slide-over panels are translucent materials that blur the content
+  moving beneath them.
+- The keyboard pushes the composer up instead of covering it, the app
+  never rubber-bands off its edges, and launch fades straight into the
+  app's own dark background.
+
+Building it needs a Mac with Xcode: `npm run tauri ios dev` from
+`apps/desktop` (the repo README's iOS section covers signing).
+
 ## Working offline
 
 You don't need a server to write. **Work offline** on the connect screen
@@ -293,6 +329,15 @@ documents can be shared to it and your portable profile applied. While
 offline, the portable profile's text fields are editable (its images update
 from a connected server), and server features — chat, shared documents,
 canvas, sessions — appear once you connect.
+
+## Staying signed in
+
+**Remember me** (checked by default on the login form) keeps your session
+on the device — relaunching the app signs you straight back in. Sessions
+last 30 days from their last use on the server side; if one does expire,
+the app says so and reopens that server's login with your username filled
+in, instead of silently dumping you at the start. Unchecking it keeps the
+session for that run only. Logging out always forgets the stored session.
 
 ## Account recovery
 

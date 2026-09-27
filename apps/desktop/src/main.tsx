@@ -10,6 +10,7 @@ import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
 import { settingsApp } from "./apps/settings";
 import { sessionsApp } from "./apps/sessions";
+import { installKeyboardInset } from "./lib/keyboardInset";
 import { installNotifications } from "./lib/notifications";
 import { installResync, registerApp } from "./platform";
 import { loadEnabledPlugins } from "./platform/pluginHost";
@@ -36,6 +37,9 @@ installResync();
 
 // OS notifications for DMs, mentions, sessions, and friend activity.
 installNotifications();
+
+// Native iOS/Android shell: keep the composer above the on-screen keyboard.
+installKeyboardInset();
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

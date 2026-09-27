@@ -74,6 +74,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import { backend, isCmdError } from "../../lib/backend";
+import { haptic } from "../../lib/haptics";
 import { uploadBlob } from "../../lib/upload";
 import { confirmDialog, toast } from "../../platform";
 import { useSession } from "../../stores/session";
@@ -1077,6 +1078,45 @@ export function BoardRoom() {
     };
   }, [board?.id]);
 
+  // Held spacebar turns a drag into a pan (Figma's hand tool), tracked as a
+  // ref so no re-render rides every keystroke. Typing surfaces are exempt.
+  const spaceHeld = useRef(false);
+  useEffect(() => {
+    const typing = (t: EventTarget | null) => {
+      const el = t as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return (
+        tag === "INPUT" ||
+        tag === "TEXTAREA" ||
+        tag === "SELECT" ||
+        tag === "BUTTON" ||
+        el.isContentEditable
+      );
+    };
+    const down = (e: KeyboardEvent) => {
+      if (e.code !== "Space" || typing(e.target)) return;
+      spaceHeld.current = true;
+      e.preventDefault();
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.code === "Space") spaceHeld.current = false;
+    };
+    // ⌘Tab away mid-hold would otherwise leave the key stuck down.
+    const blur = () => {
+      spaceHeld.current = false;
+    };
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+      spaceHeld.current = false;
+    };
+  }, []);
+
   // Peers do not announce leaving, so drop pointers that have gone quiet.
   useEffect(() => {
     const timer = setInterval(() => useCanvas.getState().pruneCursors(), 2000);
@@ -1839,6 +1879,7 @@ export function BoardRoom() {
         (c) => c.editing === el.id,
       );
       if (busy) {
+        haptic("error");
         setError(
           `${busy.user.display_name ?? busy.user.username} is drawing on this sketch right now — try again in a moment.`,
         );
@@ -2011,6 +2052,7 @@ export function BoardRoom() {
         onClick: () => deleteSelected(ids),
       },
     ].filter((item) => item !== undefined) as (BoardMenuItem | null)[];
+    haptic("light");
     setMenu({ x: e.clientX, y: e.clientY, items });
   };
 
@@ -2258,60 +2300,10 @@ export function BoardRoom() {
     setTool("select");
   };
 
-  const onSurfaceDown = (e: React.PointerEvent) => {
-    if (e.button !== 0) return;
-    // Second finger of a pinch: the touch tracker above owns it (it has
-    // already seen this pointerdown — capture phase runs first).
-    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
-    if (tool === "sticky" || tool === "text" || tool === "frame" || tool === "shape") {
-      const { x, y } = toWorld(e.clientX, e.clientY);
-      placeElement(tool, x, y);
-      return;
-    }
-    e.preventDefault();
-    if (e.shiftKey) {
-      // Marquee select.
-      const start = toWorld(e.clientX, e.clientY);
-      const rect = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
-      setMarquee(rect);
-      const onMove = (ev: PointerEvent) => {
-        if (ev.pointerId !== e.pointerId) return;
-        const now = toWorld(ev.clientX, ev.clientY);
-        rect.x2 = now.x;
-        rect.y2 = now.y;
-        setMarquee({ ...rect });
-      };
-      const cancel = () => {
-        window.removeEventListener("pointermove", onMove);
-        window.removeEventListener("pointerup", onUp);
-        setMarquee(null);
-      };
-      const onUp = (ev: PointerEvent) => {
-        if (ev.pointerId !== e.pointerId) return;
-        gestureCancels.current.delete(cancel);
-        cancel();
-        const [lx, hx] = [Math.min(rect.x1, rect.x2), Math.max(rect.x1, rect.x2)];
-        const [ly, hy] = [Math.min(rect.y1, rect.y2), Math.max(rect.y1, rect.y2)];
-        const hit = new Set<number>();
-        for (const el of Object.values(useCanvas.getState().elements)) {
-          if (el.kind === "connector" || (el.page ?? 0) !== activePage) continue;
-          if (el.x < hx && el.x + el.w > lx && el.y < hy && el.y + el.h > ly) hit.add(el.id);
-        }
-        // Lassoing part of a group takes the whole group.
-        setSelected(expandToGroups(hit));
-      };
-      gestureCancels.current.add(cancel);
-      window.addEventListener("pointermove", onMove);
-      window.addEventListener("pointerup", onUp);
-      return;
-    }
-    // Pan.
-    // A click that closes an open text editor only leaves edit mode — the
-    // element stays selected so it can be dragged straight away. Clicking
-    // blank canvas again then deselects, so one gesture changes one thing.
-    if (editing === null) setSelected(new Set());
-    setEditing(null);
-    setConnectFrom(null);
+  /** Drag-pan the viewport from this pointer — middle mouse or held space.
+   *  (Two-finger touch pan lives in the pinch tracker above; two-finger
+   *  trackpad scroll pans via the wheel handler.) */
+  const beginPan = (e: React.PointerEvent) => {
     const start = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
     const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
@@ -2332,6 +2324,84 @@ export function BoardRoom() {
       if (ev.pointerId !== e.pointerId) return;
       gestureCancels.current.delete(cancel);
       cancel();
+    };
+    gestureCancels.current.add(cancel);
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onUp);
+  };
+
+  const onSurfaceDown = (e: React.PointerEvent) => {
+    // Middle mouse always pans, whatever the tool.
+    if (e.button === 1) {
+      e.preventDefault();
+      beginPan(e);
+      return;
+    }
+    if (e.button !== 0) return;
+    // Second finger of a pinch: the touch tracker above owns it (it has
+    // already seen this pointerdown — capture phase runs first).
+    if (e.pointerType === "touch" && touchPts.current.size >= 2) return;
+    if (tool === "sticky" || tool === "text" || tool === "frame" || tool === "shape") {
+      const { x, y } = toWorld(e.clientX, e.clientY);
+      placeElement(tool, x, y);
+      return;
+    }
+    e.preventDefault();
+    if (spaceHeld.current) {
+      beginPan(e);
+      return;
+    }
+
+    // Dragging blank canvas lassoes a marquee selection (shift adds to the
+    // current one). A stationary click keeps the old semantics: closing an
+    // open text editor only leaves edit mode — the element stays selected
+    // so it can be dragged straight away; clicking blank canvas again then
+    // deselects, so one gesture changes one thing.
+    const additive = e.shiftKey;
+    const hadEditor = editing !== null;
+    if (!additive) {
+      if (!hadEditor) setSelected(new Set());
+      setEditing(null);
+      setConnectFrom(null);
+    }
+    const priorSelection = selected;
+    const origin = { x: e.clientX, y: e.clientY };
+    const start = toWorld(e.clientX, e.clientY);
+    const rect = { x1: start.x, y1: start.y, x2: start.x, y2: start.y };
+    let dragged = false;
+    const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      if (!dragged && Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) > 4) {
+        dragged = true;
+      }
+      if (!dragged) return;
+      const now = toWorld(ev.clientX, ev.clientY);
+      rect.x2 = now.x;
+      rect.y2 = now.y;
+      setMarquee({ ...rect });
+    };
+    const cancel = () => {
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onUp);
+      setMarquee(null);
+    };
+    const onUp = (ev: PointerEvent) => {
+      if (ev.pointerId !== e.pointerId) return;
+      gestureCancels.current.delete(cancel);
+      cancel();
+      // A stationary press was a click — its effect already happened on
+      // pointerdown.
+      if (!dragged) return;
+      const [lx, hx] = [Math.min(rect.x1, rect.x2), Math.max(rect.x1, rect.x2)];
+      const [ly, hy] = [Math.min(rect.y1, rect.y2), Math.max(rect.y1, rect.y2)];
+      const hit = new Set<number>();
+      for (const el of Object.values(useCanvas.getState().elements)) {
+        if (el.kind === "connector" || (el.page ?? 0) !== activePage) continue;
+        if (el.x < hx && el.x + el.w > lx && el.y < hy && el.y + el.h > ly) hit.add(el.id);
+      }
+      // Lassoing part of a group takes the whole group.
+      const expanded = expandToGroups(hit);
+      setSelected(additive ? new Set([...priorSelection, ...expanded]) : expanded);
     };
     gestureCancels.current.add(cancel);
     window.addEventListener("pointermove", onMove);
@@ -3104,7 +3174,22 @@ export function BoardRoom() {
           });
         }}
         onPointerMove={(e) => broadcastCursor(e.clientX, e.clientY)}
-        onWheel={(e) => zoomAt(e.clientX, e.clientY, e.deltaY < 0 ? 1.08 : 1 / 1.08)}
+        onWheel={(e) => {
+          const unit = e.deltaMode === 1 ? 16 : 1;
+          if (e.ctrlKey || e.metaKey) {
+            // Trackpad pinches arrive as ctrl+wheel; ⌘/ctrl+scroll zooms
+            // too. Exponential of the delta keeps pinches smooth, clamped
+            // so a notched mouse wheel steps ~1.5× per click.
+            const step = Math.max(-40, Math.min(40, e.deltaY * unit));
+            zoomAt(e.clientX, e.clientY, Math.exp(-step * 0.01));
+            return;
+          }
+          // Two-finger scroll pans the canvas (mouse wheels too; shift
+          // turns a vertical-only wheel horizontal).
+          const dx = (e.shiftKey && e.deltaX === 0 ? e.deltaY : e.deltaX) * unit;
+          const dy = (e.shiftKey && e.deltaX === 0 ? 0 : e.deltaY) * unit;
+          setView((v) => ({ ...v, tx: v.tx - dx, ty: v.ty - dy }));
+        }}
       >
         <div
           className="wf-board-stage"

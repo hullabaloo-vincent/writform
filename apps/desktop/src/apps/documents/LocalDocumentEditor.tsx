@@ -4,21 +4,28 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
   Download,
+  MessageSquare,
   Focus as FocusIcon,
   HardDrive,
   History,
   ListTree,
   MoveVertical,
   Share2,
+  SquareSplitVertical,
   Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
 import { Toolbar, WfImage } from "../../editor/RichEditor";
+import { TextFormat } from "../../editor/TextFormat";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { DocumentStats, ElementSelect, TitleEditor } from "./DocumentEditor";
+import { FeedbackHighlights, useFeedbackDecorations } from "./FeedbackPanel";
+import { onLocalFeedbackChange, readLocalFeedback, type LocalThread } from "./feedbackLocal";
+import { LocalFeedbackPanel } from "./LocalFeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
+import { PageGuides } from "./PageGuides";
 import { exportDocument } from "./export";
 import { FindBar } from "./FindBar";
 import { DocElement } from "./formats/DocElement";
@@ -54,9 +61,16 @@ function LocalEditorInner({
   const rename = useLocalDocs((s) => s.rename);
   const setFormat = useLocalDocs((s) => s.setFormat);
   const remove = useLocalDocs((s) => s.remove);
-  const [panel, setPanel] = useState<"none" | "history" | "outline">("none");
+  const [panel, setPanel] = useState<"none" | "history" | "outline" | "feedback">("none");
+  const [threads, setThreads] = useState<LocalThread[]>([]);
+  const [highlightsOn, setHighlightsOn] = useState(
+    () => localStorage.getItem("wf-doc-feedback-hl") !== "off",
+  );
   const [exportOpen, setExportOpen] = useState(false);
   const [finding, setFinding] = useState(false);
+  const [pageGuides, setPageGuides] = useState(
+    () => localStorage.getItem("wf-doc-pageguides") === "on",
+  );
   const [shareOpen, setShareOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const offline = useSession((s) => s.phase === "offline");
@@ -69,6 +83,8 @@ function LocalEditorInner({
       WfImage,
       Placeholder.configure({ placeholder: "Write…" }),
       DocElement,
+      TextFormat.configure({ shortcuts: meta.format === "none" }),
+      FeedbackHighlights,
       formatKeymap(meta.format),
       Collaboration.configure({ document: provider!.doc }),
     ],
@@ -84,6 +100,16 @@ function LocalEditorInner({
   });
 
   useAutoRevisions(editor, (json) => saveLocalVersion(meta.id, json));
+
+  // Notes-to-self: sidecar threads + the same anchored highlights server
+  // docs get. Highlights stay visible outside the panel unless toggled off.
+  useEffect(() => {
+    const reload = () => void readLocalFeedback(meta.id).then(setThreads);
+    reload();
+    return onLocalFeedbackChange(reload);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed remount per doc
+  }, []);
+  useFeedbackDecorations(editor, provider!, threads, panel === "feedback" || highlightsOn);
 
   // Honor "open with this panel" from the list's Version history entry.
   useEffect(() => {
@@ -142,6 +168,16 @@ function LocalEditorInner({
         </span>
         <span className="wf-statusbar-spacer" />
         <button
+          title="Notes to self"
+          className={panel === "feedback" ? "active" : ""}
+          onClick={() => setPanel(panel === "feedback" ? "none" : "feedback")}
+        >
+          <MessageSquare size={16} />
+          {threads.filter((t) => !t.resolved).length > 0 && (
+            <span className="wf-doc-badge">{threads.filter((t) => !t.resolved).length}</span>
+          )}
+        </button>
+        <button
           title="Document history"
           className={panel === "history" ? "active" : ""}
           onClick={() => setPanel(panel === "history" ? "none" : "history")}
@@ -154,6 +190,17 @@ function LocalEditorInner({
           onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
         >
           <ListTree size={16} />
+        </button>
+        <button
+          title="Page guides — approximate on-screen pages"
+          className={pageGuides ? "active" : ""}
+          onClick={() => {
+            const next = !pageGuides;
+            setPageGuides(next);
+            localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+          }}
+        >
+          <SquareSplitVertical size={16} />
         </button>
         <button
           title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
@@ -236,6 +283,7 @@ function LocalEditorInner({
           <Toolbar
             editor={editor}
             richBlocks={meta.format === "none"}
+            typography={meta.format === "none"}
             allowImages={false}
             leading={<ElementSelect editor={editor} format={meta.format} />}
             trailing={
@@ -250,9 +298,22 @@ function LocalEditorInner({
       <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll">
           <div className={`wf-page wf-fmt-${meta.format}`}>
+            {pageGuides && <PageGuides />}
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
         </div>
+        {panel === "feedback" && (
+          <LocalFeedbackPanel
+            docId={meta.id}
+            editor={editor}
+            highlightsOn={highlightsOn}
+            onToggleHighlights={() => {
+              const next = !highlightsOn;
+              setHighlightsOn(next);
+              localStorage.setItem("wf-doc-feedback-hl", next ? "on" : "off");
+            }}
+          />
+        )}
         {panel === "history" && <LocalHistoryPanel docId={meta.id} editor={editor} />}
         {panel === "outline" && editor && <OutlinePanel editor={editor} />}
       </div>

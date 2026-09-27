@@ -23,9 +23,6 @@ writform-server = { path = "../../../crates/writform-server" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-notification = "2"
-tauri-plugin-process = "2"
-tauri-plugin-updater = "2"
-tauri-plugin-window-state = "2"
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -43,6 +40,17 @@ futures-util = "0.3"
 # "Host on this computer": LAN interface discovery + router UPnP port mapping.
 if-addrs = "0.15"
 igd-next = { version = "0.17", features = ["aio_tokio"] }
+
+# Window memory, self-update and relaunch only exist on desktop; the iOS and
+# Android builds get their app lifecycle (and updates) from the OS.
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-process = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-window-state = "2"
+
+# Native touch feedback; the plugin only exists for the mobile targets.
+[target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]
+tauri-plugin-haptics = "2"
 
 # macOS microphone authorization: WKWebView never raises the system prompt on
 # its own, so voice asks AVFoundation directly (see src/media.rs).

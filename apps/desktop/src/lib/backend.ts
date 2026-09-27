@@ -78,6 +78,28 @@ export interface Reachability {
   upnp: UpnpResult;
 }
 
+/** Startup resume outcome: a live session, or why there isn't one.
+ *  "expired" = a remembered token was rejected (show login + notice);
+ *  "unreachable" = the remembered server didn't answer (token kept). */
+export interface ResumeResult {
+  session: SessionInfo | null;
+  reason: "expired" | "unreachable" | null;
+  addr: string | null;
+}
+
+/** Set by the session store: called when any API response proves the token
+ *  is dead (401 expired_token/invalid_token) so one place handles the drop
+ *  back to the connect screen. Lives here to avoid a store↔backend cycle. */
+let onUnauthorized: (() => void) | null = null;
+export function setOnUnauthorized(fn: () => void): void {
+  onUnauthorized = fn;
+}
+export function noteAuthFailure(status: number, body: unknown): void {
+  if (status !== 401) return;
+  const code = (body as { code?: string } | null)?.code;
+  if (code === "expired_token" || code === "invalid_token") onUnauthorized?.();
+}
+
 /** A ServerFrame from the WS, forwarded by the Rust core. */
 export type WsEvent =
   | { ev: "ready"; d: { user_id: number; server_time: number } }
@@ -90,12 +112,18 @@ export interface Backend {
   trustServer(addr: string): Promise<void>;
   listServers(): Promise<SavedServer[]>;
   removeServer(addr: string): Promise<void>;
-  login(addr: string, username: string, password: string): Promise<SessionInfo>;
-  register(addr: string, username: string, password: string): Promise<SessionInfo>;
+  /** `remember` keeps the session token on this device for auto-resume. */
+  login(addr: string, username: string, password: string, remember: boolean): Promise<SessionInfo>;
+  register(
+    addr: string,
+    username: string,
+    password: string,
+    remember: boolean,
+  ): Promise<SessionInfo>;
   /** Redeem an admin-issued reset code for a new password (pre-auth). */
   resetPassword(addr: string, username: string, code: string, newPassword: string): Promise<void>;
   logout(): Promise<void>;
-  currentSession(): Promise<SessionInfo | null>;
+  currentSession(): Promise<ResumeResult>;
 
   hostStatus(): Promise<HostStatus>;
   hostStart(port: number, serverName: string): Promise<HostStatus>;
@@ -129,6 +157,9 @@ export interface Backend {
   /** Saved revisions of one local document; empty string when it has none. */
   localdocHistoryRead(id: string): Promise<string>;
   localdocHistoryWrite(id: string, content: string): Promise<void>;
+  /** Feedback threads (notes-to-self) for a local document. */
+  localdocFeedbackRead(id: string): Promise<string>;
+  localdocFeedbackWrite(id: string, content: string): Promise<void>;
 
   /** Canvas boards stored on this device (meta only; elements stay on disk). */
   localboardList(): Promise<{ id: string; name: string; updated_at: number }[]>;
@@ -199,8 +230,10 @@ function tauriBackend(): Backend {
     trustServer: (addr) => invoke("trust_server", { addr }),
     listServers: () => invoke("list_servers"),
     removeServer: (addr) => invoke("remove_server", { addr }),
-    login: (addr, username, password) => invoke("login", { addr, username, password }),
-    register: (addr, username, password) => invoke("register", { addr, username, password }),
+    login: (addr, username, password, remember) =>
+      invoke("login", { addr, username, password, remember }),
+    register: (addr, username, password, remember) =>
+      invoke("register", { addr, username, password, remember }),
     resetPassword: (addr, username, code, newPassword) =>
       invoke("reset_password", { addr, username, code, newPassword }),
     logout: () => invoke("logout"),
@@ -231,6 +264,8 @@ function tauriBackend(): Backend {
     localdocDelete: (id) => invoke("localdoc_delete", { id }),
     localdocHistoryRead: (id) => invoke("localdoc_history_read", { id }),
     localdocHistoryWrite: (id, content) => invoke("localdoc_history_write", { id, content }),
+    localdocFeedbackRead: (id) => invoke("localdoc_feedback_read", { id }),
+    localdocFeedbackWrite: (id, content) => invoke("localdoc_feedback_write", { id, content }),
     localboardList: () => invoke("localboard_list"),
     localboardRead: (id) => invoke("localboard_read", { id }),
     localboardWrite: (id, content) => invoke("localboard_write", { id, content }),
@@ -241,7 +276,11 @@ function tauriBackend(): Backend {
       await raw("localmedia_write", bytes, { headers: { "x-media": mediaId } });
     },
     localmediaPrune: (keep) => invoke("localmedia_prune", { keep }),
-    apiFetch: (method, path, body) => invoke("api_fetch", { method, path, body: body ?? null }),
+    apiFetch: async (method, path, body) => {
+      const res = await invoke<ApiResponse>("api_fetch", { method, path, body: body ?? null });
+      noteAuthFailure(res.status, res.body);
+      return res;
+    },
     uploadAttachment: ({ dataBase64, filePath, fileName }) =>
       invoke("upload_attachment", {
         dataBase64: dataBase64 ?? null,
@@ -322,6 +361,11 @@ export const isDevPreview = !inTauri && import.meta.env.DEV;
 
 /** True in the browser web client served by writform-server. */
 export const isWeb = !inTauri && !import.meta.env.DEV;
+
+/** True inside the native iOS/Android shell (a Tauri build, not the mobile
+ *  web client). Desktop-only surfaces — updater, relaunch, window badge —
+ *  check this; haptics exist only here. */
+export const isMobileApp = inTauri && /iPhone|iPad|iPod|Android/.test(navigator.userAgent);
 
 /**
  * URL into the app's custom `writform-att` protocol, in the shape THIS

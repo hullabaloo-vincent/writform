@@ -29,6 +29,7 @@ import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { Message } from "../../bindings/proto/Message";
 import type { SearchHit } from "../../bindings/proto/SearchHit";
 import { attachmentUrl, isCmdError } from "../../lib/backend";
+import { haptic } from "../../lib/haptics";
 import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
 import { useSwipe } from "../../lib/useSwipe";
@@ -2049,6 +2050,7 @@ function Composer() {
     const attachmentIds = uploads.map((u) => u.id);
     setDraft("");
     setUploads([]);
+    haptic("light");
     void send(content, attachmentIds);
   };
 

@@ -3,6 +3,7 @@ import { create } from "zustand";
 
 import type { UserProfile } from "../bindings/proto/UserProfile";
 import { attachmentUrl, backend, isCmdError, type CmdError } from "../lib/backend";
+import { haptic } from "../lib/haptics";
 import { useSession } from "../stores/session";
 import { Avatar } from "./Avatar";
 import { Loading } from "./Loading";
@@ -125,6 +126,7 @@ export function ProfileCardHost() {
   };
 
   const acceptRequest = (requestId: number) => {
+    haptic("success");
     setActionError(null);
     void import("../apps/friends/FriendsView").then(({ friendsApi }) =>
       friendsApi

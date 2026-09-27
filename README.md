@@ -90,6 +90,33 @@ cd apps/desktop && npm run build
 cd apps/desktop && npm run bindings
 ```
 
+### iOS
+
+The desktop client also builds as a native iOS app (`src-tauri/gen/apple`
+is the committed Xcode project). Prereqs on top of the above: Xcode,
+CocoaPods (`brew install cocoapods`), and the Rust targets
+(`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`). Signing
+uses the development team in `tauri.conf.json` → `bundle.iOS` — change it
+to your own Apple Development team ID (Xcode → Settings → Accounts).
+
+```sh
+cd apps/desktop
+
+# run on a simulator, or pick your plugged-in iPhone from the list
+npm run tauri ios dev
+
+# device builds want the phone and Mac on the same network for dev
+# (the webview loads Vite over LAN); a real .ipa comes from:
+npm run tauri ios build
+```
+
+On first install to a real device, trust the developer profile under
+Settings → General → VPN & Device Management, and enable Developer Mode
+(Settings → Privacy & Security). If `tauri ios build` fails at the very
+end with `Directory not empty`, clear its stale output first:
+`rm -rf src-tauri/gen/apple/build` (a CLI packaging quirk; the Xcode
+build itself succeeded).
+
 Generated bindings in `apps/desktop/src/bindings/proto/` are committed; CI fails if
 they drift from the Rust types.
 

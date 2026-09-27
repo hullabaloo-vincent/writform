@@ -35,7 +35,7 @@ async fn host_start_pins_and_serves() {
     assert_eq!(probe.server_name, "Host Flow Test");
 
     // Register over the pinned channel; first account becomes server admin.
-    let session = register_impl(&conn, addr, "host_admin".into(), "password123".into())
+    let session = register_impl(&conn, addr, "host_admin".into(), "password123".into(), false)
         .await
         .unwrap();
     assert!(session.user.is_server_admin);

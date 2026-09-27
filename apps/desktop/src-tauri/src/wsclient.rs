@@ -38,6 +38,13 @@ impl WsManager {
     }
 }
 
+/// Why a socket attempt ended: retryable transport trouble, or a fatal
+/// rejection (bad/expired token) where reconnecting can never succeed.
+enum SocketErr {
+    Retry(String),
+    AuthRejected,
+}
+
 /// Open (or replace) the socket for the current session.
 pub fn start(
     app: tauri::AppHandle,
@@ -54,9 +61,27 @@ pub fn start(
             if manager.generation.load(Ordering::SeqCst) != my_generation {
                 return; // superseded by a newer connection or disconnect
             }
-            match run_socket(&app, &manager, &addr, &token, spki_pin, my_generation).await {
+            match run_socket(
+                &app,
+                &manager,
+                &addr,
+                &token,
+                spki_pin,
+                my_generation,
+                &mut backoff_secs,
+            )
+            .await
+            {
                 Ok(()) => return, // clean shutdown
-                Err(e) => {
+                Err(SocketErr::AuthRejected) => {
+                    // The token is dead; every retry would be rejected too.
+                    // The error frame was already forwarded to the webview,
+                    // which routes it into the session-expired flow.
+                    tracing::warn!("ws auth rejected; not retrying");
+                    let _ = app.emit("ws:status", serde_json::json!({"connected": false}));
+                    return;
+                }
+                Err(SocketErr::Retry(e)) => {
                     tracing::warn!("ws connection lost: {e}; reconnecting in {backoff_secs}s");
                     let _ = app.emit("ws:status", serde_json::json!({"connected": false}));
                     tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
@@ -74,7 +99,9 @@ async fn run_socket(
     token: &str,
     spki_pin: [u8; 32],
     my_generation: u64,
-) -> Result<(), String> {
+    backoff_secs: &mut u64,
+) -> Result<(), SocketErr> {
+    let retry = |e: String| SocketErr::Retry(e);
     let verifier = net::PinVerifier::pinned(spki_pin);
     let config = rustls::ClientConfig::builder()
         .dangerous()
@@ -89,16 +116,58 @@ async fn run_socket(
         Some(connector),
     )
     .await
-    .map_err(|e| e.to_string())?;
+    .map_err(|e| retry(e.to_string()))?;
 
-    // Authenticate, then re-subscribe to everything the frontend wants.
+    // Authenticate, then wait for the server's verdict before claiming the
+    // connection: `ready` means accepted; an `error` frame means the token
+    // is dead and retrying is pointless.
     let auth = ClientFrame::Auth {
         token: token.to_string(),
         protocol_version: writform_proto::PROTOCOL_VERSION,
     };
     ws.send(WsMsg::Text(serde_json::to_string(&auth).unwrap().into()))
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| retry(e.to_string()))?;
+
+    let verdict = tokio::time::timeout(std::time::Duration::from_secs(15), async {
+        loop {
+            match ws.next().await {
+                Some(Ok(WsMsg::Text(text))) => {
+                    let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                        continue;
+                    };
+                    match value.get("ev").and_then(|v| v.as_str()) {
+                        Some("ready") => {
+                            let _ = app.emit("ws:event", value);
+                            return Ok(());
+                        }
+                        Some("error") => {
+                            // Forward so the webview can route it into the
+                            // session-expired flow, then give up for good.
+                            let _ = app.emit("ws:event", value);
+                            return Err(SocketErr::AuthRejected);
+                        }
+                        _ => {
+                            let _ = app.emit("ws:event", value);
+                        }
+                    }
+                }
+                Some(Ok(WsMsg::Ping(_) | WsMsg::Pong(_))) => {}
+                Some(Ok(WsMsg::Close(_))) | None => {
+                    return Err(SocketErr::Retry("closed during auth".into()));
+                }
+                Some(Ok(_)) => {}
+                Some(Err(e)) => return Err(SocketErr::Retry(e.to_string())),
+            }
+        }
+    })
+    .await
+    .map_err(|_| retry("no auth verdict within 15s".into()))?;
+    verdict?;
+
+    // Accepted: a fresh connection resets the reconnect backoff.
+    *backoff_secs = 1;
+
     let rooms: Vec<String> = manager
         .desired_rooms
         .lock()
@@ -110,7 +179,7 @@ async fn run_socket(
         let sub = ClientFrame::Sub { rooms };
         ws.send(WsMsg::Text(serde_json::to_string(&sub).unwrap().into()))
             .await
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| retry(e.to_string()))?;
     }
 
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ClientFrame>();
@@ -127,7 +196,7 @@ async fn run_socket(
             frame = rx.recv() => {
                 let Some(frame) = frame else { return Ok(()) };
                 let text = serde_json::to_string(&frame).unwrap();
-                ws.send(WsMsg::Text(text.into())).await.map_err(|e| e.to_string())?;
+                ws.send(WsMsg::Text(text.into())).await.map_err(|e| retry(e.to_string()))?;
             }
             msg = ws.next() => {
                 match msg {
@@ -138,15 +207,15 @@ async fn run_socket(
                         }
                     }
                     Some(Ok(WsMsg::Ping(_) | WsMsg::Pong(_))) => {}
-                    Some(Ok(WsMsg::Close(_))) | None => return Err("socket closed".into()),
+                    Some(Ok(WsMsg::Close(_))) | None => return Err(retry("socket closed".into())),
                     Some(Ok(_)) => {}
-                    Some(Err(e)) => return Err(e.to_string()),
+                    Some(Err(e)) => return Err(retry(e.to_string())),
                 }
             }
             _ = ping.tick() => {
                 let frame = ClientFrame::Ping { client_time: now_millis() };
                 let text = serde_json::to_string(&frame).unwrap();
-                ws.send(WsMsg::Text(text.into())).await.map_err(|e| e.to_string())?;
+                ws.send(WsMsg::Text(text.into())).await.map_err(|e| retry(e.to_string()))?;
             }
         }
     }

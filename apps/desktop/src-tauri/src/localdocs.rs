@@ -109,11 +109,23 @@ pub fn localdoc_write(app: tauri::AppHandle, id: String, content: String) -> Res
     std::fs::write(doc_path(&app, &id)?, content).map_err(|e| CmdError::new("io", e.to_string()))
 }
 
+/// Feedback threads (notes-to-self) live beside history, same rationale:
+/// a folder backup carries them, and `localdoc_list` never sees the folder.
+fn feedback_path(app: &tauri::AppHandle, id: &str) -> Result<std::path::PathBuf, CmdError> {
+    validate_id(id)?;
+    let dir = docs_dir(app)?.join("feedback");
+    std::fs::create_dir_all(&dir).map_err(|e| CmdError::new("io", e.to_string()))?;
+    Ok(dir.join(format!("{id}.json")))
+}
+
 #[tauri::command]
 pub fn localdoc_delete(app: tauri::AppHandle, id: String) -> Result<(), CmdError> {
-    // History is derived data: a failure to remove it must not leave the
-    // caller thinking the document survived.
+    // History and feedback are derived data: a failure to remove them must
+    // not leave the caller thinking the document survived.
     if let Ok(path) = history_path(&app, &id) {
+        let _ = std::fs::remove_file(path);
+    }
+    if let Ok(path) = feedback_path(&app, &id) {
         let _ = std::fs::remove_file(path);
     }
     std::fs::remove_file(doc_path(&app, &id)?).map_err(|e| CmdError::new("io", e.to_string()))
@@ -144,5 +156,32 @@ pub fn localdoc_history_write(
         ));
     }
     std::fs::write(history_path(&app, &id)?, content)
+        .map_err(|e| CmdError::new("io", e.to_string()))
+}
+
+/// The document's feedback threads, as the JSON the webview wrote. Empty
+/// string when there are none yet — the common case, not an error.
+#[tauri::command]
+pub fn localdoc_feedback_read(app: tauri::AppHandle, id: String) -> Result<String, CmdError> {
+    match std::fs::read_to_string(feedback_path(&app, &id)?) {
+        Ok(raw) => Ok(raw),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(CmdError::new("io", e.to_string())),
+    }
+}
+
+#[tauri::command]
+pub fn localdoc_feedback_write(
+    app: tauri::AppHandle,
+    id: String,
+    content: String,
+) -> Result<(), CmdError> {
+    if content.len() > MAX_DOC_BYTES {
+        return Err(CmdError::new(
+            "too_large",
+            "local document feedback exceeds the 16 MB limit",
+        ));
+    }
+    std::fs::write(feedback_path(&app, &id)?, content)
         .map_err(|e| CmdError::new("io", e.to_string()))
 }
