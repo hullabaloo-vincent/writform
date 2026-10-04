@@ -76,7 +76,7 @@ import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import { backend, isCmdError } from "../../lib/backend";
 import { haptic } from "../../lib/haptics";
 import { uploadBlob } from "../../lib/upload";
-import { confirmDialog, toast } from "../../platform";
+import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useChat } from "../chat/store";
 import { CanvasDocCard } from "../documents/CanvasDocCard";
@@ -2986,16 +2986,8 @@ export function BoardRoom() {
               .then(({ exportBoard }) =>
                 exportBoard(board, Object.values(useCanvas.getState().elements)),
               )
-              .then((r) =>
-                toast(
-                  `Exported ${r.fileName} to ${r.where}${
-                    r.skippedMedia
-                      ? ` — ${r.skippedMedia} image${r.skippedMedia === 1 ? "" : "s"} skipped`
-                      : ""
-                  }`,
-                  "success",
-                ),
-              )
+              // The save path shows its own "Saved …" toast (with any
+              // skipped pictures noted).
               .catch(fail)
           }
         >

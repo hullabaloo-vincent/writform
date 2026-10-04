@@ -7,7 +7,13 @@ import {
   Settings as SettingsIcon,
   ShieldCheck,
   UserRound,
+  PenLine,
 } from "lucide-react";
+
+import {
+  setSmartPunctuationEnabled,
+  smartPunctuationEnabled,
+} from "../../editor/SmartPunctuation";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -57,7 +63,15 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
   return res.body as T;
 }
 
-type Tab = "profile" | "voice" | "notifications" | "devices" | "server" | "app" | "admin";
+type Tab =
+  | "profile"
+  | "writing"
+  | "voice"
+  | "notifications"
+  | "devices"
+  | "server"
+  | "app"
+  | "admin";
 
 function SettingsView() {
   const me = useSession((s) => s.session?.user);
@@ -67,6 +81,7 @@ function SettingsView() {
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
+    { id: "writing", label: "Writing", icon: <PenLine size={15} />, show: true },
     { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: !offline },
     { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: !offline },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: !offline },
@@ -97,6 +112,7 @@ function SettingsView() {
         {error && <p className="wf-connect-error">{error}</p>}
         {tab === "profile" &&
           (offline ? <OfflineProfileTab onError={setError} /> : <ProfileTab onError={setError} />)}
+        {tab === "writing" && <WritingTab />}
         {tab === "voice" && <VoiceTab onError={setError} />}
         {tab === "notifications" && <NotificationsTab />}
         {tab === "devices" && <DevicesTab onError={setError} />}
@@ -787,6 +803,32 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
           Device and quality changes apply immediately, even while your camera is on.
         </span>
       </div>
+    </section>
+  );
+}
+
+/** Per-device writing preferences. */
+function WritingTab() {
+  const [smart, setSmart] = useState(smartPunctuationEnabled);
+  return (
+    <section>
+      <h3>Writing</h3>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={smart}
+          onChange={(e) => {
+            setSmartPunctuationEnabled(e.target.checked);
+            setSmart(e.target.checked);
+          }}
+        />
+        Smart quotes and dashes
+      </label>
+      <p className="wf-session-meta">
+        As you type: “curly” quotes and apostrophes, -- becomes an em dash (—), and ...
+        becomes an ellipsis (…). Press Backspace right after a change to undo it. Quotes follow
+        the book’s language in a manuscript. This applies on this device only.
+      </p>
     </section>
   );
 }

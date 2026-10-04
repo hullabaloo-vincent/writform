@@ -1,7 +1,7 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
@@ -12,6 +12,23 @@ export default defineConfig(async () => ({
   // backend selection module.
   build: {
     target: "es2022",
+  },
+
+  // The book typesetter runs in a module worker that code-splits
+  // (hyphenation patterns load per language).
+  worker: {
+    format: "es" as const,
+  },
+
+  resolve: {
+    alias: [
+      // fontkit's brotli import only serves WOFF2; the bundled fonts are
+      // TTF/OTF, so a stub keeps its 750 KB dictionary out of the bundle.
+      {
+        find: /^brotli\/decompress\.js$/,
+        replacement: fileURLToPath(new URL("./src/book/engine/brotliStub.ts", import.meta.url)),
+      },
+    ],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

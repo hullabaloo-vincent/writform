@@ -51,10 +51,14 @@ export function ConfirmHost() {
       {pending.title && <h3>{pending.title}</h3>}
       <p className="wf-confirm-message">{pending.message}</p>
       <div className="wf-connect-row wf-confirm-actions">
-        <button onClick={() => answer(false)}>Cancel</button>
+        {/* A destructive ask focuses Cancel: a reflexive Enter must never
+            delete anything. */}
+        <button autoFocus={pending.danger} onClick={() => answer(false)}>
+          Cancel
+        </button>
         <button
           className={pending.danger ? "wf-danger-solid" : "wf-primary"}
-          autoFocus
+          autoFocus={!pending.danger}
           onClick={() => answer(true)}
         >
           {pending.confirmLabel ?? "Confirm"}

@@ -18,64 +18,137 @@ the group can create a session; each prompt can be started, timed
 
 ## Documents
 
-Google-Docs-style collaborative writing, separate from timed sessions.
+Google-Docs-style collaborative writing, separate from timed sessions — and
+a book-production tool: write a manuscript, design the book, export a
+print-ready paperback, an ebook and a submission manuscript.
 
 - **Live multi-user editing**: a CRDT (Yjs) syncs everyone's edits and shows
   live cursors — no lock, no conflicts, no "someone else is editing" wall.
+- **Your text is never lost**: edits that can't reach the server yet (offline,
+  a dropped connection, quitting mid-sync) are kept on this device and sent
+  when the server is back — they're never sent to the wrong server or the
+  wrong document. The save indicator says *Saved*, *Saving…*, *Offline* or
+  *Not saved* (with what to do about it), and closing, signing out or quitting
+  waits a moment for unsent edits. On-device documents save atomically, so a
+  crash mid-save can't damage the file.
 - **Writing formats**: None, Screenplay, Stage Play, Manuscript, or Poetry.
   Each format adds its own element types (scene heading, character,
   dialogue, …) with correct margins and Tab/Enter cycling between them,
   Final-Draft style.
+- **Manuscript is the book format**: elements for Chapter Heading, Part
+  Heading, Unnumbered Chapter (Prologue, Epilogue, Acknowledgments…),
+  Chapter Subtitle, Subheading, Epigraph, Attribution, Verse and Body — ⌘1–9
+  set them. Chapters number themselves ("Chapter Three" labels show beside
+  each heading); scene breaks are `* * *` + Enter or the toolbar button. You
+  write meaning, not layout: indents, fonts and spacing come from the book's
+  design, so editing the text can't break the book. In Manuscript, Tab only
+  changes an *empty* line's element (it never turns a sentence into a
+  heading), and pasted headings and `***` lines become chapters and scene
+  breaks.
+- **Smart quotes and dashes** as you type (Settings ▸ Writing to turn off):
+  curly quotes in the book's language style, `--` → —, `...` → ….
+- **Make it a book manuscript**: switching a Plain document to Manuscript (or
+  Export ▸ Make it a book manuscript…) detects chapters, parts, scene breaks
+  and front matter and shows what it found before converting — one undo puts
+  it back. Importing a Word manuscript does the same automatically.
+- **Book inspector** (the book button, Manuscript): the book's details (title,
+  author, series, ISBNs, copyright, dedication, epigraph, also-by, about the
+  author, submission contact), its **design** (five presets — Classic,
+  Literary, Fantasy, Romance, Modern — with every choice adjustable: fonts,
+  size, leading, chapter labels, drop caps, small-caps lead-ins, ornaments,
+  running heads, page numbers), **print** settings (trim size, KDP-safe
+  margins that grow with the page count, right-hand chapter starts, front and
+  back matter, spine width) and **ebook** settings. Saved in the document, so
+  collaborators see the same book.
+- **Book preview** (the eye button, Manuscript): every page exactly as it will
+  print — facing pages on a desk, page 1 alone on the right, chapter jump,
+  zoom, and "Edit here" from any line. On a wide window it docks beside the
+  manuscript and re-sets live as you write (only the chapter you're editing
+  is re-set); on a phone it's one page at a time with swipes.
+- **Book exports** (Export menu, Manuscript): **Paperback PDF** — typeset with
+  optimal line breaking, hyphenation, no widows or orphans, real small caps,
+  drop caps, running heads and roman/arabic page numbers, fonts embedded,
+  trim box set, ready for KDP and IngramSpark; **Booklet PDF** to print and
+  fold at home; **Ebook (EPUB)** for Kindle, Apple Books, Kobo and Google
+  Play; and the **Submission manuscript** (Standard Manuscript Format) as PDF
+  or Word. Each shows a preflight list first (missing ISBN digits, glyphs a
+  font lacks, a too-short book), each item with a "Show" button.
 - **Version history**: revisions are recorded at the seams of the work — a
   pause of half a minute closes one off, a long unbroken stretch is cut on
   its own after five minutes — plus named drafts you save yourself. Any
-  revision can be previewed (changes only, against the revision before it)
-  and restored.
-- **Spellcheck** underlines as you type, and Tab indents rather than
-  jumping focus out of the page: inside a list it indents the item, in a
-  writing format it cycles the element type.
+  revision can be previewed (in the document's own format, or as changes
+  against the revision before it) and restored — restoring saves a "Before
+  restoring" version first and keeps comments on untouched paragraphs.
+- **Find and replace** (⌘F, ⌥⌘F / Ctrl+H): finds phrases even across italics,
+  curly and straight quotes match each other, match case and whole words are
+  a click away; ⌘G / F3 step through matches. Replace keeps the formatting
+  and Replace All is a single undo. Opening it never moves your cursor until
+  you step to a match.
+- **Spellcheck** underlines as you type.
 - **Focus mode** (the target button, Esc leaves): the app chrome steps
   away and it's just you and the page — with optional **typewriter
   scrolling** that keeps the line you're writing vertically centred.
-- **Word-count goals**: click the word count to set a target; progress
-  rides under the count as a thin bar, per document, on this device.
-- **Typography** (Plain format): set font (Times, Palatino, Sans,
-  Typewriter, Comic Sans), size, and alignment — left, center, right,
-  justify (⌘⇧L/E/R/J) — on the selected paragraphs, plus line spacing,
-  space before/after, and a **drop cap** for chapter openers (all in the
-  inspector). Select-all restyles the whole document; the scripted formats
-  keep their own professional layouts.
+- **Reopen where you left off**: each document remembers its cursor and
+  scroll position on this device.
+- **Word count**: on every screen, including phones; with text selected it
+  reads "120 of 12,345 words". Click it to set a **word-count goal**;
+  progress rides under the count as a thin bar, per document, on this device.
+- **Typography** (Plain format): set font (Times, Palatino, Garamond,
+  Libertinus, Baskerville, Literata, Sans, Typewriter, Comic Sans), size, and
+  alignment — left, center, right, justify (⌘⇧L/E/R/J) — on the selected
+  paragraphs, plus line spacing, space before/after, and a **drop cap** for
+  chapter openers (all in the inspector). Select-all restyles the whole
+  document; the scripted formats keep their own professional layouts.
 - **Document inspector** (the sliders button, Plain format): Pages-style
   settings saved *in* the document, so collaborators see the same layout.
   Text tab: the full paragraph styles for the selection. Document tab:
   paper size (US Letter, Half Letter, US Trade 6×9, A4, A5), margins, and
   body-text defaults — font, size, line spacing, paragraph spacing, and a
   first-line indent (set indent + 0 pt spacing for the classic book look).
-- **Page view**: the page toggle paginates the sheet into real pages —
-  physical gaps between them, page numbers on the left, the exact count in
-  the word-count bar. Paragraphs that would straddle a boundary move to
-  the next page, and ⌘↩'s explicit break starts a genuine new page, on
-  screen and in PDF/Word exports.
-- **Folders**: organize your documents; move a document between folders,
+- **Page view** (Plain and the scripted formats): the page toggle paginates
+  the sheet into real pages — physical gaps between them, page numbers on
+  the left, the exact count in the word-count bar.
+- **Outline**: parts, chapters and sections with their labels and word
+  counts; drag to reorder chapters (or use Reorder on a phone) — one undo
+  puts them back.
+- **Organizer**: cards show each document's opening words (or, when
+  searching, the passage that matched) and "Manuscript · 98,412 words ·
+  Oct 3". Sort by modified, created or name (in natural order: Chapter 2
+  before Chapter 10) — remembered on this device. Every ⋯ menu works from the
+  keyboard (Shift+F10 too): Rename, Duplicate, Move, Share, Version history,
+  Delete.
+- **Recently Deleted**: deleting is undoable — the toast has **Undo**, and
+  deleted documents (from the server and from this device) wait in Recently
+  Deleted for 30 days, with their history, before they're gone for good.
+- **Combine into one manuscript**: select documents (⌘/Ctrl-click,
+  Shift-click, or Select on a phone) or use a folder's menu — put them in
+  order, name the book, and each becomes a chapter. The originals stay.
+- **Folders**: organize your documents; move documents between folders,
   rename or delete a folder (its documents stay put).
-- **Search**: full-text — matches titles and document content.
+- **Search**: full-text — matches titles and the words of every document
+  (never the editor's internal markup), with the matching passage shown.
 - **Feedback threads**: select text and leave a comment anchored to it;
-  threads track the text even as it moves, resolve/reopen, reply inline.
-  The highlighter button in the panel header shows or hides the anchor
-  highlights in the text —
-  and on-device documents have the same panel as **Notes**: comments to
-  your future editing self, stored beside the document on this device.
-- **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into a
-  new document. PDF import recovers structure, not just text: headings,
-  bold/italic, centered lines, first-line indents, and paragraphs that
-  continue across page boundaries.
-- **Booklet export**: beside the straight PDF, "Export booklet PDF"
-  imposes pages for saddle stitching — two per landscape sheet in fold
-  order (last+first, and so on). Print two-sided flipping on the short
-  edge, fold the stack in half, and it reads 1…N. Half Letter paper makes
-  a booklet that prints two-up on ordinary letter sheets.
-- **Export all**: back up every document you can see as Markdown + JSON —
-  your writing is never locked in.
+  threads track the text even as it moves, resolve/reopen, reply inline,
+  and list in the order they appear in the text. Click a highlighted
+  passage to open its thread. The highlighter button in the panel header
+  shows or hides the anchor highlights — and on-device documents have the
+  same panel as **Notes**: comments to your future editing self.
+- **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into
+  new documents — several at once, into the folder you have open. PDF import
+  recovers structure, not just text; Word import keeps italics, alignment,
+  page breaks and styles, and a Word *manuscript* arrives as a Manuscript
+  with its chapters detected.
+- **Booklet export** (Plain and scripted formats): beside the straight PDF,
+  "Export booklet PDF" imposes pages for saddle stitching — two per
+  landscape sheet in fold order. Print two-sided flipping on the short edge,
+  fold the stack in half, and it reads 1…N.
+- **Saving files**: on a Mac or PC every export opens a Save dialog (the
+  toast after offers *Show in Finder*); on iPhone and iPad exports land in
+  Files ▸ On My iPhone ▸ subScribe, with a Share… button; in the browser
+  they download.
+- **Export all**: back up every document you can see — server documents and
+  the ones on this device — as Markdown + JSON. Your writing is never locked
+  in.
 - **Sharing**: private by default; the owner grants read or write access to
   individual friends or to a whole group (which also posts a card in that
   group's chat) or shares an entire folder at once.
@@ -83,17 +156,14 @@ Google-Docs-style collaborative writing, separate from timed sessions.
   canvas board as a live-updating excerpt card.
 - **Documents on this device**: the "On this device" section holds
   single-user documents stored on your computer, never on the server — same
-  editor, formats, outline, find, word count, version history, and PDF/DOCX
-  export. Their revisions are kept on this device too, beside the document,
-  so history works with no server and no connection. **Share
+  editor, formats, outline, find, word count, version history, book
+  preview and exports. Their revisions are kept on this device too, beside
+  the document, so history works with no server and no connection. **Share
   to server** publishes a copy (optionally shared with a friend or group in
   one step); the local original stays yours and does not live-sync to the
-  published copy. While offline, **Import** (PDF, DOCX, RTF, Pages, TXT,
-  Markdown) creates documents here too. The reverse works as well:
-  right-click any server document → **Save to this device** copies it into
-  this section (owners are then offered the option of deleting the server
-  copy, turning it into a move). Images aren't supported in local documents
-  yet, and "Export all" covers server documents only.
+  published copy. While offline, **Import** creates documents here too. The
+  reverse works as well: any server document's menu → **Save a copy to this
+  device**. Images aren't supported in local documents yet.
 
 ## Chat
 

@@ -164,14 +164,28 @@ class PaginateView {
     const sheetOffset = originY - sheetRect.top; // content zero within the sheet
 
     // Pushes currently applied, so measured positions can be de-pushed.
-    const applied: Push[] = cur.find().map((d) => ({
-      pos: d.from,
-      end: d.to,
-      push: (d.spec as { push?: number }).push ?? 0,
-    }));
-    const appliedBefore = (pos: number) =>
-      applied.reduce((sum, a) => (a.pos < pos ? sum + a.push : sum), 0);
-    const appliedAt = (pos: number) => applied.find((a) => a.pos === pos)?.push ?? 0;
+    // Blocks are walked in document order, so one sorted pass with a
+    // running sum replaces a scan of every push per block (a novel has
+    // thousands of blocks and hundreds of pushes).
+    const applied: Push[] = cur
+      .find()
+      .map((d) => ({
+        pos: d.from,
+        end: d.to,
+        push: (d.spec as { push?: number }).push ?? 0,
+      }))
+      .sort((a, b) => a.pos - b.pos);
+    const appliedByPos = new Map(applied.map((a) => [a.pos, a.push]));
+    let appliedCursor = 0;
+    let appliedSum = 0;
+    const appliedBefore = (pos: number) => {
+      while (appliedCursor < applied.length && applied[appliedCursor].pos < pos) {
+        appliedSum += applied[appliedCursor].push;
+        appliedCursor += 1;
+      }
+      return appliedSum;
+    };
+    const appliedAt = (pos: number) => appliedByPos.get(pos) ?? 0;
 
     const next: (Push & { node: PmNode })[] = [];
     const dirtyPages = new Set<number>();
@@ -226,8 +240,8 @@ class PaginateView {
     const same =
       next.length === applied.length &&
       next.every((n) => {
-        const a = applied.find((x) => x.pos === n.pos);
-        return a !== undefined && Math.abs(a.push - n.push) < 1;
+        const a = appliedByPos.get(n.pos);
+        return a !== undefined && Math.abs(a - n.push) < 1;
       });
     if (!same) {
       const set = DecorationSet.create(

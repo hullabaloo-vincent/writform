@@ -3,6 +3,17 @@ import { create } from "zustand";
 import { backend, setOnUnauthorized, type SessionInfo } from "../lib/backend";
 import { toastError } from "../platform/toast";
 
+const logoutHooks = new Set<() => Promise<void>>();
+
+/** Run `hook` (awaited, at most ~2.5s for all hooks) before signing out —
+ *  e.g. to send a document's unsent edits while the session still works. */
+export function onBeforeLogout(hook: () => Promise<void>): () => void {
+  logoutHooks.add(hook);
+  return () => {
+    logoutHooks.delete(hook);
+  };
+}
+
 interface SessionState {
   /** "loading" until currentSession() resolves on startup. "offline" is the
    *  no-server mode: local notes/documents and the portable profile only. */
@@ -36,6 +47,11 @@ export const useSession = create<SessionState>((set, get) => ({
   leaveOffline: () => set({ phase: "disconnected", session: null }),
   clearEndReason: () => set({ endReason: null }),
   logout: async () => {
+    // Let open work finish sending first (bounded — sign-out must not hang).
+    await Promise.race([
+      Promise.allSettled([...logoutHooks].map((hook) => hook())),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
     await backend.logout();
     set({ phase: "disconnected", session: null, endReason: null, endAddr: null });
   },

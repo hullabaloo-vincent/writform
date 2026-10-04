@@ -1,6 +1,6 @@
 import type { Editor } from "@tiptap/react";
 import { BookmarkPlus, Clock3, FileDiff, RotateCcw, X } from "lucide-react";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
@@ -8,7 +8,9 @@ import { RichDoc } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
 import { confirmDialog, Modal } from "../../platform";
 import { documentsApi } from "./api";
+import { compactDocString } from "./compactJson";
 import { alignChanges, flatten } from "./history";
+import { applyRestore } from "./restore";
 import { useDocuments } from "./store";
 
 /** One revision as the list renders it, whatever storage it came from. */
@@ -48,6 +50,7 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
   const activities = useDocuments((s) => s.activities);
   const myAccess = useDocuments((s) => s.myAccess);
   const docId = useDocuments((s) => s.activeDocId);
+  const format = useDocuments((s) => s.meta?.format);
   const refreshVersions = useDocuments((s) => s.refreshVersions);
   const refreshActivity = useDocuments((s) => s.refreshActivity);
   const canWrite = myAccess === "owner" || myAccess === "write";
@@ -84,12 +87,14 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
   const restore = async () => {
     if (!preview || !editor || !canWrite) return;
     const ok = await confirmDialog(
-      "Replace the current text with this saved draft? Everyone editing will see the change.",
+      "Replace the current text with this saved draft? Everyone editing will see the change. Your current text is saved in Version history first.",
       { title: "Restore draft", confirmLabel: "Restore" },
     );
     if (!ok) return;
     try {
-      editor.commands.setContent(JSON.parse(preview.json));
+      // The current text is never lost to a restore.
+      await documentsApi.snapshot(docId, compactDocString(editor.getJSON()), "Before restoring", "named");
+      await applyRestore(editor, JSON.parse(preview.json));
       const label = `Restored ${preview.meta.name ?? "saved revision"}`;
       await documentsApi.snapshot(docId, preview.json, label.slice(0, 120), "named");
       await Promise.all([refreshVersions(), refreshActivity()]);
@@ -103,7 +108,7 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
     const name = naming.trim();
     if (!name || !editor) return;
     try {
-      await documentsApi.snapshot(docId, JSON.stringify(editor.getJSON()), name, "draft");
+      await documentsApi.snapshot(docId, compactDocString(editor.getJSON()), name, "draft");
       setNaming("");
       await Promise.all([refreshVersions(), refreshActivity()]);
     } catch (e) {
@@ -176,7 +181,7 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
             <button className="wf-icon" title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
           </header>
           <div className="wf-doc-version-preview">
-            {preview.mode === "draft" ? <RichDoc doc={JSON.parse(preview.json)} /> : <RevisionDiff before={preview.previous} after={preview.json} />}
+            {preview.mode === "draft" ? <VersionPreview json={preview.json} format={format} /> : <RevisionDiff before={preview.previous} after={preview.json} />}
           </div>
         </Modal>
       )}
@@ -222,10 +227,16 @@ function ActivityList({ items }: { items: DocumentActivity[] }) {
   );
 }
 
+/** A saved version rendered read-only — parsed once per version, not on
+ *  every panel render (a novel's JSON is megabytes). */
+export function VersionPreview({ json, format }: { json: string; format?: string }) {
+  const doc = useMemo(() => JSON.parse(json) as Parameters<typeof RichDoc>[0]["doc"], [json]);
+  return <RichDoc doc={doc} format={format} />;
+}
+
 export function RevisionDiff({ before, after }: { before: string | null; after: string }) {
-  const oldBlocks = flatten(before);
-  const newBlocks = flatten(after);
-  const rows = alignChanges(oldBlocks, newBlocks).map(({ oldBlock, newBlock, index }, rowIndex) => (
+  const changes = useMemo(() => alignChanges(flatten(before), flatten(after)), [before, after]);
+  const rows = changes.map(({ oldBlock, newBlock, index }, rowIndex) => (
       <article className="wf-doc-diff-block" key={`${index}-${rowIndex}`}>
         <span className="wf-doc-diff-label">{newBlock?.element || newBlock?.type || oldBlock?.element || oldBlock?.type || "block"} #{index + 1}</span>
         {oldBlock?.text && <p className="wf-doc-diff-removed"><del>{oldBlock.text}</del></p>}

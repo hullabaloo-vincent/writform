@@ -7,7 +7,8 @@
 
 import { generateJSON, type JSONContent } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
-import { prosemirrorJSONToYXmlFragment } from "@tiptap/y-tiptap";
+import { prosemirrorJSONToYXmlFragment, updateYFragment } from "@tiptap/y-tiptap";
+import { Node as PmNode } from "@tiptap/pm/model";
 import { getSchema } from "@tiptap/core";
 import * as Y from "yjs";
 
@@ -15,7 +16,9 @@ import type { Document } from "../../../bindings/proto/Document";
 import { documentsApi } from "../api";
 import { b64encode } from "../collab";
 import { DocElement } from "../formats/DocElement";
+import { applyDocMaps, docMapsUpdate, type DocMapsSnapshot } from "../docMaps";
 import { useLocalDocs } from "../local";
+import { toast } from "../../../platform/toast";
 import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
 import { rtfToText } from "./rtf";
 
@@ -31,6 +34,10 @@ interface ConvertedFile {
   stem: string;
   content: JSONContent;
   suggestedFormat: string;
+  /** Per-document maps to seed (a book manuscript's details). */
+  maps: DocMapsSnapshot;
+  /** What the import did, for the toast ("Imported as a Manuscript: …"). */
+  note: string | null;
 }
 
 /** Client-side conversion shared by server import and import-to-device. */
@@ -41,6 +48,8 @@ async function convertFile(file: File): Promise<ConvertedFile> {
 
   let content: JSONContent;
   let suggestedFormat = "none";
+  let fileMeta: { title?: string; author?: string } = {};
+  const warnings: string[] = [];
   switch (ext) {
     case "txt":
       content = paragraphsToDoc(splitPlainText(await file.text()));
@@ -52,9 +61,13 @@ async function convertFile(file: File): Promise<ConvertedFile> {
       break;
     }
     case "docx": {
-      const mammoth = await import("mammoth");
-      const result = await mammoth.convertToHtml({ arrayBuffer: await file.arrayBuffer() });
-      content = htmlToDoc(result.value);
+      // Mammoth's document model, not its HTML: keeps alignment, page
+      // breaks and blank lines (what chapter detection keys on).
+      const { docxToContent } = await import("../../../book/convert/docx");
+      const imported = await docxToContent(await file.arrayBuffer());
+      content = imported.content;
+      fileMeta = imported.meta;
+      warnings.push(...imported.warnings);
       break;
     }
     case "rtf":
@@ -104,78 +117,134 @@ async function convertFile(file: File): Promise<ConvertedFile> {
     content = { type: "doc", content: [{ type: "paragraph" }] };
   }
 
-  return { stem, content, suggestedFormat };
+  // A file that's clearly a book comes in as a book manuscript.
+  let maps: DocMapsSnapshot = {};
+  let note: string | null = null;
+  if (suggestedFormat === "none") {
+    const { asManuscript } = await import("../../../book/convert/importAsBook");
+    const book = asManuscript(content, { title: fileMeta.title ?? stem, author: fileMeta.author });
+    if (book) {
+      content = book.content;
+      suggestedFormat = "manuscript";
+      maps = { book: book.bookPatch };
+      note = `Imported as a Manuscript: ${book.summary}`;
+    }
+  }
+  if (warnings.length) note = `${note ?? "Imported"} (${warnings.join(", ")})`;
+
+  return { stem, content, suggestedFormat, maps, note };
 }
 
 export async function importFile(file: File): Promise<Document> {
-  const { stem, content, suggestedFormat } = await convertFile(file);
-
-  // Build before creating the server row so an unexpectedly huge individual
-  // block cannot leave an empty document behind.
-  const updates = buildImportSeedUpdates(content);
-  const doc = await documentsApi.create(stem.slice(0, 200), suggestedFormat);
-  try {
-    for (const update of updates) {
-      await documentsApi.appendUpdate(doc.id, b64encode(update));
-    }
-    await documentsApi.snapshot(
-      doc.id,
-      JSON.stringify(content),
-      `Imported from ${file.name}`.slice(0, 120),
-    );
-    return doc;
-  } catch (error) {
-    // Import is atomic from the user's perspective. A partially seeded
-    // document is not useful and would otherwise clutter the list.
-    await documentsApi.remove(doc.id).catch(() => {});
-    throw error;
-  }
+  const { stem, content, suggestedFormat, maps, note } = await convertFile(file);
+  const doc = await createServerDocument(stem, suggestedFormat, content, maps, `Imported from ${file.name}`);
+  if (note) toast(note, "success");
+  return doc;
 }
 
 /** Import a file as a document on this device — no server involved.
  *  Resolves to the new local document's id. */
 export async function importFileToLocal(file: File): Promise<string> {
-  const { stem, content, suggestedFormat } = await convertFile(file);
+  const { stem, content, suggestedFormat, maps, note } = await convertFile(file);
+  const id = await createLocalDocument(stem, suggestedFormat, content, maps);
+  if (note) toast(note, "success");
+  return id;
+}
+
+/**
+ * A new server document holding `content` and its per-document maps, with
+ * a named version recording where it came from. Atomic for the user: if
+ * seeding fails, the partial document is deleted for good.
+ */
+export async function createServerDocument(
+  title: string,
+  format: string,
+  content: JSONContent,
+  maps: DocMapsSnapshot,
+  versionName: string,
+): Promise<Document> {
+  // Build before creating the server row so an unexpectedly huge individual
+  // block cannot leave an empty document behind.
+  const updates = buildImportSeedUpdates(content);
+  const mapsUpdate = docMapsUpdate(maps);
+  if (mapsUpdate) updates.push(mapsUpdate);
+  const doc = await documentsApi.create(title.trim().slice(0, 200) || "Untitled", format);
+  try {
+    for (const update of updates) {
+      await documentsApi.appendUpdate(doc.id, b64encode(update));
+    }
+    await documentsApi.snapshot(doc.id, JSON.stringify(content), versionName.slice(0, 120));
+    return doc;
+  } catch (error) {
+    await discardServerDocument(doc.id);
+    throw error;
+  }
+}
+
+/** Remove a document that never really existed (a failed import or copy):
+ *  out of the list and out of Recently Deleted. */
+export async function discardServerDocument(id: number): Promise<void> {
+  await documentsApi.remove(id).catch(() => {});
+  await documentsApi.purge(id).catch(() => {});
+}
+
+/** A new on-device document holding `content` and its maps. */
+export async function createLocalDocument(
+  title: string,
+  format: string,
+  content: JSONContent,
+  maps: DocMapsSnapshot,
+): Promise<string> {
   // One-shot conversion: local docs have no per-update size ceiling.
   const ydoc = new Y.Doc();
-  const schema = getSchema(EXTENSIONS);
-  ydoc.transact(() => {
-    prosemirrorJSONToYXmlFragment(schema, content, ydoc.get("default", Y.XmlFragment));
-  });
-  const state_b64 = b64encode(Y.encodeStateAsUpdate(ydoc));
-  return useLocalDocs.getState().create(stem.slice(0, 200), suggestedFormat, state_b64);
+  try {
+    const schema = getSchema(EXTENSIONS);
+    ydoc.transact(() => {
+      prosemirrorJSONToYXmlFragment(schema, content, ydoc.get("default", Y.XmlFragment));
+    });
+    applyDocMaps(ydoc, maps);
+    const state_b64 = b64encode(Y.encodeStateAsUpdate(ydoc));
+    return await useLocalDocs.getState().create(title.trim().slice(0, 200) || "Untitled", format, state_b64);
+  } finally {
+    ydoc.destroy();
+  }
 }
 
 /**
  * Convert progressively larger ProseMirror documents into independent Yjs
  * v1 updates. Batching by source JSON size keeps each decoded update safely
- * below the collaboration endpoint's 256 KiB limit.
+ * below the collaboration endpoint's 256 KiB limit (older servers).
+ *
+ * Linear, not quadratic: the document is parsed ONCE, every batch reuses the
+ * same child node objects, and one shared mapping lets y-tiptap's diff
+ * recognize already-synced blocks by identity instead of re-comparing them.
  */
 export function buildImportSeedUpdates(content: JSONContent): Uint8Array[] {
-  const blocks = content.content ?? [];
+  const schema = getSchema(EXTENSIONS);
+  const full = PmNode.fromJSON(schema, content);
+  const children: PmNode[] = [];
+  full.forEach((child) => children.push(child));
   const ydoc = new Y.Doc();
   const fragment = ydoc.get("default", Y.XmlFragment);
-  const schema = getSchema(EXTENSIONS);
+  const meta = { mapping: new Map(), isOMark: new Map() };
+  const encoder = new TextEncoder();
   const updates: Uint8Array[] = [];
   let end = 0;
 
-  while (end < blocks.length) {
+  while (end < children.length) {
     let nextEnd = end;
     let batchBytes = 0;
-    while (nextEnd < blocks.length) {
-      const blockBytes = new TextEncoder().encode(JSON.stringify(blocks[nextEnd])).byteLength;
+    while (nextEnd < children.length) {
+      const blockBytes = encoder.encode(JSON.stringify(children[nextEnd].toJSON())).byteLength;
       if (nextEnd > end && batchBytes + blockBytes > SEED_BATCH_JSON_BYTES) break;
       batchBytes += blockBytes;
       nextEnd += 1;
     }
 
+    const partial = full.type.create(full.attrs, children.slice(0, nextEnd));
     const before = Y.encodeStateVector(ydoc);
     ydoc.transact(() => {
-      prosemirrorJSONToYXmlFragment(
-        schema,
-        { ...content, content: blocks.slice(0, nextEnd) },
-        fragment,
-      );
+      updateYFragment(ydoc, fragment, partial, meta);
     });
     const update = Y.encodeStateAsUpdate(ydoc, before);
     if (update.byteLength > MAX_SEED_UPDATE_BYTES) {
@@ -189,6 +258,7 @@ export function buildImportSeedUpdates(content: JSONContent): Uint8Array[] {
     end = nextEnd;
   }
 
+  ydoc.destroy();
   return updates;
 }
 
@@ -196,22 +266,32 @@ function htmlToDoc(html: string): JSONContent {
   return generateJSON(html, EXTENSIONS) as JSONContent;
 }
 
-/** Blank-line-separated plain text → paragraphs. */
+/**
+ * Plain text → paragraphs. Text that separates paragraphs with blank lines
+ * (and wraps lines inside them) splits on the blank lines; text with one
+ * paragraph per line — most manuscripts saved as .txt — splits per line.
+ * Blank lines in the second kind are kept as empty paragraphs, so a
+ * manuscript's scene-break gaps survive for chapter detection.
+ */
 function splitPlainText(text: string): string[] {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .split(/\n\s*\n/)
-    .map((p) => p.replace(/\n/g, " ").trim())
-    .filter((p) => p.length > 0);
+  const normalized = text.replace(/\r\n?/g, "\n").replace(/^\n+|\n+$/g, "");
+  const breaks = (normalized.match(/\n/g) ?? []).length;
+  const doubles = (normalized.match(/\n[ \t]*\n/g) ?? []).length;
+  if (breaks > 0 && doubles / breaks >= 0.3) {
+    return normalized
+      .split(/\n\s*\n/)
+      .map((p) => p.replace(/\n/g, " ").trim())
+      .filter((p) => p.length > 0);
+  }
+  return normalized.split("\n").map((line) => line.trim());
 }
 
 function paragraphsToDoc(paragraphs: string[]): JSONContent {
   return {
     type: "doc",
-    content: paragraphs.map((text) => ({
-      type: "paragraph",
-      content: [{ type: "text", text }],
-    })),
+    content: paragraphs.map((text) =>
+      text ? { type: "paragraph", content: [{ type: "text", text }] } : { type: "paragraph" },
+    ),
   };
 }
 

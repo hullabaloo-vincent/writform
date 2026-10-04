@@ -15,6 +15,13 @@ import type { SetShareRequest } from "../../bindings/proto/SetShareRequest";
 import type { UpdateDocumentRequest } from "../../bindings/proto/UpdateDocumentRequest";
 import { backend, type CmdError } from "../../lib/backend";
 
+/** A failed API call. `status` is the HTTP status — the sync engine needs it
+ *  to tell a passing hiccup from a refusal. Transport failures (no answer at
+ *  all) surface as plain CmdErrors without one. */
+export interface ApiError extends CmdError {
+  status: number;
+}
+
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await backend.apiFetch(method, path, body);
   if (res.status >= 400) {
@@ -22,7 +29,8 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
     throw {
       code: err.code ?? `http_${res.status}`,
       message: err.message ?? `request failed (${res.status})`,
-    } satisfies CmdError;
+      status: res.status,
+    } satisfies ApiError;
   }
   return res.body as T;
 }
@@ -45,9 +53,19 @@ export const documentsApi = {
   create: (title: string, format: string) =>
     api<Document>("POST", "/api/v1/documents", { title, format }),
   detail: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}`),
+  /** Read without logging an "opened" activity entry (bulk reads: export,
+   *  copy to device, duplicate, combine). */
+  detailQuiet: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}?quiet=1`),
   update: (id: number, req: UpdateDocumentRequest) =>
     api<Document>("PATCH", `/api/v1/documents/${id}`, req),
+  /** Moves the document to Recently Deleted (servers before 1.1 delete it
+   *  outright — see `trash()`). */
   remove: (id: number) => api<null>("DELETE", `/api/v1/documents/${id}`),
+  /** Recently Deleted; 404 on servers that predate it. */
+  trash: () => api<DocumentListItem[]>("GET", "/api/v1/document-trash"),
+  restore: (id: number) => api<Document>("POST", `/api/v1/documents/${id}/restore`),
+  purge: (id: number) => api<null>("DELETE", `/api/v1/document-trash/${id}`),
+  emptyTrash: () => api<null>("POST", "/api/v1/document-trash/empty"),
 
   appendUpdate: (id: number, update_b64: string) =>
     api<AppendUpdateResponse>("POST", `/api/v1/documents/${id}/updates`, { update_b64 }),

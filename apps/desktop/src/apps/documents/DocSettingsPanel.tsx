@@ -412,42 +412,50 @@ function DocumentTab({
   );
 }
 
-function InchStepper({
+/** A ¼-inch stepper (margins, trim sizes). Exported for the book inspector. */
+export function InchStepper({
   label,
   value,
   disabled,
   onChange,
+  min = MARGIN_MIN,
+  max = MARGIN_MAX,
+  step = 0.25,
 }: {
   label: string;
   value: number;
   disabled: boolean;
   onChange: (v: number) => void;
+  min?: number;
+  max?: number;
+  step?: number;
 }) {
-  // Steps snap onto the ¼-inch grid even from off-grid values (the default
-  // top margin is 0.86in): up goes to the next multiple, down to the previous.
-  const step = (dir: 1 | -1) => {
-    const quarters = dir === 1 ? Math.floor(value * 4) + 1 : Math.ceil(value * 4) - 1;
-    onChange(Math.min(MARGIN_MAX, Math.max(MARGIN_MIN, quarters / 4)));
+  // Steps snap onto the grid even from off-grid values (the default top
+  // margin is 0.86in): up goes to the next multiple, down to the previous.
+  const k = 1 / step;
+  const move = (dir: 1 | -1) => {
+    const units = dir === 1 ? Math.floor(value * k + 1e-9) + 1 : Math.ceil(value * k - 1e-9) - 1;
+    onChange(Math.min(max, Math.max(min, units / k)));
   };
-  const shown = parseFloat(value.toFixed(2));
+  const shown = parseFloat(value.toFixed(3));
   return (
     <div className="wf-inspector-stepper">
       <span className="wf-inspector-stepper-label">{label}</span>
       <div className="wf-inspector-stepper-controls">
         <button
           type="button"
-          title={`${label} margin −`}
-          disabled={disabled || value <= MARGIN_MIN}
-          onClick={() => step(-1)}
+          title={`${label} −`}
+          disabled={disabled || value <= min}
+          onClick={() => move(-1)}
         >
           <Minus size={12} />
         </button>
         <span>{shown} in</span>
         <button
           type="button"
-          title={`${label} margin +`}
-          disabled={disabled || value >= MARGIN_MAX}
-          onClick={() => step(1)}
+          title={`${label} +`}
+          disabled={disabled || value >= max}
+          onClick={() => move(1)}
         >
           <Plus size={12} />
         </button>

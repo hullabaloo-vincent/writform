@@ -43,11 +43,15 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET/POST | `/documents` | list (own + shared); `?q=` searches title + content |
-| GET/PATCH/DELETE | `/documents/{id}` | detail (Yjs state), rename/reformat, delete (owner) |
-| GET/POST | `/documents/{id}/updates` | Yjs update log — `?since=` catch-up |
+| GET/POST | `/documents` | list (own + shared) with each document's `word_count` and `excerpt`; `?q=` searches titles and the documents' words (not their JSON), each hit with a `snippet` |
+| GET/PATCH/DELETE | `/documents/{id}` | detail (Yjs state; `?quiet=1` for bulk reads that shouldn't log "opened"), rename/reformat, delete (owner) — moves it to Recently Deleted |
+| POST | `/documents/{id}/restore` | put a document back from Recently Deleted (owner) |
+| GET | `/document-trash` | the caller's Recently Deleted, newest first, with `deleted_at` |
+| DELETE | `/document-trash/{id}` | delete one for good (owner) |
+| POST | `/document-trash/empty` | empty Recently Deleted |
+| GET/POST | `/documents/{id}/updates` | Yjs update log — `?since=` catch-up (`truncated` past 16 MiB: reload the state); one update may be up to 4 MiB, larger is 413 `update_too_large` |
 | POST | `/documents/{id}/awareness` | ephemeral cursor/selection presence |
-| POST | `/documents/{id}/snapshot` | version-history snapshot (auto or named) |
+| POST | `/documents/{id}/snapshot` | version-history snapshot (auto, named or draft); also refreshes the list's text, word count and excerpt |
 | GET | `/documents/{id}/versions` · `/documents/{id}/versions/{vid}` | version history |
 | GET/PUT/DELETE | `/documents/{id}/shares` · `/documents/{id}/shares/{kind}/{id}` | read/write grants (friends or groups) |
 | POST | `/documents/{id}/move` | move into/out of a folder |
@@ -57,6 +61,13 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 | GET/POST | `/document-folders` | list/create folders |
 | PATCH/DELETE | `/document-folders/{id}` | rename/delete (documents keep, unfoldered) |
 | POST | `/document-folders/{id}/share` | share every document in a folder at once |
+
+Deleted documents read as missing everywhere (404 to owner and
+collaborators alike, no room, no images) until restored; after 30 days the
+server deletes them for good. Lists change live: the owner's devices get
+`document.listchanged` (create, rename, move, delete, restore) and
+`document.folders` (folder changes) on their user room; an open document's
+room gets `document.deleted`.
 
 ## Voice, canvas, friends, misc
 

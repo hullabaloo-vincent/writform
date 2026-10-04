@@ -7,6 +7,7 @@ import {
   AlignJustify,
   AlignLeft,
   AlignRight,
+  Asterisk,
   Bold,
   Code,
   Heading1,
@@ -36,6 +37,7 @@ import {
   TextFormat,
   togglePageBreakBefore,
 } from "./TextFormat";
+import { DocElement } from "./DocElement";
 
 /** Attachment images with the stored URL re-pointed at whichever platform
  *  is rendering (desktop protocol vs same-origin web path). */
@@ -60,6 +62,7 @@ export function RichEditor({
   placeholder,
   autoFocus,
   toolbar = false,
+  format,
 }: {
   value: JSONContent | null;
   onChange?: (doc: JSONContent) => void;
@@ -68,6 +71,8 @@ export function RichEditor({
   autoFocus?: boolean;
   /** Show the formatting toolbar (WYSIWYG controls + image upload). */
   toolbar?: boolean;
+  /** A document format whose styling applies (manuscript, screenplay…). */
+  format?: string;
 }) {
   const editor = useEditor({
     // TextFormat keeps this preview/prompt schema in step with the document
@@ -77,6 +82,8 @@ export function RichEditor({
       WfImage,
       Placeholder.configure({ placeholder: placeholder ?? "Write…" }),
       TextFormat,
+      // Element types (chapter heading, scene heading…) survive previews.
+      DocElement,
     ],
     content: value ?? undefined,
     editable,
@@ -99,7 +106,7 @@ export function RichEditor({
   }, [editor, editable]);
 
   return (
-    <div className="wf-rich-wrap">
+    <div className={`wf-rich-wrap${format ? ` wf-fmt-${format}` : ""}`}>
       {toolbar && editable && editor && <Toolbar editor={editor} />}
       <EditorContent className={`wf-rich ${editable ? "editable" : ""}`} editor={editor} />
     </div>
@@ -113,6 +120,7 @@ export function Toolbar({
   richBlocks = true,
   allowImages = true,
   typography = false,
+  manuscript = false,
 }: {
   editor: Editor;
   leading?: ReactNode;
@@ -123,6 +131,9 @@ export function Toolbar({
   /** Paragraph typography controls (align/font/size/page break) — document
    *  editors only, and only for the Plain format. */
   typography?: boolean;
+  /** The book manuscript's few direct controls: left/center/right (meaning,
+   *  not styling), block quote, and scene break. */
+  manuscript?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
@@ -159,12 +170,14 @@ export function Toolbar({
     <button
       type="button"
       title={title}
+      aria-label={title}
+      aria-pressed={active}
       className={active ? "active" : ""}
       disabled={disabled}
-      onMouseDown={(e) => {
-        e.preventDefault(); // keep editor focus
-        run();
-      }}
+      // Mousedown only keeps the editor's focus; the action runs on click,
+      // so the keyboard (Enter/Space on a focused button) works too.
+      onMouseDown={(e) => e.preventDefault()}
+      onClick={run}
     >
       {icon}
     </button>
@@ -270,6 +283,48 @@ export function Toolbar({
           })()}
         </>
       )}
+      {manuscript && (
+        <>
+          <span className="wf-toolbar-sep" />
+          {(() => {
+            const cur = curTypography(editor);
+            return (
+              <>
+                {btn(
+                  "Align left (⌘⇧L)",
+                  <AlignLeft size={15} />,
+                  () => setDocAlign(editor, "left"),
+                  cur.align === null,
+                )}
+                {btn(
+                  "Center (⌘⇧E)",
+                  <AlignCenter size={15} />,
+                  () => setDocAlign(editor, "center"),
+                  cur.align === "center",
+                )}
+                {btn(
+                  "Align right (⌘⇧R)",
+                  <AlignRight size={15} />,
+                  () => setDocAlign(editor, "right"),
+                  cur.align === "right",
+                )}
+              </>
+            );
+          })()}
+          <span className="wf-toolbar-sep" />
+          {btn(
+            "Block quote — letters, signs, extracts",
+            <Quote size={15} />,
+            () => chain().toggleBlockquote().run(),
+            editor.isActive("blockquote"),
+          )}
+          {btn(
+            "Scene break (or type * * * and press Enter)",
+            <Asterisk size={15} />,
+            () => chain().setHorizontalRule().run(),
+          )}
+        </>
+      )}
       {richBlocks && (
         <>
           <span className="wf-toolbar-sep" />
@@ -350,6 +405,6 @@ export function Toolbar({
 }
 
 /** Render a stored TipTap doc read-only (prompt display, final outputs). */
-export function RichDoc({ doc }: { doc: JSONContent | null }) {
-  return <RichEditor value={doc} editable={false} />;
+export function RichDoc({ doc, format }: { doc: JSONContent | null; format?: string }) {
+  return <RichEditor value={doc} editable={false} format={format} />;
 }

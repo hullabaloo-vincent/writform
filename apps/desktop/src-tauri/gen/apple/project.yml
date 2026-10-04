@@ -54,6 +54,8 @@ targets:
           - UIInterfaceOrientationLandscapeRight
         CFBundleShortVersionString: 1.0.1
         CFBundleVersion: "1.0.1"
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
     entitlements:
       path: writform-desktop_iOS/writform-desktop_iOS.entitlements
     scheme:

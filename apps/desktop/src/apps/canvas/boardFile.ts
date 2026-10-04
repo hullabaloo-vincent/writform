@@ -10,9 +10,9 @@
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
-import { backend, isWeb } from "../../lib/backend";
+import { isWeb } from "../../lib/backend";
+import { saveExport } from "../../lib/saveFile";
 import { uploadBlob } from "../../lib/upload";
-import { b64encode } from "../documents/collab";
 import { canvasApi } from "./api";
 import {
   activeLocalBoard,
@@ -193,7 +193,8 @@ function styleImageSlots(style: StyleWithImages): StyleImageSlot[] {
 
 export interface BoardExportResult {
   fileName: string;
-  where: string;
+  /** False when the user cancelled the Save panel. */
+  saved: boolean;
   skippedMedia: number;
 }
 
@@ -298,8 +299,13 @@ export async function exportBoard(
 
   const bytes = await zip.generateAsync({ type: "uint8array" });
   const fileName = `${sanitizeFileName(board.name)}.wfboard`;
-  const where = await backend.saveExport(fileName, b64encode(bytes));
-  return { fileName, where, skippedMedia };
+  // The save path shows the "Saved …" toast; skipped pictures ride along.
+  const result = await saveExport(fileName, "wfboard", bytes, {
+    note: skippedMedia
+      ? `${skippedMedia} image${skippedMedia === 1 ? "" : "s"} skipped`
+      : undefined,
+  });
+  return { fileName, saved: result.status === "saved", skippedMedia };
 }
 
 /* --------------------------------------------------------------- import */

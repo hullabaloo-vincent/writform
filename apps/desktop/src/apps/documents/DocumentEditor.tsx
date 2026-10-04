@@ -4,8 +4,9 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import {
-  CloudOff,
-  Download,
+  BookOpen,
+  Search,
+  Eye,
   Focus as FocusIcon,
   History,
   ListTree,
@@ -17,20 +18,30 @@ import {
   SquareSplitVertical,
   Trash2,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as Y from "yjs";
 
-import { isCmdError } from "../../lib/backend";
+import { isCmdError, isWeb } from "../../lib/backend";
 import { useSwipe } from "../../lib/useSwipe";
-import { countWords, readingTime } from "../../lib/wordCount";
+import { readingTime } from "../../lib/wordCount";
 import { loadGoal, noteGoalProgress, saveGoal } from "../../lib/writingGoals";
-import { confirmDialog } from "../../platform";
+import { confirmDialog, toast } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
 import { Paginate, reflowPagination, type PageLayoutResult, type PageSpec } from "../../editor/Paginate";
 import { Toolbar, WfImage } from "../../editor/RichEditor";
+import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
 import { TextFormat } from "../../editor/TextFormat";
+import { ManuscriptLabels, refreshManuscriptLabels } from "../../book/editor/manuscriptLabels";
+import { ManuscriptPaste } from "../../book/editor/manuscriptPaste";
+import { BookInspector } from "../../book/ui/BookInspector";
+import { ConvertDialog } from "../../book/ui/ConvertDialog";
+import { ExportBookDialog, type BookExportKind } from "../../book/ui/ExportBookDialog";
+import { BookPreview } from "../../book/preview/BookPreview";
+import { DockedPreview } from "../../book/preview/DockedPreview";
+import { scanStructure } from "../../book/model/structure";
 import { documentsApi } from "./api";
-import type { DocProvider } from "./collab";
+import { b64encode, type DocProvider } from "./collab";
 import {
   onDocSettingsChange,
   pageSpecFor,
@@ -40,16 +51,42 @@ import {
 } from "./docSettings";
 import { DocSettingsPanel } from "./DocSettingsPanel";
 import { DocElement } from "./formats/DocElement";
-import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
+import { FORMAT_LABELS, FORMAT_SPECS, type ElementSpec } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
-import { FeedbackPanel, useFeedbackDecorations, FeedbackHighlights } from "./FeedbackPanel";
+import {
+  FeedbackPanel,
+  FeedbackHighlights,
+  resolveThreadRange,
+  useFeedbackDecorations,
+  useThreadClicks,
+  type ThreadFocus,
+} from "./FeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
 import { PageGuides } from "./PageGuides";
-import { exportDocument } from "./export";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
+import { useLocalDocs } from "./local";
 import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
+import { countDocWords, countRangeWords } from "./stats";
+import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
+import {
+  bookExportItems,
+  canDockPreview,
+  EDITOR_PROPS,
+  inputRulesFor,
+  manuscriptVars,
+  pasteRulesFor,
+  showBlock,
+  useBook,
+  selectedPhrase,
+  useFindShortcut,
+  type FindRequest,
+  useServerSyncState,
+} from "./shell/hooks";
+import { useReopenPosition } from "./shell/position";
+import { SyncStatus, type SaveAction } from "./shell/SyncStatus";
+import { openServerDoc } from "./navigation";
 import { activeProvider, useDocuments } from "./store";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import { ShareDialog } from "./ShareDialog";
@@ -70,7 +107,7 @@ function caretColor(name: string): string {
   return CARET_COLORS[h % CARET_COLORS.length];
 }
 
-type Panel = "none" | "history" | "feedback" | "outline" | "settings";
+type Panel = "none" | "history" | "feedback" | "outline" | "settings" | "book" | "preview";
 
 export function DocumentEditor() {
   const meta = useDocuments((s) => s.meta);
@@ -80,7 +117,6 @@ export function DocumentEditor() {
   const me = useSession((s) => s.session?.user);
   const provider = activeProvider();
 
-  const [pending, setPending] = useState(false);
   const [panel, setPanel] = useState<Panel>(() =>
     localStorage.getItem("wf-doc-feedback") === "on" ? "feedback" : "none",
   );
@@ -111,8 +147,6 @@ export function DocumentEditor() {
         myAccess: myAccess ?? "read",
         threads,
         me: me ? (me.display_name ?? me.username) : "me",
-        pending,
-        setPending,
         panel,
         setPanel,
         shareOpen,
@@ -132,8 +166,6 @@ interface EditorCtx {
   myAccess: string;
   threads: ReturnType<typeof useDocuments.getState>["threads"];
   me: string;
-  pending: boolean;
-  setPending: (p: boolean) => void;
   panel: Panel;
   setPanel: (p: Panel) => void;
   shareOpen: boolean;
@@ -142,7 +174,7 @@ interface EditorCtx {
   setCanvasOpen: (o: boolean) => void;
   error: string | null;
   setError: (e: string | null) => void;
-  closeDocument: () => void;
+  closeDocument: (opts?: { discard?: boolean }) => void;
 }
 
 function EditorInner({
@@ -157,14 +189,27 @@ function EditorInner({
   state: EditorCtx;
 }) {
   const { meta, myAccess, panel, setPanel } = state;
-  const [exportOpen, setExportOpen] = useState(false);
-  const [finding, setFinding] = useState(false);
+  const [find, setFind] = useState<FindRequest | null>(null);
+  const openFind = useCallback(
+    (replace: boolean, prefill: string) => setFind((f) => ({ n: (f?.n ?? 0) + 1, replace, prefill })),
+    [],
+  );
+  const [converting, setConverting] = useState<null | "convert" | "tidy">(null);
+  const [bookExport, setBookExport] = useState<BookExportKind | null>(null);
+  const switchFormat = (next: string) =>
+    documentsApi
+      .update(meta.id, { title: null, format: next })
+      .then(() => {})
+      .catch((err) => state.setError(isCmdError(err) ? err.message : String(err)));
   const [highlightsOn, setHighlightsOn] = useState(
     () => localStorage.getItem("wf-doc-feedback-hl") !== "off",
   );
-  const [pageGuides, setPageGuides] = useState(
+  const [pageViewOn, setPageGuides] = useState(
     () => localStorage.getItem("wf-doc-pageguides") === "on",
   );
+  // A manuscript previews as a book instead (Preview book).
+  const pageGuides = pageViewOn && format !== "manuscript";
+  const [previewOpen, setPreviewOpen] = useState(false);
   // Phones show panels as overlays over the page — swipe right pushes the
   // open one away. Starts inside the editor text never trigger (editable).
   const panelSwipe = useSwipe({ onRight: () => setPanel("none") });
@@ -180,6 +225,9 @@ function EditorInner({
   );
   const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
   const specRef = useRef<PageSpec | null>(null);
+  // The book's details and design (Y.Map "book"): the manuscript view's
+  // fonts, ornaments and chapter labels come from it.
+  const { book, ref: bookRef } = useBook(provider.doc, { title: meta.title, author: state.me });
 
   const extensions = useMemo(
     () => [
@@ -187,8 +235,17 @@ function EditorInner({
       WfImage,
       Placeholder.configure({ placeholder: "Write…" }),
       DocElement,
-      TextFormat.configure({ shortcuts: format === "none" }),
+      TextFormat.configure({
+        shortcuts: format === "none",
+        alignShortcuts: format === "manuscript",
+      }),
       formatKeymap(format),
+      ...(format === "none" || format === "manuscript" || format === "poetry"
+        ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(bookRef.current.meta.language) })]
+        : []),
+      ...(format === "manuscript"
+        ? [ManuscriptLabels.configure({ getDesign: () => bookRef.current.design }), ManuscriptPaste]
+        : []),
       FeedbackHighlights,
       Paginate.configure({ getSpec: () => specRef.current, onLayout: setPageLayout }),
       Collaboration.configure({ document: provider.doc }),
@@ -205,28 +262,57 @@ function EditorInner({
   const editor = useEditor({
     extensions,
     editable: !readonly,
-    // WebViews default contenteditable spellcheck off — writers want the
-    // squiggle, same as the prompt editor.
-    editorProps: { attributes: { spellcheck: "true" } },
+    editorProps: EDITOR_PROPS,
+    enableInputRules: inputRulesFor(format),
+    enablePasteRules: pasteRulesFor(format),
   });
+
+  // A change of numbering style or label word re-labels the chapters.
+  const { chapterNumber, chapterLabel, restartNumbersInParts } = book.design;
+  useEffect(() => {
+    if (format === "manuscript") refreshManuscriptLabels(editor);
+  }, [editor, format, chapterNumber, chapterLabel, restartNumbersInParts]);
 
   useEffect(() => {
     editor?.setEditable(!readonly);
   }, [editor, readonly]);
 
-  // Offline chip.
-  useEffect(() => {
-    provider.onPending = state.setPending;
-    return () => {
-      provider.onPending = null;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [provider]);
+  const sync = useServerSyncState(provider);
+  const syncActions: SaveAction[] = [
+    { label: "Try Again", run: () => provider.retry() },
+    isWeb
+      ? {
+          label: "Download a Copy",
+          primary: true,
+          run: () =>
+            void import("./export")
+              .then(({ exportDocument }) =>
+                editor ? exportDocument(editor.getJSON(), meta.title, format, "docx") : null,
+              )
+              .catch((e) => state.setError(String(e))),
+        }
+      : {
+          label: "Save a Copy to This Device",
+          primary: true,
+          run: () =>
+            void useLocalDocs
+              .getState()
+              .create(`${meta.title} (copy)`, format, b64encode(Y.encodeStateAsUpdate(provider.doc)))
+              .then(() => toast("Saved a copy to this device.", "success"))
+              .catch((e) => state.setError(isCmdError(e) ? e.message : String(e))),
+        },
+  ];
 
   useAutoRevisions(editor, (json) => documentsApi.snapshot(meta.id, json), !readonly);
   // Gated on the toggle alone: the panel-open OR made the highlighter
   // button a no-op in the only place it exists (the open panel).
   useFeedbackDecorations(editor, provider, state.threads, highlightsOn);
+  // Clicking a highlighted passage opens its thread.
+  const [threadFocus, setThreadFocus] = useState<ThreadFocus | null>(null);
+  useThreadClicks(editor, (id) => {
+    setPanel("feedback");
+    setThreadFocus((f) => ({ id, n: (f?.n ?? 0) + 1 }));
+  });
 
   // Page view geometry: recompute whenever settings, format, or the toggle
   // change; the plugin re-measures on its own for edits and resizes.
@@ -236,32 +322,113 @@ function EditorInner({
   }, [editor, pageGuides, docSettings, format]);
 
   const sheetStyle = useMemo(() => {
-    const vars: Record<string, string> = format === "none" ? settingsVars(docSettings) : {};
+    const vars: Record<string, string> =
+      format === "none"
+        ? settingsVars(docSettings)
+        : format === "manuscript"
+          ? manuscriptVars(book)
+          : {};
     if (pageGuides && pageLayout) vars["--wfd-fill"] = `${pageLayout.fill}px`;
     return vars as React.CSSProperties;
-  }, [format, docSettings, pageGuides, pageLayout]);
+  }, [format, docSettings, book, pageGuides, pageLayout]);
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setFinding(true);
-      }
+  useFindShortcut(editor, openFind);
+
+  const exportItems: ExportItem[] = useMemo(() => {
+    const run = (kind: "pdf" | "booklet" | "docx") => async () => {
+      if (!editor) return;
+      const { exportDocument } = await import("./export");
+      await exportDocument(
+        editor.getJSON(),
+        meta.title,
+        format,
+        kind,
+        format === "none" ? docSettings : undefined,
+      );
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
+    return [
+      // A manuscript's PDFs come from the book typesetter (below).
+      ...(format === "manuscript"
+        ? []
+        : [
+            { label: "Export PDF", run: run("pdf") },
+            {
+              label: "Export booklet PDF",
+              title: "Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half",
+              run: run("booklet"),
+            },
+          ]),
+      { label: WORD_EXPORT, run: run("docx") },
+      ...(format === "manuscript" && editor
+        ? bookExportItems(setBookExport, async () => {
+            const { exportSubmissionDocx } = await import("../../book/exportBook");
+            await exportSubmissionDocx(editor.getJSON(), "manuscript", bookRef.current);
+          })
+        : []),
+      ...(format === "none" && !readonly
+        ? [
+            {
+              label: "Make it a book manuscript…",
+              title: "Turn chapters and scene breaks into book elements for print and ebook export",
+              separatorBefore: true,
+              run: async () => setConverting("convert"),
+            },
+          ]
+        : []),
+    ];
+  }, [editor, meta.title, format, docSettings, readonly, bookRef]);
+
+  /** Delete: to Recently Deleted with Undo (servers that predate it delete
+   *  for good, so they still ask first). Unsent edits go out first, so the
+   *  restored document has them. */
+  const deleteThis = async () => {
+    const supported = useDocuments.getState().trashSupported;
+    if (supported === false) {
+      const ok = await confirmDialog("Delete this document for everyone? This server deletes documents permanently.", {
+        title: "Delete document",
+        confirmLabel: "Delete",
+        danger: true,
+      });
+      if (!ok) return;
+    }
+    try {
+      await provider.flush(2000);
+      await documentsApi.remove(meta.id);
+      // Nothing is left to send to a deleted document.
+      state.closeDocument({ discard: true });
+      if (supported !== false) {
+        const id = meta.id;
+        const title = meta.title;
+        toast(`Moved “${title}” to Recently Deleted.`, "info", {
+          durationMs: 8000,
+          action: {
+            label: "Undo",
+            run: () =>
+              void documentsApi
+                .restore(id)
+                .then(() => openServerDoc(id))
+                .catch((e) => state.setError(isCmdError(e) ? e.message : String(e))),
+          },
+        });
+      }
+    } catch (e) {
+      state.setError(isCmdError(e) ? e.message : String(e));
+    }
+  };
 
   const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
   useTypewriterScroll(editor, focus && typewriter);
   // Word goals are per-device; the key carries the server so ids don't mix.
   const addr = useSession((s) => s.session?.addr);
   const goalKey = `${addr ?? "server"}:${meta.id}`;
+  // Reopen where you left off.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useReopenPosition(editor, `s:${goalKey}`, scrollRef);
   const toggleFocus = () => {
     if (!focus) {
       setPanel("none");
-      setFinding(false);
+      setFind(null);
     }
     setFocus(!focus);
   };
@@ -269,7 +436,9 @@ function EditorInner({
   return (
     <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
       <header className="wf-session-room-header wf-doc-header">
-        <button onClick={state.closeDocument}>←</button>
+        <button title="Back to documents" onClick={() => state.closeDocument()}>
+          ←
+        </button>
         <TitleEditor
           title={meta.title}
           canEdit={!readonly}
@@ -284,11 +453,15 @@ function EditorInner({
           title="Writing format"
           value={format}
           disabled={readonly}
-          onChange={(e) =>
-            void documentsApi
-              .update(meta.id, { title: null, format: e.target.value })
-              .catch((err) => state.setError(isCmdError(err) ? err.message : String(err)))
-          }
+          onChange={(e) => {
+            // Plain → Manuscript offers to turn the text's structure into
+            // book elements first.
+            if (format === "none" && e.target.value === "manuscript" && editor) {
+              setConverting("convert");
+              return;
+            }
+            void switchFormat(e.target.value);
+          }}
         >
           {Object.entries(FORMAT_LABELS).map(([key, label]) => (
             <option key={key} value={key}>
@@ -296,11 +469,7 @@ function EditorInner({
             </option>
           ))}
         </select>
-        {state.pending && (
-          <span className="wf-doc-pending" title="Changes not yet saved to the server">
-            <CloudOff size={14} /> pending
-          </span>
-        )}
+        {!readonly && <SyncStatus state={sync} where="server" actions={syncActions} />}
         <span className="wf-statusbar-spacer" />
         <Peers provider={provider} />
         <button
@@ -327,23 +496,54 @@ function EditorInner({
           <History size={16} />
         </button>
         <button
+          title="Find and replace (⌘F)"
+          className={find ? "active" : ""}
+          disabled={!editor}
+          onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
+        >
+          <Search size={16} />
+        </button>
+        <button
           title="Outline"
           className={panel === "outline" ? "active" : ""}
           onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
         >
           <ListTree size={16} />
         </button>
-        <button
-          title="Page view — paginate the sheet into real pages"
-          className={pageGuides ? "active" : ""}
-          onClick={() => {
-            const next = !pageGuides;
-            setPageGuides(next);
-            localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
-          }}
-        >
-          <SquareSplitVertical size={16} />
-        </button>
+        {format === "manuscript" ? (
+          <button
+            title="Preview the book — every page as it will print"
+            className={panel === "preview" || previewOpen ? "active" : ""}
+            disabled={!editor}
+            onClick={() => {
+              if (canDockPreview()) setPanel(panel === "preview" ? "none" : "preview");
+              else setPreviewOpen(true);
+            }}
+          >
+            <Eye size={16} />
+          </button>
+        ) : (
+          <button
+            title="Page view — paginate the sheet into real pages"
+            className={pageGuides ? "active" : ""}
+            onClick={() => {
+              const next = !pageViewOn;
+              setPageGuides(next);
+              localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+            }}
+          >
+            <SquareSplitVertical size={16} />
+          </button>
+        )}
+        {format === "manuscript" && (
+          <button
+            title="Book — details, design, print and ebook settings"
+            className={panel === "book" ? "active" : ""}
+            onClick={() => setPanel(panel === "book" ? "none" : "book")}
+          >
+            <BookOpen size={16} />
+          </button>
+        )}
         {format === "none" && (
           <button
             title="Document settings — paper, margins, text"
@@ -369,27 +569,10 @@ function EditorInner({
             <MoveVertical size={16} />
           </button>
         )}
-        <div className="wf-doc-export-wrap">
-          <button title="Export document" className={exportOpen ? "active" : ""} onClick={() => setExportOpen((open) => !open)}>
-            <Download size={16} />
-          </button>
-          {exportOpen && editor && (
-            <div className="wf-doc-export-menu">
-              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "pdf", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}>
-                Export PDF
-              </button>
-              <button
-                title="Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half"
-                onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "booklet", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}
-              >
-                Export booklet PDF
-              </button>
-              <button onClick={() => { setExportOpen(false); void exportDocument(editor.getJSON(), meta.title, format, "docx", format === "none" ? docSettings : undefined).catch((e) => state.setError(String(e))); }}>
-                Export Word (.docx)
-              </button>
-            </div>
-          )}
-        </div>
+        <ExportMenu
+          items={exportItems}
+          onError={(e) => state.setError(isCmdError(e) ? e.message : String(e))}
+        />
         <button title="Send to canvas" onClick={() => state.setCanvasOpen(true)}>
           <Presentation size={16} />
         </button>
@@ -402,18 +585,7 @@ function EditorInner({
           <button
             title="Delete document"
             className="wf-danger"
-            onClick={() =>
-              void confirmDialog(
-                "Delete this document for everyone? Version history is deleted too.",
-                { title: "Delete document", confirmLabel: "Delete", danger: true },
-              ).then((ok) => {
-                if (!ok) return;
-                documentsApi
-                  .remove(meta.id)
-                  .then(() => state.closeDocument())
-                  .catch((e) => state.setError(isCmdError(e) ? e.message : String(e)));
-              })
-            }
+            onClick={() => void deleteThis()}
           >
             <Trash2 size={16} />
           </button>
@@ -426,12 +598,18 @@ function EditorInner({
         </p>
       )}
 
+      {/* The header fades in focus mode; trouble stays legible in a corner. */}
+      {focus && !readonly && (
+        <SyncStatus state={sync} where="server" actions={syncActions} floating />
+      )}
+
       {editor && !readonly && (
         <div className="wf-doc-toolbar">
           <Toolbar
             editor={editor}
             richBlocks={format === "none"}
             typography={format === "none"}
+            manuscript={format === "manuscript"}
             leading={
               <>
                 <ElementSelect editor={editor} format={format} />
@@ -454,10 +632,10 @@ function EditorInner({
         </div>
       )}
 
-      {finding && editor && <FindBar editor={editor} onClose={() => setFinding(false)} />}
+      {find && editor && <FindBar editor={editor} readonly={readonly} request={find} onClose={() => setFind(null)} />}
 
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className="wf-doc-scroll">
+        <div className="wf-doc-scroll" ref={scrollRef}>
           <div
             className={`wf-page wf-fmt-${format}`}
             style={sheetStyle}
@@ -477,9 +655,33 @@ function EditorInner({
             readonly={readonly}
           />
         )}
+        {panel === "preview" && format === "manuscript" && editor && (
+          <DockedPreview
+            editor={editor}
+            format={format}
+            book={book}
+            onExpand={() => setPreviewOpen(true)}
+            onClose={() => setPanel("none")}
+            onShowSource={(src) => showBlock(editor, src)}
+          />
+        )}
+        {panel === "book" && format === "manuscript" && editor && (
+          <BookInspector
+            ydoc={provider.doc}
+            book={book}
+            readonly={readonly}
+            words={countDocWords(editor.state.doc)}
+            chapters={
+              scanStructure(editor.state.doc, "manuscript", book.design).entries.filter(
+                (e) => e.kind === "chapter",
+              ).length
+            }
+          />
+        )}
         {panel === "history" && <VersionHistoryPanel editor={editor} />}
         {panel === "feedback" && (
           <FeedbackPanel
+            focus={threadFocus}
             editor={editor}
             provider={provider}
             highlightsOn={highlightsOn}
@@ -490,9 +692,65 @@ function EditorInner({
             }}
           />
         )}
-        {panel === "outline" && <OutlinePanel editor={editor} />}
+        {panel === "outline" && (
+          <OutlinePanel
+            editor={editor}
+            format={format}
+            design={book.design}
+            commentRanges={() =>
+              editor
+                ? state.threads
+                    .map((t) => resolveThreadRange(editor, t))
+                    .filter((r): r is { from: number; to: number } => r !== null)
+                : []
+            }
+            onNavigate={() => setPanel("none")}
+            onTidy={readonly ? undefined : () => setConverting("tidy")}
+          />
+        )}
       </div>
 
+      {converting && editor && (
+        <ConvertDialog
+          editor={editor}
+          ydoc={provider.doc}
+          mode={converting}
+          onSwitchFormat={() => switchFormat("manuscript")}
+          onClose={() => setConverting(null)}
+        />
+      )}
+      {bookExport && editor && (
+        <ExportBookDialog
+          kind={bookExport}
+          editor={editor}
+          ydoc={provider.doc}
+          book={book}
+          format={format}
+          readonly={readonly}
+          onShowSource={(src) => {
+            setBookExport(null);
+            showBlock(editor, src);
+          }}
+          onClose={() => setBookExport(null)}
+        />
+      )}
+      {previewOpen && editor && format === "manuscript" && (
+        <BookPreview
+          editor={editor}
+          format={format}
+          book={book}
+          onClose={() => setPreviewOpen(false)}
+          onShowSource={(src) => {
+            setPreviewOpen(false);
+            setPanel("none");
+            showBlock(editor, src);
+          }}
+          onExport={() => {
+            setPreviewOpen(false);
+            setBookExport("paperback");
+          }}
+        />
+      )}
       {state.shareOpen && <ShareDialog onClose={() => state.setShareOpen(false)} />}
       {state.canvasOpen && (
         <SendToCanvasDialog editor={editor} onClose={() => state.setCanvasOpen(false)} />
@@ -554,19 +812,49 @@ export function ElementSelect({ editor, format }: { editor: Editor; format: stri
       <span>Element</span>
       <select
         className="wf-doc-element"
-        title="Paragraph element (Tab cycles)"
-        value={current}
+        title={
+          spec.tabOnText === "cycle"
+            ? "Paragraph element (Tab cycles)"
+            : "Paragraph element (Tab on an empty line cycles)"
+        }
+        value={spec.elements.some((el) => el.id === current) ? current : spec.defaultElement}
         onChange={(e) =>
           editor.chain().focus().updateAttributes("paragraph", { element: e.target.value }).run()
         }
       >
-        {spec.elements.map((el) => (
-          <option key={el.id} value={el.id}>
-            {el.label}{el.shortcut ? `  ${el.shortcut}` : ""}
-          </option>
-        ))}
+        {groupElements(spec.elements).map(([group, els]) =>
+          group ? (
+            <optgroup key={group} label={group}>
+              {els.map(elementOption)}
+            </optgroup>
+          ) : (
+            els.map(elementOption)
+          ),
+        )}
       </select>
     </label>
+  );
+}
+
+const elementOption = (el: ElementSpec) => (
+  <option key={el.id} value={el.id} title={el.hint}>
+    {el.label}
+    {el.shortcut ? `  ${el.shortcut}` : ""}
+  </option>
+);
+
+/** Elements in display groups (in first-appearance order), ungrouped first. */
+function groupElements(elements: ElementSpec[]): [string, ElementSpec[]][] {
+  const groups = new Map<string, ElementSpec[]>();
+  for (const el of elements) {
+    const key = el.group ?? "";
+    const list = groups.get(key) ?? [];
+    list.push(el);
+    groups.set(key, list);
+  }
+  const order = ["", "Text", "Headings", "Special"];
+  return [...groups.entries()].sort(
+    ([a], [b]) => (order.indexOf(a) + 99) % 99 - (order.indexOf(b) + 99) % 99,
   );
 }
 
@@ -583,41 +871,76 @@ export function DocumentStats({
   /** Page-view count from the paginator; null falls back to the estimate. */
   pagesExact?: number | null;
 }) {
-  const [, bump] = useState(0);
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState<number | null>(() => (goalKey ? loadGoal(goalKey) : null));
   const wrapRef = useRef<HTMLSpanElement>(null);
   useEffect(() => setGoal(goalKey ? loadGoal(goalKey) : null), [goalKey]);
-  useEffect(() => {
-    const update = () => bump((n) => n + 1);
-    editor.on("transaction", update);
-    return () => {
-      editor.off("transaction", update);
-    };
-  }, [editor]);
 
-  const words = countWords(editor.getText());
-  const blocks = editor.state.doc.childCount;
+  // Counting is cached per paragraph (stats.ts) and runs only when the text
+  // changed — debounced, but at least every 1.5s while typing — instead of
+  // re-reading the whole book (and forcing a layout) on every transaction.
+  const measure = useCallback(
+    () => ({
+      words: countDocWords(editor.state.doc),
+      blocks: editor.state.doc.childCount,
+      height: editor.view.dom.offsetHeight,
+    }),
+    [editor],
+  );
+  const [counts, setCounts] = useState(measure);
+  const [selected, setSelected] = useState<number | null>(null);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let firstPendingAt = 0;
+    const run = () => {
+      timer = null;
+      firstPendingAt = 0;
+      setCounts(measure());
+    };
+    const onUpdate = () => {
+      const now = Date.now();
+      if (!firstPendingAt) firstPendingAt = now;
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(run, now - firstPendingAt > 1250 ? 0 : 250);
+    };
+    const onSelection = () => {
+      const { from, to } = editor.state.selection;
+      setSelected(countRangeWords(editor.state.doc, from, to));
+    };
+    setCounts(measure());
+    editor.on("update", onUpdate);
+    editor.on("selectionUpdate", onSelection);
+    return () => {
+      if (timer) clearTimeout(timer);
+      editor.off("update", onUpdate);
+      editor.off("selectionUpdate", onSelection);
+    };
+  }, [editor, measure]);
+
+  const { words, blocks } = counts;
   useEffect(() => {
     if (goalKey && goal !== null) noteGoalProgress(goalKey, words, goal);
   }, [goalKey, goal, words]);
 
   // Page view reports an exact block-level count; otherwise estimate from
   // the sheet (CSS inches, so 96px/in maps exactly).
-  const pages =
-    pagesExact ?? Math.max(1, Math.ceil(editor.view.dom.offsetHeight / (11 * 96)));
+  const pages = pagesExact ?? Math.max(1, Math.ceil(counts.height / (11 * 96)));
 
   const body = (
     <>
+      {selected !== null && selected > 0 && `${selected.toLocaleString()} of `}
       {words.toLocaleString()}
       {goal !== null && ` / ${goal.toLocaleString()}`} {words === 1 && goal === null ? "word" : "words"}
-      {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
-      {format === "screenplay" && ` · ${blocks} elements`}
-      {words > 0 && (
-        <span title="On-screen pages — export pagination may differ">
-          {` · ${pagesExact === null || pagesExact === undefined ? "~" : ""}${pages} page${pages === 1 ? "" : "s"}`}
-        </span>
-      )}
+      {/* Phones keep just the count. */}
+      <span className="wf-doc-stats-more">
+        {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
+        {format === "screenplay" && ` · ${blocks} elements`}
+        {words > 0 && (
+          <span title="On-screen pages — export pagination may differ">
+            {` · ${pagesExact === null || pagesExact === undefined ? "~" : ""}${pages} page${pages === 1 ? "" : "s"}`}
+          </span>
+        )}
+      </span>
     </>
   );
   if (!goalKey) return <span className="wf-doc-stats">{body}</span>;

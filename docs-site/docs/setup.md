@@ -120,6 +120,14 @@ Containers are disposable; the named volume (`writform` below) is what
 carries your data. An update is: pull the new image, replace the container,
 keep the volume.
 
+Updates that change the database (their release notes say so — for example
+the one adding Recently Deleted and full-text search to documents) migrate
+it on first start. A copy of the volume beforehand is cheap insurance:
+
+```sh
+docker run --rm -v writform:/data -v "$PWD":/backup alpine tar czf /backup/writform-data.tgz -C /data .
+```
+
 ```sh
 docker pull ghcr.io/hullabaloo-vincent/writform-server
 ```

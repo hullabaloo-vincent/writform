@@ -20,13 +20,16 @@ struct TestServer {
     base: String,
     ws_base: String,
     client: reqwest::Client,
+    /// The server's database (for maintenance tasks and time travel).
+    pool: sqlx::SqlitePool,
 }
 
 async fn boot() -> TestServer {
     let dir = tempfile::tempdir().unwrap();
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-    let state = routes::AppState::with_data_dir("D".into(), pool, b"pk", b"sig", dir.keep());
+    let state =
+        routes::AppState::with_data_dir("D".into(), pool.clone(), b"pk", b"sig", dir.keep());
     let app = routes::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -42,6 +45,7 @@ async fn boot() -> TestServer {
         base: format!("http://127.0.0.1:{}/api/v1", addr.port()),
         ws_base: format!("ws://127.0.0.1:{}/api/v1/ws", addr.port()),
         client: reqwest::Client::new(),
+        pool,
     }
 }
 
@@ -1099,4 +1103,405 @@ async fn password_reset_flow() {
         .await
         .unwrap();
     assert_eq!(res.status(), 200);
+}
+
+#[tokio::test]
+async fn large_updates_and_quiet_reads() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let doc = create_doc(&server, &alice.token, "Novel").await;
+    let local = yrs::Doc::new();
+
+    // A whole-novel paste (~1 MiB) is one update clients can't split.
+    let big = B64.encode(text_update(&local, &"word ".repeat(210_000)));
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates", doc.id),
+            Some(json!({"update_b64": big})),
+        )
+        .await;
+    assert_eq!(res.status(), 200, "a 1 MiB update is accepted");
+
+    // Past 4 MiB the server answers 413 update_too_large (not a bare 400 the
+    // client would retry forever).
+    let huge = B64.encode(text_update(&local, &"x".repeat(4 * 1024 * 1024 + 1024)));
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates", doc.id),
+            Some(json!({"update_b64": huge})),
+        )
+        .await;
+    assert_eq!(res.status(), 413);
+    let body: serde_json::Value = res.json().await.unwrap();
+    assert_eq!(body["code"], "update_too_large");
+
+    // Bulk reads (?quiet=1) don't log an "opened" activity entry…
+    let before = opened_count(&server, &alice.token, doc.id).await;
+    let res = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            &format!("/documents/{}?quiet=1", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    assert_eq!(opened_count(&server, &alice.token, doc.id).await, before);
+    // …while really opening it does.
+    server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            &format!("/documents/{}", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(
+        opened_count(&server, &alice.token, doc.id).await,
+        before + 1
+    );
+}
+
+async fn opened_count(server: &TestServer, token: &str, id: i64) -> usize {
+    let list: Vec<DocumentActivity> = server
+        .req(
+            reqwest::Method::GET,
+            token,
+            &format!("/documents/{id}/activity"),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    list.iter().filter(|a| a.kind == "opened").count()
+}
+
+async fn list(server: &TestServer, token: &str, path: &str) -> Vec<DocumentListItem> {
+    server
+        .req(reqwest::Method::GET, token, path, None)
+        .await
+        .json()
+        .await
+        .unwrap()
+}
+
+async fn snapshot_text(server: &TestServer, token: &str, id: i64, doc: serde_json::Value) {
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            token,
+            &format!("/documents/{id}/snapshot"),
+            Some(json!({"doc_json": doc.to_string()})),
+        )
+        .await;
+    assert!(res.status().is_success(), "snapshot saved");
+}
+
+#[tokio::test]
+async fn search_counts_and_excerpts() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let doc = create_doc(&server, &alice.token, "Whale book").await;
+    snapshot_text(
+        &server,
+        &alice.token,
+        doc.id,
+        json!({"type": "doc", "content": [
+            {"type": "paragraph", "attrs": {"element": "chapter_heading"}, "content": [{"type": "text", "text": "Chapter One"}]},
+            {"type": "paragraph", "content": [
+                {"type": "text", "text": "Call me "},
+                {"type": "text", "text": "Ishmael", "marks": [{"type": "italic"}]},
+                {"type": "text", "text": ". Some years ago, never mind how long precisely, having little or no money in my purse, and nothing particular to interest me on shore, I thought I would sail about a little and see the watery part of the world."}
+            ]}
+        ]}),
+    )
+    .await;
+
+    let all = list(&server, &alice.token, "/documents").await;
+    let item = all.iter().find(|i| i.document.id == doc.id).unwrap();
+    assert_eq!(item.word_count, 45, "words counted from the text");
+    assert!(
+        item.excerpt.starts_with("Call me Ishmael. Some years ago"),
+        "excerpt skips the heading: {}",
+        item.excerpt
+    );
+    assert!(
+        item.excerpt.ends_with('…') && item.excerpt.chars().count() <= 181,
+        "excerpt shortened: {}",
+        item.excerpt
+    );
+
+    // Search matches words — across formatting — never the editor's JSON.
+    assert!(list(&server, &alice.token, "/documents?q=paragraph")
+        .await
+        .is_empty());
+    assert!(list(&server, &alice.token, "/documents?q=marks")
+        .await
+        .is_empty());
+    let hits = list(&server, &alice.token, "/documents?q=me%20ishmael").await;
+    assert_eq!(hits.len(), 1);
+    let snippet = hits[0].snippet.as_deref().unwrap();
+    assert!(snippet.contains("Call me Ishmael"), "snippet: {snippet}");
+
+    // Documents saved before this existed get their text at startup.
+    sqlx::query(
+        "UPDATE documents SET search_text = NULL, word_count = 0, excerpt = '' WHERE id = ?",
+    )
+    .bind(doc.id)
+    .execute(&server.pool)
+    .await
+    .unwrap();
+    assert!(list(&server, &alice.token, "/documents?q=watery")
+        .await
+        .is_empty());
+    let filled = routes::documents::backfill_stats(&server.pool)
+        .await
+        .unwrap();
+    assert_eq!(filled, 1);
+    let hits = list(&server, &alice.token, "/documents?q=watery").await;
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].word_count, 45);
+}
+
+#[tokio::test]
+async fn recently_deleted_lifecycle() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    server.befriend(&alice, &bob).await;
+
+    let doc = create_doc(&server, &alice.token, "Draft").await;
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/shares", doc.id),
+            Some(json!({"subject_kind": "user", "subject_id": bob.user.id.0, "access": "write"})),
+        )
+        .await;
+    assert!(res.status().is_success());
+    let folder: serde_json::Value = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/document-folders",
+            Some(json!({"name": "Book"})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    let folder_id = folder["id"].as_i64().unwrap();
+    server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/move", doc.id),
+            Some(json!({"folder_id": folder_id})),
+        )
+        .await;
+
+    // Only the owner can delete; then it's gone for everyone…
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &bob.token,
+            &format!("/documents/{}", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/documents/{}", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    for token in [&alice.token, &bob.token] {
+        assert!(list(&server, token, "/documents").await.is_empty());
+        let res = server
+            .req(
+                reqwest::Method::GET,
+                token,
+                &format!("/documents/{}", doc.id),
+                None,
+            )
+            .await;
+        assert_eq!(res.status(), 404, "a deleted document reads as missing");
+        let res = server
+            .req(
+                reqwest::Method::POST,
+                token,
+                &format!("/documents/{}/updates", doc.id),
+                Some(json!({"update_b64": B64.encode([0u8, 0])})),
+            )
+            .await;
+        assert_eq!(res.status(), 404, "and can't be written");
+    }
+    // Room joins and image reads (can_read) refuse it too.
+    let state = routes::AppState::with_data_dir(
+        "D".into(),
+        server.pool.clone(),
+        b"pk",
+        b"sig",
+        tempfile::tempdir().unwrap().keep(),
+    );
+    for user in [alice.user.id, bob.user.id] {
+        let readable = routes::documents::can_read(&state, doc.id, user).await;
+        assert!(matches!(readable, Ok(false)), "no room or image access");
+    }
+    let folders: serde_json::Value = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/document-folders",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        folders[0]["document_count"], 0,
+        "folders don't count deleted documents"
+    );
+
+    // …except in the owner's Recently Deleted.
+    let trash = list(&server, &alice.token, "/document-trash").await;
+    assert_eq!(trash.len(), 1);
+    assert!(trash[0].deleted_at.is_some());
+    assert!(list(&server, &bob.token, "/document-trash")
+        .await
+        .is_empty());
+
+    // Restore: only the owner; it comes back with its folder and shares.
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &format!("/documents/{}/restore", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 404);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/restore", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let back: Document = res.json().await.unwrap();
+    assert_eq!(back.folder_id, Some(folder_id));
+    assert_eq!(list(&server, &bob.token, "/documents").await.len(), 1);
+    assert!(list(&server, &alice.token, "/document-trash")
+        .await
+        .is_empty());
+
+    // Delete for good from Recently Deleted.
+    server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/documents/{}", doc.id),
+            None,
+        )
+        .await;
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &bob.token,
+            &format!("/document-trash/{}", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 404);
+    let res = server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/document-trash/{}", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    assert!(list(&server, &alice.token, "/document-trash")
+        .await
+        .is_empty());
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/restore", doc.id),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 404);
+
+    // Empty Recently Deleted.
+    for title in ["One", "Two"] {
+        let d = create_doc(&server, &alice.token, title).await;
+        server
+            .req(
+                reqwest::Method::DELETE,
+                &alice.token,
+                &format!("/documents/{}", d.id),
+                None,
+            )
+            .await;
+    }
+    assert_eq!(
+        list(&server, &alice.token, "/document-trash").await.len(),
+        2
+    );
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/document-trash/empty",
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+    assert!(list(&server, &alice.token, "/document-trash")
+        .await
+        .is_empty());
+
+    // After 30 days the maintenance task deletes it for good.
+    let d = create_doc(&server, &alice.token, "Old").await;
+    server
+        .req(
+            reqwest::Method::DELETE,
+            &alice.token,
+            &format!("/documents/{}", d.id),
+            None,
+        )
+        .await;
+    let now = writform_server::db::now_millis();
+    let day = 24 * 60 * 60 * 1000;
+    assert_eq!(
+        routes::documents::purge_expired(&server.pool, now + 29 * day)
+            .await
+            .unwrap(),
+        0
+    );
+    assert_eq!(
+        routes::documents::purge_expired(&server.pool, now + 31 * day)
+            .await
+            .unwrap(),
+        1
+    );
+    assert!(list(&server, &alice.token, "/document-trash")
+        .await
+        .is_empty());
 }

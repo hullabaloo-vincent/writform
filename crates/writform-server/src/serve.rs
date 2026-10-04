@@ -66,6 +66,7 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<StartedServer> {
     routes::sessions::rehydrate_timers(&state)
         .await
         .context("rehydrating prompt timers")?;
+    routes::documents::start_maintenance(&state);
     let mut app = routes::router(state);
     // The browser client is same-origin static files with an SPA fallback;
     // `/api/v1/*` always wins because real routes take precedence.

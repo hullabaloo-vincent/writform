@@ -7,9 +7,11 @@
  * documents get their stats from the server; documents on this device are
  * their own historian, so the same walk runs here.
  *
- * Local revisions live in one JSON file per document (`localdoc_history_*`),
- * newest first, pruned so a long writing session can't grow it without
- * bound. Named drafts survive pruning until only drafts are left.
+ * Local revisions (v2) live as one compressed file per version plus a small
+ * index (`localdoc_hist_*`), newest first. Automatic revisions are pruned by
+ * count and byte budget; drafts and named versions are never pruned, and the
+ * newest few always survive. (v1 kept everything in one JSON file with a
+ * 4 MB budget — a novel fit three versions, and drafts got evicted.)
  */
 
 import type { JSONContent } from "@tiptap/core";
@@ -18,6 +20,7 @@ import { useEffect, useRef } from "react";
 
 import { backend } from "../../lib/backend";
 import { countWords } from "../../lib/wordCount";
+import { compactDocString } from "./compactJson";
 
 /**
  * When to cut an automatic revision. A revision should read like one unit of
@@ -37,24 +40,31 @@ const BULK_EDITS = 120;
 const BULK_CHARS = 300;
 const TICK_MS = 5_000;
 /** Auto revisions kept per document before the oldest start falling off. */
-const MAX_AUTO_VERSIONS = 40;
-/** Byte budget for one document's history file (the command's ceiling is 16 MB). */
-const MAX_HISTORY_BYTES = 4 * 1024 * 1024;
+const MAX_AUTO_VERSIONS = 60;
+/** Compressed byte budget for one document's automatic revisions. */
+const MAX_HISTORY_BYTES = 64 * 1024 * 1024;
 /** Never prune below this many revisions, whatever the budget says. */
 const ALWAYS_KEEP = 3;
 
 export type LocalVersionKind = "auto" | "draft";
 
-export interface LocalVersion {
+/** One saved revision's index entry (the text itself is loaded on demand). */
+export interface LocalVersionMeta {
   id: string;
   /** Set for drafts the writer named; auto revisions show their timestamp. */
   name: string | null;
   kind: LocalVersionKind;
   created_at: number;
-  doc_json: string;
   changed_blocks: number;
   added_words: number;
   removed_words: number;
+  /** Compressed size on disk, for the budget. */
+  bytes: number;
+}
+
+/** A revision with its text. */
+export interface LocalVersion extends LocalVersionMeta {
+  doc_json: string;
 }
 
 /** One top-level block reduced to the parts a reader would notice changing. */
@@ -175,33 +185,129 @@ export function changeStats(
 
 /* --- documents on this device --- */
 
-export async function readLocalHistory(docId: string): Promise<LocalVersion[]> {
-  const raw = await backend.localdocHistoryRead(docId).catch(() => "");
-  if (!raw) return [];
+/** Writes per document are serialized: two auto revisions can't interleave
+ *  their read-modify-write of the index. */
+const chains = new Map<string, Promise<unknown>>();
+function serialized<T>(docId: string, task: () => Promise<T>): Promise<T> {
+  const prev = chains.get(docId) ?? Promise.resolve();
+  const next = prev.catch(() => {}).then(task);
+  chains.set(docId, next);
+  void next.finally(() => {
+    if (chains.get(docId) === next) chains.delete(docId);
+  });
+  return next;
+}
+
+/** The newest revision's text per document, so the next auto revision can
+ *  diff against it without decompressing it again. */
+const latestText = new Map<string, { id: string; json: string }>();
+
+/** Consecutive save failures per document — two in a row get surfaced. */
+const failures = new Map<string, number>();
+
+async function compress(json: string): Promise<Uint8Array> {
+  const { deflateSync, strToU8 } = await import("fflate");
+  return deflateSync(strToU8(json), { level: 6 });
+}
+
+async function decompress(bytes: Uint8Array): Promise<string> {
+  const { inflateSync, strFromU8 } = await import("fflate");
+  return strFromU8(inflateSync(bytes));
+}
+
+async function readIndex(docId: string): Promise<LocalVersionMeta[] | null> {
+  const raw = await backend.localdocHistIndexRead(docId).catch(() => "");
+  if (!raw) return null;
   try {
-    const parsed = JSON.parse(raw) as { versions?: LocalVersion[] };
+    const parsed = JSON.parse(raw) as { versions?: LocalVersionMeta[] };
     return Array.isArray(parsed.versions) ? parsed.versions : [];
   } catch {
-    // A corrupt history file must never cost the writer their document.
+    // A corrupt index must never cost the writer their document.
     return [];
   }
 }
 
-/** Oldest auto revisions go first, then oldest drafts, never the newest few. */
-function prune(versions: LocalVersion[]): LocalVersion[] {
-  let autos = 0;
-  let kept = versions.filter((v) => {
-    if (v.kind !== "auto") return true;
-    autos += 1;
-    return autos <= MAX_AUTO_VERSIONS;
-  });
-  const size = () => kept.reduce((total, v) => total + v.doc_json.length + 200, 0);
-  while (size() > MAX_HISTORY_BYTES && kept.length > ALWAYS_KEEP) {
-    const oldestAuto = kept.reduce((at, v, i) => (v.kind === "auto" ? i : at), -1);
-    const drop = oldestAuto >= 0 ? oldestAuto : kept.length - 1;
-    kept = kept.filter((_, i) => i !== drop);
+async function writeIndex(docId: string, versions: LocalVersionMeta[]): Promise<void> {
+  await backend.localdocHistIndexWrite(docId, JSON.stringify({ v: 2, versions }));
+}
+
+/** One-time move from the v1 single file to v2 (the old file is kept as
+ *  `.v1.bak`, never deleted by the migration). */
+async function migrateV1(docId: string): Promise<LocalVersionMeta[]> {
+  const raw = await backend.localdocHistoryRead(docId).catch(() => "");
+  let old: LocalVersion[] = [];
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as { versions?: LocalVersion[] };
+      old = Array.isArray(parsed.versions) ? parsed.versions : [];
+    } catch {
+      old = [];
+    }
   }
-  return kept;
+  const metas: LocalVersionMeta[] = [];
+  for (const version of old) {
+    const blob = await compress(version.doc_json);
+    await backend.localdocHistBlobWrite(docId, version.id, blob);
+    const { doc_json: _text, ...meta } = version;
+    void _text;
+    metas.push({ ...meta, bytes: blob.byteLength });
+  }
+  await writeIndex(docId, metas);
+  if (raw) await backend.localdocHistoryRetire(docId).catch(() => {});
+  return metas;
+}
+
+/** The document's revisions, newest first (index only). */
+export async function readLocalHistory(docId: string): Promise<LocalVersionMeta[]> {
+  const index = await readIndex(docId);
+  if (index !== null) return index;
+  return serialized(docId, async () => (await readIndex(docId)) ?? migrateV1(docId));
+}
+
+/** One revision's text, or null when it can't be read. */
+export async function loadLocalVersion(docId: string, versionId: string): Promise<string | null> {
+  const cached = latestText.get(docId);
+  if (cached?.id === versionId) return cached.json;
+  try {
+    return await decompress(await backend.localdocHistBlobRead(docId, versionId));
+  } catch {
+    return null;
+  }
+}
+
+/** Oldest auto revisions go first; drafts never; the newest few always stay. */
+export function pruneVersions(versions: LocalVersionMeta[]): {
+  kept: LocalVersionMeta[];
+  dropped: LocalVersionMeta[];
+} {
+  const keep = new Set(versions.slice(0, ALWAYS_KEEP).map((v) => v.id));
+  let autos = 0;
+  let bytes = 0;
+  const kept: LocalVersionMeta[] = [];
+  const dropped: LocalVersionMeta[] = [];
+  for (const v of versions) {
+    if (v.kind !== "auto" || keep.has(v.id)) {
+      kept.push(v);
+      if (v.kind === "auto") {
+        autos += 1;
+        bytes += v.bytes;
+      }
+      continue;
+    }
+    if (autos + 1 > MAX_AUTO_VERSIONS || bytes + v.bytes > MAX_HISTORY_BYTES) {
+      dropped.push(v);
+    } else {
+      kept.push(v);
+      autos += 1;
+      bytes += v.bytes;
+    }
+  }
+  return { kept, dropped };
+}
+
+/** True when this document's history failed to save twice in a row. */
+export function localHistoryTrouble(docId: string): boolean {
+  return (failures.get(docId) ?? 0) >= 2;
 }
 
 /**
@@ -209,31 +315,54 @@ function prune(versions: LocalVersion[]): LocalVersion[] {
  * are dropped rather than stored, so the Changes list stays a list of edits
  * instead of a list of minutes. Returns the revision, or null when skipped.
  */
-export async function saveLocalVersion(
+export function saveLocalVersion(
   docId: string,
   docJson: string,
   opts: { name?: string; kind?: LocalVersionKind } = {},
-): Promise<LocalVersion | null> {
-  const kind = opts.kind ?? "auto";
-  const versions = await readLocalHistory(docId);
-  const latest = versions[0] ?? null;
-  if (kind === "auto" && latest?.doc_json === docJson) return null;
+): Promise<LocalVersionMeta | null> {
+  return serialized(docId, async () => {
+    try {
+      const kind = opts.kind ?? "auto";
+      const versions = await readLocalHistory(docId);
+      const latest = versions[0] ?? null;
+      const latestJson = latest ? await loadLocalVersion(docId, latest.id) : null;
+      if (kind === "auto" && latestJson === docJson) return null;
 
-  const stats = changeStats(latest?.doc_json ?? null, docJson);
-  if (kind === "auto" && stats.changed_blocks === 0) return null;
+      const stats = changeStats(latestJson, docJson);
+      if (kind === "auto" && stats.changed_blocks === 0) return null;
 
-  const version: LocalVersion = {
-    id: crypto.randomUUID(),
-    name: opts.name?.trim() || null,
-    kind,
-    created_at: Date.now(),
-    doc_json: docJson,
-    ...stats,
-  };
-  const next = prune([version, ...versions]);
-  await backend.localdocHistoryWrite(docId, JSON.stringify({ versions: next }));
-  listeners.forEach((fn) => fn(docId));
-  return version;
+      const id = crypto.randomUUID();
+      const blob = await compress(docJson);
+      await backend.localdocHistBlobWrite(docId, id, blob);
+      const version: LocalVersionMeta = {
+        id,
+        name: opts.name?.trim() || null,
+        kind,
+        created_at: Date.now(),
+        ...stats,
+        bytes: blob.byteLength,
+      };
+      const { kept, dropped } = pruneVersions([version, ...versions]);
+      await writeIndex(docId, kept);
+      for (const old of dropped) {
+        await backend.localdocHistBlobDelete(docId, old.id).catch(() => {});
+      }
+      latestText.set(docId, { id, json: docJson });
+      failures.delete(docId);
+      listeners.forEach((fn) => fn(docId));
+      return version;
+    } catch (e) {
+      const count = (failures.get(docId) ?? 0) + 1;
+      failures.set(docId, count);
+      if (count === 2) {
+        void import("../../platform/toast").then(({ toastError }) =>
+          toastError("Couldn't save this document's history. Your text is safe; versions aren't being recorded."),
+        );
+        listeners.forEach((fn) => fn(docId));
+      }
+      throw e;
+    }
+  });
 }
 
 const listeners = new Set<(docId: string) => void>();
@@ -277,7 +406,7 @@ export function useAutoRevisions(
       edits = 0;
       lastSaveAt = Date.now();
       baseline = editor.state.doc.content.size;
-      void saveRef.current(JSON.stringify(editor.getJSON())).catch(() => {});
+      void saveRef.current(compactDocString(editor.getJSON())).catch(() => {});
     };
 
     const onUpdate = () => {
@@ -303,7 +432,7 @@ export function useAutoRevisions(
       editor.off("update", onUpdate);
       if (!dirty) return;
       try {
-        void saveRef.current(JSON.stringify(editor.getJSON())).catch(() => {});
+        void saveRef.current(compactDocString(editor.getJSON())).catch(() => {});
       } catch {
         // editor already destroyed — the last cut revision stands
       }

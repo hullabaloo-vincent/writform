@@ -1,11 +1,14 @@
 import { FileText } from "lucide-react";
 
 import { isWeb } from "../../lib/backend";
-import { onResync, usePlatform } from "../../platform";
+import { useSession } from "../../stores/session";
+import { onResync } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { documentsApi } from "./api";
 import { DocumentsView } from "./DocumentsView";
 import { useLocalDocs } from "./local";
+import { openLocalDoc } from "./navigation";
+import { drainOutbox } from "./sync/drain";
 import { activeProvider, installDocumentsWsHandler, openDocumentById, useDocuments } from "./store";
 
 export const documentsApp: WritformApp = {
@@ -19,9 +22,24 @@ export const documentsApp: WritformApp = {
   activate(ctx) {
     ctx.ui.registerMainView(() => <DocumentsView />);
     installDocumentsWsHandler();
+    // Edits left unsent (quit, crash, dropped connection) go out on sign-in,
+    // on reconnect, and once a minute while connected.
+    useSession.subscribe((s, prev) => {
+      if (s.phase === "connected" && prev.phase !== "connected") {
+        setTimeout(() => void drainOutbox().catch(() => {}), 1500);
+      }
+    });
+    if (useSession.getState().phase === "connected") void drainOutbox().catch(() => {});
+    setInterval(() => {
+      if (useSession.getState().phase === "connected") void drainOutbox().catch(() => {});
+    }, 60_000);
     onResync(() => {
+      void drainOutbox().catch(() => {});
       const s = useDocuments.getState();
-      if (s.loaded) void s.load().catch(() => {});
+      if (s.loaded) {
+        void s.load().catch(() => {});
+        void s.loadFolders().catch(() => {});
+      }
       const provider = activeProvider();
       if (provider) {
         void provider.catchUp();
@@ -63,10 +81,7 @@ export const documentsApp: WritformApp = {
               id: `localdoc-${d.id}`,
               title: d.title || "Untitled",
               subtitle: "On this device",
-              run: async () => {
-                usePlatform.getState().setActiveApp("writform.documents");
-                await useLocalDocs.getState().open(d.id);
-              },
+              run: () => void openLocalDoc(d.id).catch(() => {}),
             });
           }
         }

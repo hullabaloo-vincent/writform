@@ -2,10 +2,28 @@
 import type { Document } from "./Document";
 
 /**
- * List entry: a document plus the caller's access to it.
+ * List entry: a document plus the caller's access to it, with what the
+ * organizer shows on its card. The extra fields default for servers that
+ * predate them (word count 0, no excerpt).
  */
 export type DocumentListItem = { document: Document, 
 /**
  * `owner` | `write` | `read`.
  */
-my_access: string, };
+my_access: string, 
+/**
+ * Words in the latest snapshot.
+ */
+word_count: number, 
+/**
+ * The opening words of the text (empty until a snapshot exists).
+ */
+excerpt: string, 
+/**
+ * For a search: the text around the first match.
+ */
+snippet: string | null, 
+/**
+ * In Recently Deleted since (only in the trash listing).
+ */
+deleted_at: number | null, };

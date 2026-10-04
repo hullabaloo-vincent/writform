@@ -11,7 +11,13 @@ import {
   setLocalThreadResolved,
   type LocalThread,
 } from "./feedbackLocal";
-import { anchorsFromSelection, resolveThreadRange } from "./FeedbackPanel";
+import {
+  anchorsFromSelection,
+  inDocumentOrder,
+  resolveThreadRange,
+  useFlashThread,
+  type ThreadFocus,
+} from "./FeedbackPanel";
 
 /** The Feedback panel for on-device documents: same selection-anchored
  *  threads as server docs (the anchors are Yjs relative positions and the
@@ -22,13 +28,17 @@ export function LocalFeedbackPanel({
   editor,
   highlightsOn,
   onToggleHighlights,
+  focus,
 }: {
   docId: string;
   editor: Editor | null;
   /** Whether highlights stay visible after the panel closes. */
   highlightsOn?: boolean;
   onToggleHighlights?: () => void;
+  /** A note to bring forward (its highlight was clicked). */
+  focus?: ThreadFocus | null;
 }) {
+  useFlashThread(focus);
   const [threads, setThreads] = useState<LocalThread[]>([]);
   const [draft, setDraft] = useState("");
   const [selectionDraft, setSelectionDraft] = useState<{
@@ -62,8 +72,9 @@ export function LocalFeedbackPanel({
 
   const act = (p: Promise<unknown>) => void p.catch((e) => setError(String(e)));
 
-  const open = threads.filter((t) => !t.resolved);
-  const resolved = threads.filter((t) => t.resolved);
+  const ordered = inDocumentOrder(editor, threads);
+  const open = ordered.filter((t) => !t.resolved);
+  const resolved = ordered.filter((t) => t.resolved);
 
   const jumpTo = (thread: LocalThread) => {
     if (!editor) return;
@@ -158,7 +169,7 @@ export function LocalFeedbackPanel({
 
       <div className="wf-doc-threads">
         {open.map((t) => (
-          <div key={t.id} className="wf-doc-thread">
+          <div key={t.id} className="wf-doc-thread" data-thread-card={String(t.id)}>
             {t.excerpt && (
               <button
                 className="wf-doc-thread-excerpt"
@@ -185,7 +196,7 @@ export function LocalFeedbackPanel({
           <details className="wf-doc-resolved">
             <summary>Resolved ({resolved.length})</summary>
             {resolved.map((t) => (
-              <div key={t.id} className="wf-doc-thread resolved">
+              <div key={t.id} className="wf-doc-thread resolved" data-thread-card={String(t.id)}>
                 {t.excerpt && (
                   <button
                     className="wf-doc-thread-excerpt"

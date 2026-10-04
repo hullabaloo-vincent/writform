@@ -2,25 +2,32 @@ import type { Editor } from "@tiptap/react";
 import { BookmarkPlus, FileDiff, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { RichDoc } from "../../editor/RichEditor";
 import { confirmDialog, Modal } from "../../platform";
+import { compactDocString } from "./compactJson";
+import { applyRestore } from "./restore";
 import {
+  loadLocalVersion,
+  localHistoryTrouble,
   onLocalHistoryChange,
   readLocalHistory,
   saveLocalVersion,
-  type LocalVersion,
+  type LocalVersionMeta,
 } from "./history";
-import { RevisionDiff, VersionList, type VersionRow } from "./VersionHistoryPanel";
+import { useLocalDocs } from "./local";
+import { RevisionDiff, VersionList, VersionPreview, type VersionRow } from "./VersionHistoryPanel";
 
 /** Document history for a document stored on this device. Same shape as the
  *  server panel minus the parts that need other people: no activity feed, no
  *  author column, and every revision is yours. */
 export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Editor | null }) {
-  const [versions, setVersions] = useState<LocalVersion[]>([]);
+  const format = useLocalDocs((s) => s.items.find((d) => d.id === docId)?.format);
+  const [versions, setVersions] = useState<LocalVersionMeta[]>([]);
   const [tab, setTab] = useState<"changes" | "drafts">("changes");
-  const [preview, setPreview] = useState<{ version: LocalVersion; previous: string | null } | null>(
-    null,
-  );
+  const [preview, setPreview] = useState<{
+    version: LocalVersionMeta;
+    json: string;
+    previous: string | null;
+  } | null>(null);
   const [naming, setNaming] = useState("");
   const [error, setError] = useState<string | null>(null);
 
@@ -45,7 +52,7 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
   const drafts = versions.filter((v) => v.kind === "draft");
   const changes = versions.filter((v) => v.kind !== "draft");
 
-  const row = (v: LocalVersion): VersionRow => ({
+  const row = (v: LocalVersionMeta): VersionRow => ({
     key: v.id,
     name: v.name,
     kind: v.kind,
@@ -55,21 +62,29 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
     removed_words: v.removed_words,
   });
 
-  const open = (key: string, mode: "draft" | "change") => {
+  const open = async (key: string, mode: "draft" | "change") => {
     const index = versions.findIndex((v) => v.id === key);
     if (index < 0) return;
-    setPreview({
-      version: versions[index],
-      // The whole text for a draft; only what this revision changed otherwise.
-      previous: mode === "change" ? (versions[index + 1]?.doc_json ?? null) : null,
-    });
+    const version = versions[index];
+    // Revisions are stored compressed; load the text (and, for a change, the
+    // revision before it) only when one is opened.
+    const json = await loadLocalVersion(docId, version.id);
+    if (json === null) {
+      setError("That revision couldn't be read.");
+      return;
+    }
+    const before = versions[index + 1];
+    const previous =
+      mode === "change" && before ? await loadLocalVersion(docId, before.id) : null;
+    // The whole text for a draft; only what this revision changed otherwise.
+    setPreview({ version, json, previous });
   };
 
   const saveDraft = async () => {
     const name = naming.trim();
     if (!name || !editor) return;
     try {
-      await saveLocalVersion(docId, JSON.stringify(editor.getJSON()), { name, kind: "draft" });
+      await saveLocalVersion(docId, compactDocString(editor.getJSON()), { name, kind: "draft" });
       setNaming("");
     } catch (e) {
       setError(String(e));
@@ -78,14 +93,19 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
 
   const restore = async () => {
     if (!preview || !editor) return;
-    const ok = await confirmDialog("Replace the current text with this saved revision?", {
-      title: "Restore revision",
-      confirmLabel: "Restore",
-    });
+    const ok = await confirmDialog(
+      "Replace the current text with this saved revision? Your current text is saved in Document history first.",
+      { title: "Restore revision", confirmLabel: "Restore" },
+    );
     if (!ok) return;
     try {
-      editor.commands.setContent(JSON.parse(preview.version.doc_json));
-      await saveLocalVersion(docId, preview.version.doc_json, {
+      // The current text is never lost to a restore.
+      await saveLocalVersion(docId, compactDocString(editor.getJSON()), {
+        name: "Before restoring",
+        kind: "draft",
+      });
+      await applyRestore(editor, JSON.parse(preview.json));
+      await saveLocalVersion(docId, preview.json, {
         name: `Restored ${preview.version.name ?? new Date(preview.version.created_at).toLocaleString()}`.slice(0, 120),
         kind: "draft",
       });
@@ -100,6 +120,12 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
       <header className="wf-doc-panel-header">
         <h3>Document history</h3>
       </header>
+      {localHistoryTrouble(docId) && (
+        <p className="wf-connect-error">
+          New versions aren’t being saved — this device couldn’t write them. Your text itself is
+          safe.
+        </p>
+      )}
       <nav className="wf-doc-history-tabs" aria-label="Document history sections">
         <button className={tab === "changes" ? "active" : ""} onClick={() => setTab("changes")}>
           <FileDiff size={14} /> Changes
@@ -141,7 +167,7 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
           <VersionList
             versions={drafts.map(row)}
             active={preview?.version.id}
-            onOpen={(v) => open(v.key, "draft")}
+            onOpen={(v) => void open(v.key, "draft")}
             empty="No draft milestones yet. Save First draft when the iteration is ready."
           />
         </>
@@ -151,7 +177,7 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
         <VersionList
           versions={changes.map(row)}
           active={preview?.version.id}
-          onOpen={(v) => open(v.key, "change")}
+          onOpen={(v) => void open(v.key, "change")}
           empty="No changes recorded yet — one is saved each time you pause."
         />
       )}
@@ -177,9 +203,9 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
           </header>
           <div className="wf-doc-version-preview">
             {preview.previous === null ? (
-              <RichDoc doc={JSON.parse(preview.version.doc_json)} />
+              <VersionPreview json={preview.json} format={format} />
             ) : (
-              <RevisionDiff before={preview.previous} after={preview.version.doc_json} />
+              <RevisionDiff before={preview.previous} after={preview.json} />
             )}
           </div>
         </Modal>

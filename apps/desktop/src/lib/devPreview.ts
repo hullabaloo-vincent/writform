@@ -3,6 +3,7 @@
  * import.meta.env.DEV is true — production bundles never include it.
  */
 
+import { browserDownload } from "./backend";
 import type {
   ApiResponse,
   Backend,
@@ -29,7 +30,12 @@ export function devPreviewBackend(): Backend {
   const localdocs = new Map<string, string>();
   const localdocTimes = new Map<string, number>();
   const localdocHistory = new Map<string, string>();
+  const localdocHistIndex = new Map<string, string>();
+  const localdocHistBlobs = new Map<string, Uint8Array>();
   const localdocFeedback = new Map<string, string>();
+  const localdocMeta = new Map<string, string>();
+  /** Recently Deleted: everything a document had, and when it went. */
+  const localdocTrash = new Map<string, { raw: string; meta?: string; deleted_at: number }>();
   const localboards = new Map<string, string>();
   const localboardTimes = new Map<string, number>();
   let pending: SavedServer | null = null;
@@ -1032,19 +1038,8 @@ export function devPreviewBackend(): Backend {
     requestMicrophoneAccess: async () => "authorized",
     cameraStatus: async () => "authorized",
     requestCameraAccess: async () => "authorized",
-    saveExport: async (fileName, dataBase64) => {
-      // Browser preview: a plain download.
-      const bin = atob(dataBase64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes], { type: "application/zip" }));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-      return "your browser's downloads folder";
-    },
+    // Browser preview: a plain download.
+    saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
     uploadAttachment: async () => ({
       status: 400,
       body: { code: "mock", message: "uploads need the real app" },
@@ -1277,11 +1272,14 @@ export function devPreviewBackend(): Backend {
       return [...localdocs.entries()]
         .map(([id, raw]) => {
           const parsed = JSON.parse(raw) as { title?: string; format?: string };
+          const meta = JSON.parse(localdocMeta.get(id) ?? "{}") as { words?: number; excerpt?: string };
           return {
             id,
             title: parsed.title ?? "Untitled",
             format: parsed.format ?? "default",
             updated_at: localdocTimes.get(id) ?? 0,
+            words: meta.words ?? 0,
+            excerpt: meta.excerpt ?? "",
           };
         })
         .sort((a, b) => b.updated_at - a.updated_at);
@@ -1291,21 +1289,81 @@ export function devPreviewBackend(): Backend {
       if (raw === undefined) throw { code: "io", message: "no such local document" };
       return raw;
     },
-    async localdocWrite(id, content) {
+    async localdocWrite(id, content, meta) {
       localdocs.set(id, content);
       localdocTimes.set(id, Date.now());
+      if (meta) localdocMeta.set(id, meta);
+    },
+    async localdocTrash(id) {
+      const raw = localdocs.get(id);
+      if (raw === undefined) throw { code: "io", message: "no such local document" };
+      localdocTrash.set(id, { raw, meta: localdocMeta.get(id), deleted_at: Date.now() });
+      localdocs.delete(id);
+      localdocTimes.delete(id);
+      localdocMeta.delete(id);
+    },
+    async localdocTrashList() {
+      return [...localdocTrash.entries()]
+        .map(([id, t]) => {
+          const parsed = JSON.parse(t.raw) as { title?: string; format?: string };
+          const meta = JSON.parse(t.meta ?? "{}") as { words?: number; excerpt?: string };
+          return {
+            id,
+            title: parsed.title ?? "Untitled",
+            format: parsed.format ?? "none",
+            deleted_at: t.deleted_at,
+            words: meta.words ?? 0,
+            excerpt: meta.excerpt ?? "",
+          };
+        })
+        .sort((a, b) => b.deleted_at - a.deleted_at);
+    },
+    async localdocRestore(id) {
+      const t = localdocTrash.get(id);
+      if (!t) throw { code: "io", message: "not in Recently Deleted" };
+      localdocs.set(id, t.raw);
+      localdocTimes.set(id, Date.now());
+      if (t.meta) localdocMeta.set(id, t.meta);
+      localdocTrash.delete(id);
+    },
+    async localdocPurge(id) {
+      localdocTrash.delete(id);
+    },
+    async localdocTrashEmpty() {
+      localdocTrash.clear();
     },
     async localdocDelete(id) {
       localdocs.delete(id);
       localdocTimes.delete(id);
       localdocHistory.delete(id);
+      localdocHistIndex.delete(id);
+      for (const key of [...localdocHistBlobs.keys()]) {
+        if (key.startsWith(`${id}/`)) localdocHistBlobs.delete(key);
+      }
       localdocFeedback.delete(id);
     },
     async localdocHistoryRead(id) {
       return localdocHistory.get(id) ?? "";
     },
-    async localdocHistoryWrite(id, content) {
-      localdocHistory.set(id, content);
+    async localdocHistoryRetire(id) {
+      localdocHistory.delete(id);
+    },
+    async localdocHistIndexRead(id) {
+      return localdocHistIndex.get(id) ?? "";
+    },
+    async localdocHistIndexWrite(id, content) {
+      localdocHistIndex.set(id, content);
+    },
+    async localdocHistBlobWrite(id, version, bytes) {
+      localdocHistBlobs.set(`${id}/${version}`, bytes.slice());
+    },
+    async localdocHistBlobRead(id, version) {
+      const bytes = localdocHistBlobs.get(`${id}/${version}`);
+      if (!bytes) throw { code: "io", message: "no such version" } satisfies CmdError;
+      return bytes;
+    },
+    async localdocHistBlobDelete(id, version) {
+      localdocHistBlobs.delete(`${id}/${version}`);
     },
     async localdocFeedbackRead(id) {
       return localdocFeedback.get(id) ?? "";

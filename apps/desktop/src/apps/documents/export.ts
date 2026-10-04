@@ -1,6 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import JSZip from "jszip";
 
+import type { SaveResult } from "../../lib/backend";
+import { saveExport } from "../../lib/saveFile";
 import { pageSizeDef, type DocSettings } from "./docSettings";
 
 interface ExportRun {
@@ -88,24 +90,16 @@ function safeName(title: string): string {
   return (title.trim() || "document").replace(/[\\/:*?"<>|]+/g, "-").slice(0, 120);
 }
 
-function download(bytes: Uint8Array, mime: string, filename: string) {
-  const blob = new Blob([bytes as BlobPart], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = filename;
-  anchor.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-export async function exportDocument(doc: JSONContent, title: string, format: string, kind: "pdf" | "docx" | "booklet", settings?: DocSettings) {
+/** Build and save one export. Saving goes through the shared save path —
+ *  an `<a download>` click is silently cancelled by the desktop/iOS webview. */
+export async function exportDocument(doc: JSONContent, title: string, format: string, kind: "pdf" | "docx" | "booklet", settings?: DocSettings): Promise<SaveResult> {
   if (kind === "docx") {
-    download(await buildDocx(doc, title, format, settings), "application/vnd.openxmlformats-officedocument.wordprocessingml.document", `${safeName(title)}.docx`);
-  } else if (kind === "booklet") {
-    download(buildBookletPdf(doc, title, format, settings), "application/pdf", `${safeName(title)} (booklet).pdf`);
-  } else {
-    download(buildPdf(doc, title, format, settings), "application/pdf", `${safeName(title)}.pdf`);
+    return saveExport(`${safeName(title)}.docx`, "docx", await buildDocx(doc, title, format, settings));
   }
+  if (kind === "booklet") {
+    return saveExport(`${safeName(title)} (booklet).pdf`, "pdf", buildBookletPdf(doc, title, format, settings));
+  }
+  return saveExport(`${safeName(title)}.pdf`, "pdf", buildPdf(doc, title, format, settings));
 }
 
 const xmlEscape = (value: string) => value
@@ -127,6 +121,11 @@ function docxStyle(block: ExportBlock, format: string): string {
 const DOCX_FONTS: Record<string, string> = {
   times: "Times New Roman",
   palatino: "Palatino",
+  // Word uses these when installed (they're free) and substitutes otherwise.
+  garamond: "EB Garamond",
+  libertinus: "Libertinus Serif",
+  baskerville: "Libre Baskerville",
+  literata: "Literata",
   sans: "Arial",
   mono: "Courier New",
   comic: "Comic Sans MS",
@@ -150,6 +149,9 @@ function paragraphXml(block: ExportBlock, format: string): string {
         : block.align === "justify"
           ? "both"
           : "";
+  // The body's first-line indent belongs to running prose only: a centered
+  // or right-set line, or a list item, would read as misaligned.
+  if (jc === "center" || jc === "right" || block.marker) props.push(`<w:ind w:firstLine="0"/>`);
   if (jc) props.push(`<w:jc w:val="${jc}"/>`);
 
   const face = DOCX_FONTS[block.font];
@@ -228,8 +230,11 @@ export async function buildDocx(doc: JSONContent, title: string, format: string,
     })
     .join("");
   const titleXml = screenplay ? "" : `<w:p><w:pPr><w:pStyle w:val="Title"/></w:pPr><w:r><w:t>${xmlEscape(title)}</w:t></w:r></w:p>`;
-  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>`);
-  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/><Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/></Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>`);
+  // Document properties: Word's title bar and the file's Get Info read these.
+  const now = new Date().toISOString().replace(/\.\d{3}Z$/, "Z");
+  zip.file("docProps/core.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"><dc:title>${xmlEscape(title)}</dc:title><dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`);
   zip.file("word/_rels/document.xml.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>`);
   // Page geometry: the document's own settings for Plain docs, the classic
   // letter defaults otherwise. Twips: 1in = 1440.
@@ -238,7 +243,7 @@ export async function buildDocx(doc: JSONContent, title: string, format: string,
   const mar = settings
     ? { top: tw(settings.mt), right: tw(settings.mr), bottom: tw(settings.mb), left: tw(settings.ml) }
     : { top: 1440, right: 1440, bottom: 1440, left: screenplay ? 2160 : 1440 };
-  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${titleXml}${body}<w:sectPr><w:pgSz w:w="${tw(page.w)}" w:h="${tw(page.h)}"/><w:pgMar w:top="${mar.top}" w:right="${mar.right}" w:bottom="${mar.bottom}" w:left="${mar.left}" w:header="720" w:footer="720"/><w:footerReference w:type="default" r:id="rId2"/></w:sectPr></w:body></w:document>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>${titleXml}${body}<w:sectPr><w:footerReference w:type="default" r:id="rId2"/><w:pgSz w:w="${tw(page.w)}" w:h="${tw(page.h)}"/><w:pgMar w:top="${mar.top}" w:right="${mar.right}" w:bottom="${mar.bottom}" w:left="${mar.left}" w:header="720" w:footer="720" w:gutter="0"/></w:sectPr></w:body></w:document>`);
   zip.file("word/footer1.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:fldSimple w:instr="PAGE"><w:r><w:t>1</w:t></w:r></w:fldSimple></w:p></w:ftr>`);
   // Body defaults follow the document settings (a Plain doc always has them
   // now, so its export matches the on-screen Georgia 12pt look); the
@@ -251,13 +256,16 @@ export async function buildDocx(doc: JSONContent, title: string, format: string,
   const defSz = screenplay ? 24 : settings ? basePt * 2 : 22;
   const defAfter = screenplay ? 0 : settings?.paraSpacing !== null && settings?.paraSpacing !== undefined ? Math.round(settings.paraSpacing * 20) : 160;
   const defLine = settings?.bodyLine ? Math.round(settings.bodyLine * 240) : 240;
-  const defInd = settings?.firstIndent ? `<w:ind w:firstLine="${tw(settings.firstIndent)}"/>` : "";
-  zip.file("word/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}"/><w:sz w:val="${defSz}"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="${defAfter}" w:line="${defLine}" w:lineRule="auto"/>${defInd}</w:pPr></w:pPrDefault></w:docDefaults>${style("Normal", "Normal", 0, 0)}${style("Title", "Title", 0, 240, true, 32)}${style("Heading1", "Heading 1", 0, 160, true, 26)}${style("Action", "Action", 0, 0)}${style("SceneHeading", "Scene Heading", 0, 240, true)}${style("Character", "Character", 3168, 0)}${style("Parenthetical", "Parenthetical", 2304, 2016)}${style("Dialogue", "Dialogue", 1440, 2160)}${style("Transition", "Transition", 0, 0, false, undefined, "right")}</w:styles>`);
+  // The first-line indent lives on Normal alone (it used to be a document
+  // default, so titles and headings were indented too).
+  const bodyIndent = settings?.firstIndent ? tw(settings.firstIndent) : 0;
+  zip.file("word/styles.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="${font}" w:hAnsi="${font}"/><w:sz w:val="${defSz}"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="${defAfter}" w:line="${defLine}" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>${style("Normal", "Normal", 0, 0, false, undefined, undefined, bodyIndent)}${style("Title", "Title", 0, 240, true, 32)}${style("Heading1", "Heading 1", 0, 160, true, 26)}${style("Action", "Action", 0, 0)}${style("SceneHeading", "Scene Heading", 0, 240, true)}${style("Character", "Character", 3168, 0)}${style("Parenthetical", "Parenthetical", 2304, 2016)}${style("Dialogue", "Dialogue", 1440, 2160)}${style("Transition", "Transition", 0, 0, false, undefined, "right")}</w:styles>`);
   return zip.generateAsync({ type: "uint8array", compression: "DEFLATE" });
 }
 
-function style(id: string, name: string, left: number, right: number, bold = false, size?: number, align?: string): string {
-  return `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/><w:pPr><w:ind w:left="${left}" w:right="${right}"/>${align ? `<w:jc w:val="${align}"/>` : ""}</w:pPr><w:rPr>${bold ? "<w:b/>" : ""}${size ? `<w:sz w:val="${size}"/>` : ""}</w:rPr></w:style>`;
+function style(id: string, name: string, left: number, right: number, bold = false, size?: number, align?: string, firstLine = 0): string {
+  const ind = `<w:ind w:left="${left}" w:right="${right}"${firstLine ? ` w:firstLine="${firstLine}"` : ""}/>`;
+  return `<w:style w:type="paragraph" w:styleId="${id}"><w:name w:val="${name}"/><w:pPr>${ind}${align ? `<w:jc w:val="${align}"/>` : ""}</w:pPr><w:rPr>${bold ? "<w:b/>" : ""}${size ? `<w:sz w:val="${size}"/>` : ""}</w:rPr></w:style>`;
 }
 
 /**

@@ -8,7 +8,7 @@ import {
   ySyncPluginKey,
 } from "@tiptap/y-tiptap";
 import { Check, Highlighter, MessageSquarePlus, RotateCcw, Trash2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
@@ -111,6 +111,56 @@ export function resolveThreadRange(
   }
 }
 
+/** Threads in the order their text appears; general feedback (no anchor)
+ *  and threads whose text is gone come last. */
+export function inDocumentOrder<T extends AnchoredThread>(editor: Editor | null, threads: T[]): T[] {
+  if (!editor) return threads;
+  return threads
+    .map((t, i) => ({ t, i, at: resolveThreadRange(editor, t)?.from ?? Infinity }))
+    .sort((a, b) => a.at - b.at || a.i - b.i)
+    .map((k) => k.t);
+}
+
+/** A click on a comment highlight (not a selection) calls back with its
+ *  thread's id — the editors open the panel at that thread. */
+export function useThreadClicks(editor: Editor | null, onThread: (id: string) => void) {
+  const callback = useRef(onThread);
+  useEffect(() => {
+    callback.current = onThread;
+  }, [onThread]);
+  useEffect(() => {
+    if (!editor || editor.isDestroyed) return;
+    const dom = editor.view.dom;
+    const onClick = (e: MouseEvent) => {
+      const el = (e.target as Element | null)?.closest?.(".wf-feedback-hl[data-thread]");
+      if (!el || !editor.state.selection.empty) return;
+      callback.current(el.getAttribute("data-thread") ?? "");
+    };
+    dom.addEventListener("click", onClick);
+    return () => dom.removeEventListener("click", onClick);
+  }, [editor]);
+}
+
+/** Which thread to bring forward, and a counter so a second click on the
+ *  same highlight flashes it again. */
+export interface ThreadFocus {
+  id: string;
+  n: number;
+}
+
+/** Scroll a thread's card into view and flash it. */
+export function useFlashThread(focus: ThreadFocus | null | undefined) {
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.querySelector<HTMLElement>(`[data-thread-card="${CSS.escape(focus.id)}"]`);
+    if (!el) return;
+    el.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    el.classList.remove("flash");
+    void el.offsetWidth; // restart the animation
+    el.classList.add("flash");
+  }, [focus]);
+}
+
 /** Keep highlight decorations in sync with the open threads. */
 export function useFeedbackDecorations(
   editor: Editor | null,
@@ -162,14 +212,18 @@ export function FeedbackPanel({
   provider,
   highlightsOn,
   onToggleHighlights,
+  focus,
 }: {
   editor: Editor | null;
   provider: DocProvider;
   /** Whether highlights stay visible after the panel closes. */
   highlightsOn?: boolean;
   onToggleHighlights?: () => void;
+  /** A thread to bring forward (its highlight was clicked). */
+  focus?: ThreadFocus | null;
 }) {
   void provider;
+  useFlashThread(focus);
   const docId = useDocuments((s) => s.activeDocId);
   const threads = useDocuments((s) => s.threads);
   const myAccess = useDocuments((s) => s.myAccess);
@@ -196,8 +250,9 @@ export function FeedbackPanel({
 
   if (docId === null) return null;
   const isOwner = myAccess === "owner";
-  const open = threads.filter((t) => !t.resolved);
-  const resolved = threads.filter((t) => t.resolved);
+  const ordered = inDocumentOrder(editor, threads);
+  const open = ordered.filter((t) => !t.resolved);
+  const resolved = ordered.filter((t) => t.resolved);
 
   const submit = async (content: string, anchors: SelectionAnchors | null) => {
     const text = content.trim();
@@ -369,7 +424,7 @@ function ThreadCard({
     p.catch((e) => onError(isCmdError(e) ? e.message : String(e)));
 
   return (
-    <div className={`wf-doc-thread ${thread.resolved ? "resolved" : ""}`}>
+    <div className={`wf-doc-thread ${thread.resolved ? "resolved" : ""}`} data-thread-card={String(thread.id)}>
       {thread.excerpt && (
         <button className="wf-doc-thread-excerpt" title="Jump to text" onClick={onJump}>
           “{thread.excerpt}”

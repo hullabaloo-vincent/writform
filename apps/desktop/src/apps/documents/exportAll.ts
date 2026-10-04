@@ -1,7 +1,9 @@
 /**
  * Export every accessible document as portable files — nothing stays locked
- * in the app. Produces a zip mirroring your folders, with each document as
- * Markdown (readable anywhere) plus its full TipTap JSON (lossless).
+ * in the app. Produces a zip mirroring your folders (plus the documents on
+ * this device), with each document as Markdown (readable anywhere) plus its
+ * full TipTap JSON (lossless). Reads are quiet: exporting doesn't count as
+ * opening a document.
  */
 
 import { yDocToProsemirrorJSON } from "@tiptap/y-tiptap";
@@ -9,9 +11,11 @@ import * as Y from "yjs";
 
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
-import { backend } from "../../lib/backend";
+import { backend, type SaveResult } from "../../lib/backend";
+import { saveExport } from "../../lib/saveFile";
 import { documentsApi } from "./api";
-import { b64decode, b64encode } from "./collab";
+import { b64decode } from "./collab";
+import type { LocalDocMeta } from "./local";
 
 interface PmNode {
   type?: string;
@@ -24,40 +28,49 @@ interface PmNode {
 export async function exportAllDocuments(
   items: DocumentListItem[],
   folders: DocumentFolder[],
-): Promise<string> {
+  local: LocalDocMeta[] = [],
+): Promise<SaveResult> {
   const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
   const folderName = new Map(folders.map((f) => [f.id, f.name]));
   const used = new Set<string>();
 
-  for (const item of items) {
-    const doc = item.document;
-    const detail = await documentsApi.detail(doc.id);
+  const add = (dir: string, title: string, unique: string | number, state_b64: string) => {
     const ydoc = new Y.Doc();
     try {
-      if (detail.state_b64) Y.applyUpdate(ydoc, b64decode(detail.state_b64));
+      if (state_b64) Y.applyUpdate(ydoc, b64decode(state_b64));
       const json = yDocToProsemirrorJSON(ydoc, "default") as PmNode;
-
-      const dir =
-        item.my_access === "owner"
-          ? doc.folder_id !== null && folderName.has(doc.folder_id)
-            ? `My documents/${sanitize(folderName.get(doc.folder_id) ?? "Folder")}`
-            : "My documents"
-          : "Shared with me";
-      let base = `${dir}/${sanitize(doc.title) || "Untitled"}`;
-      if (used.has(base)) base = `${base} (${doc.id})`;
+      let base = `${dir}/${sanitize(title) || "Untitled"}`;
+      if (used.has(base)) base = `${base} (${unique})`;
       used.add(base);
-
       zip.file(`${base}.md`, pmToMarkdown(json));
       zip.file(`${base}.json`, JSON.stringify(json, null, 2));
     } finally {
       ydoc.destroy();
     }
+  };
+
+  for (const item of items) {
+    const doc = item.document;
+    const detail = await documentsApi.detailQuiet(doc.id);
+    const dir =
+      item.my_access === "owner"
+        ? doc.folder_id !== null && folderName.has(doc.folder_id)
+          ? `My documents/${sanitize(folderName.get(doc.folder_id) ?? "Folder")}`
+          : "My documents"
+        : "Shared with me";
+    add(dir, doc.title, doc.id, detail.state_b64);
+  }
+  for (const d of local) {
+    const file = JSON.parse(await backend.localdocRead(d.id)) as { state_b64?: string };
+    add("On this device", d.title, d.id.slice(0, 8), file.state_b64 ?? "");
   }
 
   const bytes = await zip.generateAsync({ type: "uint8array" });
-  const stamp = new Date().toISOString().slice(0, 10);
-  return backend.saveExport(`writform-export-${stamp}.zip`, b64encode(bytes));
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}${pad(now.getMinutes())}`;
+  return saveExport(`subScribe Documents ${stamp}.zip`, "zip", bytes);
 }
 
 function sanitize(name: string): string {

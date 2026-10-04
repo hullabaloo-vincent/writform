@@ -19,6 +19,11 @@ export const DOC_FONTS = [
     label: "Palatino",
     css: "'Palatino Linotype', Palatino, 'Book Antiqua', serif",
   },
+  // Bundled with the app (book faces): they look the same everywhere.
+  { id: "garamond", label: "Garamond", css: "'EB Garamond', Garamond, Georgia, serif" },
+  { id: "libertinus", label: "Libertinus", css: "'Libertinus Serif', 'Linux Libertine', Georgia, serif" },
+  { id: "baskerville", label: "Baskerville", css: "'Libre Baskerville', Baskerville, Georgia, serif" },
+  { id: "literata", label: "Literata", css: "Literata, Georgia, serif" },
   { id: "sans", label: "Sans", css: "-apple-system, 'Segoe UI', Arial, sans-serif" },
   { id: "mono", label: "Typewriter", css: "'Courier Prime', 'Courier New', Courier, monospace" },
   {
@@ -78,13 +83,17 @@ const TYPO_KEYS = [
 interface TextFormatOptions {
   /** Bind ⌘⇧L/E/R/J + ⌘↩. Off for previews and non-Plain formats. */
   shortcuts: boolean;
+  /** Bind just ⌘⇧L/E/R (left/center/right) — Manuscript, where alignment
+   *  is meaning (a centered sign, a right-set sign-off) but justification
+   *  and page breaks belong to the book design. */
+  alignShortcuts: boolean;
 }
 
 export const TextFormat = Extension.create<TextFormatOptions>({
   name: "textFormat",
 
   addOptions() {
-    return { shortcuts: false };
+    return { shortcuts: false, alignShortcuts: false };
   },
 
   addGlobalAttributes() {
@@ -175,10 +184,11 @@ export const TextFormat = Extension.create<TextFormatOptions>({
 
   addKeyboardShortcuts() {
     const map: Record<string, () => boolean> = {};
-    if (!this.options.shortcuts) return map;
+    if (!this.options.shortcuts && !this.options.alignShortcuts) return map;
     map["Mod-Shift-l"] = () => setTypography(this.editor, { align: null });
     map["Mod-Shift-e"] = () => setTypography(this.editor, { align: "center" });
     map["Mod-Shift-r"] = () => setTypography(this.editor, { align: "right" });
+    if (!this.options.shortcuts) return map;
     map["Mod-Shift-j"] = () => setTypography(this.editor, { align: "justify" });
     map["Mod-Enter"] = () => insertPageBreak(this.editor);
     return map;

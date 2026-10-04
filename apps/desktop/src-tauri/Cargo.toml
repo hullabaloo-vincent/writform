@@ -47,6 +47,9 @@ igd-next = { version = "0.17", features = ["aio_tokio"] }
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-window-state = "2"
+# The native Save panel for exports. Used from Rust only (save_file), so the
+# webview never gets to name an arbitrary path to write.
+tauri-plugin-dialog = "2"
 
 # Native touch feedback; the plugin only exists for the mobile targets.
 [target.'cfg(any(target_os = "android", target_os = "ios"))'.dependencies]

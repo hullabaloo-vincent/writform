@@ -32,9 +32,12 @@ use crate::perms;
 use crate::routes::AppState;
 
 const FORMATS: &[&str] = &["none", "screenplay", "stageplay", "manuscript", "poetry"];
-const MAX_UPDATE_BYTES: usize = 256 * 1024;
+/// One Yjs update. Clients batch to 192 KiB, but a single huge edit (pasting
+/// or restoring a whole novel) can't be split, so this has real headroom.
+const MAX_UPDATE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_AWARENESS_BYTES: usize = 8 * 1024;
-const MAX_SNAPSHOT_BYTES: usize = 4 * 1024 * 1024;
+/// A full revision's JSON — a 100k-word novel is ~2 MB, so room to grow.
+const MAX_SNAPSHOT_BYTES: usize = 10 * 1024 * 1024;
 const MAX_THREAD_CONTENT: usize = 4000;
 const AUTO_SNAPSHOT_INTERVAL_MS: i64 = 60_000;
 /// Automatic revisions kept per document. Clients cut one at every pause in
@@ -43,9 +46,26 @@ const AUTO_SNAPSHOT_INTERVAL_MS: i64 = 60_000;
 const MAX_AUTO_VERSIONS: i64 = 200;
 /// Compact once this many update rows sit above the merged state.
 const COMPACT_AFTER: i64 = 200;
+/// …or once the uncompacted tail holds this many bytes (a few large edits).
+const COMPACT_AFTER_BYTES: i64 = 8 * 1024 * 1024;
 /// Update rows kept below `last_seq` after compaction so `?since=` catch-up
 /// works across brief disconnects; older gaps force a full state reload.
 const KEEP_TAIL: i64 = 500;
+/// …capped by size, so a run of large updates can't pin a huge tail.
+const KEEP_TAIL_BYTES: i64 = 16 * 1024 * 1024;
+/// A catch-up larger than this is answered with `truncated` — reloading the
+/// merged state is cheaper than replaying it.
+const MAX_CATCHUP_BYTES: i64 = 16 * 1024 * 1024;
+/// Recently Deleted keeps a document this long, then it's gone for good.
+pub const TRASH_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+/// How often the maintenance task purges expired trash.
+const PURGE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 60 * 60);
+/// Card excerpt length (characters).
+const EXCERPT_CHARS: usize = 180;
+/// Search snippet context on each side of the match (characters).
+const SNIPPET_CONTEXT: usize = 70;
+/// Search results that get a snippet (each scans the document's text).
+const MAX_SNIPPETS: usize = 100;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Access {
@@ -112,10 +132,12 @@ fn row_to_document(row: DocRow) -> (Document, i64) {
 }
 
 async fn fetch_document(state: &AppState, doc_id: i64) -> Result<(Document, i64), AppError> {
-    let row: Option<DocRow> = sqlx::query_as(&format!("{DOC_SELECT} WHERE d.id = ?"))
-        .bind(doc_id)
-        .fetch_optional(&state.pool)
-        .await?;
+    let row: Option<DocRow> = sqlx::query_as(&format!(
+        "{DOC_SELECT} WHERE d.id = ? AND d.deleted_at IS NULL"
+    ))
+    .bind(doc_id)
+    .fetch_optional(&state.pool)
+    .await?;
     row.map(row_to_document).ok_or_else(|| {
         AppError::new(
             StatusCode::NOT_FOUND,
@@ -171,12 +193,13 @@ async fn shared_access(
 }
 
 /// Room permission for `document:{id}` (see `ws::room_allowed`). Unknown
-/// documents simply read as "no".
+/// documents — and documents in Recently Deleted — simply read as "no".
 pub async fn can_read(state: &AppState, doc_id: i64, user: UserId) -> Result<bool, AppError> {
-    let row: Option<(i64,)> = sqlx::query_as("SELECT owner_id FROM documents WHERE id = ?")
-        .bind(doc_id)
-        .fetch_optional(&state.pool)
-        .await?;
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT owner_id FROM documents WHERE id = ? AND deleted_at IS NULL")
+            .bind(doc_id)
+            .fetch_optional(&state.pool)
+            .await?;
     let Some((owner_id,)) = row else {
         return Ok(false);
     };
@@ -305,6 +328,7 @@ pub async fn create_document(
     .fetch_one(&state.pool)
     .await?;
     let (doc, _) = fetch_document(&state, id).await?;
+    list_changed(&state, auth.user_id);
     Ok(Json(doc))
 }
 
@@ -361,8 +385,10 @@ fn like_pattern(q: &str) -> String {
     format!("%{escaped}%")
 }
 
+/// Title or text (never the editor JSON — "paragraph" mustn't match
+/// everything).
 const SEARCH_FILTER: &str =
-    " AND (d.title LIKE ? ESCAPE '\\' OR COALESCE(d.content_json, '') LIKE ? ESCAPE '\\')";
+    " AND (d.title LIKE ? ESCAPE '\\' OR COALESCE(d.search_text, '') LIKE ? ESCAPE '\\')";
 
 pub async fn list_documents(
     State(state): State<AppState>,
@@ -387,7 +413,7 @@ pub async fn list_documents(
         }
     };
 
-    let owned_sql = format!("{DOC_SELECT} WHERE d.owner_id = ?{filter}");
+    let owned_sql = format!("{DOC_SELECT} WHERE d.owner_id = ? AND d.deleted_at IS NULL{filter}");
     let mut owned_q = sqlx::query_as::<_, DocRow>(&owned_sql).bind(auth.user_id.0);
     if let Some(p) = &pattern {
         owned_q = owned_q.bind(p).bind(p);
@@ -396,8 +422,9 @@ pub async fn list_documents(
         add(row, Access::Owner, &mut best);
     }
 
-    let user_sql =
-        format!("{DOC_SHARE_SELECT} WHERE s.subject_kind = 'user' AND s.subject_id = ?{filter}");
+    let user_sql = format!(
+        "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'user' AND s.subject_id = ? AND d.deleted_at IS NULL{filter}"
+    );
     let mut user_q = sqlx::query_as::<_, DocShareRow>(&user_sql).bind(auth.user_id.0);
     if let Some(p) = &pattern {
         user_q = user_q.bind(p).bind(p);
@@ -411,7 +438,7 @@ pub async fn list_documents(
     if !groups.is_empty() {
         let placeholders = vec!["?"; groups.len()].join(", ");
         let sql = format!(
-            "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'group' AND s.subject_id IN ({placeholders}){filter}"
+            "{DOC_SHARE_SELECT} WHERE s.subject_kind = 'group' AND s.subject_id IN ({placeholders}) AND d.deleted_at IS NULL{filter}"
         );
         let mut q = sqlx::query_as::<_, DocShareRow>(&sql);
         for g in &groups {
@@ -431,16 +458,72 @@ pub async fn list_documents(
         .map(|(document, access)| DocumentListItem {
             document,
             my_access: access.as_str().to_string(),
+            word_count: 0,
+            excerpt: String::new(),
+            snippet: None,
+            deleted_at: None,
         })
         .collect();
     items.sort_by_key(|i| std::cmp::Reverse(i.document.updated_at));
+    attach_stats(&state, &mut items, query).await?;
     Ok(Json(items))
+}
+
+/// Fill in each item's word count and excerpt, and — for a search — a
+/// snippet of the text around the match.
+async fn attach_stats(
+    state: &AppState,
+    items: &mut [DocumentListItem],
+    query: Option<&str>,
+) -> Result<(), AppError> {
+    let mut stats: HashMap<i64, (i64, String)> = HashMap::new();
+    for chunk in items.chunks(400) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let sql =
+            format!("SELECT id, word_count, excerpt FROM documents WHERE id IN ({placeholders})");
+        let mut q = sqlx::query_as::<_, (i64, i64, String)>(&sql);
+        for item in chunk {
+            q = q.bind(item.document.id);
+        }
+        for (id, words, excerpt) in q.fetch_all(&state.pool).await? {
+            stats.insert(id, (words, excerpt));
+        }
+    }
+    for item in items.iter_mut() {
+        if let Some((words, excerpt)) = stats.remove(&item.document.id) {
+            item.word_count = words;
+            item.excerpt = excerpt;
+        }
+    }
+    let Some(query) = query else {
+        return Ok(());
+    };
+    for item in items.iter_mut().take(MAX_SNIPPETS) {
+        let text: Option<(Option<String>,)> =
+            sqlx::query_as("SELECT search_text FROM documents WHERE id = ?")
+                .bind(item.document.id)
+                .fetch_optional(&state.pool)
+                .await?;
+        if let Some((Some(text),)) = text {
+            item.snippet = snippet(&text, query);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct DetailParams {
+    /// Bulk reads (export, copy to device, duplicate, combine) aren't the
+    /// user opening the document, so they don't log an "opened" entry.
+    #[serde(default)]
+    pub quiet: Option<u8>,
 }
 
 pub async fn document_detail(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(doc_id): Path<i64>,
+    Query(params): Query<DetailParams>,
 ) -> Result<Json<DocumentDetail>, AppError> {
     let (doc, access) = require_access(&state, doc_id, auth.user_id, false).await?;
     let (ydoc_state, state_seq, last_seq): (Option<Vec<u8>>, i64, i64) =
@@ -458,16 +541,21 @@ pub async fn document_detail(
     let tail: Vec<Vec<u8>> = tail.into_iter().map(|(b,)| b).collect();
     let merged = merge_updates(ydoc_state.as_deref(), &tail);
     let now = now_millis();
-    let recent_open: Option<(i64,)> = sqlx::query_as(
-        "SELECT created_at FROM document_activity
-         WHERE doc_id = ? AND actor_id = ? AND kind = 'opened'
-         ORDER BY created_at DESC LIMIT 1",
-    )
-    .bind(doc_id)
-    .bind(auth.user_id.0)
-    .fetch_optional(&state.pool)
-    .await?;
-    if recent_open.is_none_or(|(at,)| now - at >= 60_000) {
+    let quiet = params.quiet.unwrap_or(0) != 0;
+    let recent_open: Option<(i64,)> = if quiet {
+        None
+    } else {
+        sqlx::query_as(
+            "SELECT created_at FROM document_activity
+             WHERE doc_id = ? AND actor_id = ? AND kind = 'opened'
+             ORDER BY created_at DESC LIMIT 1",
+        )
+        .bind(doc_id)
+        .bind(auth.user_id.0)
+        .fetch_optional(&state.pool)
+        .await?
+    };
+    if !quiet && recent_open.is_none_or(|(at,)| now - at >= 60_000) {
         insert_activity(
             &state,
             doc_id,
@@ -554,9 +642,12 @@ pub async fn update_document(
         "document.meta",
         serde_json::to_value(&doc).expect("serializable"),
     );
+    list_changed(&state, doc.owner.id);
     Ok(Json(doc))
 }
 
+/// Move a document to Recently Deleted (owner only). Everyone loses access at
+/// once — open editors close — and the owner can restore it for 30 days.
 pub async fn delete_document(
     State(state): State<AppState>,
     auth: AuthUser,
@@ -564,7 +655,8 @@ pub async fn delete_document(
 ) -> Result<StatusCode, AppError> {
     let (_, access) = require_access(&state, doc_id, auth.user_id, false).await?;
     require_owner(access)?;
-    sqlx::query("DELETE FROM documents WHERE id = ?")
+    sqlx::query("UPDATE documents SET deleted_at = ? WHERE id = ?")
+        .bind(now_millis())
         .bind(doc_id)
         .execute(&state.pool)
         .await?;
@@ -573,7 +665,319 @@ pub async fn delete_document(
         "document.deleted",
         serde_json::json!({ "doc_id": doc_id }),
     );
+    list_changed(&state, auth.user_id);
     Ok(StatusCode::NO_CONTENT)
+}
+
+/// Tell the owner's other devices their document list changed.
+fn list_changed(state: &AppState, owner: UserId) {
+    state.ws.broadcast(
+        &format!("user:{}", owner.0),
+        "document.listchanged",
+        serde_json::json!({}),
+    );
+}
+
+/// Tell the owner's other devices their folders changed.
+fn folders_changed(state: &AppState, owner: UserId) {
+    state.ws.broadcast(
+        &format!("user:{}", owner.0),
+        "document.folders",
+        serde_json::json!({}),
+    );
+}
+
+// ------------------------------------------------------------ recently deleted
+
+/// The caller's own documents in Recently Deleted, most recent first.
+pub async fn list_trash(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<Json<Vec<DocumentListItem>>, AppError> {
+    let rows: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT id, deleted_at, excerpt FROM documents
+         WHERE owner_id = ? AND deleted_at IS NOT NULL ORDER BY deleted_at DESC",
+    )
+    .bind(auth.user_id.0)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut items = Vec::with_capacity(rows.len());
+    for (id, deleted_at, _) in rows {
+        let row: DocRow = sqlx::query_as(&format!("{DOC_SELECT} WHERE d.id = ?"))
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?;
+        let (document, _) = row_to_document(row);
+        items.push(DocumentListItem {
+            document,
+            my_access: Access::Owner.as_str().to_string(),
+            word_count: 0,
+            excerpt: String::new(),
+            snippet: None,
+            deleted_at: Some(deleted_at),
+        });
+    }
+    attach_stats(&state, &mut items, None).await?;
+    Ok(Json(items))
+}
+
+/// One of the caller's documents in Recently Deleted (404 otherwise, for
+/// anyone — a deleted document's existence isn't shared).
+async fn require_trashed(state: &AppState, doc_id: i64, user: UserId) -> Result<(), AppError> {
+    let row: Option<(i64,)> =
+        sqlx::query_as("SELECT owner_id FROM documents WHERE id = ? AND deleted_at IS NOT NULL")
+            .bind(doc_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    match row {
+        Some((owner,)) if owner == user.0 => Ok(()),
+        _ => Err(AppError::new(
+            StatusCode::NOT_FOUND,
+            "no_such_document",
+            "document not found in Recently Deleted",
+        )),
+    }
+}
+
+pub async fn restore_document(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(doc_id): Path<i64>,
+) -> Result<Json<Document>, AppError> {
+    require_trashed(&state, doc_id, auth.user_id).await?;
+    sqlx::query("UPDATE documents SET deleted_at = NULL WHERE id = ?")
+        .bind(doc_id)
+        .execute(&state.pool)
+        .await?;
+    let (doc, _) = fetch_document(&state, doc_id).await?;
+    list_changed(&state, auth.user_id);
+    Ok(Json(doc))
+}
+
+/// Delete one document from Recently Deleted for good.
+pub async fn purge_document(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(doc_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    require_trashed(&state, doc_id, auth.user_id).await?;
+    sqlx::query("DELETE FROM documents WHERE id = ?")
+        .bind(doc_id)
+        .execute(&state.pool)
+        .await?;
+    list_changed(&state, auth.user_id);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Empty the caller's Recently Deleted.
+pub async fn empty_trash(
+    State(state): State<AppState>,
+    auth: AuthUser,
+) -> Result<StatusCode, AppError> {
+    sqlx::query("DELETE FROM documents WHERE owner_id = ? AND deleted_at IS NOT NULL")
+        .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    list_changed(&state, auth.user_id);
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Delete documents that have sat in Recently Deleted past the retention
+/// period. Returns how many went.
+pub async fn purge_expired(pool: &sqlx::SqlitePool, now: i64) -> Result<u64, sqlx::Error> {
+    let done = sqlx::query("DELETE FROM documents WHERE deleted_at IS NOT NULL AND deleted_at < ?")
+        .bind(now - TRASH_RETENTION_MS)
+        .execute(pool)
+        .await?;
+    Ok(done.rows_affected())
+}
+
+/// Compute text, word count and excerpt for documents saved before they
+/// existed (one batch at a time). Returns how many were filled in.
+pub async fn backfill_stats(pool: &sqlx::SqlitePool) -> Result<u64, sqlx::Error> {
+    let mut done = 0;
+    loop {
+        let batch: Vec<(i64, String)> = sqlx::query_as(
+            "SELECT id, content_json FROM documents
+             WHERE search_text IS NULL AND content_json IS NOT NULL LIMIT 50",
+        )
+        .fetch_all(pool)
+        .await?;
+        if batch.is_empty() {
+            return Ok(done);
+        }
+        for (id, json) in batch {
+            let parsed = serde_json::from_str::<serde_json::Value>(&json).unwrap_or_default();
+            let stats = DocStats::of(&parsed);
+            sqlx::query(
+                "UPDATE documents SET search_text = ?, word_count = ?, excerpt = ? WHERE id = ?",
+            )
+            .bind(&stats.text)
+            .bind(stats.words)
+            .bind(&stats.excerpt)
+            .bind(id)
+            .execute(pool)
+            .await?;
+            done += 1;
+        }
+    }
+}
+
+/// Background upkeep for documents: fill in the text of older documents,
+/// then purge expired trash now and every few hours.
+pub fn start_maintenance(state: &AppState) {
+    let pool = state.pool.clone();
+    tokio::spawn(async move {
+        match backfill_stats(&pool).await {
+            Ok(0) => {}
+            Ok(n) => tracing::info!("documents: indexed the text of {n} older documents"),
+            Err(e) => tracing::warn!("documents: text backfill failed: {e}"),
+        }
+        loop {
+            match purge_expired(&pool, now_millis()).await {
+                Ok(0) => {}
+                Ok(n) => tracing::info!("documents: purged {n} from Recently Deleted"),
+                Err(e) => tracing::warn!("documents: trash purge failed: {e}"),
+            }
+            tokio::time::sleep(PURGE_EVERY).await;
+        }
+    });
+}
+
+// ------------------------------------------------------------ text & stats
+
+/// A document's plain text (blocks on their own lines), word count, and
+/// opening words — from its TipTap JSON.
+pub struct DocStats {
+    pub text: String,
+    pub words: i64,
+    pub excerpt: String,
+}
+
+impl DocStats {
+    pub fn of(doc: &serde_json::Value) -> DocStats {
+        let mut text = String::new();
+        let mut excerpt_source: Option<String> = None;
+        let mut first_any: Option<String> = None;
+        if let Some(blocks) = doc.get("content").and_then(|c| c.as_array()) {
+            for block in blocks {
+                let mut line = String::new();
+                collect_text(block, &mut line);
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    continue;
+                }
+                if first_any.is_none() {
+                    first_any = Some(trimmed.to_string());
+                }
+                if excerpt_source.is_none() && !is_heading(block) {
+                    excerpt_source = Some(trimmed.to_string());
+                }
+                text.push_str(trimmed);
+                text.push('\n');
+            }
+        }
+        let words = text.split_whitespace().count() as i64;
+        let excerpt = excerpt_source
+            .or(first_any)
+            .map(|s| shorten(&s, EXCERPT_CHARS))
+            .unwrap_or_default();
+        DocStats {
+            text,
+            words,
+            excerpt,
+        }
+    }
+}
+
+fn collect_text(node: &serde_json::Value, out: &mut String) {
+    match node.get("type").and_then(|t| t.as_str()) {
+        Some("text") => {
+            if let Some(t) = node.get("text").and_then(|t| t.as_str()) {
+                out.push_str(t);
+            }
+        }
+        Some("hardBreak") => out.push(' '),
+        _ => {
+            if let Some(children) = node.get("content").and_then(|c| c.as_array()) {
+                for (i, child) in children.iter().enumerate() {
+                    // Nested blocks (list items, quote paragraphs) read as
+                    // separate sentences, not one run-on word.
+                    if i > 0 && child.get("content").is_some() && !out.ends_with(' ') {
+                        out.push(' ');
+                    }
+                    collect_text(child, out);
+                }
+            }
+        }
+    }
+}
+
+/// Headings don't make good excerpts ("Chapter One").
+fn is_heading(block: &serde_json::Value) -> bool {
+    if block.get("type").and_then(|t| t.as_str()) == Some("heading") {
+        return true;
+    }
+    let element = block
+        .get("attrs")
+        .and_then(|a| a.get("element"))
+        .and_then(|e| e.as_str())
+        .unwrap_or("");
+    element.contains("heading")
+        || matches!(
+            element,
+            "chapter_subtitle" | "stanza_title" | "character" | "transition"
+        )
+}
+
+/// Up to `max` characters, cut at a word boundary, with an ellipsis.
+fn shorten(text: &str, max: usize) -> String {
+    let collapsed: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.chars().count() <= max {
+        return collapsed;
+    }
+    let cut: String = collapsed.chars().take(max).collect();
+    let at = cut.rfind(' ').filter(|&i| i > max / 2).unwrap_or(cut.len());
+    format!(
+        "{}…",
+        cut[..at].trim_end_matches(|c: char| c.is_ascii_punctuation() || c == ' ')
+    )
+}
+
+/// The text around the first case-insensitive match of `query`, or None.
+pub fn snippet(text: &str, query: &str) -> Option<String> {
+    let needle: Vec<char> = query.chars().flat_map(char::to_lowercase).collect();
+    if needle.is_empty() {
+        return None;
+    }
+    let hay: Vec<char> = text.chars().collect();
+    let lower: Vec<char> = hay
+        .iter()
+        .map(|c| c.to_lowercase().next().unwrap_or(*c))
+        .collect();
+    let at = (0..lower.len().saturating_sub(needle.len() - 1))
+        .find(|&i| lower[i..i + needle.len()] == needle[..])?;
+    let start = at.saturating_sub(SNIPPET_CONTEXT);
+    let end = (at + needle.len() + SNIPPET_CONTEXT).min(hay.len());
+    let mut s: String = hay[start..end].iter().collect();
+    // Cut back to whole words at either end.
+    if start > 0 {
+        if let Some(i) = s.find(char::is_whitespace) {
+            s = s[i..].to_string();
+        }
+    }
+    if end < hay.len() {
+        if let Some(i) = s.rfind(char::is_whitespace) {
+            s.truncate(i);
+        }
+    }
+    let body = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    Some(format!(
+        "{}{}{}",
+        if start > 0 { "…" } else { "" },
+        body,
+        if end < hay.len() { "…" } else { "" }
+    ))
 }
 
 // ------------------------------------------------------------------ updates
@@ -588,10 +992,14 @@ pub async fn append_update(
     let bytes = B64
         .decode(&req.update_b64)
         .map_err(|_| AppError::bad_request("bad_update", "update is not valid base64"))?;
-    if bytes.is_empty() || bytes.len() > MAX_UPDATE_BYTES {
-        return Err(AppError::bad_request(
-            "bad_update",
-            "update must be 1 byte to 256 KB",
+    if bytes.is_empty() {
+        return Err(AppError::bad_request("bad_update", "update is empty"));
+    }
+    if bytes.len() > MAX_UPDATE_BYTES {
+        return Err(AppError::new(
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "update_too_large",
+            "update exceeds 4 MB",
         ));
     }
     {
@@ -650,7 +1058,17 @@ async fn maybe_compact(state: &AppState, doc_id: i64) -> Result<(), AppError> {
             .fetch_one(&state.pool)
             .await?;
     if last_seq - state_seq < COMPACT_AFTER {
-        return Ok(());
+        let tail_bytes: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(SUM(LENGTH(update_data)), 0) FROM document_updates
+             WHERE doc_id = ? AND seq > ?",
+        )
+        .bind(doc_id)
+        .bind(state_seq)
+        .fetch_one(&state.pool)
+        .await?;
+        if tail_bytes < COMPACT_AFTER_BYTES {
+            return Ok(());
+        }
     }
     let tail: Vec<(i64, Vec<u8>)> = sqlx::query_as(
         "SELECT seq, update_data FROM document_updates WHERE doc_id = ? AND seq > ? ORDER BY seq",
@@ -669,9 +1087,29 @@ async fn maybe_compact(state: &AppState, doc_id: i64) -> Result<(), AppError> {
         .bind(doc_id)
         .execute(&state.pool)
         .await?;
+    // Keep at most KEEP_TAIL rows below the merge point, and no more than
+    // KEEP_TAIL_BYTES of them: walk back from the newest kept row.
+    let kept: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT seq, LENGTH(update_data) FROM document_updates
+         WHERE doc_id = ? AND seq > ? AND seq <= ? ORDER BY seq DESC",
+    )
+    .bind(doc_id)
+    .bind(merged_through - KEEP_TAIL)
+    .bind(merged_through)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut cutoff = merged_through - KEEP_TAIL;
+    let mut total = 0i64;
+    for (seq, len) in kept {
+        total += len;
+        if total > KEEP_TAIL_BYTES {
+            cutoff = seq;
+            break;
+        }
+    }
     sqlx::query("DELETE FROM document_updates WHERE doc_id = ? AND seq <= ?")
         .bind(doc_id)
-        .bind(merged_through - KEEP_TAIL)
+        .bind(cutoff)
         .execute(&state.pool)
         .await?;
     Ok(())
@@ -695,6 +1133,22 @@ pub async fn get_updates(
             .bind(doc_id)
             .fetch_one(&state.pool)
             .await?;
+    // A tail bigger than a full reload isn't worth replaying (and would make
+    // one enormous response): send the client to the merged state instead.
+    let tail_bytes: i64 = sqlx::query_scalar(
+        "SELECT COALESCE(SUM(LENGTH(update_data)), 0) FROM document_updates
+         WHERE doc_id = ? AND seq > ?",
+    )
+    .bind(doc_id)
+    .bind(params.since)
+    .fetch_one(&state.pool)
+    .await?;
+    if tail_bytes > MAX_CATCHUP_BYTES {
+        return Ok(Json(DocumentUpdateBatch {
+            updates: vec![],
+            truncated: true,
+        }));
+    }
     let rows: Vec<(i64, Vec<u8>)> = sqlx::query_as(
         "SELECT seq, update_data FROM document_updates WHERE doc_id = ? AND seq > ? ORDER BY seq",
     )
@@ -908,9 +1362,9 @@ pub async fn snapshot(
             "snapshot must be 1 byte to 4 MB",
         ));
     }
-    if serde_json::from_str::<serde_json::Value>(&req.doc_json).is_err() {
+    let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&req.doc_json) else {
         return Err(AppError::bad_request("bad_snapshot", "not valid JSON"));
-    }
+    };
     let name = match &req.name {
         Some(n) => {
             let n = n.trim();
@@ -936,13 +1390,20 @@ pub async fn snapshot(
     }
 
     let now = now_millis();
-    // The latest snapshot always refreshes the excerpt/list preview.
-    sqlx::query("UPDATE documents SET content_json = ?, updated_at = ? WHERE id = ?")
-        .bind(&req.doc_json)
-        .bind(now)
-        .bind(doc_id)
-        .execute(&state.pool)
-        .await?;
+    // The latest snapshot always refreshes the list's text, count and excerpt.
+    let stats = DocStats::of(&parsed);
+    sqlx::query(
+        "UPDATE documents SET content_json = ?, search_text = ?, word_count = ?, excerpt = ?,
+         updated_at = ? WHERE id = ?",
+    )
+    .bind(&req.doc_json)
+    .bind(&stats.text)
+    .bind(stats.words)
+    .bind(&stats.excerpt)
+    .bind(now)
+    .bind(doc_id)
+    .execute(&state.pool)
+    .await?;
 
     let hash = hex::encode(Sha256::digest(req.doc_json.as_bytes()));
     if kind == "auto" {
@@ -1485,7 +1946,8 @@ pub async fn list_folders(
 ) -> Result<Json<Vec<DocumentFolder>>, AppError> {
     let rows: Vec<(i64, String, i64, i64)> = sqlx::query_as(
         "SELECT f.id, f.name, f.created_at, COUNT(d.id)
-         FROM document_folders f LEFT JOIN documents d ON d.folder_id = f.id
+         FROM document_folders f
+         LEFT JOIN documents d ON d.folder_id = f.id AND d.deleted_at IS NULL
          WHERE f.owner_id = ? GROUP BY f.id ORDER BY f.name COLLATE NOCASE",
     )
     .bind(auth.user_id.0)
@@ -1518,6 +1980,7 @@ pub async fn create_folder(
     .bind(now)
     .fetch_one(&state.pool)
     .await?;
+    folders_changed(&state, auth.user_id);
     Ok(Json(DocumentFolder {
         id,
         name: name.to_string(),
@@ -1540,12 +2003,14 @@ pub async fn rename_folder(
         .execute(&state.pool)
         .await?;
     let (created_at, document_count): (i64, i64) = sqlx::query_as(
-        "SELECT f.created_at, (SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id)
+        "SELECT f.created_at,
+         (SELECT COUNT(*) FROM documents d WHERE d.folder_id = f.id AND d.deleted_at IS NULL)
          FROM document_folders f WHERE f.id = ?",
     )
     .bind(folder_id)
     .fetch_one(&state.pool)
     .await?;
+    folders_changed(&state, auth.user_id);
     Ok(Json(DocumentFolder {
         id: folder_id,
         name: name.to_string(),
@@ -1565,6 +2030,8 @@ pub async fn delete_folder(
         .bind(folder_id)
         .execute(&state.pool)
         .await?;
+    folders_changed(&state, auth.user_id);
+    list_changed(&state, auth.user_id);
     Ok(StatusCode::NO_CONTENT)
 }
 
@@ -1586,6 +2053,8 @@ pub async fn move_document(
         .execute(&state.pool)
         .await?;
     let (doc, _) = fetch_document(&state, doc_id).await?;
+    list_changed(&state, auth.user_id);
+    folders_changed(&state, auth.user_id);
     Ok(Json(doc))
 }
 
@@ -1600,7 +2069,9 @@ pub async fn share_folder(
 ) -> Result<Json<Vec<DocumentShare>>, AppError> {
     require_folder_owner(&state, folder_id, auth.user_id).await?;
     let doc_ids: Vec<(i64,)> =
-        sqlx::query_as("SELECT id FROM documents WHERE folder_id = ? AND owner_id = ? ORDER BY id")
+        sqlx::query_as(
+            "SELECT id FROM documents WHERE folder_id = ? AND owner_id = ? AND deleted_at IS NULL ORDER BY id",
+        )
             .bind(folder_id)
             .bind(auth.user_id.0)
             .fetch_all(&state.pool)

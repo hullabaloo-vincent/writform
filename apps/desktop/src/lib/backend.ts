@@ -100,6 +100,66 @@ export function noteAuthFailure(status: number, body: unknown): void {
   if (code === "expired_token" || code === "invalid_token") onUnauthorized?.();
 }
 
+/** What an export is; fixes the file's extension and the Save panel filter. */
+/** An on-device document in the organizer's list. */
+export interface LocalDocListing {
+  id: string;
+  title: string;
+  format: string;
+  updated_at: number;
+  /** 0 / empty for documents not saved since list metadata existed. */
+  words?: number;
+  excerpt?: string;
+}
+
+/** An on-device document in Recently Deleted. */
+export interface LocalTrashListing {
+  id: string;
+  title: string;
+  format: string;
+  deleted_at: number;
+  words: number;
+  excerpt: string;
+}
+
+export type SaveKind = "pdf" | "epub" | "docx" | "zip" | "wfboard";
+
+export type SaveResult =
+  | {
+      status: "saved";
+      /** Absolute path when the platform wrote a real file (desktop/iOS). */
+      path: string | null;
+      /** Where it went, in the user's words ("Downloads", "Files › …"). */
+      location: string;
+      /** The desktop file manager can show it (Show in Finder). */
+      revealable: boolean;
+    }
+  | { status: "cancelled" };
+
+export const SAVE_MIME: Record<SaveKind, string> = {
+  pdf: "application/pdf",
+  epub: "application/epub+zip",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  zip: "application/zip",
+  wfboard: "application/zip",
+};
+
+/** Browser save: a download. The URL outlives the click — revoking it
+ *  synchronously can cancel the download in some engines. */
+export function browserDownload(fileName: string, kind: SaveKind, bytes: Uint8Array): SaveResult {
+  const url = URL.createObjectURL(new Blob([bytes as BlobPart], { type: SAVE_MIME[kind] }));
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+  return { status: "saved", path: null, location: "your Downloads", revealable: false };
+}
+
 /** A ServerFrame from the WS, forwarded by the Rust core. */
 export type WsEvent =
   | { ev: "ready"; d: { user_id: number; server_time: number } }
@@ -149,14 +209,31 @@ export interface Backend {
   profileDelete(): Promise<void>;
 
   /** Documents stored on this device (meta only; state stays on disk). */
-  localdocList(): Promise<{ id: string; title: string; format: string; updated_at: number }[]>;
+  localdocList(): Promise<LocalDocListing[]>;
   /** Raw JSON payload of one local document (schema owned by the client). */
   localdocRead(id: string): Promise<string>;
-  localdocWrite(id: string, content: string): Promise<void>;
+  /** Save a document; `meta` (JSON: title, format, words, excerpt) is kept
+   *  beside it so the list never reads whole manuscripts. */
+  localdocWrite(id: string, content: string, meta?: string): Promise<void>;
+  /** Delete for good (Recently Deleted's purge goes through `localdocPurge`). */
   localdocDelete(id: string): Promise<void>;
-  /** Saved revisions of one local document; empty string when it has none. */
+  /** Move to Recently Deleted (with its history and notes) for 30 days. */
+  localdocTrash(id: string): Promise<void>;
+  localdocTrashList(): Promise<LocalTrashListing[]>;
+  localdocRestore(id: string): Promise<void>;
+  localdocPurge(id: string): Promise<void>;
+  localdocTrashEmpty(): Promise<void>;
+  /** Legacy (v1) single-file history; read once to migrate. Empty when none. */
   localdocHistoryRead(id: string): Promise<string>;
-  localdocHistoryWrite(id: string, content: string): Promise<void>;
+  /** Keep the migrated v1 file as `.v1.bak`. */
+  localdocHistoryRetire(id: string): Promise<void>;
+  /** History v2: the version index (JSON); empty string when none yet. */
+  localdocHistIndexRead(id: string): Promise<string>;
+  localdocHistIndexWrite(id: string, content: string): Promise<void>;
+  /** One compressed version's bytes (raw IPC body both ways). */
+  localdocHistBlobWrite(id: string, version: string, bytes: Uint8Array): Promise<void>;
+  localdocHistBlobRead(id: string, version: string): Promise<Uint8Array>;
+  localdocHistBlobDelete(id: string, version: string): Promise<void>;
   /** Feedback threads (notes-to-self) for a local document. */
   localdocFeedbackRead(id: string): Promise<string>;
   localdocFeedbackWrite(id: string, content: string): Promise<void>;
@@ -179,8 +256,9 @@ export interface Backend {
     filePath?: string;
     fileName?: string;
   }): Promise<ApiResponse>;
-  /** Save an export archive; resolves to a human-readable location. */
-  saveExport(fileName: string, dataBase64: string): Promise<string>;
+  /** Save an export the user asked for: the native Save panel on desktop,
+   *  the Files-visible Documents folder on iOS, a download on the web. */
+  saveFile(fileName: string, kind: SaveKind, bytes: Uint8Array): Promise<SaveResult>;
   /** Read a natively drag-dropped file so the importer can parse its bytes. */
   readDroppedFile(path: string): Promise<{ name: string; data_base64: string }>;
   /** Microphone authorization: not_determined | restricted | denied | authorized. */
@@ -260,10 +338,24 @@ function tauriBackend(): Backend {
     profileDelete: () => invoke("profile_delete"),
     localdocList: () => invoke("localdoc_list"),
     localdocRead: (id) => invoke("localdoc_read", { id }),
-    localdocWrite: (id, content) => invoke("localdoc_write", { id, content }),
+    localdocWrite: (id, content, meta) => invoke("localdoc_write", { id, content, meta: meta ?? null }),
     localdocDelete: (id) => invoke("localdoc_delete", { id }),
+    localdocTrash: (id) => invoke("localdoc_trash", { id }),
+    localdocTrashList: () => invoke("localdoc_trash_list"),
+    localdocRestore: (id) => invoke("localdoc_restore", { id }),
+    localdocPurge: (id) => invoke("localdoc_purge", { id }),
+    localdocTrashEmpty: () => invoke("localdoc_trash_empty"),
     localdocHistoryRead: (id) => invoke("localdoc_history_read", { id }),
-    localdocHistoryWrite: (id, content) => invoke("localdoc_history_write", { id, content }),
+    localdocHistoryRetire: (id) => invoke("localdoc_history_retire", { id }),
+    localdocHistIndexRead: (id) => invoke("localdoc_hist_index_read", { id }),
+    localdocHistIndexWrite: (id, content) => invoke("localdoc_hist_index_write", { id, content }),
+    localdocHistBlobWrite: async (id, version, bytes) => {
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      await raw("localdoc_hist_blob_write", bytes, { headers: { "x-doc": id, "x-version": version } });
+    },
+    localdocHistBlobRead: async (id, version) =>
+      new Uint8Array(await invoke<ArrayBuffer>("localdoc_hist_blob_read", { id, version })),
+    localdocHistBlobDelete: (id, version) => invoke("localdoc_hist_blob_delete", { id, version }),
     localdocFeedbackRead: (id) => invoke("localdoc_feedback_read", { id }),
     localdocFeedbackWrite: (id, content) => invoke("localdoc_feedback_write", { id, content }),
     localboardList: () => invoke("localboard_list"),
@@ -287,7 +379,17 @@ function tauriBackend(): Backend {
         filePath: filePath ?? null,
         fileName: fileName ?? null,
       }),
-    saveExport: (fileName, dataBase64) => invoke("save_export", { fileName, dataBase64 }),
+    saveFile: async (fileName, kind, bytes) => {
+      // Raw body (no base64 inflation); the name rides a header, which must
+      // be ASCII — hence the percent-encoding Rust undoes.
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      const saved = await raw<{ path: string; location: string; revealable: boolean } | null>(
+        "save_file",
+        bytes,
+        { headers: { "x-file-name": encodeURIComponent(fileName), "x-file-kind": kind } },
+      );
+      return saved ? { status: "saved", ...saved } : { status: "cancelled" };
+    },
     readDroppedFile: (path) => invoke("read_dropped_file", { path }),
     microphoneStatus: () => invoke("microphone_status"),
     requestMicrophoneAccess: () => invoke("request_microphone_access"),

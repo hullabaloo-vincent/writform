@@ -264,6 +264,16 @@ pub fn router(state: AppState) -> Router {
                 .delete(documents::delete_document),
         )
         .route(
+            "/api/v1/documents/{id}/restore",
+            post(documents::restore_document),
+        )
+        .route("/api/v1/document-trash", get(documents::list_trash))
+        .route("/api/v1/document-trash/empty", post(documents::empty_trash))
+        .route(
+            "/api/v1/document-trash/{id}",
+            delete(documents::purge_document),
+        )
+        .route(
             "/api/v1/documents/{id}/updates",
             get(documents::get_updates).post(documents::append_update),
         )

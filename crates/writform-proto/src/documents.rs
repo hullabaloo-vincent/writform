@@ -55,13 +55,29 @@ pub struct MoveDocumentRequest {
     pub folder_id: Option<i64>,
 }
 
-/// List entry: a document plus the caller's access to it.
+/// List entry: a document plus the caller's access to it, with what the
+/// organizer shows on its card. The extra fields default for servers that
+/// predate them (word count 0, no excerpt).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct DocumentListItem {
     pub document: Document,
     /// `owner` | `write` | `read`.
     pub my_access: String,
+    /// Words in the latest snapshot.
+    #[serde(default)]
+    #[ts(type = "number")]
+    pub word_count: i64,
+    /// The opening words of the text (empty until a snapshot exists).
+    #[serde(default)]
+    pub excerpt: String,
+    /// For a search: the text around the first match.
+    #[serde(default)]
+    pub snippet: Option<String>,
+    /// In Recently Deleted since (only in the trash listing).
+    #[serde(default)]
+    #[ts(type = "number | null")]
+    pub deleted_at: Option<UnixMillis>,
 }
 
 /// Detail for opening: compacted Yjs state (update v1, base64) current
@@ -93,7 +109,8 @@ pub struct UpdateDocumentRequest {
     pub format: Option<String>,
 }
 
-/// One merged batch of local Yjs edits (update v1, base64, ≤ 256 KB).
+/// One merged batch of local Yjs edits (update v1, base64). Clients batch to
+/// ≤ 192 KiB; the server accepts up to 4 MiB (413 `update_too_large` above).
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct AppendUpdateRequest {

@@ -8,7 +8,7 @@
  */
 
 import type { User } from "../bindings/proto/User";
-import { noteAuthFailure } from "./backend";
+import { browserDownload, noteAuthFailure } from "./backend";
 import type {
   ApiResponse,
   Backend,
@@ -288,8 +288,18 @@ export function webBackend(): Backend {
     localdocRead: notOnWeb("Local documents"),
     localdocWrite: notOnWeb("Local documents"),
     localdocDelete: notOnWeb("Local documents"),
+    localdocTrash: notOnWeb("Local documents"),
+    localdocTrashList: async () => [],
+    localdocRestore: notOnWeb("Local documents"),
+    localdocPurge: notOnWeb("Local documents"),
+    localdocTrashEmpty: notOnWeb("Local documents"),
     localdocHistoryRead: notOnWeb("Local documents"),
-    localdocHistoryWrite: notOnWeb("Local documents"),
+    localdocHistoryRetire: notOnWeb("Local documents"),
+    localdocHistIndexRead: notOnWeb("Local documents"),
+    localdocHistIndexWrite: notOnWeb("Local documents"),
+    localdocHistBlobWrite: notOnWeb("Local documents"),
+    localdocHistBlobRead: notOnWeb("Local documents"),
+    localdocHistBlobDelete: notOnWeb("Local documents"),
     localdocFeedbackRead: notOnWeb("Local documents"),
     localdocFeedbackWrite: notOnWeb("Local documents"),
     localboardList: async () => [],
@@ -319,18 +329,7 @@ export function webBackend(): Backend {
       return { status: res.status, body };
     },
     // Browser "save" is a download.
-    saveExport: async (fileName, dataBase64) => {
-      const bin = atob(dataBase64);
-      const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      const url = URL.createObjectURL(new Blob([bytes]));
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = fileName;
-      a.click();
-      URL.revokeObjectURL(url);
-      return "your Downloads folder";
-    },
+    saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
     readDroppedFile: notOnWeb("Native file drop"),
     // The browser raises its own permission prompts on getUserMedia.
     microphoneStatus: async () => "authorized",

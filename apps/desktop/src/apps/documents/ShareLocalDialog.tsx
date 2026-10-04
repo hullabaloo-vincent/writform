@@ -6,10 +6,12 @@ import * as Y from "yjs";
 import { backend, isCmdError } from "../../lib/backend";
 import { Modal } from "../../platform";
 import { documentsApi } from "./api";
-import { b64decode, b64encode } from "./collab";
-import { buildImportSeedUpdates } from "./import/importFile";
-import { activeLocalProvider, useLocalDocs } from "./local";
+import { b64decode } from "./collab";
+import { createServerDocument } from "./import/importFile";
+import { snapshotDocMaps, type DocMapsSnapshot } from "./docMaps";
+import { activeLocalProvider } from "./local";
 import { SharePicker } from "./SharePicker";
+import { openServerDoc } from "./navigation";
 import { useDocuments } from "./store";
 
 /** One-way publish of a local document to the connected server, mirroring
@@ -27,36 +29,34 @@ export function ShareLocalDialog({
   const [error, setError] = useState<string | null>(null);
   const [publishedId, setPublishedId] = useState<number | null>(null);
 
-  const loadContent = async (): Promise<JSONContent> => {
+  const loadContent = async (): Promise<{ content: JSONContent; maps: DocMapsSnapshot }> => {
     // Flush a live editor's debounce so the publish matches what's on screen.
     const prov = activeLocalProvider();
     if (prov && prov.id === meta.id) await prov.flush();
     const raw = await backend.localdocRead(meta.id);
     const file = JSON.parse(raw) as { state_b64?: string };
     const ydoc = new Y.Doc();
-    if (file.state_b64) Y.applyUpdate(ydoc, b64decode(file.state_b64));
-    let content = yDocToProsemirrorJSON(ydoc, "default") as JSONContent;
-    if (!content.content || content.content.length === 0) {
-      content = { type: "doc", content: [{ type: "paragraph" }] };
+    try {
+      if (file.state_b64) Y.applyUpdate(ydoc, b64decode(file.state_b64));
+      let content = yDocToProsemirrorJSON(ydoc, "default") as JSONContent;
+      if (!content.content || content.content.length === 0) {
+        content = { type: "doc", content: [{ type: "paragraph" }] };
+      }
+      // Page settings and book details travel with the text.
+      return { content, maps: snapshotDocMaps(ydoc) };
+    } finally {
+      ydoc.destroy();
     }
-    return content;
   };
 
   /** Create the server copy; returns its id. Rolls back on partial failure. */
   const publish = async (): Promise<number> => {
-    const content = await loadContent();
-    const updates = buildImportSeedUpdates(content);
-    const doc = await documentsApi.create(meta.title, meta.format);
-    try {
-      for (const update of updates) {
-        await documentsApi.appendUpdate(doc.id, b64encode(update));
-      }
-      await documentsApi.snapshot(doc.id, JSON.stringify(content), "Shared from this device");
-      return doc.id;
-    } catch (e) {
-      await documentsApi.remove(doc.id).catch(() => {});
-      throw e;
-    }
+    const { content, maps } = await loadContent();
+    const doc = await createServerDocument(meta.title, meta.format, content, maps, "Shared from this device");
+    // The new server copy belongs in the list right away.
+    const docs = useDocuments.getState();
+    if (docs.loaded) void docs.load().catch(() => {});
+    return doc.id;
   };
 
   const run = async (after?: (docId: number) => Promise<void>) => {
@@ -113,8 +113,7 @@ export function ShareLocalDialog({
               onClick={() => {
                 const id = publishedId;
                 onClose();
-                useLocalDocs.getState().close();
-                void useDocuments.getState().openDocument(id).catch(() => {});
+                void openServerDoc(id).catch(() => {});
               }}
             >
               Open server copy

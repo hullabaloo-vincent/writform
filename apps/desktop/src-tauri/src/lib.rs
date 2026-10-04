@@ -37,7 +37,8 @@ pub fn run() {
     let builder = builder
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::new().build());
+        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_dialog::init());
 
     #[cfg(mobile)]
     let builder = builder.plugin(tauri_plugin_haptics::init());
@@ -79,7 +80,7 @@ pub fn run() {
             host::host_reachability,
             commands::api::api_fetch,
             commands::api::upload_attachment,
-            commands::api::save_export,
+            commands::api::save_file,
             commands::api::read_dropped_file,
             media::microphone_status,
             media::request_microphone_access,
@@ -105,8 +106,18 @@ pub fn run() {
             localdocs::localdoc_read,
             localdocs::localdoc_write,
             localdocs::localdoc_delete,
+            localdocs::localdoc_trash,
+            localdocs::localdoc_trash_list,
+            localdocs::localdoc_restore,
+            localdocs::localdoc_purge,
+            localdocs::localdoc_trash_empty,
             localdocs::localdoc_history_read,
-            localdocs::localdoc_history_write,
+            localdocs::localdoc_history_retire,
+            localdocs::localdoc_hist_index_read,
+            localdocs::localdoc_hist_index_write,
+            localdocs::localdoc_hist_blob_write,
+            localdocs::localdoc_hist_blob_read,
+            localdocs::localdoc_hist_blob_delete,
             localdocs::localdoc_feedback_read,
             localdocs::localdoc_feedback_write,
             localboards::localboard_list,

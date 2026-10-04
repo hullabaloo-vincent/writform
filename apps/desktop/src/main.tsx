@@ -13,8 +13,10 @@ import { sessionsApp } from "./apps/sessions";
 import { installKeyboardInset } from "./lib/keyboardInset";
 import { installNotifications } from "./lib/notifications";
 import { installResync, registerApp } from "./platform";
+import { installLifecycle } from "./platform/lifecycle";
 import { loadEnabledPlugins } from "./platform/pluginHost";
 import { Root } from "./Root";
+import "./book/fonts/fonts.css";
 import "./styles.css";
 
 // Core apps register here, in dock order. Third-party plugins load through
@@ -34,6 +36,9 @@ void loadEnabledPlugins();
 
 // After a socket outage, stores re-fetch what they're showing.
 installResync();
+
+// Backgrounding / closing / quitting pushes unsent document edits out first.
+installLifecycle();
 
 // OS notifications for DMs, mentions, sessions, and friend activity.
 installNotifications();

@@ -9,8 +9,11 @@ import type { DocumentThread } from "../../bindings/proto/DocumentThread";
 import type { DocumentThreadMessage } from "../../bindings/proto/DocumentThreadMessage";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
 import { backend, isCmdError } from "../../lib/backend";
+import { onFlush } from "../../platform/lifecycle";
+import { onBeforeLogout, useSession } from "../../stores/session";
 import { documentsApi } from "./api";
 import { DocProvider } from "./collab";
+import { scopeOf } from "./sync/scope";
 
 /** The open document's live sync provider (module-level: one at a time). */
 let provider: DocProvider | null = null;
@@ -19,10 +22,50 @@ export function activeProvider(): DocProvider | null {
   return provider;
 }
 
+/**
+ * Providers on their way out: closing is instant for the user while the
+ * provider sends what's left in the background (anything it can't send stays
+ * in the outbox). Reopening the same document waits briefly for it.
+ */
+const retiring = new Map<number, Promise<void>>();
+const RETIRE_MS = 4000;
+const REOPEN_WAIT_MS = 2000;
+
+function retire(old: DocProvider, opts: { discard?: boolean } = {}) {
+  if (opts.discard) {
+    old.discard();
+    return;
+  }
+  const done = old.close(RETIRE_MS).finally(() => {
+    if (retiring.get(old.docId) === done) retiring.delete(old.docId);
+    // The list's dates and order moved while the document was open.
+    const s = useDocuments.getState();
+    if (s.loaded) void s.load().catch(() => {});
+  });
+  retiring.set(old.docId, done);
+}
+
+const EMPTY_DOC_STATE = {
+  activeDocId: null,
+  meta: null,
+  myAccess: null,
+  versions: [],
+  activities: [],
+  shares: [],
+  threads: [],
+};
+
 interface DocumentsState {
   items: DocumentListItem[];
   folders: DocumentFolder[];
   loaded: boolean;
+  /** Recently Deleted on the server. */
+  trash: DocumentListItem[];
+  /** Whether the server keeps deleted documents (null until asked; false on
+   *  servers that predate Recently Deleted — deleting is then permanent). */
+  trashSupported: boolean | null;
+  /** The last list load failed (shown with "Try again"). */
+  loadError: string | null;
   /** Panel the editor should open with (set by "Version history" etc.). */
   pendingPanel: "history" | "feedback" | null;
   activeDocId: number | null;
@@ -36,8 +79,10 @@ interface DocumentsState {
 
   load: () => Promise<void>;
   loadFolders: () => Promise<void>;
+  loadTrash: () => Promise<void>;
   openDocument: (id: number) => Promise<void>;
-  closeDocument: () => void;
+  /** `discard`: the document is gone (deleted) — drop unsent edits. */
+  closeDocument: (opts?: { discard?: boolean }) => void;
   refreshVersions: () => Promise<void>;
   refreshActivity: () => Promise<void>;
   refreshShares: () => Promise<void>;
@@ -49,19 +94,21 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
   items: [],
   folders: [],
   loaded: false,
+  trash: [],
+  trashSupported: null,
+  loadError: null,
   pendingPanel: null,
-  activeDocId: null,
-  meta: null,
-  myAccess: null,
-  versions: [],
-  activities: [],
-  shares: [],
-  threads: [],
+  ...EMPTY_DOC_STATE,
   error: null,
 
   load: async () => {
-    const items = await documentsApi.list();
-    set({ items, loaded: true });
+    try {
+      const items = await documentsApi.list();
+      set({ items, loaded: true, loadError: null });
+    } catch (e) {
+      set({ loadError: isCmdError(e) ? e.message : String(e) });
+      throw e;
+    }
   },
 
   loadFolders: async () => {
@@ -69,16 +116,31 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
     set({ folders });
   },
 
+  loadTrash: async () => {
+    try {
+      set({ trash: await documentsApi.trash(), trashSupported: true });
+    } catch (e) {
+      if ((e as { status?: number }).status === 404) set({ trash: [], trashSupported: false });
+      else throw e;
+    }
+  },
+
   openDocument: async (id) => {
     get().closeDocument();
     const next = new DocProvider(id);
     provider = next;
-    set({ activeDocId: id, meta: null, myAccess: null, versions: [], activities: [], shares: [], threads: [] });
+    set({ ...EMPTY_DOC_STATE, activeDocId: id });
     try {
+      // The previous provider for this document may still be sending.
+      const leaving = retiring.get(id);
+      if (leaving) {
+        await Promise.race([leaving, new Promise((r) => setTimeout(r, REOPEN_WAIT_MS))]);
+      }
+      if (provider !== next) return;
       const detail = await next.open();
       // A slow open may have been superseded or closed meanwhile.
       if (provider !== next) {
-        next.destroy();
+        void next.close(RETIRE_MS);
         return;
       }
       set({ meta: detail.document, myAccess: detail.my_access });
@@ -93,18 +155,11 @@ export const useDocuments = create<DocumentsState>((set, get) => ({
     }
   },
 
-  closeDocument: () => {
-    provider?.destroy();
+  closeDocument: (opts) => {
+    const old = provider;
     provider = null;
-    set({
-      activeDocId: null,
-      meta: null,
-      myAccess: null,
-      versions: [],
-      activities: [],
-      shares: [],
-      threads: [],
-    });
+    if (old) retire(old, opts);
+    set(EMPTY_DOC_STATE);
   },
 
   refreshVersions: async () => {
@@ -159,7 +214,10 @@ export function installDocumentsWsHandler(): () => void {
         items: s.items.filter((i) => i.document.id !== doc_id),
       }));
     } else if (kind === "document.listchanged") {
-      if (state.loaded) void state.load();
+      if (state.loaded) void state.load().catch(() => {});
+      if (state.trashSupported) void state.loadTrash().catch(() => {});
+    } else if (kind === "document.folders") {
+      void state.loadFolders().catch(() => {});
     } else if (kind === "document.version") {
       const meta = data as DocumentVersionMeta;
       if (state.activeDocId === meta.doc_id) {
@@ -201,9 +259,43 @@ export function installDocumentsWsHandler(): () => void {
   });
 }
 
-/** Open the documents app on a specific document (chat cards, canvas). */
+/** Open the documents app on a specific document (chat cards, canvas, ⌘K). */
 export async function openDocumentById(id: number): Promise<void> {
-  const { usePlatform } = await import("../../platform");
-  usePlatform.getState().setActiveApp("writform.documents");
-  await useDocuments.getState().openDocument(id);
+  const { openServerDoc } = await import("./navigation");
+  await openServerDoc(id);
 }
+
+// Leaving a server — sign-out, expiry, or switching servers — retires the
+// open document (its unsent edits stay in the outbox, pinned to the server
+// they belong to) and forgets this server's lists.
+let lastScope = scopeOf(useSession.getState());
+useSession.subscribe((s) => {
+  const scope = scopeOf(s);
+  if (scope === lastScope) return;
+  lastScope = scope;
+  const old = provider;
+  provider = null;
+  if (old) retire(old);
+  useDocuments.setState({
+    ...EMPTY_DOC_STATE,
+    items: [],
+    folders: [],
+    trash: [],
+    trashSupported: null,
+    loaded: false,
+    loadError: null,
+    pendingPanel: null,
+    error: null,
+  });
+});
+
+// Signing out waits (briefly) for the open document to send what it has.
+onBeforeLogout(async () => {
+  await provider?.flush(2000);
+});
+
+// Backgrounding, closing the window or quitting: push unsent edits now.
+onFlush({
+  pending: () => provider?.hasUnsent() ?? false,
+  flush: () => provider?.flush(1800) ?? Promise.resolve(),
+});
