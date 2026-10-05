@@ -11,6 +11,7 @@ import { loadFontFiles } from "../fonts/files";
 import type { BookModel } from "../model/types";
 import { smfNames } from "../smf/names";
 import type { BuiltFile } from "../ui/ExportBookDialog";
+import type { FaceBytes } from "./faces";
 import { designFor, ornamentFor, smfFamily } from "./layout";
 import type { JobImage, LayoutRequest, PrintKind, PrintResult, TypesetSession } from "./run";
 import type { DisplayList } from "./types";
@@ -83,12 +84,17 @@ type Reply =
   | { id: number; type: "laidout"; dl: DisplayList }
   | { id: number; type: "done"; result: PrintResult }
   | { id: number; type: "cancelled" }
-  | { id: number; type: "error"; message: string };
+  | { id: number; type: "error"; message: string }
+  | { id: number; type: "fonts"; families: string[] };
 
 interface Pending {
   resolve: (value: unknown) => void;
   reject: (err: unknown) => void;
   progress: (message: string) => void;
+  /** The request, to send again with fonts the worker turns out to lack. */
+  type: "layout" | "pdf";
+  req: LayoutRequest;
+  channel?: string;
 }
 
 class WorkerUnavailable extends Error {}
@@ -100,8 +106,13 @@ class Typesetter {
   private worker: Worker | null = null;
   private unavailable = false;
   private heard = false;
+  /** Families whose files the current worker has been sent. Only a hint:
+   *  a worker missing any asks for them. */
   private sent = new Set<string>();
   private pending = new Map<number, Pending>();
+  /** Requests under way, from the moment they start gathering fonts: the
+   *  worker isn't let go while there are any. */
+  private active = 0;
   private nextId = 1;
   private idle: ReturnType<typeof setTimeout> | null = null;
   private local: Promise<TypesetSession> | null = null;
@@ -109,15 +120,18 @@ class Typesetter {
   private spawn(): Worker | null {
     if (this.unavailable) return null;
     if (this.worker) return this.worker;
+    let worker: Worker;
     try {
-      this.worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
+      worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
     } catch {
       this.unavailable = true;
       return null;
     }
+    this.worker = worker;
     this.heard = false;
     this.sent.clear();
-    this.worker.onmessage = (e: MessageEvent<Reply>) => {
+    worker.onmessage = (e: MessageEvent<Reply>) => {
+      if (worker !== this.worker) return;
       this.heard = true;
       const msg = e.data;
       const p = this.pending.get(msg.id);
@@ -126,36 +140,45 @@ class Typesetter {
         p.progress(msg.message);
         return;
       }
+      if (msg.type === "fonts") {
+        void this.refill(worker, msg.id, msg.families);
+        return;
+      }
       this.pending.delete(msg.id);
       if (msg.type === "laidout") p.resolve(msg.dl);
       else if (msg.type === "done") p.resolve(msg.result);
       else if (msg.type === "cancelled") p.resolve(null);
       else p.reject(new Error(msg.message));
-      this.armIdle();
     };
-    this.worker.onerror = (e) => {
+    worker.onerror = (e) => {
       e.preventDefault();
+      if (worker !== this.worker) return;
       // Failing before ever answering means module workers can't run here
       // (or the script was blocked): use the main thread from now on.
       const cause = this.heard ? new Error(e.message || "The typesetter stopped unexpectedly.") : new WorkerUnavailable(e.message);
       if (!this.heard) this.unavailable = true;
       this.stop(cause);
     };
-    return this.worker;
+    return worker;
   }
 
   private stop(cause: unknown) {
     this.worker?.terminate();
     this.worker = null;
     this.sent.clear();
+    if (this.idle) clearTimeout(this.idle);
+    this.idle = null;
     for (const p of this.pending.values()) p.reject(cause);
     this.pending.clear();
   }
 
   private armIdle() {
     if (this.idle) clearTimeout(this.idle);
+    this.idle = null;
+    if (this.active || !this.worker) return;
     this.idle = setTimeout(() => {
-      if (!this.pending.size) this.stop(new Error("stopped"));
+      this.idle = null;
+      if (!this.active) this.stop(new Error("stopped"));
     }, IDLE_MS);
   }
 
@@ -164,33 +187,70 @@ class Typesetter {
     return this.local;
   }
 
+  /** Post a request; the files sent with it are the worker's from then on. */
+  private post(worker: Worker, id: number, p: Pending, fonts: FaceBytes[], refill = false) {
+    worker.postMessage({ id, type: p.type, req: p.req, fonts, channel: p.channel, refill }, fonts.map((f) => f.bytes.buffer));
+    for (const f of fonts) this.sent.add(f.family);
+  }
+
+  /** The worker lacks files it was thought to have: send them, with the
+   *  request again. */
+  private async refill(worker: Worker, id: number, families: string[]) {
+    for (const f of families) this.sent.delete(f);
+    try {
+      const fonts = await loadFontFiles(families);
+      const p = this.pending.get(id);
+      // Let go meanwhile, which settled the request.
+      if (!p || worker !== this.worker) return;
+      this.post(worker, id, p, fonts, true);
+    } catch (e) {
+      const p = this.pending.get(id);
+      if (!p) return;
+      this.pending.delete(id);
+      p.reject(e);
+    }
+  }
+
   private async send(
     type: "layout" | "pdf",
     req: LayoutRequest,
     onProgress: (message: string) => void,
     channel?: string,
   ): Promise<unknown> {
-    const worker = this.spawn();
-    if (worker) {
-      try {
+    this.active += 1;
+    if (this.idle) clearTimeout(this.idle);
+    this.idle = null;
+    try {
+      for (let worker = this.spawn(); worker; worker = this.spawn()) {
         const missing = req.families.filter((f) => !this.sent.has(f));
         const fonts = missing.length ? await loadFontFiles(missing) : [];
-        for (const f of missing) this.sent.add(f);
-        const id = this.nextId++;
-        if (this.idle) clearTimeout(this.idle);
-        return await new Promise((resolve, reject) => {
-          this.pending.set(id, { resolve, reject, progress: onProgress });
-          worker.postMessage({ id, type, req, fonts, channel }, fonts.map((f) => f.bytes.buffer));
-        });
-      } catch (e) {
-        if (!(e instanceof WorkerUnavailable)) throw e;
+        // It stopped while the files loaded: start over with a new one.
+        if (worker !== this.worker) continue;
+        try {
+          return await new Promise((resolve, reject) => {
+            const id = this.nextId++;
+            const p: Pending = { resolve, reject, progress: onProgress, type, req, channel };
+            this.pending.set(id, p);
+            try {
+              this.post(worker, id, p, fonts);
+            } catch (e) {
+              this.pending.delete(id);
+              reject(e);
+            }
+          });
+        } catch (e) {
+          if (!(e instanceof WorkerUnavailable)) throw e;
+        }
       }
+      // Main-thread fallback.
+      const session = await this.localSession();
+      const missing = session.missingFamilies(req.families);
+      if (missing.length) session.addFonts(await loadFontFiles(missing));
+      return type === "layout" ? (await session.layout(req, onProgress)).dl : await session.pdf(req, onProgress);
+    } finally {
+      this.active -= 1;
+      this.armIdle();
     }
-    // Main-thread fallback.
-    const session = await this.localSession();
-    const missing = session.missingFamilies(req.families);
-    if (missing.length) session.addFonts(await loadFontFiles(missing));
-    return type === "layout" ? (await session.layout(req, onProgress)).dl : session.pdf(req, onProgress);
   }
 
   /** Lay the book out (the preview). Null when a newer layout on the same

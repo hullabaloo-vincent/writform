@@ -8493,15 +8493,16 @@ body {
 
 /* Explicit page break: semantic in every format, so it lives on the
    generic content scopes. On screen it's a labeled dashed rule; in print
-   and export it's a real break. */
+   and export it's a real break. (Drawn by ::after, placed above the
+   paragraph: ::before carries a manuscript's chapter labels.) */
 .wf-doc-content .ProseMirror [data-page-break],
 .wf-rich .ProseMirror [data-page-break] {
   break-before: page;
   position: relative;
   margin-top: 30px;
 }
-.wf-doc-content .ProseMirror [data-page-break]::before,
-.wf-rich .ProseMirror [data-page-break]::before {
+.wf-doc-content .ProseMirror [data-page-break]::after,
+.wf-rich .ProseMirror [data-page-break]::after {
   content: "page break";
   position: absolute;
   top: -21px;
@@ -8599,7 +8600,28 @@ body {
 .wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break] {
   margin-top: 0;
 }
-.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break]::before {
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break]::after {
+  display: none;
+}
+
+/* In a book manuscript, the paragraph after a page break is set flush, as
+   after a heading or a scene break. A chapter starts a new page anyway, so
+   a break left on its heading shows nothing and keeps the heading's room. */
+.wf-fmt-manuscript .ProseMirror p[data-page-break] {
+  text-indent: 0;
+}
+.wf-fmt-manuscript .ProseMirror [data-element="chapter_heading"][data-page-break],
+.wf-fmt-manuscript .ProseMirror [data-element="section_heading"][data-page-break],
+.wf-fmt-manuscript .ProseMirror h1[data-page-break] {
+  margin-top: 3em;
+}
+.wf-fmt-manuscript .ProseMirror [data-element="part_heading"][data-page-break] {
+  margin-top: 4em;
+}
+.wf-fmt-manuscript .ProseMirror [data-element="chapter_heading"][data-page-break]::after,
+.wf-fmt-manuscript .ProseMirror [data-element="section_heading"][data-page-break]::after,
+.wf-fmt-manuscript .ProseMirror [data-element="part_heading"][data-page-break]::after,
+.wf-fmt-manuscript .ProseMirror h1[data-page-break]::after {
   display: none;
 }
 

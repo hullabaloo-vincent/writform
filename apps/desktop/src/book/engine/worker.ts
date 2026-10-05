@@ -3,11 +3,12 @@
  * never freezes the editor, and keeps one session (parsed fonts, shaped
  * words, laid-out chapters) alive between jobs.
  *
- * Messages in: { id, type: "layout" | "pdf", req, fonts?, channel? }.
+ * Messages in: { id, type: "layout" | "pdf", req, fonts?, channel?, refill? }.
  * Jobs run one at a time; a layout that's been overtaken by a newer one on
  * the same channel (the live preview while typing) is skipped. Out:
  * progress, then laidout (the display list), done (PDF bytes, transferred),
- * cancelled, or error.
+ * cancelled, or error — or fonts, asking for files the session doesn't have,
+ * after which the client sends the request again with them (refill).
  */
 
 import type { FaceBytes } from "./faces";
@@ -21,6 +22,8 @@ interface Request {
   fonts?: FaceBytes[];
   /** Layouts on one channel supersede each other. */
   channel?: string;
+  /** Sent again with the files this session asked for: run with what came. */
+  refill?: boolean;
 }
 
 const scope = self as unknown as {
@@ -35,7 +38,8 @@ let queue: Promise<void> = Promise.resolve();
 scope.onmessage = (e) => {
   const msg = e.data;
   if (msg.fonts?.length) session.addFonts(msg.fonts);
-  if (msg.channel) latest.set(msg.channel, msg.id);
+  // Ids only grow; a request sent again keeps its place in line.
+  if (msg.channel) latest.set(msg.channel, Math.max(latest.get(msg.channel) ?? 0, msg.id));
   queue = queue.then(() => run(msg));
 };
 
@@ -43,6 +47,14 @@ async function run(msg: Request) {
   const { id } = msg;
   if (msg.channel && latest.get(msg.channel) !== id) {
     scope.postMessage({ id, type: "cancelled" });
+    return;
+  }
+  // The client sends each family's files once per worker. If they never
+  // arrived here (this worker started while they were on their way to the
+  // one before), ask for them rather than fail.
+  const missing = session.missingFamilies(msg.req.families);
+  if (missing.length && !msg.refill) {
+    scope.postMessage({ id, type: "fonts", families: missing });
     return;
   }
   const progress = (message: string) => scope.postMessage({ id, type: "progress", message });

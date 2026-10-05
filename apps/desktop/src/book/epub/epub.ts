@@ -134,6 +134,7 @@ h1 .title { display: block; font-size: 1.35em; ${titleStyle} }
 .ornament { text-align: center; margin: -0.8em 0 1.6em; text-indent: 0; }
 h2.subhead { font-size: 1em; font-weight: normal; font-variant: small-caps; letter-spacing: 0.06em; text-align: center; margin: 1.6em 0 0.6em; }
 .scene-break { text-align: center; margin: 1em 0; letter-spacing: 0.3em; }
+.page-break { page-break-before: always; break-before: page; }
 blockquote { margin: 1em 2em;${d.blockquote === "indent-italic" ? " font-style: italic;" : d.blockquote === "smaller" ? " font-size: 0.92em;" : ""} }
 .verse { margin: 1em 2em; }
 .verse p { text-align: left; margin-bottom: 0.8em; }
@@ -434,9 +435,25 @@ function sectionXhtml(
   if (section.subtitle) parts.push(`<p class="subtitle">${esc(section.subtitle)}</p>`);
   if (design.headingOrnament && section.kind === "chapter") parts.push(`<p class="ornament">${esc(design.headingOrnament)}</p>`);
   if (section.epigraph) parts.push(epigraphXhtml(section.epigraph.paras, section.epigraph.attribution));
-  for (const block of section.blocks) parts.push(blockXhtml(block, ornament, book, imageFor));
+  let breakNext = false;
+  for (const block of section.blocks) {
+    if (block.kind === "pageBreak") {
+      breakNext = true;
+      continue;
+    }
+    const html = blockXhtml(block, ornament, book, imageFor);
+    if (!html) continue;
+    parts.push(breakNext ? pageBreakBefore(html) : html);
+    breakNext = false;
+  }
   parts.push("</section>");
   return parts.join("\n");
+}
+
+/** A page break: the block after it starts a new page in the reader (a
+ *  class on its opening tag — empty break elements aren't honored everywhere). */
+function pageBreakBefore(html: string): string {
+  return html.replace(/^<([a-z][a-z0-9]*)(?: class="([^"]*)")?/, (_, tag: string, cls?: string) => `<${tag} class="${cls ? `${cls} ` : ""}page-break"`);
 }
 
 function epigraphXhtml(paras: Run[][], attribution: Run[] | null): string {

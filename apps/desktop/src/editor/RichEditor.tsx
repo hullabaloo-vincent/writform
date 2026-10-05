@@ -37,7 +37,7 @@ import {
   TextFormat,
   togglePageBreakBefore,
 } from "./TextFormat";
-import { DocElement } from "./DocElement";
+import { DocElement, opensSection } from "./DocElement";
 
 /** Attachment images with the stored URL re-pointed at whichever platform
  *  is rendering (desktop protocol vs same-origin web path). */
@@ -132,7 +132,7 @@ export function Toolbar({
    *  editors only, and only for the Plain format. */
   typography?: boolean;
   /** The book manuscript's few direct controls: left/center/right (meaning,
-   *  not styling), block quote, and scene break. */
+   *  not styling), block quote, scene break, and page break. */
   manuscript?: boolean;
 }) {
   const fileRef = useRef<HTMLInputElement>(null);
@@ -323,6 +323,16 @@ export function Toolbar({
             <Asterisk size={15} />,
             () => chain().setHorizontalRule().run(),
           )}
+          {(() => {
+            const opens = opensSection(editor.state.selection.$from.parent);
+            return btn(
+              opens ? "Chapters always start on a new page" : "Page break — start this paragraph on a new page (⌘↩)",
+              <SeparatorHorizontal size={15} />,
+              () => togglePageBreakBefore(editor),
+              !opens && curTypography(editor).pageBreakBefore === true,
+              opens,
+            );
+          })()}
         </>
       )}
       {richBlocks && (

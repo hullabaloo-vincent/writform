@@ -3,6 +3,8 @@ import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/core";
 
 import { SCENE_MARK } from "../../../book/model/chapters";
+import { insertPageBreak } from "../../../editor/TextFormat";
+import { opensSection } from "./DocElement";
 import { FORMAT_SPECS } from "./elements";
 
 function currentElement(editor: Editor, format: string): string | null {
@@ -198,6 +200,22 @@ function handleEnter(editor: Editor, format: string): boolean {
 }
 
 /**
+ * ⌘↩ in a book manuscript: what follows the cursor starts a new page — a
+ * letter, a poem, an interlude on a page of its own. Like Enter, a line
+ * split here goes on as the element's follower. At the start of a chapter
+ * heading there's nothing to do: chapters always start on a new page. (The
+ * key is taken either way, so it never falls through to a line break.)
+ */
+function breakPage(editor: Editor, format: string): boolean {
+  const spec = FORMAT_SPECS[format];
+  const { $from, empty } = editor.state.selection;
+  if (empty && $from.parentOffset === 0 && opensSection($from.parent)) return true;
+  const follower = spec.follower[currentElement(editor, format) ?? ""] ?? spec.defaultElement;
+  insertPageBreak(editor, follower);
+  return true;
+}
+
+/**
  * Per-format keymap: Tab / Shift-Tab cycle the paragraph's element type,
  * Enter starts the format-defined follower element. Typing `INT.`/`EXT.`
  * at the start of a screenplay paragraph promotes it to a scene heading.
@@ -223,6 +241,7 @@ export function formatKeymap(format: string) {
           if (digit) shortcuts[`Mod-${digit}`] = () => setElement(this.editor, element.id);
         }
       }
+      if (format === "manuscript") shortcuts["Mod-Enter"] = () => breakPage(this.editor, format);
       return shortcuts;
     },
 

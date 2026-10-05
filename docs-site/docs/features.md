@@ -39,12 +39,15 @@ print-ready paperback, an ebook and a submission manuscript.
   Heading, Unnumbered Chapter (Prologue, Epilogue, Acknowledgments…),
   Chapter Subtitle, Subheading, Epigraph, Attribution, Verse and Body — ⌘1–9
   set them. Chapters number themselves ("Chapter Three" labels show beside
-  each heading); scene breaks are `* * *` + Enter or the toolbar button. You
-  write meaning, not layout: indents, fonts and spacing come from the book's
-  design, so editing the text can't break the book. In Manuscript, Tab only
-  changes an *empty* line's element (it never turns a sentence into a
-  heading), and pasted headings and `***` lines become chapters and scene
-  breaks.
+  each heading); scene breaks are `* * *` + Enter or the toolbar button. A
+  page break (⌘↩ / Ctrl+Enter, or the toolbar's page-break button) starts
+  what follows on a new page — a letter, a poem, an interlude on a page of
+  its own — in the print PDF, the ebook and the submission manuscript alike;
+  chapters start on a new page by themselves. You write meaning, not layout:
+  indents, fonts and spacing come from the book's design, so editing the
+  text can't break the book. In Manuscript, Tab only changes an *empty*
+  line's element (it never turns a sentence into a heading), and pasted
+  headings and `***` lines become chapters and scene breaks.
 - **Smart quotes and dashes** as you type (Settings ▸ Writing to turn off):
   curly quotes in the book's language style, `--` → —, `...` → ….
 - **Make it a book manuscript**: switching a Plain document to Manuscript (or

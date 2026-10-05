@@ -548,6 +548,12 @@ class Layout {
   private flow(rows: Row[], section: number, start: number, first: PageDraft | null) {
     let page = first ?? this.page("body", section, { head: !this.smf, folio: "normal" });
     let pos = first ? start : 0;
+    // A page break before the text: the heading keeps the opening page to
+    // itself. (On a page with nothing on it yet, there's nothing to part.)
+    if (first?.items.length && rows[0]?.forceBreak) {
+      page = this.page("body", section, { head: !this.smf, folio: "normal" });
+      pos = 0;
+    }
     let i = 0;
     while (i < rows.length) {
       let fit = this.fill(rows, i, pos);

@@ -9,6 +9,7 @@
 
 import type { JSONContent } from "@tiptap/core";
 
+import { SECTION_ELEMENTS } from "../../editor/DocElement";
 import { quoteStyleFor } from "../../editor/SmartPunctuation";
 import type { Book } from "./bookMap";
 import {
@@ -21,19 +22,15 @@ import {
 import { normalizeRuns } from "./punctuation";
 import type {
   Align,
+  Block,
   BookModel,
   EpigraphBlock,
   ParaBlock,
+  QuoteBlock,
   Run,
   Section,
   Warning,
 } from "./types";
-
-const HEADING_ELEMENTS: Record<string, "chapter" | "part" | "section"> = {
-  chapter_heading: "chapter",
-  part_heading: "part",
-  section_heading: "section",
-};
 
 function runsOf(node: JSONContent): Run[] {
   const runs: Run[] = [];
@@ -159,6 +156,13 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
 
   const ensure = (src: number): Section => current ?? open("untitled", src);
 
+  /** A page break the writer put in: what comes next starts a new page —
+   *  after a heading, too (the heading keeps its opening page to itself).
+   *  Before the first section there's no page to break. */
+  const breakPage = (src: number) => {
+    current?.blocks.push({ kind: "pageBreak", src });
+  };
+
   const pushPara = (node: JSONContent, src: number, runs: Run[]) => {
     const section = ensure(src);
     const element = (node.attrs?.element as string | null) ?? null;
@@ -196,6 +200,7 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
         const kind = parseHeading(text, "part").labelled && format !== "manuscript" ? "part" : "chapter";
         open(kind, src, text);
       } else {
+        if (node.attrs?.pageBreakBefore) breakPage(src);
         ensure(src).blocks.push({ kind: "subheading", runs: fix(runs), src });
         fresh = true;
       }
@@ -205,13 +210,20 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
     if (type === "paragraph") {
       const runs = runsOf(node);
       const text = textOf(runs);
-      const headingKind = element ? HEADING_ELEMENTS[element] : undefined;
+      const headingKind = element ? SECTION_ELEMENTS.get(element) : undefined;
       if (headingKind) {
         open(headingKind, src, text.trim());
         return;
       }
+      // Any line can start a new page — verse, an epigraph, a letter's first
+      // line — except a chapter's subtitle, which belongs to its heading.
+      if (node.attrs?.pageBreakBefore && !(element === "chapter_subtitle" && current && inOpener)) {
+        breakPage(src);
+        fresh = true;
+      }
       if (!text.trim()) {
-        blankLines += 1;
+        // An empty line there just to carry a page break isn't spacing.
+        if (!node.attrs?.pageBreakBefore) blankLines += 1;
         return;
       }
       if (element === "chapter_subtitle" && current && inOpener) {
@@ -226,7 +238,8 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
       }
       if (element === "epigraph") {
         const section = ensure(src);
-        const existing = lastEpigraph(section);
+        // A line put on a new page doesn't join the epigraph before it.
+        const existing = node.attrs?.pageBreakBefore ? null : lastEpigraph(section);
         if (existing && !existing.attribution) {
           existing.paras.push(fix(runs));
         } else {
@@ -262,10 +275,6 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
         fresh = true;
         return;
       }
-      if (node.attrs?.pageBreakBefore && current && current.blocks.length) {
-        current.blocks.push({ kind: "pageBreak", src });
-        fresh = true;
-      }
       pushPara(node, src, runs);
       return;
     }
@@ -282,14 +291,24 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
     }
 
     if (type === "blockquote") {
-      const paras = (node.content ?? [])
-        .filter((c) => c.type === "paragraph")
-        .map((c) => ({ runs: fix(runsOf(c)), align: alignOf(c) }))
-        .filter((p) => textOf(p.runs).trim());
-      if (paras.length) {
+      // A page break inside a letter or extract continues it on a new page.
+      let paras: QuoteBlock["paras"] = [];
+      const flush = () => {
+        if (!paras.length) return;
         ensure(src).blocks.push({ kind: "blockquote", paras, src });
         current!.words += paras.reduce((n, p) => n + wordsIn(textOf(p.runs)), 0);
+        paras = [];
+      };
+      for (const c of node.content ?? []) {
+        if (c.type !== "paragraph") continue;
+        if (c.attrs?.pageBreakBefore) {
+          flush();
+          breakPage(src);
+        }
+        const para = { runs: fix(runsOf(c)), align: alignOf(c) };
+        if (textOf(para.runs).trim()) paras.push(para);
       }
+      flush();
       inOpener = false;
       return;
     }
@@ -319,10 +338,22 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
     }
   });
 
-  // Scene breaks never open or close a section.
+  // Breaks. A scene break against a page break moves to the new page's
+  // top, where the engine shows its ornament (as at any page turn); repeats
+  // collapse; no section ends on a break, and none opens on a scene break
+  // (a page break there parts the text from the heading, so it stays).
+  const isBreak = (b: Block | undefined) => b?.kind === "scene" || b?.kind === "pageBreak";
   for (const section of sections) {
-    while (section.blocks[0]?.kind === "scene") section.blocks.shift();
-    while (section.blocks[section.blocks.length - 1]?.kind === "scene") section.blocks.pop();
+    const blocks = section.blocks;
+    for (let i = blocks.length - 2; i >= 0; i -= 1) {
+      if (blocks[i].kind === "scene" && blocks[i + 1].kind === "pageBreak") {
+        [blocks[i], blocks[i + 1]] = [blocks[i + 1], blocks[i]];
+      }
+    }
+    section.blocks = blocks.filter((b, i) => !(isBreak(b) && blocks[i - 1]?.kind === b.kind));
+    const lead = section.blocks[0]?.kind === "pageBreak" ? 1 : 0;
+    while (section.blocks[lead]?.kind === "scene") section.blocks.splice(lead, 1);
+    while (isBreak(section.blocks[section.blocks.length - 1])) section.blocks.pop();
     if (section.kind === "chapter" && section.blocks.length === 0) {
       warnings.push({ kind: "empty-section", message: `${section.label || section.title || "A chapter"} has no text.`, src: section.src });
     }

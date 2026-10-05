@@ -85,7 +85,8 @@ interface TextFormatOptions {
   shortcuts: boolean;
   /** Bind just ⌘⇧L/E/R (left/center/right) — Manuscript, where alignment
    *  is meaning (a centered sign, a right-set sign-off) but justification
-   *  and page breaks belong to the book design. */
+   *  belongs to the book design. (Its ⌘↩ page break is the format keymap's,
+   *  which knows what the line after the break should be.) */
   alignShortcuts: boolean;
 }
 
@@ -269,11 +270,37 @@ export function togglePageBreakBefore(editor: Editor): boolean {
   return setTypography(editor, { pageBreakBefore: cur ? null : true });
 }
 
-/** Word's ⌘↩: split the paragraph and start the new one on a fresh page. */
-export function insertPageBreak(editor: Editor): boolean {
+/**
+ * Word's ⌘↩: what follows the cursor starts on a new page. At the start of
+ * a paragraph (or on an empty one) that's the paragraph itself, and no
+ * empty line is left behind on the page before. Anywhere else the paragraph
+ * splits there; `element` sets the new half's element (a manuscript's next
+ * line) and a line break just before the cursor goes with the split.
+ */
+export function insertPageBreak(editor: Editor, element?: string | null): boolean {
+  const { $from, empty } = editor.state.selection;
+  const block = $from.parent;
+  if (block.type.name !== "paragraph" && block.type.name !== "heading") return false;
+  if (empty && $from.parentOffset === 0) {
+    return editor
+      .chain()
+      .focus()
+      .command(({ tr, dispatch }) => {
+        if (dispatch && !block.attrs.pageBreakBefore) {
+          tr.setNodeMarkup($from.before(), undefined, { ...block.attrs, pageBreakBefore: true });
+        }
+        return true;
+      })
+      .run();
+  }
+  const lineBreakBefore = empty && $from.nodeBefore?.type.name === "hardBreak";
   return editor
     .chain()
     .focus()
+    .command(({ tr, dispatch }) => {
+      if (dispatch && lineBreakBefore) tr.delete($from.pos - 1, $from.pos);
+      return true;
+    })
     .splitBlock()
     .command(({ tr, dispatch }) => {
       const { $from } = tr.selection;
@@ -283,6 +310,7 @@ export function insertPageBreak(editor: Editor): boolean {
         tr.setNodeMarkup($from.before(), undefined, {
           ...node.attrs,
           pageBreakBefore: true,
+          ...(element !== undefined && node.type.name === "paragraph" ? { element } : {}),
         });
       }
       return true;

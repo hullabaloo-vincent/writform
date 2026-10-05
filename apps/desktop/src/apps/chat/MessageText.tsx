@@ -26,11 +26,18 @@ const INLINE_RE = new RegExp(
     "\\[([^\\]\\n]+)\\]\\((https?://[^\\s)]+)\\)", // 5 label, 6 url
     "(https?://[^\\s<>]+)", // 7 bare url
     ":([a-z0-9_]{1,32}):", // 8 emote name
-    "(?<=^|[^A-Za-z0-9_-])@([A-Za-z0-9_-]{3,32})", // 9 @mention
-    "(?<=^|\\s)#([a-z0-9][a-z0-9_-]{0,31})", // 10 #channel
+    "@([A-Za-z0-9_-]{3,32})", // 9 @mention
+    "#([a-z0-9][a-z0-9_-]{0,31})", // 10 #channel
   ].join("|"),
   "g",
 );
+
+// What may come just before a mention / a channel reference (or nothing:
+// the start of the text). Checked on the previous character instead of with
+// a lookbehind, which WebKit only supports from Safari 16.4 — on older iOS
+// and macOS the pattern throws as this module loads and the app can't start.
+const BEFORE_MENTION = /[^A-Za-z0-9_-]/;
+const BEFORE_CHANNEL = /\s/;
 
 interface RenderCtx {
   emotes: Map<string, Emote>;
@@ -47,6 +54,12 @@ function renderInline(text: string, ctx: RenderCtx, keyBase: string): ReactNode[
   let m: RegExpExecArray | null;
   INLINE_RE.lastIndex = 0;
   while ((m = INLINE_RE.exec(text)) !== null) {
+    if ((m[9] || m[10]) && m.index > 0 && !(m[9] ? BEFORE_MENTION : BEFORE_CHANNEL).test(text[m.index - 1])) {
+      // Mid-word (an email address, "issue#4"): not a mention or reference.
+      // Nothing else can start at this character, so look on from the next.
+      INLINE_RE.lastIndex = m.index + 1;
+      continue;
+    }
     const key = `${keyBase}-${n++}`;
     let node: ReactNode = null;
     if (m[1]) node = <code key={key}>{m[1].slice(1, -1)}</code>;

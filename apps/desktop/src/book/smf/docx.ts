@@ -101,53 +101,56 @@ export async function buildManuscriptDocx(model: BookModel): Promise<Uint8Array>
     }
     if (s.subtitle) body.push(p(text(s.subtitle), centered));
     const epigraphs = s.epigraph ? [s.epigraph] : [];
+    // A page break goes on the paragraph after it: an empty paragraph of
+    // its own would leave a blank line at the top of the page.
+    let breakNext = false;
+    const add = (inner: string, pPr = "") => {
+      body.push(p(inner, (breakNext ? "<w:pageBreakBefore/>" : "") + pPr));
+      breakNext = false;
+    };
     for (const block of [...epigraphs, ...s.blocks]) {
       switch (block.kind) {
         case "para":
-          body.push(
-            p(
-              runs(block.runs),
-              block.align === "center" ? centered : block.align === "right" ? '<w:ind w:firstLine="0"/><w:jc w:val="right"/>' : "",
-            ),
+          add(
+            runs(block.runs),
+            block.align === "center" ? centered : block.align === "right" ? '<w:ind w:firstLine="0"/><w:jc w:val="right"/>' : "",
           );
           break;
         case "scene":
-          body.push(p(text("#"), centered));
+          add(text("#"), centered);
           break;
         case "subheading":
-          body.push(p(runs(block.runs), centered));
+          add(runs(block.runs), centered);
           break;
         case "blockquote":
           for (const para of block.paras) {
-            body.push(p(runs(para.runs), '<w:ind w:left="720" w:right="720" w:firstLine="0"/>'));
+            add(runs(para.runs), '<w:ind w:left="720" w:right="720" w:firstLine="0"/>');
           }
           break;
         case "verse":
-          body.push(
-            p(
-              block.lines.map((line, i) => (i ? "<w:r><w:br/></w:r>" : "") + runs(line)).join(""),
-              '<w:ind w:left="720" w:firstLine="0"/>',
-            ),
+          add(
+            block.lines.map((line, i) => (i ? "<w:r><w:br/></w:r>" : "") + runs(line)).join(""),
+            '<w:ind w:left="720" w:firstLine="0"/>',
           );
           break;
         case "epigraph":
           for (const para of block.paras) {
-            body.push(p(runs(para), '<w:ind w:left="1440" w:right="720" w:firstLine="0"/>'));
+            add(runs(para), '<w:ind w:left="1440" w:right="720" w:firstLine="0"/>');
           }
           if (block.attribution) {
-            body.push(p(`${text("— ")}${runs(block.attribution)}`, '<w:ind w:firstLine="0"/><w:jc w:val="right"/>'));
+            add(`${text("— ")}${runs(block.attribution)}`, '<w:ind w:firstLine="0"/><w:jc w:val="right"/>');
           }
           break;
         case "list":
           block.items.forEach((item, i) => {
-            body.push(p(`${text(block.ordered ? `${i + 1}. ` : "• ")}${runs(item)}`, '<w:ind w:left="720" w:firstLine="0"/>'));
+            add(`${text(block.ordered ? `${i + 1}. ` : "• ")}${runs(item)}`, '<w:ind w:left="720" w:firstLine="0"/>');
           });
           break;
         case "pageBreak":
-          body.push(p("", "<w:pageBreakBefore/>"));
+          breakNext = true;
           break;
         case "image":
-          body.push(p(text(`[Image${block.alt ? `: ${block.alt}` : ""}]`), centered));
+          add(text(`[Image${block.alt ? `: ${block.alt}` : ""}]`), centered);
           break;
       }
     }
