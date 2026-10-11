@@ -7,7 +7,7 @@ import {
   Minus,
   Plus,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import { curRun, type FormatContext } from "../../editor/format/effective";
@@ -44,6 +44,7 @@ import {
   updateDocSettings,
   type DocSettings,
   type PageNumberFormat,
+  type SetupSection,
 } from "./docSettings";
 import { HeaderFooterForm } from "./HeaderFooterForm";
 
@@ -54,12 +55,15 @@ import { HeaderFooterForm } from "./HeaderFooterForm";
  * per-document settings). Document format only; the scripted formats carry
  * their own fixed conventions.
  */
+const tabOf = (section: SetupSection): "text" | "document" => (section === "indents" ? "text" : "document");
+
 export function DocSettingsPanel({
   editor,
   ydoc,
   settings,
   readonly,
   format,
+  at = null,
 }: {
   editor: Editor | null;
   ydoc: Y.Doc;
@@ -67,8 +71,33 @@ export function DocSettingsPanel({
   readonly: boolean;
   /** The document's styles, and the schema level it may use here. */
   format: FormatContext;
+  /** Show this part: its tab, scrolled to, its first control focused. `n`
+   *  changes with every request, so asking for the same part twice works. */
+  at?: { section: SetupSection; n: number } | null;
 }) {
-  const [tab, setTab] = useState<"text" | "document">(readonly ? "document" : "text");
+  const [tab, setTab] = useState<"text" | "document">(at ? tabOf(at.section) : readonly ? "document" : "text");
+  const panelRef = useRef<HTMLElement>(null);
+  const asked = at ? `${at.section}:${at.n}` : null;
+  useEffect(() => {
+    if (!at) return;
+    setTab(tabOf(at.section));
+    // Once that tab is on screen: bring the part into view and mark it for a
+    // moment, so the eye finds what was asked for.
+    const timer = setTimeout(() => {
+      const part = panelRef.current?.querySelector<HTMLElement>(`[data-setup="${at.section}"]`);
+      if (!part) return;
+      part.scrollIntoView?.({ block: "start", behavior: "smooth" });
+      part.classList.add("wf-inspector-asked");
+      setTimeout(() => part.classList.remove("wf-inspector-asked"), 1600);
+      // A field to type in, if the part has one; else its first control.
+      const first =
+        part.querySelector<HTMLElement>('input:not([disabled]):not([type="checkbox"]):not([type="radio"])') ??
+        part.querySelector<HTMLElement>("select:not([disabled]), button:not([disabled])");
+      first?.focus({ preventScroll: true });
+    }, 30);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed by the request, not the object
+  }, [asked]);
   // What the document uses and knows about its fonts, for the pickers.
   const [table, setTable] = useState(() => readDocFontTable(ydoc));
   useEffect(() => {
@@ -87,7 +116,7 @@ export function DocSettingsPanel({
     onUsed: (id, info) => noteDocFont(ydoc, id, info),
   };
   return (
-    <aside className="wf-doc-panel wf-inspector">
+    <aside className="wf-doc-panel wf-inspector" ref={panelRef}>
       <header className="wf-doc-panel-header wf-inspector-tabs">
         <button className={tab === "text" ? "active" : ""} onClick={() => setTab("text")}>
           Text
@@ -304,7 +333,7 @@ function TextTab({
       </section>
 
       {rich && (
-        <section>
+        <section data-setup="indents">
           <h4>Indents</h4>
           <div className="wf-inspector-row">
             <span>Left</span>
@@ -465,7 +494,7 @@ function DocumentTab({
   const indents = withCurrent(DOC_INDENTS, settings.firstIndent);
   return (
     <div className="wf-inspector-body">
-      <section>
+      <section data-setup="paper">
         <h4>Paper</h4>
         <label className="wf-inspector-row">
           <span>Size</span>
@@ -509,7 +538,7 @@ function DocumentTab({
         </p>
       </section>
 
-      <section>
+      <section data-setup="margins">
         <h4>Margins</h4>
         <div className="wf-inspector-grid">
           <InchStepper label="Top" value={settings.mt} disabled={disabled} onChange={(mt) => onPatch({ mt })} />
@@ -543,7 +572,7 @@ function DocumentTab({
         )}
       </section>
 
-      <section>
+      <section data-setup="header">
         <h4>Header and footer</h4>
         <HeaderFooterForm settings={settings} disabled={disabled} onPatch={onPatch} />
         <div className="wf-inspector-grid">
@@ -570,7 +599,7 @@ function DocumentTab({
         </label>
       </section>
 
-      <section>
+      <section data-setup="body">
         <h4>Body text</h4>
         <div className="wf-inspector-row">
           <span>Font</span>
@@ -719,6 +748,19 @@ export function InchStepper({
     onChange(Math.min(max, Math.max(min, units / k)));
   };
   const shown = parseFloat(value.toFixed(3));
+  // The figure can be typed too (a margin of 1.1 in is on no step): kept as
+  // typed until Enter or leaving the field, then held to the range.
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft === null) return;
+    // "0,75" and "2 in" are numbers too; "wide" is not (and not zero).
+    const figure = draft.replace(",", ".").replace(/[^0-9.+-]/g, "");
+    const n = Number(figure);
+    setDraft(null);
+    if (!figure || !Number.isFinite(n)) return;
+    const next = Math.round(Math.min(max, Math.max(min, n)) * 1000) / 1000;
+    if (next !== value) onChange(next);
+  };
   return (
     <div className="wf-inspector-stepper">
       <span className="wf-inspector-stepper-label">{label}</span>
@@ -731,7 +773,32 @@ export function InchStepper({
         >
           <Minus size={12} />
         </button>
-        <span>{shown} in</span>
+        <label className="wf-inspector-stepper-value">
+          <input
+            type="text"
+            inputMode="decimal"
+            aria-label={`${label}, inches`}
+            disabled={disabled}
+            value={draft ?? String(shown)}
+            onChange={(e) => setDraft(e.target.value)}
+            onFocus={(e) => e.currentTarget.select()}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                commit();
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                setDraft(null);
+                e.currentTarget.blur();
+              } else if (e.key === "ArrowUp" || e.key === "ArrowDown") {
+                e.preventDefault();
+                setDraft(null);
+                move(e.key === "ArrowUp" ? 1 : -1);
+              }
+            }}
+          />
+          <span>in</span>
+        </label>
         <button
           type="button"
           title={`${label} +`}

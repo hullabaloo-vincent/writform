@@ -133,13 +133,39 @@ print-ready paperback, an ebook and a submission manuscript.
   while the caret is in a table, and a **Picture** tab while a picture is
   selected. **Review** — Editing, Suggesting or Viewing, the suggested
   changes (next, previous, accept, reject), comments, history, compare,
-  find, read aloud, preview and print. Groups that don't fit the window
-  fold into a ⋯ menu; on a phone the ribbon is one row that scrolls, and its
-  menus open as sheets. While the phone's keyboard is up for the text, the
+  find, read aloud, preview and print. Each tab's row holds only what is
+  used every day; the rest is one click away under a **More** (⋯) button
+  beside it — *More text formatting* (strikethrough, sub- and superscript,
+  inline code, larger/smaller, change case, copy formatting, clear
+  formatting), *More paragraph formatting* (shading, borders, sort, show
+  ¶), and a **More** on Insert, Layout and Review. A More button is lit
+  while something inside it is switched on. Alignment is one menu; a
+  list's style menu shows while the caret is in a list; Accept and Reject
+  show when there are suggestions to decide. Groups that don't fit the
+  window fold into a ⋯ menu at the end of the row; on a phone the ribbon
+  is one row that scrolls, and its menus open as sheets. While the phone's keyboard is up for the text, the
   row sits on the keyboard, under your thumbs — and goes back to the top
   when you type somewhere else (the title, a comment, a search). The
   scripted formats keep their own toolbars (which ride on the keyboard the
   same way) and professional layouts.
+- **Selection menu**: select words with the mouse and a small menu appears
+  above them — **bold**, **italic**, **underline**, text **colour**,
+  **highlight**, **link**, **comment** and **clear formatting** — so the
+  commonest changes need no trip to the ribbon. It never takes the caret
+  out of the text; Escape, or clicking anywhere, puts it away, and it
+  follows the selection as the page scrolls (and goes when the selection
+  scrolls out of view). Its last button — the sliders — chooses what it
+  holds: tick strikethrough, sub- and superscript or inline code in, tick
+  anything out, or switch the menu off; Settings ▸ Writing has the same
+  choices (and switches it back on). (On a touch
+  screen the system's own selection menu is left alone; the toolbar sits on
+  the keyboard instead.)
+- **Links**: put the caret on a link and a small panel beside it says
+  where it goes, with **Open**, **Copy**, **Edit** (its address and its
+  words) and **Remove**. A click in the text only places the caret, so a
+  link is never followed by accident; ⌘/Ctrl-click follows it, and in a
+  document you can only read, any click does. Links open in your browser
+  (or mail program), never inside the app. Escape puts the panel away.
 - **Styles** (Document format): Normal, No Spacing, Title, Subtitle,
   Heading 1–6, Quote and Caption, each shown in its own look — and styles
   of your own. *Modify…* changes what a style looks like everywhere it's
@@ -152,12 +178,17 @@ print-ready paperback, an ebook and a submission manuscript.
 - **Format painter**: click it, then select other text — it takes the
   formatting of the words you were on (and whole paragraphs take the
   paragraph's alignment, spacing and indents too). Escape puts it down.
-- **Pasting from Word, Google Docs and the web** (Document format) keeps
-  bold, italics, colours, highlights, sub/superscripts and lists — Word's
-  typed-out bullets become real lists — and takes on this document's body
-  font and size, so a paste doesn't arrive in Calibri 11. Text that differed
-  from its surroundings (a larger line, another typeface) keeps the
-  difference. ⌘⇧V still pastes plain text.
+- **Pasting from Word, Google Docs and the web** (Document format)
+  **matches this document** by default: the words come in with their
+  structure (paragraphs, headings, lists — Word's typed-out bullets become
+  real lists — tables, links) and their emphasis (bold, italics, underline,
+  sub/superscripts), and leave their look behind: typeface, size, colour,
+  highlight, alignment, indents and spacing are this document's. A small
+  strip under the paste says so and offers **Keep its styling** — one click
+  brings the colours, highlights, alignment and differing fonts and sizes
+  back (and **Match this document** switches again). The choice stays until
+  you type the next thing; Escape or the × settles it sooner. What you copy
+  inside the app pastes exactly as it was. ⌘⇧V still pastes plain text.
 - **Tables** (Document format): Insert ▸ Table, then type; Tab moves to the
   next cell and adds a row after the last. The Table tab adds and deletes
   rows and columns, merges and splits cells, marks a **header row** (set
@@ -177,7 +208,10 @@ print-ready paperback, an ebook and a submission manuscript.
   one at once. In preview, print and PDF a footnote sits at the foot of the
   page that cites it (running over to the next page if it must) and
   endnotes close the document; clicking a reference in the PDF goes to its
-  note. A note's words aren't counted in the word count.
+  note. A note's words aren't counted in the word count. While you write,
+  every note is also listed under the document's last page — **Footnotes**
+  and **Endnotes**, each with its number: click a note's words to change
+  them right there, or its number to go to the sentence that cites it.
 - **Table of contents** (Document format): Insert ▸ Contents lists the
   document's headings and keeps itself up to date; click an entry to go to
   it. On paper each entry has its page number and a row of dots, and in the

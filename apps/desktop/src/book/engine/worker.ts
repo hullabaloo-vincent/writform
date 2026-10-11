@@ -9,6 +9,13 @@
  * progress, then laidout (the display list), done (PDF bytes, transferred),
  * pages (a document's page map), cancelled, or error — or fonts, asking for files the session doesn't have,
  * after which the client sends the request again with them (refill).
+ *
+ * The first thing out, before any job, is { type: "ready" }: this script and
+ * everything it imports loaded. A worker has no `window` and no `document`,
+ * so one import that reaches for either stops the whole script before it
+ * can say anything — the client waits for "ready" and, not hearing it, does
+ * the work on the main thread instead (see client.ts; harness/worker.test.ts
+ * runs this file where there is no window).
  */
 
 import type { FaceBytes } from "./faces";
@@ -42,6 +49,8 @@ scope.onmessage = (e) => {
   if (msg.channel) latest.set(msg.channel, Math.max(latest.get(msg.channel) ?? 0, msg.id));
   queue = queue.then(() => run(msg));
 };
+
+scope.postMessage({ type: "ready" });
 
 async function run(msg: Request) {
   const { id } = msg;

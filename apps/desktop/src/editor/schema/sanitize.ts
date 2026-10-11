@@ -232,3 +232,65 @@ export function encodeSection(p: SectionProps | null): string | null {
   }
   return tokens.join(" ");
 }
+
+// ---------------------------------------------------------------- pictures, notes, contents, tables
+//
+// These belong to nodes whose own modules build views in the page (and
+// reach the app's backend). The page layout reads the same attributes in a
+// worker, where there is no page — so the readers live here, with nothing
+// imported, and the node modules re-export them.
+
+export type ImageAlign = "left" | "center" | "right";
+export const imageAlign = (v: unknown): ImageAlign | null => (v === "left" || v === "center" || v === "right" ? v : null);
+export const CAPTION_MAX = 500;
+export const imageCaption = (v: unknown): string | null => {
+  const text = typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, CAPTION_MAX) : "";
+  return text || null;
+};
+
+export type NoteKind = "foot" | "end";
+export const noteKind = (v: unknown): NoteKind => (v === "end" ? "end" : "foot");
+
+/** How a note's number is written: 1, 2, 3 for footnotes; i, ii, iii for
+ *  endnotes (Word's own defaults). */
+export function noteNumber(n: number, kind: NoteKind): string {
+  if (kind === "foot") return String(n);
+  const table: [number, string][] = [
+    [1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"],
+    [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"],
+  ];
+  let rest = Math.max(1, Math.min(3999, n));
+  let out = "";
+  for (const [value, glyph] of table) {
+    while (rest >= value) {
+      out += glyph;
+      rest -= value;
+    }
+  }
+  return out;
+}
+
+export const TOC_DEPTH = 3;
+export const tocDepth = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 6 ? v : TOC_DEPTH);
+
+/** Which lines a table draws. */
+export const TABLE_LINES = ["all", "rows", "box", "none"] as const;
+export type TableLines = (typeof TABLE_LINES)[number];
+export const linesAttr = (v: unknown): TableLines =>
+  typeof v === "string" && (TABLE_LINES as readonly string[]).includes(v) ? (v as TableLines) : "all";
+
+export const COL_MIN = 18;
+export const COL_MAX = 1440;
+
+/** A table's column widths in points — or null when it has none of its
+ *  own, or they don't match its columns (a concurrent edit added one):
+ *  then the columns share the width equally. */
+export function parseCols(v: unknown, count: number): number[] | null {
+  if (typeof v !== "string" || !v.trim()) return null;
+  const widths = v.trim().split(/\s+/).map(Number);
+  if (widths.length !== count || !widths.every((w) => Number.isFinite(w) && w > 0)) return null;
+  return widths.map((w) => Math.min(COL_MAX, Math.max(COL_MIN, w)));
+}
+
+export const encodeCols = (widths: number[] | null): string | null =>
+  widths && widths.length ? widths.map((w) => roundPt(Math.min(COL_MAX, Math.max(COL_MIN, w)))).join(" ") : null;

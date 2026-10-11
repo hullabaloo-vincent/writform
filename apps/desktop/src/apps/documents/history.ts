@@ -192,9 +192,13 @@ function serialized<T>(docId: string, task: () => Promise<T>): Promise<T> {
   const prev = chains.get(docId) ?? Promise.resolve();
   const next = prev.catch(() => {}).then(task);
   chains.set(docId, next);
-  void next.finally(() => {
-    if (chains.get(docId) === next) chains.delete(docId);
-  });
+  // (The caller hears of a failure through `next`; this copy of it is
+  // only for tidying, and must not go unanswered.)
+  void next
+    .finally(() => {
+      if (chains.get(docId) === next) chains.delete(docId);
+    })
+    .catch(() => {});
   return next;
 }
 
@@ -257,11 +261,23 @@ async function migrateV1(docId: string): Promise<LocalVersionMeta[]> {
   return metas;
 }
 
+/**
+ * The index, made if there is none yet (a document's first revision; a v1
+ * history moved over). ONLY for code already running in the document's
+ * chain: anything else goes through `readLocalHistory`, which joins the
+ * chain to do this. (Saving used to call that from inside the chain — and
+ * so waited for itself: a document with no history never got its first
+ * revision, and nothing after it was ever recorded either.)
+ */
+async function indexInChain(docId: string): Promise<LocalVersionMeta[]> {
+  return (await readIndex(docId)) ?? migrateV1(docId);
+}
+
 /** The document's revisions, newest first (index only). */
 export async function readLocalHistory(docId: string): Promise<LocalVersionMeta[]> {
   const index = await readIndex(docId);
   if (index !== null) return index;
-  return serialized(docId, async () => (await readIndex(docId)) ?? migrateV1(docId));
+  return serialized(docId, () => indexInChain(docId));
 }
 
 /** One revision's text, or null when it can't be read. */
@@ -323,7 +339,8 @@ export function saveLocalVersion(
   return serialized(docId, async () => {
     try {
       const kind = opts.kind ?? "auto";
-      const versions = await readLocalHistory(docId);
+      // (Not readLocalHistory: this is already inside the chain it joins.)
+      const versions = await indexInChain(docId);
       const latest = versions[0] ?? null;
       const latestJson = latest ? await loadLocalVersion(docId, latest.id) : null;
       if (kind === "auto" && latestJson === docJson) return null;

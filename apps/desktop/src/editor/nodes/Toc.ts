@@ -13,9 +13,9 @@ import type { Node as PmNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 
 import { showRev } from "../review/TrackMarks";
+import { TOC_DEPTH, tocDepth } from "../schema/sanitize";
 
-export const TOC_DEPTH = 3;
-export const tocDepth = (v: unknown): number => (typeof v === "number" && Number.isInteger(v) && v >= 1 && v <= 6 ? v : TOC_DEPTH);
+export { TOC_DEPTH, tocDepth };
 
 export interface TocEntry {
   level: number;

@@ -1,5 +1,5 @@
 import { ChevronDown } from "lucide-react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
 const PHONE = "(max-width: 767px)";
@@ -14,6 +14,14 @@ export function useIsPhone(): boolean {
   }, []);
   return phone;
 }
+
+/**
+ * Panels opened from inside a panel (a "More" menu's Shading ▸): the outer
+ * one must not take a click in the inner one for a click elsewhere, and
+ * close under it. Each panel tells the ones it was opened from that it is
+ * theirs.
+ */
+const Nest = createContext<{ add(el: HTMLElement): void; remove(el: HTMLElement): void } | null>(null);
 
 /**
  * A toolbar button that opens a panel: a menu beside the button on a
@@ -60,6 +68,28 @@ export function Flyout({
   const panelRef = useRef<HTMLDivElement>(null);
   const phone = useIsPhone();
   const close = useCallback(() => setOpen(false), []);
+  // The panels opened from this one's (and from theirs).
+  const parent = useContext(Nest);
+  const inside = useRef(new Set<HTMLElement>());
+  const nest = useMemo(
+    () => ({
+      add: (el: HTMLElement) => {
+        inside.current.add(el);
+        parent?.add(el);
+      },
+      remove: (el: HTMLElement) => {
+        inside.current.delete(el);
+        parent?.remove(el);
+      },
+    }),
+    [parent],
+  );
+  useLayoutEffect(() => {
+    const el = panelRef.current;
+    if (!open || !el || !parent) return;
+    parent.add(el);
+    return () => parent.remove(el);
+  }, [open, parent]);
 
   useLayoutEffect(() => {
     if (!open || phone) return;
@@ -87,6 +117,7 @@ export function Flyout({
     const onPointer = (e: PointerEvent) => {
       const target = e.target as Node;
       if (panelRef.current?.contains(target) || buttonRef.current?.contains(target)) return;
+      for (const el of inside.current) if (el.contains(target)) return;
       setOpen(false);
     };
     const onKey = (e: KeyboardEvent) => {
@@ -138,7 +169,7 @@ export function Flyout({
               }}
             >
               {phone && <div className="wf-flyout-grip" aria-hidden="true" />}
-              {children(close)}
+              <Nest.Provider value={nest}>{children(close)}</Nest.Provider>
             </div>
           </>,
           document.body,

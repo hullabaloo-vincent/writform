@@ -1576,7 +1576,9 @@ body {
   margin-top: 0;
 }
 
-.wf-modal input {
+/* (Fields — not a tick box or a radio button, which would stretch across
+   the row and push its label to the far side.) */
+.wf-modal input:where(:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"])) {
   flex: 1;
   padding: 9px 11px;
   font-size: 14px;
@@ -8791,12 +8793,38 @@ body {
   justify-content: center;
 }
 
-.wf-inspector-stepper-controls > span {
+/* The figure, typed or stepped: a bare field with its unit after it. */
+.wf-inspector-stepper-value {
   flex: 1;
-  text-align: center;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+  cursor: text;
+}
+.wf-inspector-stepper-value input {
+  width: 4.2ch;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.wf-inspector-stepper-value span {
+  color: var(--wf-text-dim);
+}
+.wf-inspector-stepper-controls:focus-within {
+  border-color: var(--wf-accent);
 }
 
 .wf-inspector-dim {
@@ -9744,6 +9772,11 @@ body {
   min-height: 0;
   font-size: 12px;
   text-align: right;
+}
+/* Its figures are set against the right edge, where the little up/down
+   arrows are: keep the two apart. */
+.wf-inspector-number::-webkit-inner-spin-button {
+  margin-left: 8px;
 }
 .wf-hf {
   display: flex;
@@ -10853,12 +10886,16 @@ body {
   cursor: default;
 }
 .wf-newdoc fieldset input {
-  margin-top: 3px;
+  flex: none;
+  margin: 3px 0 0;
 }
 .wf-newdoc fieldset span {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 1px;
+  text-align: left;
 }
 .wf-newdoc fieldset small {
   color: var(--wf-text-dim);
@@ -12668,3 +12705,434 @@ body {
   bottom: max(var(--wf-kb, 0px), var(--wf-kb-inset, 0px));
   max-height: min(70vh, 520px, calc(100vh - max(var(--wf-kb, 0px), var(--wf-kb-inset, 0px)) - 48px));
 }
+
+/* ---- What a link is, beside it (editor/ui/LinkBubble) ---- */
+
+.wf-flyout.wf-link-bubble {
+  /* Over the page and its panels; under dialogs and the ribbon's menus. */
+  z-index: 60;
+  min-width: 0;
+  max-width: min(420px, calc(100vw - 16px));
+  padding: 4px;
+  overflow: visible;
+}
+.wf-flyout.wf-link-bubble.editing {
+  width: min(320px, calc(100vw - 16px));
+  padding: 6px;
+}
+.wf-link-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.wf-link-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 7px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text-dim);
+}
+.wf-link-row button:hover:not(:disabled),
+.wf-link-row button:focus-visible {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-link-row .wf-link-where {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  color: var(--wf-text);
+  font-size: 13px;
+}
+.wf-link-row .wf-link-where svg {
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+}
+.wf-link-row .wf-link-where span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-link-row .wf-link-where:disabled {
+  cursor: default;
+  color: var(--wf-text-dim);
+}
+@media (max-width: 767px) {
+  .wf-link-row button {
+    height: 38px;
+    min-width: 38px;
+  }
+  .wf-link-bubble .wf-link-form input {
+    height: 42px;
+    font-size: 16px;
+  }
+}
+
+/* ---- The part of the inspector that was asked for by name ---- */
+
+.wf-inspector section[data-setup] {
+  scroll-margin-top: 8px;
+  border-radius: var(--wf-radius-sm);
+}
+.wf-inspector section.wf-inspector-asked {
+  animation: wf-inspector-asked 1.6s ease-out;
+}
+@keyframes wf-inspector-asked {
+  0%,
+  35% {
+    box-shadow: 0 0 0 6px rgba(124, 108, 240, 0.22);
+    background: rgba(124, 108, 240, 0.1);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(124, 108, 240, 0);
+    background: transparent;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wf-inspector section.wf-inspector-asked {
+    animation: none;
+    box-shadow: 0 0 0 2px var(--wf-accent);
+  }
+}
+@media (max-width: 767px) {
+  .wf-inspector-stepper-value input {
+    font-size: 16px;
+    width: 5ch;
+  }
+}
+
+/* ---- A document's footnotes and endnotes, under its last page
+   (editor/ui/NotesList). Paper like the page above it. ---- */
+
+.wf-notes {
+  width: min(var(--wfd-w, 8.5in), calc(100% - 16px));
+  margin: 18px auto 0;
+  padding: 20px 26px 24px;
+  color: #202026;
+  color-scheme: light;
+  background: #fdfcf9;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3), 0 2px 7px rgba(0, 0, 0, 0.22);
+  font-size: 14px;
+  line-height: 1.45;
+}
+.wf-notes-group + .wf-notes-group {
+  margin-top: 20px;
+}
+.wf-notes h4 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4f4f5a;
+}
+.wf-notes-hint {
+  margin: 2px 0 10px;
+  font-size: 12px;
+  color: #74747e;
+}
+.wf-notes ol {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-notes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.wf-notes button.wf-notes-num {
+  flex: none;
+  min-width: 36px;
+  height: 30px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #5b4bd6;
+  font-size: 12.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  cursor: pointer;
+}
+.wf-notes button.wf-notes-num:hover,
+.wf-notes button.wf-notes-num:focus-visible {
+  background: rgba(0, 0, 0, 0.07);
+}
+.wf-notes button.wf-notes-text {
+  flex: 1;
+  min-width: 0;
+  min-height: 30px;
+  height: auto;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  cursor: text;
+}
+.wf-notes button.wf-notes-text:hover,
+.wf-notes button.wf-notes-text:focus-visible {
+  border-color: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.03);
+}
+.wf-notes-text em {
+  color: #8a8a94;
+}
+.wf-notes li.removed .wf-notes-text {
+  text-decoration: line-through;
+  color: #9a5555;
+}
+.wf-notes-edit {
+  flex: 1;
+  min-width: 0;
+}
+.wf-notes .wf-notes-field .ProseMirror {
+  min-height: 30px;
+  max-height: none;
+  padding: 4px 8px;
+  border: 1px solid #5b4bd6;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #202026;
+}
+@media (max-width: 767px) {
+  .wf-notes {
+    padding: 16px 12px 18px;
+  }
+  .wf-notes button.wf-notes-num,
+  .wf-notes button.wf-notes-text,
+  .wf-notes .wf-notes-field .ProseMirror {
+    min-height: 38px;
+  }
+  .wf-notes button.wf-notes-num {
+    height: 38px;
+  }
+  .wf-notes .wf-notes-field .ProseMirror {
+    font-size: 16px;
+  }
+}
+
+/* ---- Menus: a heading inside one, icons beside its items, and a row
+   that opens another menu (the ribbon's "More" menus) ---- */
+
+.wf-flyout-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 10px 3px 28px;
+  color: var(--wf-text-dim);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+.wf-flyout-heading svg {
+  margin-left: -22px;
+}
+.wf-flyout-text > svg {
+  width: 14px;
+  margin-right: 8px;
+  vertical-align: -2px;
+  color: var(--wf-text-dim);
+}
+.wf-flyout button.wf-flyout-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  /* In line with the items above and below it (their tick column). */
+  padding: 4px 10px 4px 28px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 13px;
+  text-align: left;
+}
+.wf-flyout button.wf-flyout-row:hover:not(:disabled),
+.wf-flyout button.wf-flyout-row:focus-visible,
+.wf-flyout button.wf-flyout-row.active {
+  background: var(--wf-bg-hover);
+}
+.wf-flyout button.wf-flyout-row > svg,
+.wf-flyout button.wf-flyout-row .wf-color-icon {
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+}
+.wf-flyout button.wf-flyout-row .wf-flyout-label {
+  flex: 1;
+  min-width: 0;
+}
+/* It opens to the side of the menu it is in. */
+.wf-flyout button.wf-flyout-row .wf-flyout-caret {
+  margin-left: auto;
+  transform: rotate(-90deg);
+  opacity: 0.7;
+}
+.wf-flyout.sheet button.wf-flyout-row {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+/* ---- The selection menu (editor/ui/SelectionBubble) ---- */
+
+.wf-selection-bubble {
+  position: fixed;
+  /* With the link panel: over the page, under dialogs and menus. */
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 4px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+  animation: wf-modal-in 0.12s ease-out;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wf-selection-bubble button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text-dim);
+}
+.wf-selection-bubble button:hover:not(:disabled),
+.wf-selection-bubble button:focus-visible {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-selection-bubble button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-accent);
+}
+.wf-selection-bubble .wf-flyout-caret {
+  opacity: 0.7;
+  margin-left: -2px;
+}
+.wf-bubble-sep {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: var(--wf-border);
+}
+.wf-bubble-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+}
+.wf-selection-bubble button.wf-bubble-custom {
+  min-width: 26px;
+  padding: 0 4px;
+  opacity: 0.75;
+}
+.wf-selection-bubble button.wf-bubble-custom:hover,
+.wf-selection-bubble button.wf-bubble-custom.active {
+  opacity: 1;
+}
+
+/* ---- A set of ticks in Settings (what the selection menu holds) ---- */
+
+.wf-settings-ticks {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 6px 14px;
+  margin: 4px 0 14px;
+  font-size: 13px;
+}
+.wf-settings-ticks label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-settings-ticks .wf-link-button {
+  justify-self: start;
+}
+
+/* ---- After a paste: how it was taken, and the other way (ui/PasteOptions) ---- */
+
+.wf-paste-options {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: calc(100vw - 16px);
+  padding: 4px 4px 4px 10px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.36);
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+  white-space: nowrap;
+  animation: wf-modal-in 0.12s ease-out;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wf-paste-options > svg {
+  flex-shrink: 0;
+}
+.wf-paste-options > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-paste-options button {
+  height: 26px;
+  min-height: 0;
+  padding: 0 9px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 12.5px;
+}
+.wf-paste-options button:hover,
+.wf-paste-options button:focus-visible {
+  background: var(--wf-bg-hover);
+}
+.wf-paste-options button.wf-paste-close {
+  width: 26px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--wf-text-dim);
+}
+@media (max-width: 767px) {
+  .wf-paste-options button {
+    height: 34px;
+    font-size: 14px;
+  }
+  .wf-paste-options button.wf-paste-close {
+    width: 34px;
+  }
+}
+

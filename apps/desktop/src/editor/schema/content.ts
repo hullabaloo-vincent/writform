@@ -33,11 +33,20 @@ export interface ContentOptions {
   textFormat?: Partial<TextFormatOptions>;
   /** Corner handles on pictures (the editors; not previews or import). */
   resizeImages?: boolean;
+  /** A click on a link puts the caret in it rather than following it: the
+   *  editors show where it goes, and offer to open or change it
+   *  (ui/LinkBubble). */
+  linkPopup?: boolean;
 }
 
 export function docContentExtensions(opts: ContentOptions = {}): Extensions {
   return [
-    opts.history === false ? StarterKit.configure({ undoRedo: false }) : StarterKit,
+    opts.history === false || opts.linkPopup
+      ? StarterKit.configure({
+          ...(opts.history === false ? { undoRedo: false as const } : {}),
+          ...(opts.linkPopup ? { link: { openOnClick: false } } : {}),
+        })
+      : StarterKit,
     opts.resizeImages ? WfResizableImage : WfImage,
     DocElement,
     opts.textFormat ? TextFormat.configure(opts.textFormat) : TextFormat,

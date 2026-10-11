@@ -16,7 +16,9 @@
 
 1. In a **Document**, open the **Layout** tab of the ribbon for margins,
    paper, orientation and columns — or the sliders button for everything:
-   gutter, facing pages, headers and footers, page numbers.
+   gutter, facing pages, headers and footers, page numbers. **Margins ▸
+   Custom margins…** opens that panel at Margins: type a figure (1.1, say)
+   or step by quarter inches with − and +.
 2. For a header or footer, type in its left, centre or right slot and use
    **Add a field** for the page number, page count, title, author or date.
    Tick *Different first page* to leave a title page clean.
@@ -26,11 +28,15 @@
 
 ## Format a document
 
-1. Select words and use the ribbon's **Home** tab: font, size, bold,
-   colour, highlight, sub- and superscript. With nothing selected, a choice
-   applies to what you type next.
-2. For a whole paragraph: alignment, line spacing, the indent buttons,
-   shading and borders in the ribbon; exact indents (a hanging indent, a
+1. Select words: a small menu appears above them with bold, italic,
+   underline, colour, highlight, link and comment. The ribbon's **Home**
+   tab has those and the font, size and style; the **⋯** button beside
+   them has the rest (strikethrough, sub- and superscript, change case,
+   clear formatting). With nothing selected, a choice applies to what you
+   type next.
+2. For a whole paragraph: alignment, line spacing and the indent buttons
+   in the ribbon, shading and borders under the **⋯** beside them; exact
+   indents (a hanging indent, a
    first line), *exactly*/*at least* line heights and *keep with next* in
    the inspector's **Text** tab (the sliders button).
 3. Use **styles** for anything you'll do twice. Pick Title, Heading 1 or
@@ -38,7 +44,8 @@
    the styles button and choose **Modify Heading 1…** — or format one
    heading by hand and choose **Update Heading 1 to match selection**.
    **New style from selection…** saves a look under a name of your own.
-4. The **format painter** (the brush) copies formatting: click it, then
+4. To copy formatting from one place to another: put the caret in the
+   text that has it, choose **⋯ ▸ Copy formatting to other text**, then
    select the text to give it to.
 5. ⌘⇧9 (or the checklist button) starts a **checklist**; click a box to
    tick it.
@@ -50,7 +57,9 @@
    header row, lines and shading.
 2. **A footnote**: put the caret where the reference goes and choose
    Insert ▸ Footnote (or Endnote). Write the note in the box that opens;
-   Enter goes back to the text. Click a note's number to read or change it.
+   Enter goes back to the text. Click a note's number to read or change it —
+   or scroll to the end of the document, where all its footnotes and
+   endnotes are listed and can be changed in place.
 3. **A table of contents**: Insert ▸ Contents, usually near the top. It
    lists Heading 1–3 and updates as you write. Page numbers show in the
    preview, in print and in the PDF.

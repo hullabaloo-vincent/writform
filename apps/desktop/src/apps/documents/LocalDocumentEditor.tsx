@@ -31,6 +31,10 @@ import { ReadAloudBar } from "../../editor/speech/ReadAloudBar";
 import { styleFonts } from "../../editor/styles/sheet";
 import { useDocStyles } from "../../editor/styles/useDocStyles";
 import { KeyboardDock } from "../../editor/ui/KeyboardDock";
+import { LinkBubble } from "../../editor/ui/LinkBubble";
+import { NotesList } from "../../editor/ui/NotesList";
+import { PasteOptions } from "../../editor/ui/PasteOptions";
+import { SelectionBubble } from "../../editor/ui/SelectionBubble";
 import { Ribbon } from "../../editor/ui/Ribbon";
 import type { FontInfo } from "../../fonts/css";
 import { fontKey, noteDocFont, readDocFontTable, replaceDocFont } from "../../fonts/docFonts";
@@ -63,6 +67,7 @@ import {
   settingsVars,
   type DocSettings,
   updateDocSettings,
+  type SetupSection,
 } from "./docSettings";
 import { sideFromFile } from "./compareFile";
 import { CompareView, type CompareSide } from "./CompareView";
@@ -120,6 +125,9 @@ function LocalEditorInner({
   const rename = useLocalDocs((s) => s.rename);
   const setFormat = useLocalDocs((s) => s.setFormat);
   const remove = useLocalDocs((s) => s.remove);
+  /** The part of the inspector last asked for by name (the ribbon's
+   *  "Custom margins…"); see DocSettingsPanel. */
+  const [setupAt, setSetupAt] = useState<{ section: SetupSection; n: number } | null>(null);
   const [panel, setPanel] = useState<
     "none" | "history" | "outline" | "feedback" | "settings" | "book" | "preview"
   >("none");
@@ -190,6 +198,7 @@ function LocalEditorInner({
         history: false,
         textFormat: { shortcuts: format === "none", alignShortcuts: format === "manuscript" },
         resizeImages: true,
+        linkPopup: true,
       }),
       Placeholder.configure({ placeholder: "Write…" }),
       ...(format === "none" || format === "manuscript" || format === "poetry"
@@ -666,7 +675,11 @@ function LocalEditorInner({
                 ...(speaks ? { readAloud: () => setReading(true) } : {}),
                 compareFile: () => compareFileRef.current?.click(),
                 history: () => setPanel("history"),
-                pageSetup: () => setPanel("settings"),
+                pageSetup: (section) => {
+                  // At the part asked for ("Custom margins…" → Margins).
+                  if (section) setSetupAt((was) => ({ section, n: (was?.n ?? 0) + 1 }));
+                  setPanel("settings");
+                },
                 preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)),
                 print: openPrint,
               }}
@@ -713,6 +726,18 @@ function LocalEditorInner({
       )}
 
       {find && editor && <FindBar editor={editor} readonly={review.mode === "view"} request={find} onClose={() => setFind(null)} />}
+      {editor && <LinkBubble editor={editor} />}
+      {editor && <PasteOptions editor={editor} />}
+      {editor && (
+        <SelectionBubble
+          editor={editor}
+          format={meta.format === "none" ? docStyles.format : null}
+          onComment={() => {
+            setFeedbackTab("comments");
+            setPanel("feedback");
+          }}
+        />
+      )}
       {reading && editor && <ReadAloudBar editor={editor} lang={lang} onClose={() => setReading(false)} />}
       <input
         ref={compareFileRef}
@@ -739,6 +764,8 @@ function LocalEditorInner({
             {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
+          {/* Its footnotes and endnotes, where they can be seen and changed. */}
+          {editor && <NotesList editor={editor} style={sheetStyle} />}
         </div>
         {panel === "settings" && (
           <DocSettingsPanel
@@ -747,6 +774,7 @@ function LocalEditorInner({
             settings={docSettings}
             readonly={false}
             format={docStyles.format}
+            at={setupAt}
           />
         )}
         {panel === "feedback" && (

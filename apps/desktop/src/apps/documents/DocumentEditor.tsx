@@ -40,6 +40,10 @@ import { ReadAloudBar } from "../../editor/speech/ReadAloudBar";
 import { styleFonts } from "../../editor/styles/sheet";
 import { useDocStyles } from "../../editor/styles/useDocStyles";
 import { KeyboardDock } from "../../editor/ui/KeyboardDock";
+import { LinkBubble } from "../../editor/ui/LinkBubble";
+import { NotesList } from "../../editor/ui/NotesList";
+import { PasteOptions } from "../../editor/ui/PasteOptions";
+import { SelectionBubble } from "../../editor/ui/SelectionBubble";
 import { Ribbon } from "../../editor/ui/Ribbon";
 import type { FontInfo } from "../../fonts/css";
 import { fontKey, noteDocFont, readDocFontTable, replaceDocFont } from "../../fonts/docFonts";
@@ -72,6 +76,7 @@ import {
   settingsVars,
   type DocSettings,
   updateDocSettings,
+  type SetupSection,
 } from "./docSettings";
 import { DocSettingsPanel } from "./DocSettingsPanel";
 import { FORMAT_LABELS, FORMAT_SPECS, type ElementSpec } from "./formats/elements";
@@ -202,6 +207,9 @@ function EditorInner({
 }) {
   const { meta, myAccess, panel, setPanel } = state;
   const [find, setFind] = useState<FindRequest | null>(null);
+  /** The part of the inspector last asked for by name (the ribbon's
+   *  "Custom margins…"); see DocSettingsPanel. */
+  const [setupAt, setSetupAt] = useState<{ section: SetupSection; n: number } | null>(null);
   const openFind = useCallback(
     (replace: boolean, prefill: string) => setFind((f) => ({ n: (f?.n ?? 0) + 1, replace, prefill })),
     [],
@@ -266,6 +274,7 @@ function EditorInner({
         history: false,
         textFormat: { shortcuts: format === "none", alignShortcuts: format === "manuscript" },
         resizeImages: true,
+        linkPopup: true,
       }),
       Placeholder.configure({ placeholder: "Write…" }),
       formatKeymap(format),
@@ -761,7 +770,11 @@ function EditorInner({
                 ...(speaks ? { readAloud: () => setReading(true) } : {}),
                 compareFile: () => compareFileRef.current?.click(),
                 history: () => setPanel("history"),
-                pageSetup: () => setPanel("settings"),
+                pageSetup: (section) => {
+                  // At the part asked for ("Custom margins…" → Margins).
+                  if (section) setSetupAt((was) => ({ section, n: (was?.n ?? 0) + 1 }));
+                  setPanel("settings");
+                },
                 preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)),
                 print: openPrint,
               }}
@@ -816,6 +829,18 @@ function EditorInner({
       )}
 
       {find && editor && <FindBar editor={editor} readonly={readonly || review.mode === "view"} request={find} onClose={() => setFind(null)} />}
+      {editor && <LinkBubble editor={editor} />}
+      {editor && <PasteOptions editor={editor} />}
+      {editor && (
+        <SelectionBubble
+          editor={editor}
+          format={format === "none" ? docStyles.format : null}
+          onComment={() => {
+            setFeedbackTab("comments");
+            setPanel("feedback");
+          }}
+        />
+      )}
       {reading && editor && <ReadAloudBar editor={editor} lang={lang} onClose={() => setReading(false)} />}
       <input
         ref={compareFileRef}
@@ -842,6 +867,8 @@ function EditorInner({
             {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />
           </div>
+          {/* Its footnotes and endnotes, where they can be seen and changed. */}
+          {editor && <NotesList editor={editor} style={sheetStyle} />}
         </div>
         {/* Panel state lives above the format-keyed remount, so a format
             switch could otherwise leave a stale inspector open. */}
@@ -852,6 +879,7 @@ function EditorInner({
             settings={docSettings}
             readonly={readonly}
             format={docStyles.format}
+            at={setupAt}
           />
         )}
         {panel === "preview" && hasPreview && editor && (

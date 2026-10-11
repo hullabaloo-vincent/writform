@@ -5,14 +5,11 @@ import { NodeSelection } from "@tiptap/pm/state";
 
 import { normalizeAttachmentSrc } from "../../lib/backend";
 import { showRev } from "../review/TrackMarks";
+import { CAPTION_MAX, imageAlign, imageCaption, type ImageAlign } from "../schema/sanitize";
 
-export type ImageAlign = "left" | "center" | "right";
-export const imageAlign = (v: unknown): ImageAlign | null => (v === "left" || v === "center" || v === "right" ? v : null);
-export const CAPTION_MAX = 500;
-export const imageCaption = (v: unknown): string | null => {
-  const text = typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, CAPTION_MAX) : "";
-  return text || null;
-};
+// (How a picture's attributes are read lives with the other readers, where
+// the page layout — which runs in a worker — can reach it.)
+export { CAPTION_MAX, imageAlign, imageCaption, type ImageAlign };
 
 /** How a picture sits and what's written under it, on the element that
  *  holds it. */

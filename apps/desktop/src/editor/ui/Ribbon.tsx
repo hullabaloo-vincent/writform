@@ -69,6 +69,7 @@ import {
   pageDims,
   PAGE_SIZES,
   type DocSettings,
+  type SetupSection,
 } from "../../apps/documents/docSettings";
 import type { FontInfo } from "../../fonts/css";
 import { fontKey } from "../../fonts/docFonts";
@@ -125,7 +126,8 @@ export interface RibbonActions {
   /** Open the list of suggested changes. */
   changes?: () => void;
   history?: () => void;
-  pageSetup?: () => void;
+  /** Open the inspector at a part of it (see DocSettingsPanel). */
+  pageSetup?: (section?: SetupSection) => void;
   preview?: () => void;
   print?: () => void;
   readAloud?: () => void;
@@ -183,6 +185,13 @@ const BORDERS: { sides: string; label: string }[] = [
 ];
 
 const LINES = [1, 1.15, 1.5, 2];
+
+const ALIGNMENTS: { value: "left" | "center" | "right" | "justify"; label: string; keys: string; icon: ReactNode }[] = [
+  { value: "left", label: "Left", keys: "⌘⇧L", icon: <AlignLeft size={14} /> },
+  { value: "center", label: "Centre", keys: "⌘⇧E", icon: <AlignCenter size={14} /> },
+  { value: "right", label: "Right", keys: "⌘⇧R", icon: <AlignRight size={14} /> },
+  { value: "justify", label: "Justified", keys: "⌘⇧J", icon: <AlignJustify size={14} /> },
+];
 
 /**
  * The Document format's ribbon: Home, Insert, Layout and Review, each a row
@@ -356,12 +365,6 @@ export function Ribbon({
         <>
           {btn("Undo (⌘Z)", <Undo2 size={15} />, () => chain().undo().run(), false, !editor.can().undo())}
           {btn("Redo (⌘⇧Z)", <Redo2 size={15} />, () => chain().redo().run(), false, !editor.can().redo())}
-          {btn(
-            paint ? "Painting — select the text to format (Esc to stop)" : "Format painter — copy this formatting to other text",
-            <Paintbrush size={15} />,
-            () => setPaint(paint ? null : pickUpFormat(editor, format.level)),
-            !!paint,
-          )}
         </>
       ),
     },
@@ -377,7 +380,7 @@ export function Ribbon({
           fontTable={fontTable}
           onSave={onSaveStyle}
           onFontUsed={onFontUsed}
-          onBodyText={actions.pageSetup}
+          onBodyText={actions.pageSetup ? () => actions.pageSetup?.("body") : undefined}
         />
       ),
     },
@@ -414,8 +417,6 @@ export function Ribbon({
               </option>
             ))}
           </select>
-          {btn("Larger (⌘⇧.)", <AArrowUp size={16} />, () => stepRunSize(editor, 1, format))}
-          {btn("Smaller (⌘⇧,)", <AArrowDown size={16} />, () => stepRunSize(editor, -1, format))}
         </>
       ),
     },
@@ -427,9 +428,6 @@ export function Ribbon({
           {btn("Bold (⌘B)", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
           {btn("Italic (⌘I)", <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic"))}
           {btn("Underline (⌘U)", <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline"))}
-          {btn("Strikethrough", <Strikethrough size={15} />, () => chain().toggleStrike().run(), editor.isActive("strike"))}
-          {rich && btn("Subscript (⌘=)", <Subscript size={15} />, () => toggleScript(editor, "sub"), run.vscript === "sub")}
-          {rich && btn("Superscript (⌘⇧=)", <Superscript size={15} />, () => toggleScript(editor, "super"), run.vscript === "super")}
           {rich && (
             <ColorFlyout
               title="Text colour"
@@ -450,23 +448,103 @@ export function Ribbon({
               onPick={(c) => setHighlight(editor, c)}
             />
           )}
-          {btn("Inline code", <Code size={15} />, () => chain().toggleCode().run(), editor.isActive("code"))}
-          <Flyout title="Change case" icon={<CaseSensitive size={16} />} disabled={editor.state.selection.empty}>
-            {(close) =>
-              CASES.map((c) => (
+          {/* Used now and then: one click away, and lit when one of them is on. */}
+          <Flyout
+            title="More text formatting"
+            icon={<MoreHorizontal size={16} />}
+            caret={false}
+            active={!!paint || editor.isActive("strike") || editor.isActive("code") || !!run.vscript}
+          >
+            {(close) => (
+              <>
                 <FlyoutItem
-                  key={c.kind}
+                  checked={editor.isActive("strike")}
                   onPick={() => {
-                    changeCase(editor, c.kind);
+                    chain().toggleStrike().run();
                     close();
                   }}
                 >
-                  {c.label}
+                  <Strikethrough size={14} /> Strikethrough
                 </FlyoutItem>
-              ))
-            }
+                {rich && (
+                  <FlyoutItem
+                    checked={run.vscript === "sub"}
+                    hint="⌘="
+                    onPick={() => {
+                      toggleScript(editor, "sub");
+                      close();
+                    }}
+                  >
+                    <Subscript size={14} /> Subscript
+                  </FlyoutItem>
+                )}
+                {rich && (
+                  <FlyoutItem
+                    checked={run.vscript === "super"}
+                    hint="⌘⇧="
+                    onPick={() => {
+                      toggleScript(editor, "super");
+                      close();
+                    }}
+                  >
+                    <Superscript size={14} /> Superscript
+                  </FlyoutItem>
+                )}
+                <FlyoutItem
+                  checked={editor.isActive("code")}
+                  onPick={() => {
+                    chain().toggleCode().run();
+                    close();
+                  }}
+                >
+                  <Code size={14} /> Inline code
+                </FlyoutItem>
+                <hr />
+                {/* (These two stay open: a size is often stepped more than once.) */}
+                <FlyoutItem hint="⌘⇧." onPick={() => stepRunSize(editor, 1, format)}>
+                  <AArrowUp size={14} /> Larger
+                </FlyoutItem>
+                <FlyoutItem hint="⌘⇧," onPick={() => stepRunSize(editor, -1, format)}>
+                  <AArrowDown size={14} /> Smaller
+                </FlyoutItem>
+                <hr />
+                <div className="wf-flyout-heading">
+                  <CaseSensitive size={14} /> Change case
+                </div>
+                {CASES.map((c) => (
+                  <FlyoutItem
+                    key={c.kind}
+                    disabled={editor.state.selection.empty}
+                    onPick={() => {
+                      changeCase(editor, c.kind);
+                      close();
+                    }}
+                  >
+                    {c.label}
+                  </FlyoutItem>
+                ))}
+                <hr />
+                <FlyoutItem
+                  checked={!!paint}
+                  hint={paint ? "Esc" : undefined}
+                  onPick={() => {
+                    setPaint(paint ? null : pickUpFormat(editor, format.level));
+                    close();
+                  }}
+                >
+                  <Paintbrush size={14} /> {paint ? "Stop copying formatting" : "Copy formatting to other text"}
+                </FlyoutItem>
+                <FlyoutItem
+                  onPick={() => {
+                    clearFormatting(editor);
+                    close();
+                  }}
+                >
+                  <RemoveFormatting size={14} /> Clear formatting
+                </FlyoutItem>
+              </>
+            )}
           </Flyout>
-          {btn("Clear formatting", <RemoveFormatting size={15} />, () => clearFormatting(editor))}
         </>
       ),
     },
@@ -476,7 +554,7 @@ export function Ribbon({
       content: (
         <>
           {btn("Bulleted list", <List size={15} />, () => chain().toggleBulletList().run(), editor.isActive("bulletList"))}
-          {rich && (
+          {rich && editor.isActive("bulletList") && (
             <Flyout title="Bullet style" className="wf-ribbon-narrow">
               {(close) =>
                 BULLET_MARKERS.map((m) => (
@@ -495,6 +573,7 @@ export function Ribbon({
             </Flyout>
           )}
           {btn("Numbered list", <ListOrdered size={15} />, () => chain().toggleOrderedList().run(), inOrdered)}
+          {inOrdered && (
           <Flyout title="Numbering" className="wf-ribbon-narrow">
             {(close) => (
               <>
@@ -532,6 +611,7 @@ export function Ribbon({
               </>
             )}
           </Flyout>
+          )}
           {rich && btn("Checklist (⌘⇧9)", <ListChecks size={15} />, () => toggleChecklist(editor), editor.isActive("taskList"))}
           {btn(
             "Decrease indent (⇧Tab)",
@@ -555,10 +635,26 @@ export function Ribbon({
       label: "Paragraph",
       content: (
         <>
-          {btn("Align left (⌘⇧L)", <AlignLeft size={15} />, () => setDocAlign(editor, "left"), cur.align === null)}
-          {btn("Centre (⌘⇧E)", <AlignCenter size={15} />, () => setDocAlign(editor, "center"), cur.align === "center")}
-          {btn("Align right (⌘⇧R)", <AlignRight size={15} />, () => setDocAlign(editor, "right"), cur.align === "right")}
-          {btn("Justify (⌘⇧J)", <AlignJustify size={15} />, () => setDocAlign(editor, "justify"), cur.align === "justify")}
+          <Flyout
+            title="Alignment"
+            icon={cur.align === "center" ? <AlignCenter size={15} /> : cur.align === "right" ? <AlignRight size={15} /> : cur.align === "justify" ? <AlignJustify size={15} /> : <AlignLeft size={15} />}
+          >
+            {(close) =>
+              ALIGNMENTS.map((a) => (
+                <FlyoutItem
+                  key={a.value}
+                  checked={(cur.align ?? "left") === a.value}
+                  hint={a.keys}
+                  onPick={() => {
+                    setDocAlign(editor, a.value);
+                    close();
+                  }}
+                >
+                  {a.icon} {a.label}
+                </FlyoutItem>
+              ))
+            }
+          </Flyout>
           <Flyout title="Line and paragraph spacing" icon={<UnfoldVertical size={15} />}>
             {(close) => (
               <>
@@ -608,7 +704,7 @@ export function Ribbon({
                     <FlyoutItem
                       onPick={() => {
                         close();
-                        actions.pageSetup?.();
+                        actions.pageSetup?.("indents");
                       }}
                     >
                       Indents and spacing…
@@ -618,10 +714,15 @@ export function Ribbon({
               </>
             )}
           </Flyout>
+          <Flyout title="More paragraph formatting" icon={<MoreHorizontal size={16} />} caret={false} active={showMarks || !!border || !!para.shade}>
+            {(closeMore) => (
+              <>
           {rich && (
             <ColorFlyout
               title="Shading"
-              icon={<PaintBucket size={15} />}
+              icon={<PaintBucket size={14} />}
+              label="Shading"
+              className="wf-flyout-row"
               value={para.shade}
               colors={SHADE_COLORS}
               noneLabel="No shading"
@@ -629,7 +730,7 @@ export function Ribbon({
             />
           )}
           {rich && (
-            <Flyout title="Borders" icon={<Square size={15} />} active={!!border}>
+            <Flyout title="Borders" icon={<Square size={14} />} label="Borders" className="wf-flyout-row" active={!!border}>
               {(close) => (
                 <>
                   <FlyoutItem
@@ -671,8 +772,26 @@ export function Ribbon({
               )}
             </Flyout>
           )}
-          {btn("Sort A to Z", <ArrowDownAZ size={15} />, () => sortBlocks(editor))}
-          {btn("Show paragraph marks", <Pilcrow size={15} />, onToggleMarks, showMarks)}
+                <FlyoutItem
+                  onPick={() => {
+                    sortBlocks(editor);
+                    closeMore();
+                  }}
+                >
+                  <ArrowDownAZ size={14} /> Sort A to Z
+                </FlyoutItem>
+                <FlyoutItem
+                  checked={showMarks}
+                  onPick={() => {
+                    onToggleMarks();
+                    closeMore();
+                  }}
+                >
+                  <Pilcrow size={14} /> Show paragraph marks
+                </FlyoutItem>
+              </>
+            )}
+          </Flyout>
         </>
       ),
     },
@@ -683,40 +802,7 @@ export function Ribbon({
     {
       id: "pages",
       label: "Breaks",
-      content: (
-        <>
-          {btn("Page break (⌘↩)", <SeparatorHorizontal size={15} />, () => insertPageBreak(editor), false, false, "Page break")}
-          {rich && (
-            <Flyout title="More breaks" className="wf-ribbon-narrow">
-              {(close) => (
-                <>
-                  <FlyoutItem
-                    checked={para.colBreak === true}
-                    hint="to the top of the next column"
-                    onPick={() => {
-                      toggleColumnBreak(editor);
-                      close();
-                    }}
-                  >
-                    Column break
-                  </FlyoutItem>
-                  <FlyoutItem
-                    disabled={!topLevel}
-                    checked={!!para.sect}
-                    hint="a new page, with its own page setup"
-                    onPick={() => {
-                      setSection(editor, para.sect ? null : {});
-                      close();
-                    }}
-                  >
-                    Section break
-                  </FlyoutItem>
-                </>
-              )}
-            </Flyout>
-          )}
-        </>
-      ),
+      content: btn("Page break (⌘↩)", <SeparatorHorizontal size={15} />, () => insertPageBreak(editor), false, false, "Page break"),
     },
     {
       id: "table",
@@ -728,20 +814,8 @@ export function Ribbon({
       label: "Link",
       content: (
         <>
-          <LinkFlyout editor={editor} openSignal={linkSignal} />
-          {allowImages && btn(uploading ? "Uploading…" : "Picture", <ImagePlus size={15} />, () => fileRef.current?.click(), false, uploading)}
-        </>
-      ),
-    },
-    {
-      id: "blocks",
-      label: "Blocks",
-      content: (
-        <>
-          {btn("Quote", <Quote size={15} />, () => chain().toggleBlockquote().run(), editor.isActive("blockquote"))}
-          {btn("Code block", <SquareCode size={15} />, () => chain().toggleCodeBlock().run(), editor.isActive("codeBlock"))}
-          {btn("Divider line", <Minus size={15} />, () => chain().setHorizontalRule().run())}
-          {btn("Line break (⇧↩)", <WrapText size={15} />, () => chain().setHardBreak().run())}
+          {allowImages && btn(uploading ? "Uploading…" : "Picture", <ImagePlus size={15} />, () => fileRef.current?.click(), false, uploading, "Picture")}
+          <LinkFlyout editor={editor} openSignal={linkSignal} label="Link" />
         </>
       ),
     },
@@ -760,25 +834,66 @@ export function Ribbon({
       id: "symbols",
       label: "Symbols",
       content: (
-        <>
-          <Flyout title="Symbol" icon={<Omega size={15} />} panelClass="wf-symbols">
-            {() =>
-              SYMBOL_GROUPS.map((group) => (
-                <div key={group.label} className="wf-symbol-group">
-                  <span>{group.label}</span>
-                  <div>
-                    {group.symbols.map((s) => (
-                      <button key={s} type="button" title={s} onClick={() => chain().insertContent(s).run()}>
-                        {s}
-                      </button>
-                    ))}
-                  </div>
+        <Flyout title="Symbol" icon={<Omega size={15} />} label="Symbol" panelClass="wf-symbols">
+          {() =>
+            SYMBOL_GROUPS.map((group) => (
+              <div key={group.label} className="wf-symbol-group">
+                <span>{group.label}</span>
+                <div>
+                  {group.symbols.map((s) => (
+                    <button key={s} type="button" title={s} onClick={() => chain().insertContent(s).run()}>
+                      {s}
+                    </button>
+                  ))}
                 </div>
-              ))
-            }
-          </Flyout>
-          {btn("Today's date", <CalendarDays size={15} />, () => insertDate(editor))}
-        </>
+              </div>
+            ))
+          }
+        </Flyout>
+      ),
+    },
+    {
+      id: "more-insert",
+      label: "More",
+      content: (
+        <Flyout title="More to insert" icon={<MoreHorizontal size={16} />} label="More">
+          {(close) => {
+            const pick = (run: () => void) => () => {
+              run();
+              close();
+            };
+            return (
+              <>
+                <FlyoutItem checked={editor.isActive("blockquote")} onPick={pick(() => chain().toggleBlockquote().run())}>
+                  <Quote size={14} /> Quote
+                </FlyoutItem>
+                <FlyoutItem checked={editor.isActive("codeBlock")} onPick={pick(() => chain().toggleCodeBlock().run())}>
+                  <SquareCode size={14} /> Code block
+                </FlyoutItem>
+                <FlyoutItem onPick={pick(() => chain().setHorizontalRule().run())}>
+                  <Minus size={14} /> Divider line
+                </FlyoutItem>
+                <FlyoutItem hint="⇧↩" onPick={pick(() => chain().setHardBreak().run())}>
+                  <WrapText size={14} /> Line break
+                </FlyoutItem>
+                <FlyoutItem onPick={pick(() => insertDate(editor))}>
+                  <CalendarDays size={14} /> Today’s date
+                </FlyoutItem>
+                {rich && (
+                  <>
+                    <hr />
+                    <FlyoutItem checked={para.colBreak === true} hint="to the next column" onPick={pick(() => toggleColumnBreak(editor))}>
+                      Column break
+                    </FlyoutItem>
+                    <FlyoutItem disabled={!topLevel} checked={!!para.sect} hint="a new page, its own setup" onPick={pick(() => setSection(editor, para.sect ? null : {}))}>
+                      Section break
+                    </FlyoutItem>
+                  </>
+                )}
+              </>
+            );
+          }}
+        </Flyout>
       ),
     },
   ];
@@ -817,7 +932,7 @@ export function Ribbon({
                   <FlyoutItem
                     onPick={() => {
                       close();
-                      actions.pageSetup?.();
+                      actions.pageSetup?.("margins");
                     }}
                   >
                     Custom margins…
@@ -881,22 +996,44 @@ export function Ribbon({
       content: rich ? <SectionFlyout editor={editor} settings={settings} /> : null,
     },
     {
-      id: "print-options",
-      label: "Options",
-      content: (
-        <>
-          {btn("Hyphenate words at line ends", null, () => onPatchSettings({ hyphenate: !settings.hyphenate }), settings.hyphenate, false, "Hyphenation")}
-          {btn("Number the lines", null, () => onPatchSettings({ lineNumbers: !settings.lineNumbers }), settings.lineNumbers, false, "Line numbers")}
-        </>
-      ),
-    },
-    {
       id: "setup",
       label: "Page setup",
       content: (
         <>
-          {actions.pageSetup && btn("Headers, footers, page numbers and more", <FileCog size={15} />, actions.pageSetup, false, false, "Header & footer")}
+          {actions.pageSetup && btn("Headers, footers, page numbers and more", <FileCog size={15} />, () => actions.pageSetup?.("header"), false, false, "Header & footer")}
         </>
+      ),
+    },
+    {
+      id: "print-options",
+      label: "Options",
+      content: (
+        <Flyout title="More page options" icon={<MoreHorizontal size={16} />} label="More" active={settings.hyphenate || settings.lineNumbers}>
+          {(close) => (
+            <>
+              <FlyoutItem
+                checked={settings.hyphenate}
+                hint="break long words at line ends"
+                onPick={() => {
+                  onPatchSettings({ hyphenate: !settings.hyphenate });
+                  close();
+                }}
+              >
+                Hyphenation
+              </FlyoutItem>
+              <FlyoutItem
+                checked={settings.lineNumbers}
+                hint="in the margin"
+                onPick={() => {
+                  onPatchSettings({ lineNumbers: !settings.lineNumbers });
+                  close();
+                }}
+              >
+                Line numbers
+              </FlyoutItem>
+            </>
+          )}
+        </Flyout>
       ),
     },
   ];
@@ -926,11 +1063,13 @@ export function Ribbon({
             {review.canSuggest && <option value="suggest">Suggesting</option>}
             <option value="view">Viewing</option>
           </select>
-          {btn("Previous change", <ChevronUp size={15} />, () => stepChange(editor, -1), false, !pending)}
-          {btn("Next change", <ChevronDown size={15} />, () => stepChange(editor, 1), false, !pending)}
-          {btn("Accept this change", <Check size={15} />, () => decide("accept"), false, !pending, "Accept")}
-          {btn("Reject this change", <X size={15} />, () => decide("reject"), false, !pending, "Reject")}
-          <Flyout title="All changes" className="wf-ribbon-narrow" disabled={!pending}>
+          {/* Nothing suggested: nothing to step through or decide. */}
+          {pending > 0 && btn("Previous change", <ChevronUp size={15} />, () => stepChange(editor, -1))}
+          {pending > 0 && btn("Next change", <ChevronDown size={15} />, () => stepChange(editor, 1))}
+          {pending > 0 && btn("Accept this change", <Check size={15} />, () => decide("accept"), false, false, "Accept")}
+          {pending > 0 && btn("Reject this change", <X size={15} />, () => decide("reject"), false, false, "Reject")}
+          {pending > 0 && (
+          <Flyout title="All changes" className="wf-ribbon-narrow">
             {(close) => (
               <>
                 <FlyoutItem
@@ -952,6 +1091,7 @@ export function Ribbon({
               </>
             )}
           </Flyout>
+          )}
           {actions.changes && btn("The list of suggested changes", null, actions.changes, false, false, pending ? `Changes (${pending})` : "Changes")}
         </>
       ) : null,
@@ -959,23 +1099,12 @@ export function Ribbon({
     {
       id: "feedback",
       label: "Comments",
-      content: (
-        <>
-          {actions.comments && btn("Comments", <MessageSquare size={15} />, actions.comments, false, false, "Comments")}
-          {actions.history && btn("Version history — and comparing a version with now", <History size={15} />, actions.history, false, false, "History")}
-          {actions.compareFile && btn("Compare with a Word file, side by side", <GitCompareArrows size={15} />, actions.compareFile, false, false, "Compare")}
-        </>
-      ),
+      content: actions.comments ? btn("Comments", <MessageSquare size={15} />, actions.comments, false, false, "Comments") : null,
     },
     {
       id: "find",
       label: "Find",
-      content: (
-        <>
-          {actions.find && btn("Find and replace (⌘F)", <Search size={15} />, actions.find, false, false, "Find")}
-          {actions.readAloud && btn("Read aloud, from the caret", <Volume2 size={15} />, actions.readAloud, false, false, "Read aloud")}
-        </>
-      ),
+      content: actions.find ? btn("Find and replace (⌘F)", <Search size={15} />, actions.find, false, false, "Find") : null,
     },
     {
       id: "output",
@@ -986,6 +1115,40 @@ export function Ribbon({
           {actions.print && btn("Print (⌘P)", <Printer size={15} />, actions.print, false, false, "Print")}
         </>
       ),
+    },
+    {
+      id: "more-review",
+      label: "More",
+      content:
+        actions.history || actions.compareFile || actions.readAloud ? (
+          <Flyout title="More for reviewing" icon={<MoreHorizontal size={16} />} label="More">
+            {(close) => {
+              const pick = (run: () => void) => () => {
+                close();
+                run();
+              };
+              return (
+                <>
+                  {actions.history && (
+                    <FlyoutItem hint="and compare a version with now" onPick={pick(actions.history)}>
+                      <History size={14} /> Version history
+                    </FlyoutItem>
+                  )}
+                  {actions.compareFile && (
+                    <FlyoutItem hint="side by side" onPick={pick(actions.compareFile)}>
+                      <GitCompareArrows size={14} /> Compare with a Word file
+                    </FlyoutItem>
+                  )}
+                  {actions.readAloud && (
+                    <FlyoutItem hint="from the caret" onPick={pick(actions.readAloud)}>
+                      <Volume2 size={14} /> Read aloud
+                    </FlyoutItem>
+                  )}
+                </>
+              );
+            }}
+          </Flyout>
+        ) : null,
     },
   ];
 

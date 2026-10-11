@@ -23,32 +23,15 @@ import { StepMap } from "@tiptap/pm/transform";
 import { EditorView } from "@tiptap/pm/view";
 
 import { showRev } from "../review/TrackMarks";
+import { noteKind, noteNumber, type NoteKind } from "../schema/sanitize";
 
 /** The note editors that are open, by the reference they hang from (so
  *  something outside — a test — can reach the one for a given note). */
 export const openNotes = new WeakMap<Element, EditorView>();
 
-export type NoteKind = "foot" | "end";
-export const noteKind = (v: unknown): NoteKind => (v === "end" ? "end" : "foot");
-
-/** How a note's number is written: 1, 2, 3 for footnotes; i, ii, iii for
- *  endnotes (Word's own defaults). */
-export function noteNumber(n: number, kind: NoteKind): string {
-  if (kind === "foot") return String(n);
-  const table: [number, string][] = [
-    [1000, "m"], [900, "cm"], [500, "d"], [400, "cd"], [100, "c"], [90, "xc"],
-    [50, "l"], [40, "xl"], [10, "x"], [9, "ix"], [5, "v"], [4, "iv"], [1, "i"],
-  ];
-  let rest = Math.max(1, Math.min(3999, n));
-  let out = "";
-  for (const [value, glyph] of table) {
-    while (rest >= value) {
-      out += glyph;
-      rest -= value;
-    }
-  }
-  return out;
-}
+// (How a note's kind and number are read lives with the other readers,
+// where the page layout — which runs in a worker — can reach it.)
+export { noteKind, noteNumber, type NoteKind };
 
 /** The number of the note at `pos` among the notes of its kind. */
 function numberAt(doc: PmNode, pos: number, kind: NoteKind): number {
@@ -58,6 +41,143 @@ function numberAt(doc: PmNode, pos: number, kind: NoteKind): number {
     return node.type.name !== "footnote";
   });
   return Math.max(1, n);
+}
+
+/** A note open for writing: an editor of its own, whose every change goes
+ *  into the document as it's made. */
+export interface NoteEditorHandle {
+  view: EditorView;
+  /** The note as it now stands in the document (someone else's typing in
+   *  it, an undo): shown as the smallest change that explains it. */
+  update(next: PmNode): void;
+  /** Take the caret, at the end of what's written. */
+  focusEnd(): void;
+  destroy(): void;
+}
+
+/**
+ * Open a note for writing inside `mount` — beside its number in the text,
+ * or in the list of notes at the end of the document. What's typed is
+ * stepped into the document at once; Enter and Escape say "done".
+ */
+export function mountNoteEditor(opts: {
+  editor: Editor;
+  /** Where the note is in the document now. */
+  position: () => number | undefined;
+  node: PmNode;
+  mount: HTMLElement;
+  onDone: () => void;
+}): NoteEditorHandle {
+  const { editor } = opts;
+  const outer = editor.view;
+  const kind = noteKind(opts.node.attrs.kind);
+
+  /** What's typed in the note goes into the document as it's typed. */
+  const dispatchInner = (tr: Transaction) => {
+    const { state, transactions } = view.state.applyTransaction(tr);
+    view.updateState(state);
+    if (tr.getMeta("fromOutside")) return;
+    const at = opts.position();
+    if (at === undefined) return;
+    const outerTr = outer.state.tr;
+    const offset = StepMap.offset(at + 1);
+    for (const one of transactions) {
+      for (const step of one.steps) {
+        const mapped = step.map(offset);
+        if (mapped) outerTr.step(mapped);
+      }
+    }
+    if (outerTr.docChanged) outer.dispatch(outerTr);
+  };
+
+  const marks = outer.state.schema.marks;
+  const bind: Record<string, (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean> = {
+    Escape: () => {
+      opts.onDone();
+      return true;
+    },
+    Enter: () => {
+      opts.onDone();
+      return true;
+    },
+    "Mod-z": () => editor.commands.undo(),
+    "Mod-Shift-z": () => editor.commands.redo(),
+    "Mod-y": () => editor.commands.redo(),
+  };
+  if (marks.bold) bind["Mod-b"] = toggleMark(marks.bold);
+  if (marks.italic) bind["Mod-i"] = toggleMark(marks.italic);
+  if (marks.underline) bind["Mod-u"] = toggleMark(marks.underline);
+  const view: EditorView = new EditorView(opts.mount, {
+    state: EditorState.create({ doc: opts.node, plugins: [keymap(bind)] }),
+    dispatchTransaction: dispatchInner,
+    editable: () => editor.isEditable,
+    attributes: { class: "wf-fn-text", "aria-label": kind === "end" ? "Endnote" : "Footnote", spellcheck: "true" },
+    handleDOMEvents: {
+      mousedown: () => {
+        // A click in the note takes the focus from the text around it.
+        if (outer.hasFocus()) view.focus();
+        return false;
+      },
+    },
+  });
+
+  return {
+    view,
+    update(next) {
+      const state = view.state;
+      const start = next.content.findDiffStart(state.doc.content);
+      if (start === null || start === undefined) return;
+      const diff = next.content.findDiffEnd(state.doc.content);
+      if (!diff) return;
+      let { a: endA, b: endB } = diff;
+      const overlap = start - Math.min(endA, endB);
+      if (overlap > 0) {
+        endA += overlap;
+        endB += overlap;
+      }
+      view.dispatch(state.tr.replace(start, endB, next.slice(start, endA)).setMeta("fromOutside", true));
+    },
+    focusEnd() {
+      const end = view.state.doc.content.size;
+      view.dispatch(view.state.tr.setSelection(TextSelection.create(view.state.doc, end)).setMeta("fromOutside", true));
+      view.focus();
+    },
+    destroy() {
+      view.destroy();
+    },
+  };
+}
+
+/** One note of a document, for a list of them. */
+export interface NoteEntry {
+  /** Where its reference is in the text. */
+  pos: number;
+  kind: NoteKind;
+  /** Its number as written beside the text (1, 2, 3 — i, ii, iii). */
+  label: string;
+  text: string;
+  /** Someone has suggested removing it. */
+  removed: boolean;
+}
+
+/** Every footnote and endnote, in the order they are cited. */
+export function listNotes(doc: PmNode): NoteEntry[] {
+  const out: NoteEntry[] = [];
+  const count = { foot: 0, end: 0 };
+  doc.descendants((node, pos) => {
+    if (node.type.name !== "footnote") return true;
+    const kind = noteKind(node.attrs.kind);
+    count[kind] += 1;
+    out.push({
+      pos,
+      kind,
+      label: noteNumber(count[kind], kind),
+      text: node.textContent,
+      removed: typeof node.attrs.tc === "string" && /(^|\n)del:/.test(node.attrs.tc),
+    });
+    return false;
+  });
+  return out;
 }
 
 export const Footnote = Node.create({
@@ -93,7 +213,7 @@ export const Footnote = Node.create({
       const dom = document.createElement("sup");
       dom.className = "wf-fn";
       let current = node;
-      let inner: EditorView | null = null;
+      let inner: NoteEditorHandle | null = null;
       let pop: HTMLDivElement | null = null;
       let reposition: (() => void) | null = null;
 
@@ -106,25 +226,6 @@ export const Footnote = Node.create({
       show(node);
 
       const position = (): number | undefined => (typeof getPos === "function" ? getPos() : undefined);
-
-      /** What's typed in the note goes into the document as it's typed. */
-      const dispatchInner = (tr: Transaction) => {
-        if (!inner) return;
-        const { state, transactions } = inner.state.applyTransaction(tr);
-        inner.updateState(state);
-        if (tr.getMeta("fromOutside")) return;
-        const at = position();
-        if (at === undefined) return;
-        const outerTr = outer.state.tr;
-        const offset = StepMap.offset(at + 1);
-        for (const one of transactions) {
-          for (const step of one.steps) {
-            const mapped = step.map(offset);
-            if (mapped) outerTr.step(mapped);
-          }
-        }
-        if (outerTr.docChanged) outer.dispatch(outerTr);
-      };
 
       const close = (focusOuter: boolean) => {
         if (!inner) return;
@@ -196,38 +297,8 @@ export const Footnote = Node.create({
         dom.append(pop);
         dom.classList.add("open");
 
-        const marks = outer.state.schema.marks;
-        const bind: Record<string, (state: EditorState, dispatch?: (tr: Transaction) => void) => boolean> = {
-          Escape: () => {
-            close(true);
-            return true;
-          },
-          Enter: () => {
-            close(true);
-            return true;
-          },
-          "Mod-z": () => editor.commands.undo(),
-          "Mod-Shift-z": () => editor.commands.redo(),
-          "Mod-y": () => editor.commands.redo(),
-        };
-        if (marks.bold) bind["Mod-b"] = toggleMark(marks.bold);
-        if (marks.italic) bind["Mod-i"] = toggleMark(marks.italic);
-        if (marks.underline) bind["Mod-u"] = toggleMark(marks.underline);
-        inner = new EditorView(body, {
-          state: EditorState.create({ doc: current, plugins: [keymap(bind)] }),
-          dispatchTransaction: dispatchInner,
-          editable: () => editor.isEditable,
-          attributes: { class: "wf-fn-text", "aria-label": kind === "end" ? "Endnote" : "Footnote", spellcheck: "true" },
-          handleDOMEvents: {
-            mousedown: () => {
-              // A click in the note takes the focus from the text around it.
-              if (outer.hasFocus()) inner?.focus();
-              return false;
-            },
-          },
-        });
-
-        openNotes.set(dom, inner);
+        inner = mountNoteEditor({ editor, position, node: current, mount: body, onDone: () => close(true) });
+        openNotes.set(dom, inner.view);
 
         // Beside its number, wherever that is on the screen — fixed there,
         // so nothing that clips or scrolls (the sheet, a table) cuts it off.
@@ -246,11 +317,7 @@ export const Footnote = Node.create({
         reposition();
         window.addEventListener("scroll", reposition, true);
         window.addEventListener("resize", reposition);
-        if (editor.isEditable) {
-          const end = inner.state.doc.content.size;
-          inner.dispatch(inner.state.tr.setSelection(TextSelection.create(inner.state.doc, end)).setMeta("fromOutside", true));
-          inner.focus();
-        }
+        if (editor.isEditable) inner.focusEnd();
       };
 
       return {
@@ -268,24 +335,9 @@ export const Footnote = Node.create({
           const reopened = inner && next.attrs.kind !== current.attrs.kind;
           current = next;
           show(next);
-          if (inner && !reopened) {
-            // Someone else's typing in the same note (or an undo) arrives
-            // in the open editor as the smallest change that explains it.
-            const state = inner.state;
-            const start = next.content.findDiffStart(state.doc.content);
-            if (start !== null && start !== undefined) {
-              const diff = next.content.findDiffEnd(state.doc.content);
-              if (diff) {
-                let { a: endA, b: endB } = diff;
-                const overlap = start - Math.min(endA, endB);
-                if (overlap > 0) {
-                  endA += overlap;
-                  endB += overlap;
-                }
-                inner.dispatch(state.tr.replace(start, endB, next.slice(start, endA)).setMeta("fromOutside", true));
-              }
-            }
-          }
+          // Someone else's typing in the same note (or an undo) arrives in
+          // the open editor.
+          if (inner && !reopened) inner.update(next);
           return true;
         },
         // Events in the note's editor are its own.

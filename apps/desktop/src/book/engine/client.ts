@@ -146,6 +146,8 @@ async function prepareImages(urls: string[]): Promise<{ images: JobImage[]; fail
 // ---------------------------------------------------------------- worker
 
 type Reply =
+  /** The worker's script loaded (it has no id: it answers no request). */
+  | { id?: undefined; type: "ready" }
   | { id: number; type: "progress"; message: string }
   | { id: number; type: "laidout"; dl: DisplayList }
   | { id: number; type: "done"; result: PrintResult }
@@ -169,7 +171,21 @@ class WorkerUnavailable extends Error {}
 /** Idle workers are let go after this long (they hold fonts and caches). */
 const IDLE_MS = 3 * 60_000;
 
-class Typesetter {
+/**
+ * How long a new worker has to say it loaded. One that never does — its
+ * script threw while loading, which not every webview reports as an error —
+ * would otherwise leave every preview, page view and export waiting for
+ * ever; past this the main thread does the work.
+ */
+let startMs = 6000;
+
+/** For tests: how long to wait for a worker to start. */
+export function setWorkerPatience(ms: number): void {
+  startMs = ms;
+}
+
+/** (Exported for tests; the app uses the one from `typesetter()`.) */
+export class Typesetter {
   private worker: Worker | null = null;
   private unavailable = false;
   private heard = false;
@@ -182,6 +198,7 @@ class Typesetter {
   private active = 0;
   private nextId = 1;
   private idle: ReturnType<typeof setTimeout> | null = null;
+  private starting: ReturnType<typeof setTimeout> | null = null;
   private local: Promise<TypesetSession> | null = null;
 
   private spawn(): Worker | null {
@@ -197,10 +214,21 @@ class Typesetter {
     this.worker = worker;
     this.heard = false;
     this.sent.clear();
+    // Not a word from it in time: it didn't load. Work on the main thread.
+    this.starting = setTimeout(() => {
+      this.starting = null;
+      if (worker !== this.worker || this.heard) return;
+      console.warn("[typesetter] the worker didn't start; typesetting on the main thread");
+      this.unavailable = true;
+      this.stop(new WorkerUnavailable("the typesetting worker didn't start"));
+    }, startMs);
     worker.onmessage = (e: MessageEvent<Reply>) => {
       if (worker !== this.worker) return;
       this.heard = true;
+      if (this.starting) clearTimeout(this.starting);
+      this.starting = null;
       const msg = e.data;
+      if (msg.type === "ready") return;
       const p = this.pending.get(msg.id);
       if (!p) return;
       if (msg.type === "progress") {
@@ -236,6 +264,8 @@ class Typesetter {
     this.sent.clear();
     if (this.idle) clearTimeout(this.idle);
     this.idle = null;
+    if (this.starting) clearTimeout(this.starting);
+    this.starting = null;
     for (const p of this.pending.values()) p.reject(cause);
     this.pending.clear();
   }

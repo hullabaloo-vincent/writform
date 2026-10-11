@@ -66,10 +66,15 @@ export function ColorFlyout({
   colors,
   noneLabel,
   disabled,
+  label,
+  className,
   onPick,
 }: {
   title: string;
   icon: ReactNode;
+  /** Words beside the icon (a row in a menu, rather than a toolbar button). */
+  label?: ReactNode;
+  className?: string;
   value: string | null;
   colors: Swatch[];
   /** What taking the colour off is called ("Automatic", "No highlight"). */
@@ -81,6 +86,8 @@ export function ColorFlyout({
     <Flyout
       title={title}
       disabled={disabled}
+      label={label}
+      className={className}
       panelClass="wf-colors"
       icon={
         <span className="wf-color-icon" style={{ ["--wf-swatch" as string]: value ?? "transparent" }}>

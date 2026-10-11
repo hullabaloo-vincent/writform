@@ -53,6 +53,7 @@ import { Avatar, confirmDialog, toast } from "../../platform";
 import type { WritformApp } from "../../platform";
 import { FontSettings } from "../../fonts/ui/FontSettings";
 import { AccountMenu } from "../../platform/AccountMenu";
+import { SELECTION_TOOLS, useSelectionMenu } from "../../editor/ui/selectionMenu";
 import { useLocalProfile } from "../../stores/localProfile";
 import { useSession } from "../../stores/session";
 
@@ -854,6 +855,7 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
 function WritingTab() {
   const [smart, setSmart] = useState(smartPunctuationEnabled);
   const [exact, setExact] = useState(exactPageView);
+  const menu = useSelectionMenu();
   return (
     <section>
       <h3>Writing</h3>
@@ -891,6 +893,26 @@ function WritingTab() {
         and is an approximation. Takes effect the next time a document is opened. On this device
         only.
       </p>
+      <label className="wf-settings-field wf-field-row">
+        <input type="checkbox" checked={!menu.off} onChange={(e) => menu.setOff(!e.target.checked)} />
+        Show a quick menu over selected words
+      </label>
+      <p className="wf-session-meta">
+        Select words with the mouse and a small menu appears above them. Choose what it holds here, or
+        from the sliders button at its end. (Colours, sub- and superscript and clear formatting show
+        in the Document format only.) On this device only.
+      </p>
+      <div className="wf-settings-ticks" role="group" aria-label="What the selection menu holds">
+        {SELECTION_TOOLS.map((tool) => (
+          <label key={tool.id}>
+            <input type="checkbox" disabled={menu.off} checked={menu.tools.includes(tool.id)} onChange={() => menu.toggle(tool.id)} />
+            {tool.label}
+          </label>
+        ))}
+        <button className="wf-link-button" disabled={menu.off} onClick={menu.reset}>
+          Back to the usual set
+        </button>
+      </div>
     </section>
   );
 }

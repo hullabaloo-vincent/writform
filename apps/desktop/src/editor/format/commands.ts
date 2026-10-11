@@ -5,8 +5,9 @@
  * needs level 2 is in run.ts, ParaFormat.ts and nodes/TaskList.ts).
  */
 
-import type { Editor } from "@tiptap/core";
+import { getMarkRange, type Editor } from "@tiptap/core";
 import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
+import { TextSelection, type EditorState } from "@tiptap/pm/state";
 
 import { isStyleElement } from "../styles/sheet";
 
@@ -235,3 +236,83 @@ export function applyLink(editor: Editor, href: string, text: string): boolean {
 export function removeLink(editor: Editor): boolean {
   return editor.chain().focus().extendMarkRange("link").unsetLink().run();
 }
+
+/** A link in the text: where it is, where it goes, and its words. */
+export interface LinkHere {
+  from: number;
+  to: number;
+  href: string;
+  text: string;
+  /** Its words are plain text (no picture or note inside), so they can be
+   *  retyped in a field. */
+  plain: boolean;
+}
+
+/**
+ * The link the selection is on: the caret in it or at either end of it, or
+ * a selection that stays inside it. Null for a selection that reaches past
+ * the link — that is about the text, not the link.
+ */
+export function linkAtSelection(state: EditorState): LinkHere | null {
+  const type = state.schema.marks.link;
+  if (!type) return null;
+  const { from, to } = state.selection;
+  const range = getMarkRange(state.doc.resolve(from), type);
+  if (!range || from < range.from || to > range.to) return null;
+  const mark = state.doc.nodeAt(range.from)?.marks.find((m) => m.type === type);
+  const href = typeof mark?.attrs.href === "string" ? mark.attrs.href : "";
+  if (!href) return null;
+  let plain = true;
+  state.doc.nodesBetween(range.from, range.to, (node) => {
+    if (node.isInline && !node.isText) plain = false;
+  });
+  return { from: range.from, to: range.to, href, text: state.doc.textBetween(range.from, range.to, " "), plain };
+}
+
+/**
+ * Change where a link goes and, when `text` is given and different, its
+ * words (which then take the formatting the link began with). The caret
+ * ends up after it.
+ */
+export function updateLink(editor: Editor, link: LinkHere, href: string, text: string | null): boolean {
+  const { state } = editor;
+  const type = state.schema.marks.link;
+  const first = state.doc.nodeAt(link.from);
+  if (!type || !first) return false;
+  const old = first.marks.find((m) => m.type === type);
+  const tr = state.tr;
+  let to = link.to;
+  const words = text?.trim() ? text : null;
+  if (words !== null && link.plain && words !== link.text) {
+    tr.replaceWith(link.from, link.to, state.schema.text(words, first.marks));
+    to = link.from + words.length;
+  }
+  tr.removeMark(link.from, to, type).addMark(link.from, to, type.create({ ...old?.attrs, href }));
+  tr.setSelection(TextSelection.create(tr.doc, Math.min(to, tr.doc.content.size)));
+  editor.view.dispatch(tr.scrollIntoView());
+  editor.view.focus();
+  return true;
+}
+
+/** Take the link off its words (the words stay). */
+export function unlinkAt(editor: Editor, link: LinkHere): boolean {
+  const type = editor.state.schema.marks.link;
+  if (!type) return false;
+  editor.view.dispatch(editor.state.tr.removeMark(link.from, link.to, type));
+  editor.view.focus();
+  return true;
+}
+
+/** A link's destination as a reader would say it: "example.com/page",
+ *  "Email ada@example.com", "Call 555 0100". */
+export function describeHref(href: string): string {
+  const mail = /^mailto:([^?]*)/i.exec(href);
+  if (mail) return `Email ${decodeURIComponent(mail[1])}`;
+  const tel = /^tel:(.*)/i.exec(href);
+  if (tel) return `Call ${tel[1]}`;
+  return href.replace(/^https?:\/\//i, "").replace(/\/$/, "");
+}
+
+/** Whether following this address is something the app will do (a web
+ *  page, an email, a phone number — nothing that runs). */
+export const canOpenHref = (href: string): boolean => /^(https?:\/\/|mailto:|tel:)/i.test(href);

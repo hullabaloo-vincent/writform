@@ -12,27 +12,37 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { bodyLook, pageDims, type DocSettings } from "../apps/documents/docSettings";
+// Everything here must load in a worker (no page, no backend): the editor's
+// node modules don't, so what the layout needs of them — how their
+// attributes are read — comes from schema/sanitize (harness/worker.test.ts
+// runs the worker where there is no window, and fails if that changes).
 import {
   colorAttr,
   firstIndentAttr,
+  imageAlign,
+  imageCaption,
   indentAttr,
   lineAtAttr,
   lineRuleAttr,
+  linesAttr,
   MARKER_GLYPH,
   markerAttr,
+  noteKind,
+  noteNumber,
   parseBorder,
+  parseCols,
   parseSection,
   sizeAttr,
+  tocDepth,
   vscriptAttr,
   type Border,
+  type ImageAlign,
   type LineRule,
+  type NoteKind,
   type SectionProps,
+  type TableLines,
   type VScript,
 } from "../editor/schema/sanitize";
-import { noteKind, noteNumber, type NoteKind } from "../editor/nodes/Footnote";
-import { imageAlign, imageCaption, type ImageAlign } from "../editor/nodes/Image";
-import { tocDepth } from "../editor/nodes/Toc";
-import { linesAttr, parseCols, type TableLines } from "../editor/tables/Table";
 import {
   BLOCK_GAP,
   BULLETS,

@@ -41,7 +41,7 @@ import {
 } from "@tiptap/pm/tables";
 
 import { showRev } from "../review/TrackMarks";
-import { colorAttr, roundPt, toHexColor } from "../schema/sanitize";
+import { COL_MAX, COL_MIN, colorAttr, encodeCols, linesAttr, parseCols, roundPt, TABLE_LINES, toHexColor, type TableLines } from "../schema/sanitize";
 
 declare module "@tiptap/core" {
   interface NodeConfig<Options, Storage> {
@@ -50,27 +50,9 @@ declare module "@tiptap/core" {
   }
 }
 
-/** Which lines a table draws. */
-export const TABLE_LINES = ["all", "rows", "box", "none"] as const;
-export type TableLines = (typeof TABLE_LINES)[number];
-export const linesAttr = (v: unknown): TableLines =>
-  typeof v === "string" && (TABLE_LINES as readonly string[]).includes(v) ? (v as TableLines) : "all";
-
-export const COL_MIN = 18;
-export const COL_MAX = 1440;
-
-/** A table's column widths in points — or null when it has none of its
- *  own, or they don't match its columns (a concurrent edit added one):
- *  then the columns share the width equally. */
-export function parseCols(v: unknown, count: number): number[] | null {
-  if (typeof v !== "string" || !v.trim()) return null;
-  const widths = v.trim().split(/\s+/).map(Number);
-  if (widths.length !== count || !widths.every((w) => Number.isFinite(w) && w > 0)) return null;
-  return widths.map((w) => Math.min(COL_MAX, Math.max(COL_MIN, w)));
-}
-
-export const encodeCols = (widths: number[] | null): string | null =>
-  widths && widths.length ? widths.map((w) => roundPt(Math.min(COL_MAX, Math.max(COL_MIN, w)))).join(" ") : null;
+// (How a table's lines and column widths are read lives with the other
+// readers, where the page layout — which runs in a worker — can reach it.)
+export { COL_MAX, COL_MIN, encodeCols, linesAttr, parseCols, TABLE_LINES, type TableLines };
 
 const span = (v: unknown): number => {
   const n = Number(v);

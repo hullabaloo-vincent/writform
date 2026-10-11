@@ -82,11 +82,12 @@ function LinkForm({ editor, close }: { editor: Editor; close: () => void }) {
 
 /** The Link button: an address (and, with nothing selected, the words to
  *  show). On a link already, it edits or removes it. */
-export function LinkFlyout({ editor, openSignal }: { editor: Editor; openSignal?: number }) {
+export function LinkFlyout({ editor, openSignal, label }: { editor: Editor; openSignal?: number; label?: string }) {
   return (
     <Flyout
       title="Link (⌘⇧K)"
       icon={<Link2 size={15} />}
+      label={label}
       caret={false}
       active={editor.isActive("link")}
       className="wf-link-flyout-button"

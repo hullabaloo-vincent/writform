@@ -391,3 +391,7 @@ export function bodyLook(s: Pick<DocSettings, "bodyFont" | "bodySize" | "bodyLin
     firstIndent: s.firstIndent ? s.firstIndent * 72 : 0,
   };
 }
+
+/** The parts of the inspector (DocSettingsPanel) something else can ask for
+ *  by name: "Custom margins…" in the ribbon opens it at Margins. */
+export type SetupSection = "paper" | "margins" | "header" | "body" | "indents";

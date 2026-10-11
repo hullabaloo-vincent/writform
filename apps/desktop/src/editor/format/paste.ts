@@ -16,14 +16,26 @@
  *    merged cells and shading;
  *  - comments, styles, and Office's bookkeeping elements go.
  *
+ * Then there is the question of how much of that to take. By default a
+ * paste from another program MATCHES this document: its paragraphs,
+ * headings, lists, tables, links and emphasis (bold, italic, underline…)
+ * come in, and its look — typeface, size, colour, highlight, alignment,
+ * indents, spacing, shading — stays behind, so the words read as if they
+ * had been typed here. The other choice, keeping its styling, is one click
+ * away until the next thing is typed (ui/PasteOptions shows it). What is
+ * copied inside this app is always pasted exactly as it was.
+ *
  * Going out: the marks draw themselves through custom properties, which
  * mean nothing to another program — so copied HTML states the same
  * formatting as ordinary CSS too.
  */
 
 import { Extension } from "@tiptap/core";
-import { DOMSerializer, type Schema } from "@tiptap/pm/model";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { DOMSerializer, Fragment, Slice, type Node as PmNode, type Schema } from "@tiptap/pm/model";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { isInTable } from "@tiptap/pm/tables";
+import type { EditorView } from "@tiptap/pm/view";
+import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 import { catalogNow, loadCatalog } from "../../fonts/catalog";
 import { fontCssFamily } from "../../fonts/css";
@@ -297,6 +309,85 @@ export interface PasteFormatOptions {
   level: () => number;
 }
 
+// ------------------------------------------------------------------ match, or keep
+
+/** What of a pasted mark is meaning rather than look. */
+const KEPT_MARKS = new Set(["bold", "italic", "underline", "strike", "code", "link", "vscript", "insertion", "deletion"]);
+/** What of a pasted node's attributes is structure rather than look ("*":
+ *  all of them — a picture is its address and its size). */
+const KEPT_ATTRS: Record<string, string[] | "*"> = {
+  heading: ["level"],
+  orderedList: ["start", "type"],
+  taskItem: ["checked"],
+  table: ["head"],
+  tableCell: ["colspan", "rowspan"],
+  codeBlock: ["language"],
+  footnote: ["kind"],
+  toc: ["depth"],
+  image: "*",
+};
+
+function matchNode(node: PmNode): PmNode {
+  const marks = node.marks.filter((m) => KEPT_MARKS.has(m.type.name));
+  if (node.isText) return marks.length === node.marks.length ? node : node.mark(marks);
+  const keep = KEPT_ATTRS[node.type.name] ?? [];
+  const attrs = keep === "*" ? node.attrs : Object.fromEntries(keep.filter((name) => name in node.attrs).map((name) => [name, node.attrs[name]]));
+  const children: PmNode[] = [];
+  node.content.forEach((child) => children.push(matchNode(child)));
+  // (Everything left out takes the schema's default: no alignment, no
+  // indent, no style of another document's.)
+  return node.type.create(attrs, Fragment.fromArray(children), marks);
+}
+
+/** A pasted slice with this document's formatting: its structure and its
+ *  emphasis, without its look. */
+export function matchSlice(slice: Slice): Slice {
+  const nodes: PmNode[] = [];
+  slice.content.forEach((node) => nodes.push(matchNode(node)));
+  return new Slice(Fragment.fromArray(nodes), slice.openStart, slice.openEnd);
+}
+
+/** The paste just made, while its formatting can still be chosen. */
+export interface PasteChoice {
+  /** Where it is in the document. */
+  from: number;
+  to: number;
+  mode: "match" | "keep";
+  /** As it was copied (tidied), and as matched to this document. */
+  kept: Slice;
+  matched: Slice;
+}
+
+type PasteMeta = { clear: true } | { choice: Omit<PasteChoice, "from" | "to">; from: number; to: number };
+
+export const pasteChoiceKey = new PluginKey<PasteChoice | null>("wf-paste-choice");
+
+/** The paste whose formatting can still be changed, if there is one. */
+export const pasteChoice = (view: EditorView): PasteChoice | null => pasteChoiceKey.getState(view.state) ?? null;
+
+/** Change the paste just made to the other way of taking it. */
+export function switchPaste(view: EditorView, mode: "match" | "keep"): boolean {
+  const now = pasteChoice(view);
+  if (!now || now.mode === mode) return false;
+  const slice = mode === "keep" ? now.kept : now.matched;
+  const tr = view.state.tr.replaceRange(now.from, now.to, slice);
+  const end = tr.mapping.map(now.to, 1);
+  tr.setSelection(TextSelection.near(tr.doc.resolve(Math.min(end, tr.doc.content.size)), -1));
+  view.dispatch(
+    tr
+      .scrollIntoView()
+      .setMeta("paste", true)
+      .setMeta(pasteChoiceKey, { choice: { mode, kept: now.kept, matched: now.matched }, from: now.from, to: now.to } satisfies PasteMeta),
+  );
+  view.focus();
+  return true;
+}
+
+/** Settle for the paste as it is (the choice is put away). */
+export function settlePaste(view: EditorView): void {
+  if (pasteChoice(view)) view.dispatch(view.state.tr.setMeta(pasteChoiceKey, { clear: true } satisfies PasteMeta));
+}
+
 /** The Document format's clipboard: see the top of this file. */
 export const PasteFormat = Extension.create<PasteFormatOptions>({
   name: "pasteFormat",
@@ -319,6 +410,56 @@ export const PasteFormat = Extension.create<PasteFormatOptions>({
         props: {
           transformPastedHTML: (html) => cleanPastedHtml(html, { installed, catalog: catalogNow()?.byName, level: level() }),
           clipboardSerializer: clipboardSerializer(this.editor.schema),
+        },
+      }),
+      new Plugin<PasteChoice | null>({
+        key: pasteChoiceKey,
+        state: {
+          init: () => null,
+          apply(tr, value) {
+            const meta = tr.getMeta(pasteChoiceKey) as PasteMeta | undefined;
+            if (meta) {
+              if ("clear" in meta) return null;
+              // Between where the selection's ends were is what was pasted.
+              const from = tr.mapping.map(meta.from, -1);
+              const to = tr.mapping.map(meta.to, 1);
+              return to > from ? { ...meta.choice, from, to } : null;
+            }
+            if (!value || !tr.docChanged) return value;
+            // Someone else's edit elsewhere moves it along; anything the
+            // writer does next (typing, an undo) settles the paste as it is.
+            const sync = tr.getMeta(ySyncPluginKey) as { isChangeOrigin?: boolean; isUndoRedoOperation?: boolean } | undefined;
+            const theirs = !!sync?.isChangeOrigin && !sync.isUndoRedoOperation;
+            // (Nor is the editor's own tidying after an edit — the empty
+            // paragraph it keeps at the end of a document — the writer's.)
+            const tidying = !!tr.getMeta("appendedTransaction");
+            if (!theirs && !tidying) return null;
+            const from = tr.mapping.map(value.from, -1);
+            const to = tr.mapping.map(value.to, 1);
+            return to > from ? { ...value, from, to } : null;
+          },
+        },
+        props: {
+          handlePaste: (view, event, slice) => {
+            const html = event.clipboardData?.getData("text/html") ?? "";
+            // Plain text has no look to choose about; what was copied in
+            // this app is pasted as it was; and cells pasted into cells are
+            // the table's own business.
+            if (!html || html.includes("data-pm-slice") || isInTable(view.state)) return false;
+            const matched = matchSlice(slice);
+            if (matched.eq(slice)) return false;
+            const { from, to } = view.state.selection;
+            const single = matched.openStart === 0 && matched.openEnd === 0 && matched.content.childCount === 1 ? matched.content.firstChild : null;
+            const tr = single ? view.state.tr.replaceSelectionWith(single, false) : view.state.tr.replaceSelection(matched);
+            view.dispatch(
+              tr
+                .scrollIntoView()
+                .setMeta("paste", true)
+                .setMeta("uiEvent", "paste")
+                .setMeta(pasteChoiceKey, { choice: { mode: "match", kept: slice, matched }, from, to } satisfies PasteMeta),
+            );
+            return true;
+          },
         },
       }),
     ];
