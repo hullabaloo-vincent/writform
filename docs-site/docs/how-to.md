@@ -125,8 +125,9 @@ update the server first (see [Setup](setup.md#updating-a-server)).
 Press the page-view button (the split sheet in the header). The sheet is
 divided into the pages the PDF will have: the same text on each, the same
 count, with the break falling inside a paragraph or between the rows of a
-table when that is where the page turns. It catches up a moment after you
-stop typing. The lines themselves are the screen's. For the page exactly
+table when that is where the page turns. It keeps up as you type. The gaps
+between the pages stay where they are and the text moves across them. The
+lines themselves are the screen's. For the page exactly
 as printed, line for line, open **Preview** (the eye). If page view
 misbehaves on your device, Settings ▸ Writing ▸ *Page view shows the pages
 as they print* switches to the simpler view.

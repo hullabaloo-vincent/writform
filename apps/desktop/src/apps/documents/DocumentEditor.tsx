@@ -28,7 +28,7 @@ import { loadGoal, noteGoalProgress, saveGoal } from "../../lib/writingGoals";
 import { confirmDialog, toast } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
-import { Paginate, reflowPagination, type PageLayoutResult, type PageMapFor, type PageSpec } from "../../editor/Paginate";
+import { Paginate, reflowPagination, type PageMapFor, type PageSpec } from "../../editor/Paginate";
 import { Toolbar } from "../../editor/RichEditor";
 import { PasteFormat } from "../../editor/format/paste";
 import { RunShortcuts } from "../../editor/format/run";
@@ -91,7 +91,6 @@ import {
   type ThreadFocus,
 } from "./FeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
-import { PageGuides } from "./PageGuides";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
 import { PrintDialog } from "./PrintDialog";
@@ -255,7 +254,10 @@ function EditorInner({
   // Its paragraph styles, and the level of formatting it may use (the
   // lower of this app's and its server's).
   const docStyles = useDocStyles(provider.doc, docSettings, provider.level, fontTable);
-  const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
+  // How many pages page view shows. (The gaps between them are the
+  // paginator's own drawing, on the sheet: nothing here is rendered again
+  // as the text moves across them.)
+  const [pagesExact, setPagesExact] = useState<number | null>(null);
   const specRef = useRef<PageSpec | null>(null);
   // Where the printed pages fall (the layout engine's answer), for page view.
   const pageMapRef = useRef<PageMapFor | "pending" | null>(null);
@@ -286,7 +288,7 @@ function EditorInner({
         : []),
       FeedbackHighlights,
       ReadAloudHighlight,
-      Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: setPageLayout }),
+      Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
       // Hold edits to what this server can store (a paste from a newer
       // document is down-converted).
       SchemaGuard.configure({ level: () => provider.level }),
@@ -392,9 +394,8 @@ function EditorInner({
         : format === "manuscript"
           ? manuscriptVars(book)
           : {};
-    if (pageGuides && pageLayout) vars["--wfd-fill"] = `${pageLayout.fill}px`;
     return vars as React.CSSProperties;
-  }, [format, docSettings, book, pageGuides, pageLayout]);
+  }, [format, docSettings, book]);
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
   useFindShortcut(editor, openFind);
@@ -783,7 +784,7 @@ function EditorInner({
                   editor={editor}
                   format={format}
                   goalKey={goalKey}
-                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                  pagesExact={pageGuides ? pagesExact : null}
                 />
               }
             />
@@ -810,7 +811,7 @@ function EditorInner({
                   editor={editor}
                   format={format}
                   goalKey={goalKey}
-                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                  pagesExact={pageGuides ? pagesExact : null}
                 />
               }
             />
@@ -864,7 +865,6 @@ function EditorInner({
           >
             {/* The styles this document has changed (see editor/styles/css.ts). */}
             {format === "none" && docStyles.css && <style>{docStyles.css}</style>}
-            {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />
           </div>
           {/* Its footnotes and endnotes, where they can be seen and changed. */}

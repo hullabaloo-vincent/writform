@@ -56,9 +56,14 @@ export async function docModel(source: DocSource): Promise<DocModel> {
 }
 
 /** Where the document's pages fall, for the editor's page view. Null when
- *  a newer request on the same channel overtook this one. */
-export async function docPageMap(source: DocSource, channel?: string): Promise<PageMap | null> {
-  return typesetter().docPages(await docModel({ ...source, raw: true }), channel);
+ *  a newer request on the same channel overtook this one. `timing.model`
+ *  is given how long the part done on the page took, ms (the rest is the
+ *  engine's, on its own thread). */
+export async function docPageMap(source: DocSource, channel?: string, timing?: { model: number }): Promise<PageMap | null> {
+  const began = performance.now();
+  const model = await docModel({ ...source, raw: true });
+  if (timing) timing.model = performance.now() - began;
+  return typesetter().docPages(model, channel);
 }
 
 export async function buildDocPdf(

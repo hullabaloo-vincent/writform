@@ -320,10 +320,11 @@ submission manuscript.
   the sheet as its printed pages, with gaps between them, page numbers on
   the left and the count in the word-count bar. The pages are the printed
   ones: the text breaks where the PDF's pages do, in the middle of a
-  paragraph or between the rows of a table, a moment after you stop typing,
-  and the count is the PDF's. Lines within a page are still the screen's
-  own, so a page on screen is as tall as its text needs (never shorter than
-  the paper). Preview shows the page line for line. Settings ▸ Writing has
+  paragraph or between the rows of a table, and the count is the PDF's.
+  It keeps up as you type. The gaps between pages hold still and the text
+  moves across them. Lines within a page are still the screen's own, so a
+  page whose text needs much more room than the paper is made taller.
+  Preview shows the page line for line. Settings ▸ Writing has
   a switch back to the simpler view that only moves whole paragraphs.
 - **Outline**: parts, chapters and sections with their labels and word
   counts. Drag to reorder chapters (or use Reorder on a phone). One undo

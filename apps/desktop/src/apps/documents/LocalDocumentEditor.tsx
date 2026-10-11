@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import { Paginate, reflowPagination, type PageLayoutResult, type PageMapFor, type PageSpec } from "../../editor/Paginate";
+import { Paginate, reflowPagination, type PageMapFor, type PageSpec } from "../../editor/Paginate";
 import { Toolbar } from "../../editor/RichEditor";
 import { PasteFormat } from "../../editor/format/paste";
 import { RunShortcuts } from "../../editor/format/run";
@@ -84,7 +84,6 @@ import {
 import { onLocalFeedbackChange, readLocalFeedback, type LocalThread } from "./feedbackLocal";
 import { LocalFeedbackPanel } from "./LocalFeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
-import { PageGuides } from "./PageGuides";
 import { PrintDialog } from "./PrintDialog";
 import { FindBar } from "./FindBar";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
@@ -180,7 +179,10 @@ function LocalEditorInner({
   // Its paragraph styles, and the level of formatting it may use (a
   // document on this device: all of it).
   const docStyles = useDocStyles(provider!.doc, docSettings, DOC_SCHEMA_LEVEL, fontTable);
-  const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
+  // How many pages page view shows. (The gaps between them are the
+  // paginator's own drawing, on the sheet: nothing here is rendered again
+  // as the text moves across them.)
+  const [pagesExact, setPagesExact] = useState<number | null>(null);
   const specRef = useRef<PageSpec | null>(null);
   // Where the printed pages fall (the layout engine's answer), for page view.
   const pageMapRef = useRef<PageMapFor | "pending" | null>(null);
@@ -209,7 +211,7 @@ function LocalEditorInner({
         : []),
       FeedbackHighlights,
       ReadAloudHighlight,
-      Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: setPageLayout }),
+      Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
       formatKeymap(format),
       // Editing, Suggesting or Viewing (suggestions are made under the name
       // this device knows you by).
@@ -402,9 +404,8 @@ function LocalEditorInner({
         : meta.format === "manuscript"
           ? manuscriptVars(book)
           : {};
-    if (pageGuides && pageLayout) vars["--wfd-fill"] = `${pageLayout.fill}px`;
     return vars as React.CSSProperties;
-  }, [meta.format, docSettings, book, pageGuides, pageLayout]);
+  }, [meta.format, docSettings, book]);
 
   // Honor "open with this panel" from the list's Version history entry.
   useEffect(() => {
@@ -688,7 +689,7 @@ function LocalEditorInner({
                   editor={editor}
                   format={meta.format}
                   goalKey={`local:${meta.id}`}
-                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                  pagesExact={pageGuides ? pagesExact : null}
                 />
               }
             />
@@ -707,7 +708,7 @@ function LocalEditorInner({
                   editor={editor}
                   format={meta.format}
                   goalKey={`local:${meta.id}`}
-                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                  pagesExact={pageGuides ? pagesExact : null}
                 />
               }
             />
@@ -761,7 +762,6 @@ function LocalEditorInner({
           >
             {/* The styles this document has changed (see editor/styles/css.ts). */}
             {meta.format === "none" && docStyles.css && <style>{docStyles.css}</style>}
-            {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
           {/* Its footnotes and endnotes, where they can be seen and changed. */}
