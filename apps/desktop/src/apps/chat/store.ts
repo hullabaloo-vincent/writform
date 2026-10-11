@@ -508,7 +508,7 @@ async function deliver(entry: OutboxEntry): Promise<void> {
     useChat.setState((s) => ({
       outbox: s.outbox.map((o) => (o.key === entry.key ? { ...o, state: "failed" } : o)),
     }));
-    toastError("Message didn't send — retry or discard it below.");
+    toastError("Message didn't send. Retry or discard it below.");
   }
 }
 

@@ -63,7 +63,7 @@ export function MoveDialog({
             </button>
           </li>
         ))}
-        {folders.length === 0 && <li className="wf-friend-dim">No folders yet — create one from the toolbar.</li>}
+        {folders.length === 0 && <li className="wf-friend-dim">No folders yet. Create one from the toolbar.</li>}
       </ul>
     </Modal>
   );
@@ -288,7 +288,7 @@ export function CombineDialog({
       <header className="wf-doc-panel-header">
         <h3>Combine into one manuscript</h3>
       </header>
-      <p className="wf-combine-note">In this order — each becomes a chapter (or keeps its own headings). The originals don’t change.</p>
+      <p className="wf-combine-note">Combined in this order. Each becomes a chapter (or keeps its own headings). The originals don’t change.</p>
       <ol className="wf-combine-list">
         {order.map((s, i) => (
           <li key={s.key}>

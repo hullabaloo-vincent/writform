@@ -9,11 +9,11 @@ import { useLocalDocs } from "./local";
 import { openLocalDoc, openServerDoc } from "./navigation";
 
 const FORMAT_HINTS: Record<string, string> = {
-  none: "Letters, essays, reports — a page you format yourself",
-  manuscript: "A book: chapters and scenes, typeset for you",
+  none: "Letters, essays and reports on a page you format yourself",
+  manuscript: "A book whose chapters and scenes are typeset for you",
   screenplay: "Scene headings, action, dialogue",
   stageplay: "Acts, scenes, stage directions",
-  poetry: "Lines and stanzas, set as you break them",
+  poetry: "Lines and stanzas set as you break them",
 };
 
 /**
@@ -106,14 +106,14 @@ export function NewDocumentDialog({
               <input type="radio" name="newdoc-place" checked={where === "device"} onChange={() => setPlace("device")} />
               <span>
                 <strong>On this device</strong>
-                <small>Yours alone; publish it to a server whenever you like</small>
+                <small>Yours alone, and you can publish it to a server whenever you like</small>
               </span>
             </label>
             <label className={`${where === "server" ? "on" : ""}${connected ? "" : " off"}`}>
               <input type="radio" name="newdoc-place" checked={where === "server"} disabled={!connected} onChange={() => setPlace("server")} />
               <span>
                 <strong>{connected ? `On ${server}` : "On a server"}</strong>
-                <small>{connected ? "Write it together, live, with comments and history" : "Join or host a server to write together"}</small>
+                <small>{connected ? "Write it together live with comments and history" : "Join or host a server to write together"}</small>
               </span>
             </label>
           </fieldset>

@@ -271,7 +271,7 @@ export function StyleDialog({
           <label className="wf-inspector-check">
             <span>
               Keep with next
-              <small>Never the last thing on a page — for headings</small>
+              <small>Never the last thing on a page (for headings)</small>
             </span>
             <input type="checkbox" checked={draft.keepNext} onChange={() => set({ keepNext: !draft.keepNext })} />
           </label>

@@ -835,7 +835,7 @@ export function DocumentsView() {
         )}
         {offline && view.kind === "all" && !searching && (
           <p className="wf-documents-empty">
-            These documents live on this device. Connect to a server to write with others — its documents appear
+            These documents live on this device. Connect to a server to write with others. Its documents appear
             here beside yours.
           </p>
         )}

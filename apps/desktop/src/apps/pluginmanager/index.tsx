@@ -25,7 +25,7 @@ function PluginManagerView() {
         : "none";
       const ok = await confirmDialog(
         `Permissions it requests: ${perms}\n\n` +
-          `Plugins run with the app's access — only enable plugins you trust.`,
+          `Plugins run with the app's access, so only enable plugins you trust.`,
         { title: `Enable "${manifest.name}"?`, confirmLabel: "Enable plugin" },
       );
       if (!ok) return;
@@ -50,7 +50,7 @@ function PluginManagerView() {
       {error && <p className="wf-connect-error">{error}</p>}
       {needsReload && (
         <p className="wf-chat-invite" onClick={() => window.location.reload()}>
-          Changes take effect after reload — click here to reload now.
+          Changes take effect after reload. Click here to reload now.
         </p>
       )}
       <ul className="wf-plugin-list">

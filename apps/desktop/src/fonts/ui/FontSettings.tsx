@@ -42,14 +42,14 @@ export function FontSettings() {
           </label>
           <p className="wf-session-meta">
             Documents can use any of the {catalog ? catalog.fonts.length.toLocaleString() : "nearly 2,000"} families of the
-            Google Fonts library. A font is fetched the first time a document needs it — from the server you’re
-            connected to when it has it, otherwise from the library’s public CDN (jsDelivr) — and kept on this device.
-            That download is the only request subScribe makes to a third party; it carries the font’s name and
+            Google Fonts library. A font is fetched the first time a document needs it and kept on this device. It
+            comes from the server you’re connected to when it has it, otherwise from the library’s public CDN (jsDelivr).
+            That download is the only request subScribe makes to a third party, and it carries the font’s name and
             nothing about you or your writing. Switched off, only fonts already here (or on your server) are used,
             and others are shown in a stand-in.
           </p>
           <p className="wf-session-meta">
-            {cache ? `${cache.files} font file${cache.files === 1 ? "" : "s"} on this device — ${mb(cache.bytes)} of ${mb(cache.limit)}.` : "…"}{" "}
+            {cache ? `${cache.files} font file${cache.files === 1 ? "" : "s"} on this device (${mb(cache.bytes)} of ${mb(cache.limit)}).` : "…"}{" "}
             <button
               className="wf-link"
               disabled={!cache || cache.files === 0}
@@ -70,7 +70,7 @@ export function FontSettings() {
       )}
       {isWeb && (
         <p className="wf-session-meta">
-          Fonts from the online library are fetched and kept by your server; this browser never asks anyone else.
+          Fonts from the online library are fetched and kept by your server. This browser never asks anyone else.
         </p>
       )}
       <button className="wf-link" aria-expanded={licences} onClick={() => setLicences((v) => !v)}>
@@ -80,15 +80,15 @@ export function FontSettings() {
         <ul className="wf-fonts-licences">
           {bundled.map((f) => (
             <li key={f.id}>
-              <strong>{f.name}</strong> — bundled with the app, SIL Open Font License 1.1
+              <strong>{f.name}</strong>: bundled with the app under the SIL Open Font License 1.1
             </li>
           ))}
           <li>
-            <strong>Online library</strong> — {catalog?.source ?? "Fontsource"}. Every family is open-licensed (SIL Open
-            Font License, Apache 2.0 or Ubuntu Font Licence), free to use and to embed in what you publish.
+            <strong>Online library</strong>: {catalog?.source ?? "Fontsource"}. Every family is open-licensed (SIL Open
+            Font License, Apache 2.0 or Ubuntu Font Licence), so it is free to use and to embed in what you publish.
           </li>
           <li>
-            <strong>Fonts on this computer</strong> — used on screen as installed; embedded in a PDF only when the
+            <strong>Fonts on this computer</strong>: used on screen as installed, and embedded in a PDF only when the
             font’s own licence setting allows it. They are never uploaded.
           </li>
         </ul>

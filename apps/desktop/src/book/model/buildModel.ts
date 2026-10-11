@@ -131,7 +131,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
       if (parsed?.literal !== null && parsed?.literal !== undefined && parsed.literal !== chapterNo) {
         warnings.push({
           kind: "number-mismatch",
-          message: `“${heading}” is chapter ${chapterNo}; it prints as ${numberLabel(chapterNo, design.chapterNumber === "as-written" ? "numeral" : design.chapterNumber, design.chapterLabel) || `chapter ${chapterNo}`}.`,
+          message: `“${heading}” is chapter ${chapterNo} and prints as ${numberLabel(chapterNo, design.chapterNumber === "as-written" ? "numeral" : design.chapterNumber, design.chapterLabel) || `chapter ${chapterNo}`}.`,
           src,
         });
       }
@@ -421,7 +421,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
   if (blankLines > 0) {
     warnings.push({
       kind: "blank-lines",
-      message: `${blankLines} blank line${blankLines === 1 ? " doesn’t" : "s don’t"} print — the design sets the spacing. Use a scene break (* * *) where you meant a pause.`,
+      message: `${blankLines} blank line${blankLines === 1 ? " doesn’t" : "s don’t"} print because the design sets the spacing. Use a scene break (* * *) where you meant a pause.`,
     });
   }
   for (const [field, label] of [
@@ -430,7 +430,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
   ] as const) {
     const value = book.meta[field];
     if (value && !validIsbn(value)) {
-      warnings.push({ kind: "isbn", message: `The ${label} ISBN “${value}” isn’t valid — check the digits.` });
+      warnings.push({ kind: "isbn", message: `The ${label} ISBN “${value}” isn’t valid. Check the digits.` });
     }
   }
 

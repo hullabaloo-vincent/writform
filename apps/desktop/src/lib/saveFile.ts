@@ -22,7 +22,7 @@ export async function saveExport(
 
   const shown = result.path ? baseName(result.path) : fileName;
   const message = `Saved “${shown}”${result.location ? ` to ${result.location}` : ""}${
-    options.note ? ` — ${options.note}` : ""
+    options.note ? ` (${options.note})` : ""
   }`;
 
   if (result.revealable && result.path) {

@@ -7,13 +7,13 @@ Hate sharing your info with big tech so they can serve you even MORE ads?
 
 For me, that's a yes, yes, yes, and a big ol' YES.
 
-subScribe is a writing suite you own. On your own device, with no account: documents with a Word-style ribbon,
-real page layout, print, PDF and Word in and out; book publishing; boards; and an Obsidian-compatible notes vault.
-With a server one of you runs: write together live, with groups, chat (text, voice, and video), timed writing
-prompts with full session history, and friends & DMs. Fully self-hosted — nothing touches a third-party cloud.
+subScribe is a writing suite you own. On your own device, with no account, you get documents (a Word-style ribbon,
+real page layout, print, PDF and Word in and out), book publishing, boards, and an Obsidian-compatible notes vault.
+With a server one of you runs, you can write together live, with groups, chat (text, voice, and video), timed writing
+prompts with full session history, and friends & DMs. It is fully self-hosted and nothing touches a third-party cloud.
 
 Every feature is an "app" on an internal platform layer (dock, UI slots, command
-palette), and third-party plugins use the exact same extension points — see
+palette), and third-party plugins use the exact same extension points. See
 [docs/plugin-api.md](docs/plugin-api.md).
 
 ## Install
@@ -21,9 +21,9 @@ palette), and third-party plugins use the exact same extension points — see
 **Windows / Linux:** grab the installer from
 [Releases](https://github.com/hullabaloo-vincent/writform/releases).
 
-**macOS:** build it locally — notarizing a download needs a paid Apple Developer
+**macOS:** build it locally. Notarizing a download needs a paid Apple Developer
 account, but apps compiled on your own Mac are never quarantined, so they just
-open. Double-click **`scripts/Build subScribe (macOS).command`**; it checks for
+open. Double-click **`scripts/Build subScribe (macOS).command`**. It checks for
 Xcode Command Line Tools, Node, and Rust, offers to install anything missing,
 and drops the finished app in Applications.
 
@@ -40,32 +40,30 @@ server.
 | `apps/desktop` | Tauri 2 desktop client (React + TypeScript) |
 | `examples/plugins` | Example third-party plugin(s) |
 | `docs/` | Protocol, crypto, plugin-API, and canvas-phase specs |
-| `deploy/` | systemd unit; `Dockerfile` at the repo root |
+| `deploy/` | systemd unit (the `Dockerfile` is at the repo root) |
 
 ## Built-in apps
 
-- **Chat** — groups (invite codes, roles, kick), channels, messages with image
-attachments, markdown, custom emotes, @mentions and #channel references,
-presence (online/busy/invisible). 
-- **Sessions** — a session holds multiple
-rich-text prompts; each is started/timed/stopped by its creator, everyone
-writes privately, writings reveal when the prompt ends, side chat throughout,
-full history browsable.
-- **Documents** — collaborative writing with live
-multi-user editing (CRDT), writing formats (screenplay, stage play,
-manuscript, poetry), version history, folders, full-text search, anchored
-feedback threads, PDF/DOCX/RTF/Pages/TXT/MD import, and sharing with friends
-or whole groups.
-- **Canvas** — group storyboards: sticky notes, text, frames
-(with color), connectors, pasted images, link cards, live document
-references, live multi-user editing. **Voice** — audio channels per group:
-peer-to-peer WebRTC mesh (media never touches the server), mute, speaking
-indicators, device/gain settings. **Friends** — requests, DMs, note sharing,
-profile cards.
-- **Notes** — local-first markdown vault (Obsidian-compatible
-files), wiki-links + backlinks, share snapshots to friends.
-- **Plugins** —
-enable third-party plugins with per-plugin permissions.
+- **Chat**: groups (invite codes, roles, kick), channels, messages with image
+  attachments, markdown, custom emotes, @mentions and #channel references,
+  presence (online/busy/invisible).
+- **Sessions**: a session holds multiple rich-text prompts. Each is
+  started/timed/stopped by its creator, everyone writes privately, and
+  writings reveal when the prompt ends. Side chat runs throughout and the
+  full history is browsable.
+- **Documents**: collaborative writing with live multi-user editing (CRDT),
+  writing formats (screenplay, stage play, manuscript, poetry), version
+  history, folders, full-text search, anchored feedback threads,
+  PDF/DOCX/RTF/Pages/TXT/MD import, and sharing with friends or whole groups.
+- **Canvas**: group storyboards with sticky notes, text, frames (with color),
+  connectors, pasted images, link cards, live document references and live
+  multi-user editing. **Voice**: audio channels per group over a peer-to-peer
+  WebRTC mesh (media never touches the server), with mute, speaking
+  indicators and device/gain settings. **Friends**: requests, DMs, note
+  sharing, profile cards.
+- **Notes**: local-first markdown vault (Obsidian-compatible files),
+  wiki-links + backlinks, share snapshots to friends.
+- **Plugins**: enable third-party plugins with per-plugin permissions.
 
 Native notifications for DMs, mentions, new sessions, shared documents/notes,
 and friend requests. Server admins can issue one-time password reset codes
@@ -97,7 +95,7 @@ The desktop client also builds as a native iOS app (`src-tauri/gen/apple`
 is the committed Xcode project). Prereqs on top of the above: Xcode,
 CocoaPods (`brew install cocoapods`), and the Rust targets
 (`rustup target add aarch64-apple-ios aarch64-apple-ios-sim`). Signing
-uses the development team in `tauri.conf.json` → `bundle.iOS` — change it
+uses the development team in `tauri.conf.json` → `bundle.iOS`. Change it
 to your own Apple Development team ID (Xcode → Settings → Accounts).
 
 ```sh
@@ -115,36 +113,36 @@ On first install to a real device, trust the developer profile under
 Settings → General → VPN & Device Management, and enable Developer Mode
 (Settings → Privacy & Security). If `tauri ios build` fails at the very
 end with `Directory not empty`, clear its stale output first:
-`rm -rf src-tauri/gen/apple/build` (a CLI packaging quirk; the Xcode
-build itself succeeded).
+`rm -rf src-tauri/gen/apple/build` (this is a CLI packaging quirk and the
+Xcode build itself succeeded).
 
-Generated bindings in `apps/desktop/src/bindings/proto/` are committed; CI fails if
-they drift from the Rust types.
+Generated bindings in `apps/desktop/src/bindings/proto/` are committed, and CI
+fails if they drift from the Rust types.
 
 ## Self-hosting & updates
 
-- **Easiest — no server admin at all:** open the desktop app and pick **"Host on
+- **Easiest (no server admin at all):** open the desktop app and pick **"Host on
   this computer"** on the welcome screen. It runs a full server inside the app
   (data under the app's data directory), makes you the server admin, and shows
-  shareable addresses in Settings → Server — including one-click UPnP port
+  shareable addresses in Settings → Server. That includes one-click UPnP port
   mapping for internet access, with port-forward/Tailscale guidance when the
   router refuses.
 - **Docker:** `docker run -p 7311:7311 -v writform-data:/data ghcr.io/hullabaloo-vincent/writform-server`
 - **Bare metal:** grab `writform-server` from GitHub Releases + `deploy/writform-server.service`
-- Upgrading = pull the new image / binary and restart; SQLite migrations run at startup.
+- Upgrading = pull the new image / binary and restart. SQLite migrations run at startup.
 - Releases are one button: Actions → Release → "Run workflow" picks the version
   bump, commits it, tags, and publishes installers + the server image to GitHub
   Releases/GHCR (auto-update via the Tauri updater once signing keys are
-  configured — see `.github/workflows/release.yml` for the one-time setup).
-  What to check before pressing it — above all whether the document format's
-  schema level has to rise — is in [`docs/release.md`](docs/release.md).
+  configured, with the one-time setup in `.github/workflows/release.yml`).
+  What to check before pressing it (above all whether the document format's
+  schema level has to rise) is in [`docs/release.md`](docs/release.md).
 
 ## Security model
 
 Clients pin a self-hosted server on first connect (TOFU): TLS 1.3 with hybrid
 X25519+ML-KEM-768 key exchange (FIPS 203), plus an ML-DSA-65 (FIPS 204) server
-identity key whose signature binds the TLS certificate — verified on every
-connect, so a changed identity is a loud warning. Passwords are
-PBKDF2-HMAC-SHA-512; session tokens are opaque and stored hashed. All client
-network I/O runs in the Tauri Rust core (the webview cannot pin certificates).
-Details in [docs/crypto.md](docs/crypto.md).
+identity key whose signature binds the TLS certificate. The signature is
+verified on every connect, so a changed identity is a loud warning. Passwords
+are PBKDF2-HMAC-SHA-512. Session tokens are opaque and stored hashed. All
+client network I/O runs in the Tauri Rust core (the webview cannot pin
+certificates). Details in [docs/crypto.md](docs/crypto.md).

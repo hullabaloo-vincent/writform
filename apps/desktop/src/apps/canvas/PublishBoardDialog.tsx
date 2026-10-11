@@ -68,7 +68,7 @@ export function PublishBoardDialog({
       {done ? (
         <>
           <p className="wf-doc-share-note">
-            Published ✓ — everyone in {chosen?.name ?? "the group"} can open it now.
+            Published ✓ Everyone in {chosen?.name ?? "the group"} can open it now.
             {done.notice ? ` (${done.notice}.)` : ""}
           </p>
           <div className="wf-import-actions">
@@ -88,7 +88,7 @@ export function PublishBoardDialog({
         <>
           <p className="wf-import-label">
             {progress.label}
-            {progress.total > 1 ? ` — ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : ""}
+            {progress.total > 1 ? ` (${Math.min(progress.done + 1, progress.total)} of ${progress.total})` : ""}
           </p>
           <div className="wf-import-bar">
             <span style={{ width: `${percent}%` }} />
@@ -100,7 +100,7 @@ export function PublishBoardDialog({
       ) : (
         <>
           <p className="wf-doc-share-note">
-            Publishes a copy to a group on the server you’re connected to, pictures included. The board on this
+            Publishes a copy with its pictures to a group on the server you’re connected to. The board on this
             device stays here, and later changes to it do <strong>not</strong> reach the published copy.
           </p>
           {groups.length === 0 ? (

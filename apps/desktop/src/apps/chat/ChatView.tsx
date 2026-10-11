@@ -101,7 +101,7 @@ function EmotePicker({
   return (
     <div className="wf-emote-picker" onPointerDown={(e) => e.stopPropagation()}>
       <header>
-        <span>Emotes{group ? ` — ${group.name}` : ""}</span>
+        <span>Emotes{group ? ` · ${group.name}` : ""}</span>
         <button onClick={onClose}>×</button>
       </header>
       {error && <p className="wf-connect-error">{error}</p>}
@@ -132,7 +132,7 @@ function EmotePicker({
         ))}
         {emotes.length === 0 && (
           <p className="wf-friend-dim">
-            No custom emotes yet{isAdmin ? " — add one below." : "."}
+            No custom emotes yet{isAdmin ? ". Add one below." : "."}
           </p>
         )}
       </div>
@@ -470,8 +470,8 @@ function GroupSettingsDialog({
       <div className="wf-field">
         Join code
         <p className="wf-session-meta">
-          A permanent code anyone can enter on the join screen — like an invite that never
-          expires. Clear it to stop new joins.
+          A permanent code anyone can enter on the join screen. It works like an invite that
+          never expires. Clear it to stop new joins.
         </p>
         <div className="wf-connect-row" style={{ alignItems: "center" }}>
           <input
@@ -494,7 +494,7 @@ function GroupSettingsDialog({
         </div>
         {group.join_code && (
           <p className="wf-session-meta">
-            Active: <code>{group.join_code}</code> — share it anywhere.
+            Active: <code>{group.join_code}</code>. Share it anywhere.
           </p>
         )}
       </div>
@@ -563,7 +563,7 @@ function ChannelList() {
             </button>
             <button
               className="wf-invite-btn"
-              title="Invite people — generate a temporary invite code"
+              title="Invite people with a temporary invite code"
               onClick={() =>
                 void chatApi.createInvite(group!.id).then((i) => setInvite(i.code))
               }
@@ -643,7 +643,7 @@ function ChannelList() {
                     title={
                       isMuted
                         ? "Unmute channel"
-                        : "Mute channel — no notifications or badges on this device"
+                        : "Mute channel (no notifications or badges on this device)"
                     }
                     onClick={() => toggleMute(c.id)}
                   >
@@ -919,7 +919,7 @@ function MemberList() {
 
   return (
     <>
-      <header className="wf-chat-members-header">Members — {members.length}</header>
+      <header className="wf-chat-members-header">Members · {members.length}</header>
       <ul>
         {members.map((m) => (
           <li
@@ -1147,7 +1147,7 @@ export function PinsButton({
             <p className="wf-friend-dim">Loading…</p>
           ) : pinned.length === 0 ? (
             <p className="wf-friend-dim">
-              Nothing pinned yet — pin a message from its hover actions.
+              Nothing pinned yet. Pin a message from its hover actions.
             </p>
           ) : (
             <div className="wf-chat-search-hits">
@@ -1678,8 +1678,8 @@ function DocumentShareCard({ content }: { content: string }) {
         <span className="wf-session-meta">
           {error ??
             (card.access === "write"
-              ? "Shared with this group — everyone can edit"
-              : "Shared with this group — read only")}
+              ? "Shared with this group · everyone can edit"
+              : "Shared with this group · read only")}
         </span>
       </div>
       <button

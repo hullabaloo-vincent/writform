@@ -232,7 +232,7 @@ export function OutlinePanel({
                   className="wf-doc-outline-item"
                   style={{ paddingLeft: 10 + entry.level * 14 }}
                   onClick={() => jump(entry.pos)}
-                  title={entry.mismatch ? `Typed as ${entry.literal}; prints as ${entry.label}` : undefined}
+                  title={entry.mismatch ? `Typed as ${entry.literal} but prints as ${entry.label}` : undefined}
                 >
                   {draggable && <GripVertical size={12} className="wf-doc-outline-grip" />}
                   <span className="wf-doc-outline-text">

@@ -397,13 +397,13 @@ pub async fn read_dropped_file(path: String) -> Result<serde_json::Value, CmdErr
     if meta.is_dir() {
         return Err(CmdError::new(
             "is_directory",
-            "that's a folder — drop a single document file instead",
+            "that's a folder, so drop a single document file instead",
         ));
     }
     if meta.len() > MAX_IMPORT_BYTES {
         return Err(CmdError::new(
             "too_large",
-            "that file is larger than 64 MB — import it in smaller pieces",
+            "that file is larger than 64 MB, so import it in smaller pieces",
         ));
     }
     let bytes = tokio::fs::read(&path)

@@ -24,7 +24,7 @@ function ReconnectBanner() {
   return (
     <div className="wf-reconnect-banner">
       <span className="wf-spinner sm" aria-hidden />
-      Connection to the server lost — reconnecting…
+      Connection to the server lost. Reconnecting…
     </div>
   );
 }
@@ -104,7 +104,7 @@ function SessionStatus() {
     <span className="wf-session-status">
       <button
         className="wf-status-toggle"
-        title={`Status: ${current.label} — click to change`}
+        title={`Status: ${current.label} (click to change)`}
         onClick={() => setOpen((v) => !v)}
       >
         <Avatar

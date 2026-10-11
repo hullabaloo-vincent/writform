@@ -443,7 +443,7 @@ export async function typesetToPdf(kind: PrintKind, model: BookModel, onProgress
   if (kind === "paperback") {
     return {
       bytes: result.bytes,
-      fileName: `${bookFileName(model.book)} – paperback interior.pdf`,
+      fileName: `${bookFileName(model.book)} (paperback interior).pdf`,
       saveKind: "pdf",
       warnings,
       summary: `${result.pages} pages · ${trim} · inside margin ${fmt(result.insideMargin)} in`,
@@ -452,10 +452,10 @@ export async function typesetToPdf(kind: PrintKind, model: BookModel, onProgress
   if (kind === "booklet") {
     return {
       bytes: result.bytes,
-      fileName: `${bookFileName(model.book)} – booklet.pdf`,
+      fileName: `${bookFileName(model.book)} (booklet).pdf`,
       saveKind: "pdf",
       warnings,
-      summary: `${result.pages} pages on ${result.sheets} sheets — print two-sided, flipping on the short edge, then fold`,
+      summary: `${result.pages} pages on ${result.sheets} sheets. Print two-sided, flipping on the short edge, then fold.`,
     };
   }
   return {

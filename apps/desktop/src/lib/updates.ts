@@ -37,7 +37,7 @@ export async function announceUpdateOnLaunch(): Promise<void> {
     const update = await checkForUpdate();
     if (!update) return;
     const { toast } = await import("../platform");
-    toast(`subScribe ${update.version} is available — install it from Settings → Application.`);
+    toast(`subScribe ${update.version} is available. Install it from Settings → Application.`);
   } catch {
     // Launch checks are best-effort; the manual check surfaces errors.
   }

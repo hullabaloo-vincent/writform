@@ -67,7 +67,7 @@ export function PrintDialog({
       setError("Printing couldn’t start here. Save the PDF and print it from there.");
       return;
     }
-    if (outcome === "opened") toast("Opened as a PDF — print it from there.", "info");
+    if (outcome === "opened") toast("Opened as a PDF. Print it from there.", "info");
     if (outcome !== "cancelled") onClose();
   };
 

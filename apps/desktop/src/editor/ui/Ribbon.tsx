@@ -824,9 +824,9 @@ export function Ribbon({
       label: "Notes",
       content: rich ? (
         <>
-          {btn("Footnote — a note at the foot of the page", <Asterisk size={15} />, () => insertNote(editor, "foot"), false, false, "Footnote")}
-          {btn("Endnote — a note at the end of the document", null, () => insertNote(editor, "end"), false, false, "Endnote")}
-          {btn("Table of contents — the headings, kept up to date", <TableOfContents size={15} />, () => insertToc(editor), false, !topLevel, "Contents")}
+          {btn("Footnote: a note at the foot of the page", <Asterisk size={15} />, () => insertNote(editor, "foot"), false, false, "Footnote")}
+          {btn("Endnote: a note at the end of the document", null, () => insertNote(editor, "end"), false, false, "Endnote")}
+          {btn("Table of contents: a list of the headings that stays up to date", <TableOfContents size={15} />, () => insertToc(editor), false, !topLevel, "Contents")}
         </>
       ) : null,
     },
@@ -885,7 +885,7 @@ export function Ribbon({
                     <FlyoutItem checked={para.colBreak === true} hint="to the next column" onPick={pick(() => toggleColumnBreak(editor))}>
                       Column break
                     </FlyoutItem>
-                    <FlyoutItem disabled={!topLevel} checked={!!para.sect} hint="a new page, its own setup" onPick={pick(() => setSection(editor, para.sect ? null : {}))}>
+                    <FlyoutItem disabled={!topLevel} checked={!!para.sect} hint="a new page with its own setup" onPick={pick(() => setSection(editor, para.sect ? null : {}))}>
                       Section break
                     </FlyoutItem>
                   </>
@@ -1054,7 +1054,7 @@ export function Ribbon({
         <>
           <select
             className="wf-ribbon-select wf-ribbon-mode"
-            title="Editing changes the text; Suggesting proposes changes; Viewing shows the text with them accepted"
+            title="Editing changes the text. Suggesting proposes changes. Viewing shows the text with them accepted."
             aria-label="Mode"
             value={review.mode}
             onChange={(e) => review.setMode(e.target.value as ReviewMode)}
@@ -1111,7 +1111,7 @@ export function Ribbon({
       label: "Print",
       content: (
         <>
-          {actions.preview && btn("Preview — every page as it will print", <Eye size={15} />, actions.preview, false, false, "Preview")}
+          {actions.preview && btn("Preview: every page as it will print", <Eye size={15} />, actions.preview, false, false, "Preview")}
           {actions.print && btn("Print (⌘P)", <Printer size={15} />, actions.print, false, false, "Print")}
         </>
       ),
@@ -1227,7 +1227,7 @@ export function Ribbon({
       label: "Look",
       content: (
         <>
-          {btn("Header row — the first row, repeated when the table runs over a page", null, () => setTableAttrs(editor, { head: tableNow?.head ? null : true }), !!tableNow?.head, false, "Header row")}
+          {btn("Header row: the first row repeats when the table runs over a page", null, () => setTableAttrs(editor, { head: tableNow?.head ? null : true }), !!tableNow?.head, false, "Header row")}
           <Flyout title="Lines" icon={<Square size={15} />} label="Lines">
             {(close) =>
               TABLE_LINES_NAMES.map(([value, label]) => (

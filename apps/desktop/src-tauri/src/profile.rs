@@ -168,7 +168,7 @@ pub(crate) fn store_image(
     let ext = image_ext(bytes).ok_or_else(|| {
         CmdError::new(
             "bad_image",
-            "That isn't a picture this can use — choose a PNG, JPEG, GIF or WebP.",
+            "That isn't a picture this can use. Choose a PNG, JPEG, GIF or WebP.",
         )
     })?;
     remove_stem(dir, stem);

@@ -135,7 +135,7 @@ export const FORMAT_SPECS: Record<string, FormatSpec> = {
       },
       {
         id: "flush",
-        label: "Body — No Indent",
+        label: "Body (No Indent)",
         group: "Text",
         hint: "A body paragraph that never takes a first-line indent",
       },

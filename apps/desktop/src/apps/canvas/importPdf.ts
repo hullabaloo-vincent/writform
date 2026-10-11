@@ -483,7 +483,7 @@ export async function importPdfAsBoard(
       if (name === "PasswordException") {
         throw {
           code: "pdf_password",
-          message: "This PDF is password-protected — remove the password and try again.",
+          message: "This PDF is password-protected. Remove the password and try again.",
         };
       }
       throw { code: "pdf_invalid", message: "That file doesn't look like a readable PDF." };
@@ -550,7 +550,7 @@ export async function importPdfAsBoard(
       throw {
         code: "pdf_nothing",
         message:
-          "Nothing recognizable to import — this PDF has no text, pictures or note-like shapes.",
+          "Nothing recognizable to import. This PDF has no text, pictures or note-like shapes.",
       };
     }
 

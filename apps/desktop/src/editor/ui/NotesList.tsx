@@ -111,7 +111,7 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
             {group.kind === "end"
               ? "Printed at the end of the document."
               : "Each is printed at the foot of the page that cites it."}
-            {editable ? " Click a note to change it; its number shows where it is cited." : " Click a note to see where it is cited."}
+            {editable ? " Click a note to change it. Its number shows where it is cited." : " Click a note to see where it is cited."}
           </p>
           <ol>
             {group.items.map((note) => (

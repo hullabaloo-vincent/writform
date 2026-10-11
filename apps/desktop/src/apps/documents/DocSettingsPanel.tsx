@@ -433,7 +433,7 @@ function TextTab({
         <label className="wf-inspector-check">
           <span>
             Drop cap
-            <small>Oversized first letter, set into the opening lines</small>
+            <small>An oversized first letter set into the opening lines</small>
           </span>
           <input
             type="checkbox"
@@ -706,7 +706,7 @@ function DocumentTab({
       </section>
 
       <p className="wf-inspector-dim wf-inspector-foot">
-        Saved with the document — everyone who opens it sees the same layout.
+        Saved with the document, so everyone who opens it sees the same layout.
       </p>
     </div>
   );

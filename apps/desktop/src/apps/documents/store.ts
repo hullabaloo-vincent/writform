@@ -224,7 +224,7 @@ export function installDocumentsWsHandler(): () => void {
         if (state.activeDocId === doc_id) {
           state.closeDocument();
           toast(
-            "This document now uses formatting from a newer version of subScribe. Update the app to keep editing it — your unsent changes are kept on this device.",
+            "This document now uses formatting from a newer version of subScribe. Update the app to keep editing it. Your unsent changes are kept on this device.",
             "error",
           );
         }

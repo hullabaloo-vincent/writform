@@ -207,7 +207,7 @@ export function FriendsView() {
           </>
         )}
 
-        <h3>All friends — {friends.length}</h3>
+        <h3>All friends · {friends.length}</h3>
         {!loaded && <SkeletonRows rows={4} avatar />}
         <ul className="wf-friend-list">
           {friends.map((f) => (
@@ -260,7 +260,7 @@ export function FriendsView() {
             </li>
           ))}
           {loaded && friends.length === 0 && (
-            <li className="wf-friend-dim">No friends yet — add one above.</li>
+            <li className="wf-friend-dim">No friends yet. Add one above.</li>
           )}
         </ul>
       </div>
@@ -321,7 +321,7 @@ function DmPane({ dm }: { dm: DmChannel }) {
     void chatApi.sendMessage(dm.channel_id, content, [], replyToId).catch(() => {
       // Put the text back so nothing is lost.
       setDraft(dm.channel_id, content);
-      toastError("Message didn't send — your text is back in the box.");
+      toastError("Message didn't send. Your text is back in the box.");
     });
   };
 

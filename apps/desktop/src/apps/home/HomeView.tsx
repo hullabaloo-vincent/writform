@@ -213,7 +213,7 @@ export function HomeView() {
         <section aria-labelledby="home-recent">
           <h2 id="home-recent">Jump back in</h2>
           {recents.length === 0 ? (
-            <p className="wf-home-empty">What you work on will be here, newest first.</p>
+            <p className="wf-home-empty">What you work on will be here with the newest first.</p>
           ) : (
             <ul className="wf-home-recents">
               {recents.map((item) => (
@@ -317,7 +317,7 @@ export function HomeView() {
           >
             {exporting ?? "Export everything on this device…"}
           </button>
-          <small>Documents, boards, notes and your profile, in one zip.</small>
+          <small>Documents, boards, notes and your profile in one zip.</small>
         </footer>
       )}
       </div>
@@ -349,7 +349,7 @@ function NameYourself() {
     >
       <label htmlFor="home-name">What should we call you?</label>
       <div className="wf-connect-row">
-        <input id="home-name" value={name} maxLength={64} placeholder="Your name, as an author" onChange={(e) => setName(e.target.value)} />
+        <input id="home-name" value={name} maxLength={64} placeholder="Your name as an author" onChange={(e) => setName(e.target.value)} />
         <button type="submit" className="wf-primary" disabled={!name.trim()}>
           Save
         </button>

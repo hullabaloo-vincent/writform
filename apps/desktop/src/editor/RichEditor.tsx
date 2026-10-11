@@ -292,7 +292,7 @@ export function Toolbar({
           })()}
           <span className="wf-toolbar-sep" />
           {btn(
-            "Block quote — letters, signs, extracts",
+            "Block quote for letters, signs and extracts",
             <Quote size={15} />,
             () => chain().toggleBlockquote().run(),
             editor.isActive("blockquote"),
@@ -305,7 +305,7 @@ export function Toolbar({
           {(() => {
             const opens = opensSection(editor.state.selection.$from.parent);
             return btn(
-              opens ? "Chapters always start on a new page" : "Page break — start this paragraph on a new page (⌘↩)",
+              opens ? "Chapters always start on a new page" : "Page break: start this paragraph on a new page (⌘↩)",
               <SeparatorHorizontal size={15} />,
               () => togglePageBreakBefore(editor),
               !opens && curTypography(editor).pageBreakBefore === true,

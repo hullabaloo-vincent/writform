@@ -1887,7 +1887,7 @@ export function BoardRoom() {
       if (busy) {
         haptic("error");
         setError(
-          `${busy.user.display_name ?? busy.user.username} is drawing on this sketch right now — try again in a moment.`,
+          `${busy.user.display_name ?? busy.user.username} is drawing on this sketch right now. Try again in a moment.`,
         );
         return;
       }

@@ -46,7 +46,7 @@ const LOCAL_IMAGE = /^image\/(png|jpeg|gif)$/;
 export function uploadToDevice(docId: string): ImageUploader {
   return async (file) => {
     if (!LOCAL_IMAGE.test(file.type)) {
-      throw { code: "bad_image", message: "That kind of picture can’t be added — use a PNG, JPEG or GIF." } satisfies CmdError;
+      throw { code: "bad_image", message: "That kind of picture can’t be added. Use a PNG, JPEG or GIF." } satisfies CmdError;
     }
     const mediaId = crypto.randomUUID();
     await backend.localdocMediaWrite(docId, mediaId, await file.arrayBuffer());

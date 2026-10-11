@@ -120,7 +120,7 @@ export function AccountMenu({ inline = false, onNavigate }: { inline?: boolean; 
                     {current
                       ? "Connected"
                       : own && host && !host.running
-                        ? "This computer — stopped"
+                        ? "This computer · stopped"
                         : s.signed_in
                           ? `${own ? "This computer · " : ""}Connect${s.last_username ? ` as ${s.last_username}` : ""}`
                           : `${own ? "This computer · " : ""}Sign in`}
@@ -178,7 +178,7 @@ export function AccountMenu({ inline = false, onNavigate }: { inline?: boolean; 
             </span>
             <span className="wf-account-text">
               Disconnect
-              <small>Stay signed in; work on this device</small>
+              <small>Stay signed in and work on this device</small>
             </span>
           </button>
           <button className="wf-account-item" role="menuitem" onClick={() => void signOut()}>
@@ -197,7 +197,7 @@ export function AccountMenu({ inline = false, onNavigate }: { inline?: boolean; 
     <div className="wf-account" ref={wrapRef}>
       <button
         className={`wf-rail-item wf-account-button${open ? " active" : ""}`}
-        title={`${displayName} — account and servers`}
+        title={`${displayName}: account and servers`}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((v) => !v)}

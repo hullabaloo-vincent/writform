@@ -254,7 +254,7 @@ function FontList({
           </div>
         ))}
         {sections.length === 0 && <p className="wf-fontlist-empty">No font by that name.</p>}
-        {!online && <p className="wf-fontlist-empty">The online library is switched off in Settings; only fonts already downloaded will load.</p>}
+        {!online && <p className="wf-fontlist-empty">The online library is switched off in Settings, so only fonts already downloaded will load.</p>}
       </div>
     </div>
   );

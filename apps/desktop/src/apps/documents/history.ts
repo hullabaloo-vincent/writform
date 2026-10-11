@@ -373,7 +373,7 @@ export function saveLocalVersion(
       failures.set(docId, count);
       if (count === 2) {
         void import("../../platform/toast").then(({ toastError }) =>
-          toastError("Couldn't save this document's history. Your text is safe; versions aren't being recorded."),
+          toastError("Couldn't save this document's history. Your text is safe, but versions aren't being recorded."),
         );
         listeners.forEach((fn) => fn(docId));
       }

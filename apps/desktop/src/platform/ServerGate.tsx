@@ -58,7 +58,7 @@ export function ServerGate({ app }: { app: AppManifest }) {
         {link === "local" && (
           <>
             <p>
-              Writing together — chat, voice, live sessions, shared documents and boards — runs on a server
+              Writing together (chat, voice, live sessions, shared documents and boards) runs on a server
               that one of you keeps. Join one you’ve been invited to, or start your own. What you write on
               this device stays here either way.
             </p>

@@ -113,7 +113,7 @@ export function installSessionsWsHandler(): () => void {
               }
             : s.detail,
         }));
-        toast("Prompt stopping — 10 seconds to finish your sentence");
+        toast("Prompt stopping in 10 seconds. Finish your sentence.");
       }
     } else if (kind === "session.ended") {
       const { session_id } = data as { session_id: number };

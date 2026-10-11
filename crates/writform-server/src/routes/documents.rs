@@ -322,7 +322,7 @@ fn storable_level(state: &AppState, level: u32) -> Result<u32, AppError> {
     if level > state.max_doc_schema {
         return Err(AppError::bad_request(
             "schema_unsupported",
-            "this server doesn't support that document format yet — update the server",
+            "This server doesn't support that document format yet. Update the server.",
         ));
     }
     Ok(level.max(1))

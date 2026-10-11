@@ -210,7 +210,7 @@ function Check({
 
 function BookTab({ book, disabled, patch }: { book: Book; disabled: boolean; patch: Patch }) {
   const m = book.meta;
-  const isbn = (v: string) => (v && !validIsbn(v) ? "Not a valid ISBN — check the digits." : null);
+  const isbn = (v: string) => (v && !validIsbn(v) ? "Not a valid ISBN. Check the digits." : null);
   const [contactOpen, setContactOpen] = useState(false);
   return (
     <div className="wf-inspector-body">
@@ -370,7 +370,7 @@ function BookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pat
               disabled={disabled}
             />
             <p className="wf-inspector-dim">
-              The PDF uses Libertinus for the serif (Times New Roman can’t be embedded); the Word file
+              The PDF uses Libertinus for the serif (Times New Roman can’t be embedded). The Word file
               uses Times New Roman itself.
             </p>
           </>
@@ -378,7 +378,7 @@ function BookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pat
       </section>
 
       <p className="wf-inspector-dim wf-inspector-foot">
-        Saved with the manuscript — everyone working on it sees the same book.
+        Saved with the manuscript, so everyone working on it sees the same book.
       </p>
     </div>
   );
@@ -821,7 +821,7 @@ function EbookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pa
     <div className="wf-inspector-body">
       <section>
         <h4>Ebook</h4>
-        <Check label="Contents page" checked={e.toc} onChange={(v) => set("toc", v)} disabled={disabled} hint="Readers always get navigation; this adds a page too." />
+        <Check label="Contents page" checked={e.toc} onChange={(v) => set("toc", v)} disabled={disabled} hint="Readers always get navigation. This adds a page too." />
         <Check label="Embed the book’s fonts" checked={e.embedFonts} onChange={(v) => set("embedFonts", v)} disabled={disabled} />
         <Check label="Drop caps" checked={e.dropCaps} onChange={(v) => set("dropCaps", v)} disabled={disabled} />
         <Check label="Copyright page at the back" checked={e.copyrightAtBack} onChange={(v) => set("copyrightAtBack", v)} disabled={disabled} />
@@ -834,7 +834,7 @@ function EbookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pa
               : "created on first export"}
         </p>
         <p className="wf-inspector-dim">
-          Most ebook readers use their own fonts and margins — the ebook keeps your structure,
+          Most ebook readers use their own fonts and margins. The ebook keeps your structure,
           headings, scene breaks and front matter, and lets the reader do the rest.
         </p>
       </section>

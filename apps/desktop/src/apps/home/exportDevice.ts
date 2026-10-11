@@ -143,14 +143,14 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
   zip.file(
     "README.txt",
     [
-      "Everything on this device, exported from subScribe.",
+      "A subScribe export of everything on this device.",
       "",
       "Documents/  each document as Word (.docx, with its pictures) and as .json",
-      "            (the editor's own format: everything, losslessly), in the",
+      "            (the editor's own format, which keeps everything), in the",
       "            folder it is in on this device.",
-      "Boards/     each board as .json (the app's board file); the pictures on",
+      "Boards/     each board as .json (the app's board file). The pictures on",
       "            them are in Boards/pictures, named by the id the board uses.",
-      "Notes/      your notes, as the Markdown files they are.",
+      "Notes/      your notes as the Markdown files they are.",
       "profile.json  your name and look on this device (with your picture and",
       "              banner beside it, if you've set them).",
       "",
@@ -165,6 +165,6 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
   const now = new Date();
   const pad = (n: number) => String(n).padStart(2, "0");
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-  const result = await saveExport(`subScribe — this device ${stamp}.zip`, "zip", bytes);
+  const result = await saveExport(`subScribe (this device) ${stamp}.zip`, "zip", bytes);
   return { result, documents, boards: boardCount, notes: noteCount, skipped };
 }

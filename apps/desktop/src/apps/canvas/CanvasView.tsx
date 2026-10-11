@@ -208,16 +208,16 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
       {groupId === null ? (
         <p className="wf-app-empty-hint">
           {offline
-            ? "Boards shared with a group live on a server — they appear here once you connect. Boards on this device work without one."
+            ? "Boards shared with a group live on a server and appear here once you connect. Boards on this device work without one."
             : "Join a group first (see the Chat app) for shared boards. Boards on this device work without a group."}
         </p>
       ) : (
         <>
           {boards.length === 0 && !q && (
             <p className="wf-app-empty-hint">
-              Boards are shared visual spaces for your group — sticky notes, images, frames,
-              connectors, and live document excerpts, all synced in real time. Create one to
-              start storyboarding together.
+              Boards are shared visual spaces for your group. They hold sticky notes, images,
+              frames, connectors and live document excerpts, and they sync in real time. Create
+              one to start storyboarding together.
             </p>
           )}
           <div className="wf-sessions-grid">

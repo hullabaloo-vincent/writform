@@ -2,8 +2,8 @@
 
 Everything is JSON over HTTPS at `/api/v1/`, authenticated with
 `Authorization: Bearer <token>` (login/register return the token). Mutations
-happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
-"REST is truth, WS is invalidation."
+happen over REST, and a WebSocket at `/api/v1/ws` fans out change events.
+The rule is "REST is truth, WS is invalidation."
 
 ## Auth & profile
 
@@ -25,7 +25,7 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 | GET | `/groups/{id}/members` · `/groups/{id}/presence` |
 | POST | `/groups/{id}/invites` · `/invites/redeem` |
 | GET/POST | `/groups/{id}/channels` · `/channels/{id}/messages` (`?before=` / `?after=`) |
-| PATCH/DELETE | `/messages/{id}` (author; admins may delete) |
+| PATCH/DELETE | `/messages/{id}` (author, and admins may delete) |
 | GET/POST/DELETE | `/groups/{id}/emotes` |
 | POST | `/attachments` (multipart) · GET `/attachments/{id}` |
 
@@ -43,15 +43,15 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| GET/POST | `/documents` | list (own + shared) with each document's `word_count` and `excerpt`; `?q=` searches titles and the documents' words (not their JSON), each hit with a `snippet` |
-| GET/PATCH/DELETE | `/documents/{id}` | detail (Yjs state; `?quiet=1` for bulk reads that shouldn't log "opened"), rename/reformat, delete (owner) — moves it to Recently Deleted |
+| GET/POST | `/documents` | list (own + shared) with each document's `word_count` and `excerpt`. `?q=` searches titles and the documents' words (not their JSON), and each hit has a `snippet` |
+| GET/PATCH/DELETE | `/documents/{id}` | detail (Yjs state, with `?quiet=1` for bulk reads that shouldn't log "opened"), rename/reformat, delete (owner), which moves it to Recently Deleted |
 | POST | `/documents/{id}/restore` | put a document back from Recently Deleted (owner) |
 | GET | `/document-trash` | the caller's Recently Deleted, newest first, with `deleted_at` |
 | DELETE | `/document-trash/{id}` | delete one for good (owner) |
 | POST | `/document-trash/empty` | empty Recently Deleted |
-| GET/POST | `/documents/{id}/updates` | Yjs update log — `?since=` catch-up (`truncated` past 16 MiB: reload the state); one update may be up to 4 MiB, larger is 413 `update_too_large` |
+| GET/POST | `/documents/{id}/updates` | Yjs update log with `?since=` catch-up (`truncated` past 16 MiB: reload the state). One update may be up to 4 MiB, and a larger one is 413 `update_too_large` |
 | POST | `/documents/{id}/awareness` | ephemeral cursor/selection presence |
-| POST | `/documents/{id}/snapshot` | version-history snapshot (auto, named or draft); also refreshes the list's text, word count and excerpt |
+| POST | `/documents/{id}/snapshot` | version-history snapshot (auto, named or draft). Also refreshes the list's text, word count and excerpt |
 | GET | `/documents/{id}/versions` · `/documents/{id}/versions/{vid}` | version history |
 | GET/PUT/DELETE | `/documents/{id}/shares` · `/documents/{id}/shares/{kind}/{id}` | read/write grants (friends or groups) |
 | POST | `/documents/{id}/move` | move into/out of a folder |
@@ -64,23 +64,23 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 | GET | `/document-capabilities` | `max_schema_level`: the newest document schema level this server stores (404 on servers before levels = 1) |
 
 Deleted documents read as missing everywhere (404 to owner and
-collaborators alike, no room, no images) until restored; after 30 days the
+collaborators alike, no room, no images) until restored. After 30 days the
 server deletes them for good. Lists change live: the owner's devices get
 `document.listchanged` (create, rename, move, delete, restore) and
-`document.folders` (folder changes) on their user room; an open document's
-room gets `document.deleted`.
+`document.folders` (folder changes) on their user room, and an open
+document's room gets `document.deleted`.
 
 **Schema levels.** Every document has a `schema_level`: the newest
-vocabulary (node types, marks, attributes) its content uses; level 1 is
+vocabulary (node types, marks, attributes) its content uses. Level 1 is
 everything through 1.0.6. An editor bound to content newer than its schema
-deletes what it doesn't know, for everyone, so the content routes — detail,
-`updates` (both ways) and `snapshot` — take the client's level as `?sl=N`
+deletes what it doesn't know, for everyone, so the content routes (detail,
+`updates` both ways, and `snapshot`) take the client's level as `?sl=N`
 (absent = 1) and answer 403 `client_too_old` below the document's. An update
 that needs a newer level says so (`schema_level` in the body, at most the
 sender's `sl` and the server's `max_schema_level`, else 400
 `schema_unsupported`), and accepting it raises the document in the same
 step. From level 2 up, `document.update` is sent to `docv{level}:{id}`
-instead of `document:{id}`; clients left in the plain room get
+instead of `document:{id}`. Clients left in the plain room get
 `document.deleted` with `outdated: <level>` when a document is raised, and
 never the newer content. Level 2 is text colour, highlight, a font or size
 on part of a paragraph, sub/superscript, paragraph indents, borders and
@@ -94,12 +94,12 @@ picture placement and captions, sections, and tracked changes.
 | GET/POST | `/groups/{id}/voice` · POST `/voice/{id}/join` · `/voice/leave` · `/voice/{id}/signal` |
 | GET/POST | `/groups/{id}/boards` · `/boards/{id}/elements` · PATCH/DELETE `/elements/{id}` |
 | GET | `/link-preview?url=` (server-fetched page metadata) |
-| GET | `/fonts/{family}/{subset}-{weight}-{style}.ttf` — a font of the online library, fetched once by the server and kept (so browsers never ask a third party) |
+| GET | `/fonts/{family}/{subset}-{weight}-{style}.ttf` (a font of the online library that the server fetches once and keeps, so browsers never ask a third party) |
 | GET/POST/DELETE | `/friends`, `/friends/requests`, `/dms` |
 | POST | `/notes/share` |
 | GET/PUT | `/plugins/{id}/data/{scope}/{scope_id}/{key}` |
 | GET | `/admin/stats` · `/admin/users` · POST `/admin/users/{id}/logout` · `/admin/users/{id}/reset-code` |
 
 The full wire types live in `crates/writform-proto` and are exported to
-TypeScript for the client — the source of truth if you're building against
-the API.
+TypeScript for the client. They are the source of truth if you're building
+against the API.

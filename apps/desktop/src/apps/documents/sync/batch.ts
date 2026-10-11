@@ -102,14 +102,14 @@ export function sendErrorMessage(kind: SendErrorKind): string {
     case "too_large":
       return "A change is too large for this server.";
     case "outdated":
-      return "This document now uses formatting from a newer version of subScribe. Update the app to keep editing — your changes are kept on this device.";
+      return "This document now uses formatting from a newer version of subScribe. Update the app to keep editing. Your changes are kept on this device.";
     case "server_old":
       return "This server needs an update before it can save this formatting.";
     case "rejected":
       return "The server refused a change.";
     case "auth":
-      return "Signed out — changes will send when you sign back in.";
+      return "Signed out. Changes will send when you sign back in.";
     default:
-      return "Offline — changes are kept on this device and sync when you reconnect.";
+      return "Offline. Changes are kept on this device and sync when you reconnect.";
   }
 }

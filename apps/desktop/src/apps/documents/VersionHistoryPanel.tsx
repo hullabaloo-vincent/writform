@@ -174,7 +174,7 @@ export function VersionHistoryPanel({
           versions={changes.map(serverRow)}
           active={preview ? String(preview.meta.id) : undefined}
           onOpen={(row) => void openByKey(row, "change")}
-          empty="No changes recorded yet — they appear as you write."
+          empty="No changes recorded yet. They appear as you write."
         />
       )}
 
@@ -190,7 +190,7 @@ export function VersionHistoryPanel({
             <span className="wf-statusbar-spacer" />
             {onCompare && (
               <button
-                title="This version beside the text as it is now, differences marked"
+                title="This version beside the text as it is now with the differences marked"
                 onClick={() => {
                   onCompare({ title: versionTitle(preview.meta.name, preview.meta.created_at), doc: JSON.parse(preview.json) });
                   setPreview(null);

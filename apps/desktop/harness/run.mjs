@@ -61,8 +61,9 @@ for (const test of tests) {
     define: { "import.meta.env": JSON.stringify({ DEV: false, PROD: true }) },
     plugins: [assets],
     // jsdom reads its own files at runtime and pdf.js loads its worker from
-    // beside itself, so Node loads those two, not the bundle.
-    external: ["jsdom", "pdfjs-dist"],
+    // beside itself, so Node loads those two, not the bundle. (TypeScript's
+    // compiler, which one harness reads the source with, is simply large.)
+    external: ["jsdom", "pdfjs-dist", "typescript"],
     // CommonJS dependencies call require().
     banner: { js: "import { createRequire as __cr } from 'node:module'; const require = __cr(import.meta.url);" },
     logLevel: "warning",

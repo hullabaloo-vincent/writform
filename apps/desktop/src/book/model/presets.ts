@@ -95,7 +95,7 @@ export const PRESETS: PresetInfo[] = [
   {
     id: "literary",
     label: "Literary",
-    description: "Libertinus, large chapter numerals, a quiet small-caps lead-in, blank-line scene breaks.",
+    description: "Libertinus, large chapter numerals, a quiet small-caps lead-in and blank-line scene breaks.",
     design: {
       ...BASE,
       preset: "literary",
@@ -119,7 +119,7 @@ export const PRESETS: PresetInfo[] = [
   {
     id: "fantasy",
     label: "Fantasy",
-    description: "Cinzel headings over Garamond text, a fleuron under each chapter title.",
+    description: "Cinzel headings over Garamond text and a fleuron under each chapter title.",
     design: {
       ...BASE,
       preset: "fantasy",
@@ -136,7 +136,7 @@ export const PRESETS: PresetInfo[] = [
   {
     id: "romance",
     label: "Romance",
-    description: "Playfair Display italic titles over Libre Baskerville, an airy page.",
+    description: "Playfair Display italic titles over Libre Baskerville on an airy page.",
     design: {
       ...BASE,
       preset: "romance",
@@ -156,7 +156,7 @@ export const PRESETS: PresetInfo[] = [
   {
     id: "modern",
     label: "Modern",
-    description: "Literata, flush-left numerals, uppercase titles, no ornaments.",
+    description: "Literata, flush-left numerals, uppercase titles and no ornaments.",
     design: {
       ...BASE,
       preset: "modern",

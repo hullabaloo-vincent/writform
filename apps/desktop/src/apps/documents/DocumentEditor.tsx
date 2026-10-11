@@ -470,12 +470,12 @@ function EditorInner({
             { label: "Export PDF", run: run("pdf") },
             {
               label: "Export booklet PDF",
-              title: "Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half",
+              title: "Pages imposed for saddle stitch: print two-sided (flip on the short edge), then fold in half",
               run: run("booklet"),
             },
           ]),
-      { label: WORD_EXPORT, ...(tracked ? { title: "With the suggested changes, as Word's tracked changes" } : {}), run: run("docx") },
-      ...(tracked ? [{ label: "Export Word, clean copy", title: "The text as it would be with every suggestion accepted", run: run("docx-clean") }] : []),
+      { label: WORD_EXPORT, ...(tracked ? { title: "Suggested changes become Word's tracked changes" } : {}), run: run("docx") },
+      ...(tracked ? [{ label: "Export Word (clean copy)", title: "The text as it would be with every suggestion accepted", run: run("docx-clean") }] : []),
       ...(format === "manuscript" && editor
         ? bookExportItems(setBookExport, async () => {
             const { exportSubmissionDocx } = await import("../../book/exportBook");
@@ -627,7 +627,7 @@ function EditorInner({
         </button>
         {/* (A Document has this on its Review tab.) */}
         {speaks && format !== "none" && (
-          <button title="Read aloud, from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
+          <button title="Read aloud from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
             <Volume2 size={16} />
           </button>
         )}
@@ -635,8 +635,8 @@ function EditorInner({
           <button
             title={
               format === "manuscript"
-                ? "Preview the book — every page as it will print"
-                : "Preview — every page as it will print"
+                ? "Preview every page of the book as it will print"
+                : "Preview every page as it will print"
             }
             className={panel === "preview" || previewOpen ? "active" : ""}
             disabled={!editor}
@@ -650,7 +650,7 @@ function EditorInner({
         )}
         {format !== "manuscript" && (
           <button
-            title="Page view — paginate the sheet into real pages"
+            title="Page view: paginate the sheet into real pages"
             className={pageGuides ? "active" : ""}
             onClick={() => {
               const next = !pageViewOn;
@@ -663,7 +663,7 @@ function EditorInner({
         )}
         {format === "manuscript" && (
           <button
-            title="Book — details, design, print and ebook settings"
+            title="Book: details, design, print and ebook settings"
             className={panel === "book" ? "active" : ""}
             onClick={() => setPanel(panel === "book" ? "none" : "book")}
           >
@@ -672,7 +672,7 @@ function EditorInner({
         )}
         {format === "none" && (
           <button
-            title="Document settings — paper, margins, text"
+            title="Document settings: paper, margins, text"
             className={panel === "settings" ? "active" : ""}
             onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
           >
@@ -680,7 +680,7 @@ function EditorInner({
           </button>
         )}
         <button
-          title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
+          title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
           className={focus ? "active" : ""}
           onClick={toggleFocus}
         >
@@ -688,7 +688,7 @@ function EditorInner({
         </button>
         {focus && (
           <button
-            title="Typewriter scrolling — keep the line you're writing centred"
+            title="Typewriter scrolling: keep the line you're writing centred"
             className={typewriter ? "active" : ""}
             onClick={() => setTypewriter(!typewriter)}
           >
@@ -736,7 +736,7 @@ function EditorInner({
               review={review}
               trailing={
                 speaks ? (
-                  <button className="wf-icon" title="Read aloud, from the caret" onClick={() => setReading(!reading)}>
+                  <button className="wf-icon" title="Read aloud from the caret" onClick={() => setReading(!reading)}>
                     <Volume2 size={15} />
                   </button>
                 ) : undefined
@@ -1176,7 +1176,7 @@ export function DocumentStats({
         {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
         {format === "screenplay" && ` · ${blocks} elements`}
         {words > 0 && (
-          <span title="On-screen pages — export pagination may differ">
+          <span title="On-screen pages (export pagination may differ)">
             {` · ${pagesExact === null || pagesExact === undefined ? "~" : ""}${pages} page${pages === 1 ? "" : "s"}`}
           </span>
         )}
@@ -1191,7 +1191,7 @@ export function DocumentStats({
     <span className="wf-doc-stats wf-doc-goal-wrap" ref={wrapRef}>
       <button
         className="wf-doc-stats-btn"
-        title={goal !== null ? "Word-count goal — click to change" : "Set a word-count goal"}
+        title={goal !== null ? "Word-count goal (click to change)" : "Set a word-count goal"}
         onClick={() => setGoalOpen((v) => !v)}
       >
         {body}

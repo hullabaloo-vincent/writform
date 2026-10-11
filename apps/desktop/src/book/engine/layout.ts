@@ -244,7 +244,7 @@ class Layout {
 
     this.sceneOrnament = this.smf ? { text: "#", family: d.bodyFont } : ornamentFor(d.ornament || "* * *", d);
     if (!this.smf && d.sceneBreak === "ornament" && d.ornament && this.sceneOrnament.text !== d.ornament) {
-      this.warnings.push({ kind: "missing-glyphs", message: `The ornament “${d.ornament}” isn’t in the book’s fonts; asterisks print instead.` });
+      this.warnings.push({ kind: "missing-glyphs", message: `The ornament “${d.ornament}” isn’t in the book’s fonts, so asterisks print instead.` });
     }
     this.headingOrnament = !this.smf && d.headingOrnament ? ornamentFor(d.headingOrnament, d) : null;
     const { meta, smf } = o.model.book;
@@ -982,7 +982,7 @@ class Layout {
     const bottom = this.y(this.capacity - 1);
     let y = Math.max(this.firstBaseline, bottom - height);
     if (bottom - height < this.firstBaseline) {
-      this.warnings.push({ kind: "overfull", message: "The copyright page runs longer than a page — shorten the custom notice." });
+      this.warnings.push({ kind: "overfull", message: "The copyright page runs longer than a page. Shorten the custom notice." });
     }
     for (const set of sets) {
       for (const line of set.lines) {
@@ -1081,7 +1081,7 @@ class Layout {
       }
     }
     if (!contact.legalName && !contact.email) {
-      this.warnings.push({ kind: "contact", message: "No contact details for the title page — add them in Book ▸ Submission manuscript." });
+      this.warnings.push({ kind: "contact", message: "No contact details for the title page. Add them in Book ▸ Submission manuscript." });
     }
     const t = this.display((meta.title || "Untitled").toLocaleUpperCase(meta.language || "en-US"), this.body, this.pageH / 2, this.L);
     p.items.push(...t.items);
@@ -1220,12 +1220,12 @@ class Layout {
       if (list) {
         this.warnings.push({
           kind: "missing-glyphs",
-          message: `${bookFont(family).label} has no ${list} — ${chars.size === 1 ? "it prints" : "they print"} as a blank box.`,
+          message: `${bookFont(family).label} has no ${list}, so ${chars.size === 1 ? "it prints" : "they print"} as a blank box.`,
         });
       }
     }
     if (!this.smf && pages.length < 24) {
-      this.warnings.push({ kind: "page-count", message: `${pages.length} pages — KDP and IngramSpark need at least 24 for a paperback.` });
+      this.warnings.push({ kind: "page-count", message: `${pages.length} pages. KDP and IngramSpark need at least 24 for a paperback.` });
     }
 
     return {

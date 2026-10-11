@@ -87,7 +87,7 @@ export const Toc = Node.create({
         if (!entries.length) {
           const empty = document.createElement("p");
           empty.className = "wf-toc-empty";
-          empty.textContent = "Table of contents — headings you add will be listed here.";
+          empty.textContent = "Table of contents. Headings you add will be listed here.";
           dom.append(empty);
           return;
         }

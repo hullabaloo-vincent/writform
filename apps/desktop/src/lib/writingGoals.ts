@@ -36,5 +36,5 @@ export function noteGoalProgress(docKey: string, words: number, target: number):
   if (words < target || celebrated.has(docKey)) return;
   celebrated.add(docKey);
   haptic("success");
-  toast(`Goal reached — ${target.toLocaleString()} words`);
+  toast(`Goal reached: ${target.toLocaleString()} words`);
 }

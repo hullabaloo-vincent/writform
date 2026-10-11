@@ -128,7 +128,7 @@ export function revDomAttrs(tc: unknown): Record<string, string> {
     "data-rev": revs.ins && revs.del ? "ins del" : shown,
     "data-rev-v": encodeRevs(revs)!,
     "data-c": String(revColor(rev.a)),
-    title: `${describeRev(rev)} — ${VERB[shown]}`,
+    title: `${describeRev(rev)} · ${VERB[shown]}`,
   };
 }
 
@@ -189,7 +189,7 @@ function revMark(name: string, kind: RevKind, tag: "ins" | "del") {
         mergeAttributes(HTMLAttributes, {
           "data-rev": kind,
           "data-c": String(revColor(rev.a)),
-          title: `${describeRev(rev)} — ${VERB[kind]}`,
+          title: `${describeRev(rev)} · ${VERB[kind]}`,
         }),
         0,
       ];

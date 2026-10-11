@@ -430,5 +430,5 @@ export function summarize(result: DetectResult, choices: PlanChoices): string {
   if (breaks) parts.push(plural(breaks, "scene break"));
   if (choices.extractFront && result.front.indexes.length) parts.push("title page → Book details");
   if (result.strips.size) parts.push(plural(result.strips.size, "stray indent"));
-  return parts.length ? parts.join(", ") : "No structure found — chapters can be marked by hand.";
+  return parts.length ? parts.join(", ") : "No structure found. Chapters can be marked by hand.";
 }

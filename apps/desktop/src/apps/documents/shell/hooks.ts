@@ -20,7 +20,7 @@ export function bookExportItems(open: (kind: BookExportKind) => void, word: () =
   return [
     {
       label: "Paperback PDF (print-ready)…",
-      title: "The book's interior for KDP or IngramSpark, typeset in the book design",
+      title: "The book's interior typeset in the book design for KDP or IngramSpark",
       separatorBefore: true,
       run: async () => open("paperback"),
     },
@@ -41,7 +41,7 @@ export function bookExportItems(open: (kind: BookExportKind) => void, word: () =
     },
     {
       label: "Submission manuscript (Word)…",
-      title: "The same manuscript as a Word document, for agents who ask for .docx",
+      title: "The same manuscript as a Word document for agents who ask for .docx",
       run: word,
     },
   ];
@@ -202,9 +202,9 @@ export function serverIndicator(s: SyncState): SaveIndicator {
         kind: "offline",
         detail:
           s.reason === "auth"
-            ? "Signed out — your changes are kept on this device and send when you sign back in."
+            ? "Signed out. Your changes are kept on this device and send when you sign back in."
             : s.reason === "scope"
-              ? "Connected to a different server — your changes send when you're back on this one."
+              ? "Connected to a different server. Your changes send when you're back on this one."
               : "Changes are kept on this device and sync when you reconnect.",
       };
     case "error":

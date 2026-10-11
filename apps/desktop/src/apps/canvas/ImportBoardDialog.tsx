@@ -79,7 +79,7 @@ export function ImportBoardDialog({
         <>
           <p className="wf-import-label">
             {progress.label}
-            {progress.total > 1 ? ` — ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : ""}
+            {progress.total > 1 ? ` (${Math.min(progress.done + 1, progress.total)} of ${progress.total})` : ""}
           </p>
           <div className="wf-import-bar">
             <span style={{ width: `${percent}%` }} />

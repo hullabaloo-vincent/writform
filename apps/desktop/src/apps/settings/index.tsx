@@ -187,7 +187,7 @@ function OfflineProfileTab({ onError }: { onError: (e: string | null) => void })
       <h3>Your profile</h3>
       <p className="wf-session-meta">
         Who you are on this device: the name on what you write and export, and the picture beside it. When you
-        join a server you can apply it there in one step — it isn’t sent anywhere until you do.
+        join a server you can apply it there in one step. It isn’t sent anywhere until you do.
       </p>
       <div className="wf-settings-field">
         Picture
@@ -226,7 +226,7 @@ function OfflineProfileTab({ onError }: { onError: (e: string | null) => void })
         <input
           value={displayName}
           maxLength={64}
-          placeholder="Your name, as an author"
+          placeholder="Your name as an author"
           onChange={(e) => {
             setDisplayName(e.target.value);
             setSaved(false);
@@ -276,7 +276,7 @@ function OfflineProfileTab({ onError }: { onError: (e: string | null) => void })
             disabled={busy}
             onClick={() =>
               void confirmDialog(
-                "Clear the profile saved on this device — name, pictures and all? Your profiles on servers are not affected.",
+                "Clear the profile saved on this device, including its name and pictures? Your profiles on servers are not affected.",
                 { title: "Clear profile", confirmLabel: "Clear", danger: true },
               ).then((ok) => {
                 if (!ok) return;
@@ -483,7 +483,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
         <div className="wf-connect-row">
           <input
             value={displayName}
-            placeholder="(none — username is shown)"
+            placeholder="(none, so the username is shown)"
             onChange={(e) => {
               setDisplayName(e.target.value);
               setSaved(false);
@@ -500,7 +500,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
       <h4>Portable profile</h4>
       <p className="wf-session-meta">
         Keep a copy of this look (name, colors, bio, avatar, banner) on this computer and apply
-        it to any server you join — profiles are otherwise per-server. Usernames stay
+        it to any server you join. Profiles are otherwise per-server. Usernames stay
         per-server and are not included.
       </p>
       <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
@@ -580,7 +580,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
       </div>
       {portable && (
         <p className="wf-session-meta">
-          Saved {new Date(portable.saved_at).toLocaleString()} — you’ll also be offered it when
+          Saved {new Date(portable.saved_at).toLocaleString()}. You’ll also be offered it when
           registering on a new server.
         </p>
       )}
@@ -789,8 +789,8 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
           </div>
         </div>
         <span className="wf-session-meta">
-          Speak — the meter shows your level after the input-volume setting.
-          Device changes apply immediately, even mid-call.
+          Speak and the meter shows your level after the input-volume setting.
+          Device changes apply immediately even mid-call.
         </span>
       </div>
       <label className="wf-settings-field wf-field-row">
@@ -828,8 +828,8 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
           value={settings.videoQuality}
           onChange={(e) => apply({ videoQuality: e.target.value === "720p" ? "720p" : "360p" })}
         >
-          <option value="360p">360p — easier on bandwidth (recommended)</option>
-          <option value="720p">720p — sharper, several times the bandwidth</option>
+          <option value="360p">360p: easier on bandwidth (recommended)</option>
+          <option value="720p">720p: sharper but several times the bandwidth</option>
         </select>
       </label>
       <div className="wf-settings-field">
@@ -843,8 +843,8 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
         </div>
         {cameraTesting && <video ref={previewRef} autoPlay playsInline muted className="wf-camera-preview" />}
         <span className="wf-session-meta">
-          The preview is mirrored, like a mirror — others see you unmirrored.
-          Device and quality changes apply immediately, even while your camera is on.
+          The preview is mirrored, but others see you unmirrored.
+          Device and quality changes apply immediately even while your camera is on.
         </span>
       </div>
     </section>
@@ -871,7 +871,7 @@ function WritingTab() {
         Smart quotes and dashes
       </label>
       <p className="wf-session-meta">
-        As you type: “curly” quotes and apostrophes, -- becomes an em dash (—), and ...
+        As you type: “curly” quotes and apostrophes, -- becomes an em dash, and ...
         becomes an ellipsis (…). Press Backspace right after a change to undo it. Quotes follow
         the book’s language in a manuscript. This applies on this device only.
       </p>
@@ -887,8 +887,8 @@ function WritingTab() {
         Page view shows the pages as they print
       </label>
       <p className="wf-session-meta">
-        With this on, page view breaks the text where the printed page does — in the middle of a
-        paragraph, between the rows of a table — and counts the same pages as the preview and the
+        With this on, page view breaks the text where the printed page does (in the middle of a
+        paragraph, between the rows of a table) and counts the same pages as the preview and the
         PDF. Turn it off for the simpler view, which only moves whole paragraphs to the next page
         and is an approximation. Takes effect the next time a document is opened. On this device
         only.
@@ -1018,7 +1018,7 @@ function ServerTab({ onError }: { onError: (e: string | null) => void }) {
       <section>
         <h3>Servers</h3>
         <p className="wf-session-meta">
-          A server is where you write with others. The ones you’ve joined are remembered here; your work on this
+          A server is where you write with others. The ones you’ve joined are remembered here. Your work on this
           device doesn’t need one.
         </p>
         <AccountMenu inline />
@@ -1036,12 +1036,12 @@ function ServerTab({ onError }: { onError: (e: string | null) => void }) {
             Connected to <strong>{current.server_name}</strong> at <code>{current.addr}</code>
           </p>
           <p className="wf-session-meta">
-            Pinned identity fingerprint (the host sees the same value here; a standalone server
+            Pinned identity fingerprint (the host sees the same value here, and a standalone server
             prints it at startup):
           </p>
           <div className="wf-fingerprint">{current.fingerprint}</div>
           <p className="wf-session-meta">
-            If this ever changes unexpectedly, the app will warn loudly before connecting — that
+            If this ever changes unexpectedly, the app will warn loudly before connecting. A change
             can mean a reinstalled server, or someone intercepting the connection.
           </p>
         </>
@@ -1084,10 +1084,10 @@ function CopyableAddr({ addr, note }: { addr: string; note: string }) {
 function lanNote(addr: string): string {
   const [a, b] = addr.split(":")[0].split(".").map(Number);
   if (a === 172 && b >= 16 && b <= 31) {
-    return "same network — likely a virtual adapter (WSL / VM), usually not the one to share";
+    return "same network, but likely a virtual adapter (WSL / VM) and usually not the one to share";
   }
   if (a === 100 && b >= 64 && b <= 127) {
-    return "carrier-grade NAT range — probably not shareable";
+    return "carrier-grade NAT range (probably not shareable)";
   }
   return "same network (home / office Wi-Fi)";
 }
@@ -1127,7 +1127,7 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
 
   return (
     <>
-      <h4>Hosting — {host.server_name}</h4>
+      <h4>Hosting · {host.server_name}</h4>
       <p className="wf-session-meta">
         This computer hosts the server ({host.running ? `running on port ${host.port}` : "stopped"}).
         It runs while subScribe is open and starts again with the app.
@@ -1135,7 +1135,7 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
 
       {host.running && (
         <>
-          <p className="wf-session-meta">Share an address with friends — they add it via “Add a server”:</p>
+          <p className="wf-session-meta">Share an address with friends. They add it via “Add a server”:</p>
           <ul className="wf-device-list">
             {host.lan_addrs.map((a) => (
               <CopyableAddr key={a} addr={a} note={lanNote(a)} />
@@ -1145,13 +1145,13 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
             ) : publicIp ? (
               <CopyableAddr
                 addr={`${publicIp}:${host.port}`}
-                note={`over the internet — works once TCP port ${host.port} is forwarded to this computer`}
+                note={`over the internet (works once TCP port ${host.port} is forwarded to this computer)`}
               />
             ) : null}
           </ul>
           <p className="wf-session-meta">
-            When a friend connects for the first time, they are shown the server fingerprint above
-            — read it to them so they can verify it.
+            When a friend connects for the first time, they are shown the server fingerprint above.
+            Read it to them so they can verify it.
           </p>
 
           <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
@@ -1178,14 +1178,14 @@ function HostingSection({ onError }: { onError: (e: string | null) => void }) {
           {reach?.upnp.status === "failed" && (
             <p className="wf-session-meta">
               Couldn’t map the port automatically ({reach.upnp.message}). This only means the
-              automatic method failed — if you’ve already forwarded TCP port {host.port} to
+              automatic method failed. If you’ve already forwarded TCP port {host.port} to
               this computer in your router, you’re done: friends use the “over the internet”
               address listed above. Otherwise, add that forward in your router settings, or
               put everyone on a shared VPN like Tailscale and share your Tailscale address
-              instead — no router changes needed. To confirm it worked, keep hosting running
+              instead, which needs no router changes. To confirm it worked, keep hosting running
               and test port {host.port} from a port-checking website (from outside your own
               network). If it still fails with the forward in place, your ISP may put you
-              behind carrier-grade NAT — Tailscale is the way around that.
+              behind carrier-grade NAT, and Tailscale is the way around that.
             </p>
           )}
         </>
@@ -1269,7 +1269,7 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
     <section>
       <h3>Application</h3>
       <p className="wf-session-meta">
-        subScribe {version ?? ""} — updates are downloaded from GitHub Releases and verified
+        subScribe {version ?? ""}. Updates are downloaded from GitHub Releases and verified
         against the app's signing key before installing.
       </p>
       {!inTauri || isMobileApp ? (
@@ -1295,7 +1295,7 @@ function AppTab({ onError }: { onError: (e: string | null) => void }) {
           )}
           {status === "up_to_date" && <span className="wf-session-meta">You're up to date.</span>}
           {status === "installed" && (
-            <span className="wf-session-meta">Installed — restart to finish.</span>
+            <span className="wf-session-meta">Installed. Restart to finish.</span>
           )}
         </div>
       )}
@@ -1411,7 +1411,7 @@ function AdminTab({ onError }: { onError: (e: string | null) => void }) {
             <button onClick={() => setResetCode(null)}>Done</button>
           </div>
           <p className="wf-session-meta">
-            Hand it to them out of band — they enter it under “Forgot password?” on the login
+            Hand it to them out of band. They enter it under “Forgot password?” on the login
             screen.
           </p>
         </div>

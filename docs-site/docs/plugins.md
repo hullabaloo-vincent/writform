@@ -1,6 +1,6 @@
 # Plugins
 
-subScribe's client is a platform: chat, sessions, notes — every feature is an
+subScribe's client is a platform. Every feature (chat, sessions, notes) is an
 "app" registered on the same internal surface plugins use.
 
 ## Install a plugin
@@ -13,7 +13,7 @@ app's plugin directory and enable it in the **Plugins** app:
 - Windows: `%APPDATA%\com.writform.desktop\plugins\<id>\`
 
 Enabling shows the plugin's requested permissions. Plugins run with the
-app's privileges (the Obsidian model) — **only install plugins you trust**.
+app's privileges (the Obsidian model), so **only install plugins you trust**.
 
 ## Bundled example: Llama AI
 

@@ -92,15 +92,15 @@ export function ShareLocalDialog({
         <div className="wf-doc-share-note" role="alert">
           <p>
             This server is running an older version of subScribe and can’t hold some of this
-            document’s formatting — text colour and highlight, fonts and sizes on part of a
+            document’s formatting: text colour and highlight, fonts and sizes on part of a
             paragraph, indents, borders, checklists, tables, footnotes, a table of contents,
             sections or suggested changes.
           </p>
           <p>
-            You can publish a simplified copy now (every word is kept — a table becomes its
-            cells’ paragraphs, a note sits in brackets where it’s cited, suggested changes are
-            taken as accepted — and that formatting is left out), or update the server and
-            publish the document as it is. The one on this
+            You can publish a simplified copy now, or update the server and publish the
+            document as it is. A simplified copy keeps every word and leaves that formatting
+            out: a table becomes its cells’ paragraphs, a note sits in brackets where it’s
+            cited and suggested changes are taken as accepted. The one on this
             device isn’t changed either way.
           </p>
           <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
@@ -141,7 +141,7 @@ export function ShareLocalDialog({
         </>
       ) : (
         <>
-          <p className="wf-doc-share-note">Published ✓ — the server copy now exists.</p>
+          <p className="wf-doc-share-note">Published ✓ The server copy now exists.</p>
           <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
             <button
               className="wf-primary"

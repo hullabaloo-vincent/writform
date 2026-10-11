@@ -169,7 +169,7 @@ pub async fn login(
         return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",
-            "too many login attempts; try again in a minute",
+            "too many login attempts, so try again in a minute",
         ));
     }
 

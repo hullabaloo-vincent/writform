@@ -186,8 +186,8 @@ export function NotesView() {
         <div className="wf-notes-empty">
           <p>Select or create a note.</p>
           <p className="wf-notes-empty-hint">
-            Notes are plain markdown files stored on this computer — private, offline, and
-            never uploaded.
+            Notes are plain markdown files stored on this computer. They are private, work
+            offline and are never uploaded.
           </p>
           <div className="wf-notes-empty-actions">
             <button className="wf-primary" onClick={() => void createNote()}>
@@ -557,18 +557,18 @@ function extractLinks(content: string): string[] {
 }
 
 const CHEATSHEET: { syntax: string; what: string }[] = [
-  { syntax: "# Heading", what: "Headings, `#` through `######`" },
+  { syntax: "# Heading", what: "Headings from `#` through `######`" },
   { syntax: "**bold**  *italic*  ~~strike~~", what: "Emphasis" },
-  { syntax: "[[Note Name]]", what: "Link to another note — click to open, or create it if new" },
-  { syntax: "[[Note Name|label]]", what: "Same link, different visible text" },
+  { syntax: "[[Note Name]]", what: "Link to another note (click to open, or create it if new)" },
+  { syntax: "[[Note Name|label]]", what: "The same link with different visible text" },
   { syntax: "- item", what: "Bullet list (`1.` for numbered)" },
   { syntax: "- [ ] todo\n- [x] done", what: "Task list with checkboxes" },
   { syntax: "> quoted text", what: "Blockquote" },
-  { syntax: "> [!tip] Title\n> body", what: "Callout — note, tip, warning, danger, success, question, example, quote" },
+  { syntax: "> [!tip] Title\n> body", what: "Callout: note, tip, warning, danger, success, question, example, quote" },
   { syntax: "> [!warning]- Title", what: "Add `-` to start folded, `+` to start open" },
   { syntax: "`code`", what: "Inline code" },
   { syntax: "```js\ncode\n```", what: "Fenced code block with syntax highlighting" },
-  { syntax: "[text](https://…)", what: "Web link — opens in your browser" },
+  { syntax: "[text](https://…)", what: "Web link (opens in your browser)" },
   { syntax: "| a | b |\n| --- | --- |", what: "Table" },
   { syntax: "---", what: "Horizontal rule" },
 ];

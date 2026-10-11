@@ -85,7 +85,7 @@ export function DockedPreview({
           {!dl
             ? "Preview"
             : source.noun === "book"
-              ? `${page?.folio ? `p. ${page.folio}` : "—"} · ${at + 1} of ${count}`
+              ? `${page?.folio ? `p. ${page.folio} · ` : ""}${at + 1} of ${count}`
               : `Page ${at + 1} of ${count}`}
         </span>
         <button

@@ -125,8 +125,8 @@ pub async fn probe_impl(manager: &ConnectionManager, addr: String) -> CmdResult<
     if !bound {
         return Err(CmdError::new(
             "binding_invalid",
-            "server identity does not vouch for the presented certificate — \
-             possible interception, refusing to continue",
+            "server identity does not vouch for the presented certificate (possible \
+             interception), so the connection is refused",
         ));
     }
 
@@ -247,7 +247,12 @@ pub fn pin_for(manager: &ConnectionManager, addr: &str) -> CmdResult<[u8; 32]> {
     let bytes = (0..32)
         .map(|i| u8::from_str_radix(&saved.spki_hash[i * 2..i * 2 + 2], 16))
         .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| CmdError::new("corrupt_pin", "stored pin is corrupt; remove and re-add"))?;
+        .map_err(|_| {
+            CmdError::new(
+                "corrupt_pin",
+                "stored pin is corrupt, so remove the server and add it again",
+            )
+        })?;
     pin.copy_from_slice(&bytes);
     Ok(pin)
 }

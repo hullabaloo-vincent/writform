@@ -297,7 +297,7 @@ export function FindBar({
           <button disabled={!matches.length} onClick={replaceCurrent} title="Replace this match (↵)">
             Replace
           </button>
-          <button disabled={!matches.length} onClick={replaceEvery} title="Replace every match (⌘↵) — one undo">
+          <button disabled={!matches.length} onClick={replaceEvery} title="Replace every match in one undo step (⌘↵)">
             Replace all
           </button>
         </div>

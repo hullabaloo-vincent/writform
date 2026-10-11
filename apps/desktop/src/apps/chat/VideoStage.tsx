@@ -219,7 +219,7 @@ export function VideoStage() {
       <span className="wf-stage-name">
         {t.micMuted && <MicOff size={11} />}
         {t.sharingScreen && t.kind === "camera" && <MonitorUp size={11} />}
-        {t.kind === "screen" ? `${t.name} — screen` : t.name}
+        {t.kind === "screen" ? `${t.name} (screen)` : t.name}
       </span>
       {t.userId !== me.id && t.kind === "camera" && (
         <input

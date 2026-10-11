@@ -215,7 +215,7 @@ class LocalBoardSession {
       if (!this.failed) {
         this.failed = true;
         toastError(
-          `This board couldn't be saved to this device${isCmdError(e) ? ` (${e.message})` : ""}. It's still open — keep it open, and it will save as soon as it can.`,
+          `This board couldn't be saved to this device${isCmdError(e) ? ` (${e.message})` : ""}. It's still open. Keep it open and it will save as soon as it can.`,
         );
       }
       if (!this.closed) {

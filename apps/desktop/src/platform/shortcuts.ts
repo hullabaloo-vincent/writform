@@ -38,7 +38,7 @@ export function shortcutSections(): ShortcutSection[] {
       title: "Documents",
       rows: [
         { keys: [mod, "F"], what: "Find in the document" },
-        { keys: [mod, "B"], what: "Bold — I italic, U underline" },
+        { keys: [mod, "B"], what: "Bold (I italic, U underline)" },
         { keys: ["Tab"], what: "Indent list / cycle the element type" },
         { keys: [mod, "1–6"], what: "Element type (writing formats)" },
       ],
@@ -49,7 +49,7 @@ export function shortcutSections(): ShortcutSection[] {
         { keys: ["F"], what: "Frame the selection (or fit the page)" },
         { keys: [mod, "F"], what: "Find and replace on the board" },
         { keys: [mod, "A"], what: "Select everything on the page" },
-        { keys: [mod, "C"], what: "Copy — X cut, V paste, D duplicate" },
+        { keys: [mod, "C"], what: "Copy (X cut, V paste, D duplicate)" },
         { keys: [mod, "G"], what: `Group (${mod}${shift}G ungroups)` },
         { keys: [mod, "Z"], what: `Undo (${mod}${shift}Z redoes)` },
         { keys: [shift, "drag"], what: "Marquee-select / keep proportions" },

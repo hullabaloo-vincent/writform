@@ -70,7 +70,7 @@ function DocsView() {
           </button>
         ))}
         <p className="wf-docs-note">
-          Also deployable as a website — see <code>docs-site/</code>.
+          Also deployable as a website. See <code>docs-site/</code>.
         </p>
       </nav>
       <article

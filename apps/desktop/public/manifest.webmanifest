@@ -1,7 +1,7 @@
 {
   "name": "subScribe",
   "short_name": "subScribe",
-  "description": "A writing suite you own: documents, books, boards and notes — and writing together on your own server.",
+  "description": "A writing suite you own for documents, books, boards and notes, and for writing together on your own server.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#16161c",

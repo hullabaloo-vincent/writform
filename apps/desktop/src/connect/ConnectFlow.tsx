@@ -123,9 +123,9 @@ export function ConnectFlow({ request }: { request?: ConnectRequest }) {
       const ownIp = await discoverPublicIp().catch(() => null);
       if (ownIp !== null && host === ownIp) {
         message +=
-          " — this is your own network's public address, and testing it from inside " +
+          ". This is your own network's public address, and testing it from inside " +
           "the same network often fails (router hairpinning) even when the port " +
-          "forward is correct. On this network use the LAN address instead; check " +
+          "forward is correct. On this network use the LAN address instead. Check " +
           "internet reachability from outside (a port-check website, or a phone on " +
           "cellular data).";
       }
@@ -190,7 +190,7 @@ export function ConnectFlow({ request }: { request?: ConnectRequest }) {
   return (
     <>
         {isDevPreview && (
-          <p className="wf-connect-preview">Development preview — in-memory data, no real network.</p>
+          <p className="wf-connect-preview">Development preview with in-memory data and no real network.</p>
         )}
         {error && <p className="wf-connect-error">{error}</p>}
 
@@ -280,7 +280,7 @@ function Welcome({ onHost, onJoin }: { onHost: () => void; onJoin: () => void })
         <span>
           <strong>Host on this computer</strong>
           <small>
-            Create your server right here — no setup, no terminal. Friends connect to your
+            Create your server right here with no setup and no terminal. Friends connect to your
             address, and everything stays on your machine.
           </small>
         </span>
@@ -386,7 +386,7 @@ function PickServer({
                 <span className="wf-server-badge">this computer</span>
               </span>
               <span className="wf-server-status">
-                {host.running ? `running · port ${host.port}` : "stopped — click to start"}
+                {host.running ? `running · port ${host.port}` : "stopped · click to start"}
               </span>
             </button>
           </li>
@@ -461,7 +461,7 @@ function TrustPrompt({
           <p>
             <strong>{probe.server_name}</strong> at {probe.addr} presents a{" "}
             <strong>different identity key</strong> than the one you trusted before. This can mean
-            the server was reinstalled — or that someone is intercepting the connection.
+            the server was reinstalled, or that someone is intercepting the connection.
           </p>
           {probe.trust.status === "identity_changed" && (
             <p className="wf-connect-dim">
@@ -474,7 +474,7 @@ function TrustPrompt({
           <h2>First connection</h2>
           <p>
             Verify this fingerprint matches the one shown by <strong>{probe.server_name}</strong>{" "}
-            (the host finds it in Settings → Server; a standalone server prints it at startup):
+            (the host finds it in Settings → Server, and a standalone server prints it at startup):
           </p>
         </>
       )}
@@ -578,14 +578,14 @@ function AuthForm({
       </p>
       {freshHost && mode === "register" && (
         <p className="wf-connect-dim">
-          Your server is live. Create your account — the first account becomes the server admin.
+          Your server is live. Create your account. The first account becomes the server admin.
         </p>
       )}
       {resetDone && mode === "login" && (
-        <p className="wf-connect-dim">Password changed — log in with your new password.</p>
+        <p className="wf-connect-dim">Password changed. Log in with your new password.</p>
       )}
       {expired && mode === "login" && !resetDone && (
-        <p className="wf-connect-dim">Your session expired — log in again to continue.</p>
+        <p className="wf-connect-dim">Your session expired. Log in again to continue.</p>
       )}
       <div className="wf-auth-tabs">
         <button

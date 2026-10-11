@@ -28,7 +28,7 @@ export function SectionFlyout({ editor, settings }: { editor: Editor; settings: 
   };
   const ownMargins = props.mt !== undefined || props.mr !== undefined || props.mb !== undefined || props.ml !== undefined;
   return (
-    <Flyout title="Section — a part of the document with its own page setup" icon={<FilePlus2 size={15} />} label="Section" active={!!here} panelClass="wf-section">
+    <Flyout title="Section: a part of the document with its own page setup" icon={<FilePlus2 size={15} />} label="Section" active={!!here} panelClass="wf-section">
       {(close) => (
         <>
           {!startsHere && (

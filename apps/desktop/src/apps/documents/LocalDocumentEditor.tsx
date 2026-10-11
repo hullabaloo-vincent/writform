@@ -341,12 +341,12 @@ function LocalEditorInner({
             { label: "Export PDF", run: run("pdf") },
             {
               label: "Export booklet PDF",
-              title: "Pages imposed for saddle stitch — print two-sided (flip on the short edge), fold in half",
+              title: "Pages imposed for saddle stitch: print two-sided (flip on the short edge), then fold in half",
               run: run("booklet"),
             },
           ]),
-      { label: WORD_EXPORT, ...(tracked ? { title: "With the suggested changes, as Word's tracked changes" } : {}), run: run("docx") },
-      ...(tracked ? [{ label: "Export Word, clean copy", title: "The text as it would be with every suggestion accepted", run: run("docx-clean") }] : []),
+      { label: WORD_EXPORT, ...(tracked ? { title: "Suggested changes become Word's tracked changes" } : {}), run: run("docx") },
+      ...(tracked ? [{ label: "Export Word (clean copy)", title: "The text as it would be with every suggestion accepted", run: run("docx-clean") }] : []),
       ...(meta.format === "manuscript" && editor
         ? bookExportItems(setBookExport, async () => {
             const { exportSubmissionDocx } = await import("../../book/exportBook");
@@ -519,7 +519,7 @@ function LocalEditorInner({
         </button>
         {/* (A Document has this on its Review tab.) */}
         {speaks && meta.format !== "none" && (
-          <button title="Read aloud, from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
+          <button title="Read aloud from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
             <Volume2 size={16} />
           </button>
         )}
@@ -527,8 +527,8 @@ function LocalEditorInner({
           <button
             title={
               meta.format === "manuscript"
-                ? "Preview the book — every page as it will print"
-                : "Preview — every page as it will print"
+                ? "Preview every page of the book as it will print"
+                : "Preview every page as it will print"
             }
             className={panel === "preview" || previewOpen ? "active" : ""}
             disabled={!editor}
@@ -542,7 +542,7 @@ function LocalEditorInner({
         )}
         {meta.format !== "manuscript" && (
           <button
-            title="Page view — paginate the sheet into real pages"
+            title="Page view: paginate the sheet into real pages"
             className={pageGuides ? "active" : ""}
             onClick={() => {
               const next = !pageViewOn;
@@ -555,7 +555,7 @@ function LocalEditorInner({
         )}
         {meta.format === "manuscript" && (
           <button
-            title="Book — details, design, print and ebook settings"
+            title="Book: details, design, print and ebook settings"
             className={panel === "book" ? "active" : ""}
             onClick={() => setPanel(panel === "book" ? "none" : "book")}
           >
@@ -564,7 +564,7 @@ function LocalEditorInner({
         )}
         {meta.format === "none" && (
           <button
-            title="Document settings — paper, margins, text"
+            title="Document settings: paper, margins, text"
             className={panel === "settings" ? "active" : ""}
             onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
           >
@@ -572,7 +572,7 @@ function LocalEditorInner({
           </button>
         )}
         <button
-          title={focus ? "Leave focus mode (Esc)" : "Focus mode — just you and the page"}
+          title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
           className={focus ? "active" : ""}
           onClick={toggleFocus}
         >
@@ -580,7 +580,7 @@ function LocalEditorInner({
         </button>
         {focus && (
           <button
-            title="Typewriter scrolling — keep the line you're writing centred"
+            title="Typewriter scrolling: keep the line you're writing centred"
             className={typewriter ? "active" : ""}
             onClick={() => setTypewriter(!typewriter)}
           >
@@ -641,7 +641,7 @@ function LocalEditorInner({
               review={review}
               trailing={
                 speaks ? (
-                  <button className="wf-icon" title="Read aloud, from the caret" onClick={() => setReading(!reading)}>
+                  <button className="wf-icon" title="Read aloud from the caret" onClick={() => setReading(!reading)}>
                     <Volume2 size={15} />
                   </button>
                 ) : undefined

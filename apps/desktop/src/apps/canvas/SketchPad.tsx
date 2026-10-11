@@ -281,7 +281,7 @@ export function SketchPad({
 
       {strokes.length === 0 && !live && (
         <p className="wf-sketch-hint">
-          Draw with a mouse, trackpad, finger or stylus. Strokes stay editable — reopen this
+          Draw with a mouse, trackpad, finger or stylus. Strokes stay editable. Reopen this
           sketch any time to add to it.
         </p>
       )}

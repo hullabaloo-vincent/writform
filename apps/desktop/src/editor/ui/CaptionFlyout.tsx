@@ -9,7 +9,7 @@ import { Flyout } from "./Flyout";
 export function CaptionFlyout({ editor }: { editor: Editor }) {
   const current = imageCaption(selectedImage(editor)?.node.attrs.caption) ?? "";
   return (
-    <Flyout title="Caption — a line of text under the picture" icon={<Captions size={15} />} label="Caption" active={!!current} panelClass="wf-link-flyout">
+    <Flyout title="Caption: a line of text under the picture" icon={<Captions size={15} />} label="Caption" active={!!current} panelClass="wf-link-flyout">
       {(close) => <CaptionForm editor={editor} initial={current} close={close} />}
     </Flyout>
   );

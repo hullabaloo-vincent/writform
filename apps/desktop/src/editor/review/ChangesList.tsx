@@ -10,7 +10,7 @@ import type { ReviewItem, ReviewState } from "./useReview";
 const MODES: { mode: ReviewMode; label: string; hint: string }[] = [
   { mode: "edit", label: "Editing", hint: "Change the text directly" },
   { mode: "suggest", label: "Suggesting", hint: "Your edits become suggestions that can be accepted or rejected" },
-  { mode: "view", label: "Viewing", hint: "Read it as it would be with every suggestion accepted — nothing can be changed" },
+  { mode: "view", label: "Viewing", hint: "Read it as it would be with every suggestion accepted (nothing can be changed)" },
 ];
 
 /** Editing / Suggesting / Viewing. Someone who can only read chooses
@@ -91,7 +91,7 @@ export function ChangesList({
             <Eye size={13} /> The text is shown as it would read with every suggestion accepted.
           </p>
         )}
-        {review.mode === "suggest" && <p className="wf-changes-note">What you type, delete or paste is suggested, not changed.</p>}
+        {review.mode === "suggest" && <p className="wf-changes-note">What you type, delete or paste is suggested rather than changed.</p>}
         {decide && items.length > 1 && (
           <div className="wf-changes-all">
             <button type="button" onClick={() => resolveAll(editor, "accept")}>
@@ -161,7 +161,7 @@ export function ViewingBar({ review, trailing }: { review: ReviewState; trailing
   return (
     <div className="wf-viewing-bar">
       <Eye size={15} />
-      <span className="wf-viewing-text">Viewing — the text as it reads with every suggestion accepted.</span>
+      <span className="wf-viewing-text">Viewing: the text as it reads with every suggestion accepted.</span>
       <span className="wf-statusbar-spacer" />
       <ModeSwitch review={review} />
       {trailing}

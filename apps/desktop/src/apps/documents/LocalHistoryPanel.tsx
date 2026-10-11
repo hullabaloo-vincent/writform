@@ -132,7 +132,7 @@ export function LocalHistoryPanel({
       </header>
       {localHistoryTrouble(docId) && (
         <p className="wf-connect-error">
-          New versions aren’t being saved — this device couldn’t write them. Your text itself is
+          New versions aren’t being saved because this device couldn’t write them. Your text itself is
           safe.
         </p>
       )}
@@ -188,7 +188,7 @@ export function LocalHistoryPanel({
           versions={changes.map(row)}
           active={preview?.version.id}
           onOpen={(v) => void open(v.key, "change")}
-          empty="No changes recorded yet — one is saved each time you pause."
+          empty="No changes recorded yet. One is saved each time you pause."
         />
       )}
 
@@ -206,7 +206,7 @@ export function LocalHistoryPanel({
             <span className="wf-statusbar-spacer" />
             {onCompare && (
               <button
-                title="This version beside the text as it is now, differences marked"
+                title="This version beside the text as it is now with the differences marked"
                 onClick={() => {
                   onCompare({ title: versionTitle(preview.version.name, preview.version.created_at), doc: JSON.parse(preview.json) });
                   setPreview(null);

@@ -96,7 +96,7 @@ export function ExportBookDialog({
           ? [{ kind: "image", message: `${failed} image${failed === 1 ? "" : "s"} couldn’t be loaded and ${failed === 1 ? "was" : "were"} left out.` }]
           : [];
         if (fonts?.missing.length) {
-          extra.push({ kind: "font", message: `${fonts.missing.join(" and ")} couldn’t be fetched and ${fonts.missing.length === 1 ? "isn’t" : "aren’t"} in the file; readers will see their device’s own type there.` });
+          extra.push({ kind: "font", message: `${fonts.missing.join(" and ")} couldn’t be fetched and ${fonts.missing.length === 1 ? "isn’t" : "aren’t"} in the file, so readers will see their device’s own type there.` });
         }
         result = {
           bytes,
@@ -180,7 +180,7 @@ export function ExportBookDialog({
             </button>
           )}
           <small>
-            Optional. For Kindle (KDP), leave it out — the cover you upload on KDP is used. Apple
+            Optional. For Kindle (KDP), leave it out because the cover you upload on KDP is used. Apple
             Books and Kobo use the one inside the file.
           </small>
         </div>

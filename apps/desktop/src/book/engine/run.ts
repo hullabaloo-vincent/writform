@@ -195,7 +195,7 @@ export class TypesetSession {
       if (print.margins === "custom" && print.mi < kdpMinInside(result.pages.length)) {
         result.warnings.push({
           kind: "page-count",
-          message: `At ${result.pages.length} pages KDP needs an inside margin of at least ${kdpMinInside(result.pages.length)} in; it was widened to fit.`,
+          message: `At ${result.pages.length} pages KDP needs an inside margin of at least ${kdpMinInside(result.pages.length)} in, so it was widened to fit.`,
         });
       }
       return { dl: result, faces };

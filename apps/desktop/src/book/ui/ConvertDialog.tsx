@@ -80,7 +80,7 @@ export function ConvertDialog({
       <h3>{mode === "convert" ? "Make it a book manuscript" : "Tidy up the manuscript"}</h3>
       <p className="wf-convert-lede">
         {mode === "convert"
-          ? "Chapters, parts and scene breaks become book elements, so the book’s design can lay them out — and editing can’t break the formatting."
+          ? "Chapters, parts and scene breaks become book elements, so the book’s design can lay them out and editing can’t break the formatting."
           : "Finds chapter headings, scene breaks and stray indents that aren’t marked yet."}
       </p>
       <p className="wf-convert-summary">{summary}</p>
@@ -128,7 +128,7 @@ export function ConvertDialog({
                   checked={choices.blankPolicy === "delete"}
                   onChange={() => setChoices((c) => ({ ...c, blankPolicy: "delete" }))}
                 />
-                They’re just spacing — remove them
+                They’re just spacing, so remove them
               </label>
             </fieldset>
           )}
@@ -149,8 +149,8 @@ export function ConvertDialog({
                   front.alsoBy?.length && "also-by list",
                 ]
                   .filter(Boolean)
-                  .join(", ")}{" "}
-                — the book generates these pages.
+                  .join(", ")}
+                . The book generates these pages.
               </small>
             </label>
           )}

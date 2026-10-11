@@ -22,13 +22,13 @@ async function api<T>(method: string, path: string, body?: unknown): Promise<T> 
     if (res.status === 404 && !err.message && NEWER_PATHS.test(path)) {
       throw {
         code: "server_outdated",
-        message: "the server is running an older subScribe version that doesn't support this yet — ask the host to update writform-server",
+        message: "the server is running an older subScribe version that doesn't support this yet, so ask the host to update writform-server",
       } satisfies CmdError;
     }
     if (res.status === 405 && !err.message) {
       throw {
         code: "server_outdated",
-        message: "the server is running an older subScribe version that doesn't support this yet — ask the host to update writform-server",
+        message: "the server is running an older subScribe version that doesn't support this yet, so ask the host to update writform-server",
       } satisfies CmdError;
     }
     throw {

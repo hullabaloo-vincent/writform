@@ -163,7 +163,7 @@ export const useSession = create<SessionState>((set, get) => ({
   sessionExpired: () => {
     const { link, session } = get();
     if (link !== "connected") return; // once-guard: failing refetches burst
-    toastError("Your session expired — sign in again to carry on with the server.");
+    toastError("Your session expired. Sign in again to carry on with the server.");
     // Local teardown only; the token is already dead server-side.
     void backend.logout().catch(() => {});
     apply({ type: "expired" });

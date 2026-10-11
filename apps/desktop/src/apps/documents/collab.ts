@@ -446,7 +446,7 @@ export class DocProvider {
       this.setStatus({
         kind: "error",
         reason: "forbidden",
-        message: "You can no longer edit this document — your unsent changes are kept on this device.",
+        message: "You can no longer edit this document. Your unsent changes are kept on this device.",
       });
       return;
     }

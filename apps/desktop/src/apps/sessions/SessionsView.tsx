@@ -337,7 +337,7 @@ function PromptCard({
               <Countdown
                 endsAt={prompt.ends_at}
                 onEnd={() => {
-                  toast("Time's up — the prompt has ended.", "info");
+                  toast("Time's up. The prompt has ended.", "info");
                   void notifyNow("Time's up", "The writing prompt timer just ended.");
                 }}
               />
@@ -346,7 +346,7 @@ function PromptCard({
               <button
                 title={
                   prompt.ends_at != null && prompt.ends_at - Date.now() <= 10_000
-                    ? "End immediately, skipping the grace period"
+                    ? "End immediately and skip the grace period"
                     : "Writers get a 10-second warning before it ends"
                 }
                 onClick={() => void sessionApi.stopPrompt(prompt.id)}
@@ -471,7 +471,7 @@ function WritingArea({ prompt }: { prompt: SessionPrompt }) {
       </div>
       <RichEditor
         value={(mine?.doc as JSONContent) ?? EMPTY_DOC}
-        placeholder="Start writing — it autosaves while the prompt runs."
+        placeholder="Start writing. It autosaves while the prompt runs."
         autoFocus
         toolbar
         onChange={(doc) => {
@@ -532,7 +532,7 @@ function SessionChat({ channelId }: { channelId: number }) {
     void chatApi.sendMessage(channelId, content, attachmentIds, replyToId).catch(() => {
       // Put the text back so nothing is lost.
       setDraft(content);
-      toastError("Message didn't send — your text is back in the box.");
+      toastError("Message didn't send. Your text is back in the box.");
     });
   };
 
@@ -667,7 +667,7 @@ function NewPrompt({ sessionId }: { sessionId: number }) {
         <RichEditor
           value={doc}
           onChange={setDoc}
-          placeholder="Write the prompt — formatting and images welcome."
+          placeholder="Write the prompt. Formatting and images are welcome."
           autoFocus
           toolbar
         />
