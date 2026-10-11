@@ -12809,9 +12809,10 @@ body {
 }
 
 /* ---- A document's footnotes and endnotes, under its last page
-   (editor/ui/NotesList). Paper like the page above it. ---- */
+   (editor/ui/NotesList). Paper like the page above it.
+   (Not `.wf-notes`: that is the Notes app.) ---- */
 
-.wf-notes {
+.wf-docnotes {
   width: min(var(--wfd-w, 8.5in), calc(100% - 16px));
   margin: 18px auto 0;
   padding: 20px 26px 24px;
@@ -12824,10 +12825,10 @@ body {
   font-size: 14px;
   line-height: 1.45;
 }
-.wf-notes-group + .wf-notes-group {
+.wf-docnotes-group + .wf-docnotes-group {
   margin-top: 20px;
 }
-.wf-notes h4 {
+.wf-docnotes h4 {
   margin: 0;
   font-size: 12px;
   font-weight: 650;
@@ -12835,12 +12836,12 @@ body {
   text-transform: uppercase;
   color: #4f4f5a;
 }
-.wf-notes-hint {
+.wf-docnotes-hint {
   margin: 2px 0 10px;
   font-size: 12px;
   color: #74747e;
 }
-.wf-notes ol {
+.wf-docnotes ol {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -12848,12 +12849,12 @@ body {
   flex-direction: column;
   gap: 2px;
 }
-.wf-notes li {
+.wf-docnotes li {
   display: flex;
   align-items: flex-start;
   gap: 6px;
 }
-.wf-notes button.wf-notes-num {
+.wf-docnotes button.wf-docnotes-num {
   flex: none;
   min-width: 36px;
   height: 30px;
@@ -12868,11 +12869,11 @@ body {
   text-align: right;
   cursor: pointer;
 }
-.wf-notes button.wf-notes-num:hover,
-.wf-notes button.wf-notes-num:focus-visible {
+.wf-docnotes button.wf-docnotes-num:hover,
+.wf-docnotes button.wf-docnotes-num:focus-visible {
   background: rgba(0, 0, 0, 0.07);
 }
-.wf-notes button.wf-notes-text {
+.wf-docnotes button.wf-docnotes-text {
   flex: 1;
   min-width: 0;
   min-height: 30px;
@@ -12888,23 +12889,23 @@ body {
   overflow-wrap: anywhere;
   cursor: text;
 }
-.wf-notes button.wf-notes-text:hover,
-.wf-notes button.wf-notes-text:focus-visible {
+.wf-docnotes button.wf-docnotes-text:hover,
+.wf-docnotes button.wf-docnotes-text:focus-visible {
   border-color: rgba(0, 0, 0, 0.2);
   background: rgba(0, 0, 0, 0.03);
 }
-.wf-notes-text em {
+.wf-docnotes-text em {
   color: #8a8a94;
 }
-.wf-notes li.removed .wf-notes-text {
+.wf-docnotes li.removed .wf-docnotes-text {
   text-decoration: line-through;
   color: #9a5555;
 }
-.wf-notes-edit {
+.wf-docnotes-edit {
   flex: 1;
   min-width: 0;
 }
-.wf-notes .wf-notes-field .ProseMirror {
+.wf-docnotes .wf-docnotes-field .ProseMirror {
   min-height: 30px;
   max-height: none;
   padding: 4px 8px;
@@ -12914,18 +12915,18 @@ body {
   color: #202026;
 }
 @media (max-width: 767px) {
-  .wf-notes {
+  .wf-docnotes {
     padding: 16px 12px 18px;
   }
-  .wf-notes button.wf-notes-num,
-  .wf-notes button.wf-notes-text,
-  .wf-notes .wf-notes-field .ProseMirror {
+  .wf-docnotes button.wf-docnotes-num,
+  .wf-docnotes button.wf-docnotes-text,
+  .wf-docnotes .wf-docnotes-field .ProseMirror {
     min-height: 38px;
   }
-  .wf-notes button.wf-notes-num {
+  .wf-docnotes button.wf-docnotes-num {
     height: 38px;
   }
-  .wf-notes .wf-notes-field .ProseMirror {
+  .wf-docnotes .wf-docnotes-field .ProseMirror {
     font-size: 16px;
   }
 }

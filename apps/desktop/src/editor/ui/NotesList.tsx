@@ -44,7 +44,7 @@ function NoteField({ editor, pos, onDone }: { editor: Editor; pos: number; onDon
     };
   }, [editor]);
 
-  return <div ref={mount} className="wf-fn-body wf-notes-field" />;
+  return <div ref={mount} className="wf-fn-body wf-docnotes-field" />;
 }
 
 /**
@@ -103,11 +103,11 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
   const groups = (["foot", "end"] as const).map((kind) => ({ kind, items: notes.filter((n) => n.kind === kind) })).filter((g) => g.items.length > 0);
 
   return (
-    <section className="wf-notes" style={style} aria-label="Notes in this document">
+    <section className="wf-docnotes" style={style} aria-label="Notes in this document">
       {groups.map((group) => (
-        <div key={group.kind} className="wf-notes-group">
+        <div key={group.kind} className="wf-docnotes-group">
           <h4>{group.kind === "end" ? "Endnotes" : "Footnotes"}</h4>
-          <p className="wf-notes-hint">
+          <p className="wf-docnotes-hint">
             {group.kind === "end"
               ? "Printed at the end of the document."
               : "Each is printed at the foot of the page that cites it."}
@@ -116,12 +116,12 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
           <ol>
             {group.items.map((note) => (
               <li key={`${note.kind}:${note.label}`} className={`${active === note.pos ? "editing" : ""}${note.removed ? " removed" : ""}`}>
-                <button type="button" className="wf-notes-num" title="Show where this note is cited" aria-label={`Note ${note.label}: show where it is cited`} onClick={() => show(note)}>
+                <button type="button" className="wf-docnotes-num" title="Show where this note is cited" aria-label={`Note ${note.label}: show where it is cited`} onClick={() => show(note)}>
                   {note.label}
                 </button>
                 {active === note.pos && editable ? (
                   <div
-                    className="wf-notes-edit"
+                    className="wf-docnotes-edit"
                     onBlur={(e) => {
                       // Leaving the note (not moving within it): done.
                       if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setActive(null);
@@ -136,7 +136,7 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
                 ) : (
                   <button
                     type="button"
-                    className="wf-notes-text"
+                    className="wf-docnotes-text"
                     title={editable ? "Change this note" : "Show where this note is cited"}
                     onClick={() => (editor.isEditable ? setActive(note.pos) : show(note))}
                   >

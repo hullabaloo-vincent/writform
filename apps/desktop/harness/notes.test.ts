@@ -5,6 +5,8 @@
 import { check, finish } from "./env";
 import { mountPoint } from "./dom";
 
+import { readFileSync } from "node:fs";
+
 import { Editor, type JSONContent } from "@tiptap/core";
 import { NodeSelection } from "@tiptap/pm/state";
 import { act, createElement } from "react";
@@ -15,6 +17,15 @@ import { docContentExtensions } from "../src/editor/schema/content";
 import { NotesList } from "../src/editor/ui/NotesList";
 
 (globalThis as unknown as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
+
+{
+  // This list is not the Notes app. It once borrowed that app's class name
+  // (`wf-notes`), and its paper styling landed on the whole Notes app.
+  const css = readFileSync(new URL("../../src/styles.css", import.meta.url), "utf8");
+  const rules = (name: string) => (css.match(new RegExp(`^\\.${name} \\{`, "gm")) ?? []).length;
+  check("the Notes app's container is styled once, by the Notes app alone", rules("wf-notes") === 1, `${rules("wf-notes")} rules`);
+  check("…and this list has a name of its own", rules("wf-docnotes") === 1 && !/^\.wf-notes/m.test(css.slice(css.indexOf("under its last page"))));
+}
 
 const t = (text: string): JSONContent => ({ type: "text", text });
 const note = (text: string, kind?: "end"): JSONContent => ({ type: "footnote", ...(kind ? { attrs: { kind } } : {}), ...(text ? { content: [t(text)] } : {}) });
@@ -41,12 +52,12 @@ const withNotes = (): JSONContent => ({
   const host = mountPoint();
   const root = createRoot(host);
   await act(async () => root.render(createElement(NotesList, { editor: plain })));
-  check("a document without notes shows no list", host.querySelector(".wf-notes") === null);
+  check("a document without notes shows no list", host.querySelector(".wf-docnotes") === null);
   // One is added: the list appears.
   await act(async () => {
     plain.view.dispatch(plain.state.tr.insert(4, plain.schema.nodes.footnote.create(null, plain.schema.text("A first note."))));
   });
-  check("…until it has one", host.querySelector(".wf-notes")?.textContent?.includes("A first note.") === true);
+  check("…until it has one", host.querySelector(".wf-docnotes")?.textContent?.includes("A first note.") === true);
   await act(async () => root.unmount());
   plain.destroy();
 }
@@ -56,20 +67,20 @@ const withNotes = (): JSONContent => ({
   const host = mountPoint();
   const root = createRoot(host);
   await act(async () => root.render(createElement(NotesList, { editor: e })));
-  const groups = () => [...host.querySelectorAll(".wf-notes-group")] as HTMLElement[];
+  const groups = () => [...host.querySelectorAll(".wf-docnotes-group")] as HTMLElement[];
   const rows = (g: number) => [...groups()[g].querySelectorAll("li")] as HTMLElement[];
-  const textOf = (row: HTMLElement) => (row.querySelector(".wf-notes-text") as HTMLElement | null)?.textContent ?? null;
-  const field = () => host.querySelector(".wf-notes-field") as HTMLElement | null;
+  const textOf = (row: HTMLElement) => (row.querySelector(".wf-docnotes-text") as HTMLElement | null)?.textContent ?? null;
+  const field = () => host.querySelector(".wf-docnotes-field") as HTMLElement | null;
   const noteAt = (pos: number) => e.state.doc.nodeAt(pos);
   const positions = () => listNotes(e.state.doc).map((n) => n.pos);
 
   check("footnotes and endnotes are listed apart, each under its name", groups().length === 2 && groups()[0].querySelector("h4")?.textContent === "Footnotes" && groups()[1].querySelector("h4")?.textContent === "Endnotes");
-  check("…with their numbers and their words", rows(0).length === 2 && rows(0)[0].textContent?.startsWith("1") === true && textOf(rows(0)[0]) === "In December 1879." && rows(1)[0].querySelector(".wf-notes-num")?.textContent === "i" && textOf(rows(1)[0]) === "Sources differ on the wind.");
+  check("…with their numbers and their words", rows(0).length === 2 && rows(0)[0].textContent?.startsWith("1") === true && textOf(rows(0)[0]) === "In December 1879." && rows(1)[0].querySelector(".wf-docnotes-num")?.textContent === "i" && textOf(rows(1)[0]) === "Sources differ on the wind.");
   check("…an empty one says so", textOf(rows(0)[1]) === "Empty note");
   check("…and where each kind is printed", groups()[0].textContent?.includes("foot of the page") === true && groups()[1].textContent?.includes("end of the document") === true);
 
   // Click a note's words: it is written right there.
-  await act(async () => void (rows(1)[0].querySelector(".wf-notes-text") as HTMLButtonElement).click());
+  await act(async () => void (rows(1)[0].querySelector(".wf-docnotes-text") as HTMLButtonElement).click());
   const inner = field() ? openNotes.get(field()!) : undefined;
   check("a click on a note's words opens it for writing, in the list", !!field() && !!inner && inner.state.doc.textContent === "Sources differ on the wind.");
   const endPos = positions()[1];
@@ -103,22 +114,22 @@ const withNotes = (): JSONContent => ({
   check("Enter finishes, and the list shows the new words", field() === null && textOf(rows(1)[0]) === "NB: Sources differ on the wind. Badly. Very.");
 
   // Its number goes to the place that cites it.
-  await act(async () => void (rows(0)[1].querySelector(".wf-notes-num") as HTMLButtonElement).click());
+  await act(async () => void (rows(0)[1].querySelector(".wf-docnotes-num") as HTMLButtonElement).click());
   const sel = e.state.selection;
   check("a click on its number selects the note where it's cited (and opens it there)", sel instanceof NodeSelection && sel.from === positions()[2] && !!e.view.dom.querySelector("sup.wf-fn.open"));
 
   // The note being written is deleted from the text: the field goes.
-  await act(async () => void (rows(0)[0].querySelector(".wf-notes-text") as HTMLButtonElement).click());
+  await act(async () => void (rows(0)[0].querySelector(".wf-docnotes-text") as HTMLButtonElement).click());
   check("(a footnote opens for writing the same way)", field() !== null);
   await act(async () => {
     const at = positions()[0];
     e.view.dispatch(e.state.tr.delete(at, at + noteAt(at)!.nodeSize));
   });
-  check("the note being written is deleted from the text: its field goes with it", field() === null && rows(0).length === 1 && rows(0)[0].querySelector(".wf-notes-num")?.textContent === "1");
+  check("the note being written is deleted from the text: its field goes with it", field() === null && rows(0).length === 1 && rows(0)[0].querySelector(".wf-docnotes-num")?.textContent === "1");
 
   // A document that can't be edited: the list is for finding, not writing.
   await act(async () => e.setEditable(false));
-  await act(async () => void (rows(1)[0].querySelector(".wf-notes-text") as HTMLButtonElement).click());
+  await act(async () => void (rows(1)[0].querySelector(".wf-docnotes-text") as HTMLButtonElement).click());
   // (With the first footnote gone, the endnote is the first note cited.)
   const endnote = listNotes(e.state.doc).find((n) => n.kind === "end")!.pos;
   check("where the document can't be edited, a click goes to the citation instead", field() === null && e.state.selection instanceof NodeSelection && e.state.selection.from === endnote);
