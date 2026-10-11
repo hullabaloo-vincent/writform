@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { PaletteItem } from "./types";
+import { useSession } from "../stores/session";
 import { executeCommand, usePlatform } from "./registry";
 
 interface JumpEntry {
@@ -18,6 +19,7 @@ export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const seq = useRef(0);
   const commands = usePlatform((s) => s.commands);
+  const connected = useSession((s) => s.link === "connected");
   const sources = usePlatform((s) => s.paletteSources);
   const apps = usePlatform((s) => s.apps);
 
@@ -56,6 +58,8 @@ export function CommandPalette() {
       run: item.run,
     }));
     const cmds = Object.values(commands)
+      // What needs a server isn't offered without one.
+      .filter((c) => (connected || apps[c.appId]?.offline) && (c.available?.() ?? true))
       .filter((c) => !q || c.title.toLowerCase().includes(q) || c.id.includes(q))
       .map((c) => ({
         key: `cmd:${c.id}`,
@@ -71,7 +75,7 @@ export function CommandPalette() {
     };
     const builtin = !q || shortcuts.title.toLowerCase().includes(q) ? [shortcuts] : [];
     return [...places, ...cmds, ...builtin];
-  }, [commands, apps, query, jumps]);
+  }, [commands, apps, query, jumps, connected]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

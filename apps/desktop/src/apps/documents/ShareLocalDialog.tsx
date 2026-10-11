@@ -28,6 +28,10 @@ export function ShareLocalDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [publishedId, setPublishedId] = useState<number | null>(null);
+  // The server can't hold this document's formatting (it hasn't been
+  // updated): offered a copy without it, the writer said yes.
+  const [tooOld, setTooOld] = useState(false);
+  const [simplify, setSimplify] = useState(false);
 
   const loadContent = async (): Promise<{ content: JSONContent; maps: DocMapsSnapshot }> => {
     // Flush a live editor's debounce so the publish matches what's on screen.
@@ -52,7 +56,7 @@ export function ShareLocalDialog({
   /** Create the server copy; returns its id. Rolls back on partial failure. */
   const publish = async (): Promise<number> => {
     const { content, maps } = await loadContent();
-    const doc = await createServerDocument(meta.title, meta.format, content, maps, "Shared from this device");
+    const doc = await createServerDocument(meta.title, meta.format, content, maps, "Shared from this device", { simplify });
     // The new server copy belongs in the list right away.
     const docs = useDocuments.getState();
     if (docs.loaded) void docs.load().catch(() => {});
@@ -67,7 +71,8 @@ export function ShareLocalDialog({
       setPublishedId(docId);
       if (after) await after(docId);
     } catch (e) {
-      setError(isCmdError(e) ? e.message : String(e));
+      if (isCmdError(e) && e.code === "server_too_old") setTooOld(true);
+      else setError(isCmdError(e) ? e.message : String(e));
     } finally {
       setBusy(false);
     }
@@ -76,12 +81,42 @@ export function ShareLocalDialog({
   return (
     <Modal onClose={onClose} className="wf-doc-share-modal">
       <header className="wf-doc-panel-header">
-        <h3>Share “{meta.title}” to the server</h3>
+        <h3>Publish “{meta.title}” to the server</h3>
       </header>
       {error && (
         <p className="wf-connect-error" onClick={() => setError(null)}>
           {error}
         </p>
+      )}
+      {tooOld && publishedId === null && !simplify && (
+        <div className="wf-doc-share-note" role="alert">
+          <p>
+            This server is running an older version of subScribe and can’t hold some of this
+            document’s formatting — text colour and highlight, fonts and sizes on part of a
+            paragraph, indents, borders, checklists, tables, footnotes, a table of contents,
+            sections or suggested changes.
+          </p>
+          <p>
+            You can publish a simplified copy now (every word is kept — a table becomes its
+            cells’ paragraphs, a note sits in brackets where it’s cited, suggested changes are
+            taken as accepted — and that formatting is left out), or update the server and
+            publish the document as it is. The one on this
+            device isn’t changed either way.
+          </p>
+          <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
+            <button
+              onClick={() => {
+                setSimplify(true);
+                setTooOld(false);
+              }}
+            >
+              Publish a simplified copy
+            </button>
+          </div>
+        </div>
+      )}
+      {simplify && publishedId === null && (
+        <p className="wf-doc-share-note">A simplified copy will be published. Choose who to share it with.</p>
       )}
       {publishedId === null ? (
         <>

@@ -48,6 +48,7 @@ import {
   ImagePlus,
   Pencil,
   Search,
+  Share2,
   Star,
   Palette,
   Pipette,
@@ -78,10 +79,12 @@ import { haptic } from "../../lib/haptics";
 import { uploadBlob } from "../../lib/upload";
 import { confirmDialog } from "../../platform";
 import { useSession } from "../../stores/session";
+import { useWhenConnected } from "../../stores/whenConnected";
 import { useChat } from "../chat/store";
 import { CanvasDocCard } from "../documents/CanvasDocCard";
 import { canvasApi } from "./api";
 import { BoardFind } from "./BoardFind";
+import { PublishBoardDialog } from "./PublishBoardDialog";
 import { imageSrc, isLocalBoard, saveLocalImage } from "./local";
 import {
   parseSketch,
@@ -935,6 +938,9 @@ export function BoardRoom() {
   /** Which outline the shape tool places; picked from the toolbar popover. */
   const [shapeKind, setShapeKind] = useState<ShapeKind>("rect");
   const [finding, setFinding] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+  /** Publishing needs a server: not connected, it follows the connect sheet. */
+  const publish = useWhenConnected(() => setPublishing(true));
   /** null = closed; `{ el: null }` = drawing a new one; `{ el }` = editing. */
   const [sketching, setSketching] = useState<{ el: CanvasElement | null } | null>(null);
   const [menu, setMenu] = useState<BoardMenuState | null>(null);
@@ -2976,6 +2982,14 @@ export function BoardRoom() {
         >
           <Search size={16} />
         </button>
+        {local && (
+          <button
+            title="Publish a copy to a server…"
+            onClick={() => publish(null)}
+          >
+            <Share2 size={16} />
+          </button>
+        )}
         <button
           title="Export board (.wfboard)"
           onClick={() =>
@@ -3003,11 +3017,15 @@ export function BoardRoom() {
           <button
             className="wf-danger"
             onClick={() =>
-              void confirmDialog(
-                local
-                  ? "Delete this board from this device? It exists nowhere else."
-                  : "Delete this board for everyone? This cannot be undone.",
-                { title: "Delete board", confirmLabel: "Delete board", danger: true },
+              // A board on this device goes to Recently Deleted, with an
+              // Undo — no question needed. A server's is gone for everyone.
+              void (local
+                ? Promise.resolve(true)
+                : confirmDialog("Delete this board for everyone? This cannot be undone.", {
+                    title: "Delete board",
+                    confirmLabel: "Delete board",
+                    danger: true,
+                  })
               ).then((ok) => {
                 if (!ok) return;
                 canvasApi.deleteBoard(board.id).then(closeBoard).catch(fail);
@@ -3022,6 +3040,13 @@ export function BoardRoom() {
         <p className="wf-connect-error wf-board-error" onClick={() => setError(null)}>
           {error}
         </p>
+      )}
+      {publishing && (
+        <PublishBoardDialog
+          board={board}
+          onClose={() => setPublishing(false)}
+          onOpen={(id) => void useCanvas.getState().openBoard(id).catch(fail)}
+        />
       )}
       {finding && (
         <BoardFind

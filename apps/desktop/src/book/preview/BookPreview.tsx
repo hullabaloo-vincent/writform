@@ -3,9 +3,8 @@ import { AlertTriangle, ChevronLeft, ChevronRight, Columns2, Download, Rectangle
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { useSwipe } from "../../lib/useSwipe";
-import type { Book } from "../model/bookMap";
 import { PageSvg } from "./PageSvg";
-import { sectionAt, spreadOf, usePreviewLayout } from "./usePreviewLayout";
+import { sectionAt, spreadOf, usePreviewLayout, type PreviewSource } from "./usePreviewLayout";
 
 const PX_PER_PT = 96 / 72;
 const ZOOMS = [50, 75, 100, 150, 200] as const;
@@ -48,21 +47,19 @@ export function pickSource(e: React.MouseEvent): { src: number; x: number; y: nu
  */
 export function BookPreview({
   editor,
-  format,
-  book,
+  source,
   onClose,
   onShowSource,
   onExport,
 }: {
   editor: Editor;
-  format: string;
-  book: Book;
+  source: PreviewSource;
   onClose: () => void;
   /** Put the cursor in a manuscript block (top-level index). */
   onShowSource: (src: number) => void;
   onExport: () => void;
 }) {
-  const { dl, busy, message, error, retry } = usePreviewLayout(editor, format, book, false, "overlay");
+  const { dl, busy, message, error, retry } = usePreviewLayout(editor, source, false, "overlay");
   const phone = isPhone();
   const [spreads, setSpreads] = useState(!phone);
   const [at, setAt] = useState(0);
@@ -134,12 +131,12 @@ export function BookPreview({
   const warnings = dl?.warnings ?? [];
 
   return (
-    <div className={`wf-bp-overlay${chrome ? "" : " wf-bp-bare"}`} role="dialog" aria-label="Book preview">
+    <div className={`wf-bp-overlay${chrome ? "" : " wf-bp-bare"}`} role="dialog" aria-label="Page preview">
       <header className="wf-bp-bar">
         <button className="wf-icon" title="Close preview (Esc)" onClick={onClose}>
           <X size={17} />
         </button>
-        <strong className="wf-bp-title">Book preview</strong>
+        <strong className="wf-bp-title">{source.noun === "book" ? "Book preview" : "Preview"}</strong>
         {dl && (
           <>
             <button className="wf-icon" title="Previous (←)" disabled={at === 0} onClick={() => go(-1)}>
@@ -243,7 +240,7 @@ export function BookPreview({
           else if (phone) setChrome(!chrome);
         }}
       >
-        {!dl && !error && <p className="wf-bp-status">{message || "Setting the book…"}</p>}
+        {!dl && !error && <p className="wf-bp-status">{message || `Setting the ${source.noun}…`}</p>}
         {error && (
           <div className="wf-bp-status">
             <p>{error}</p>
@@ -257,7 +254,7 @@ export function BookPreview({
                 <div key={`empty-${slot}`} className="wf-bp-slot" style={{ width: pageW }} />
               ) : (
                 <div key={index} className={`wf-bp-slot ${dl.pages[index].side}`}>
-                  <PageSvg page={dl.pages[index]} dl={dl} width={pageW} paper={book.print.paper} />
+                  <PageSvg page={dl.pages[index]} dl={dl} width={pageW} paper={source.paper} />
                 </div>
               ),
             )}

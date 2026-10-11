@@ -5,6 +5,7 @@
  * their own entries through their provider.
  */
 
+import { DOC_SCHEMA_LEVEL } from "../../../editor/schema/levels";
 import { documentsApi } from "../api";
 import { b64encode, isDocOpen } from "../collab";
 import { classifySendError, isPermanent, sendErrorMessage, type SendErrorKind } from "./batch";
@@ -28,8 +29,14 @@ export async function drainOutbox(): Promise<void> {
   try {
     const scope = currentScope();
     if (!scope) return;
+    // "Outdated" isn't final the way other refusals are: the next version
+    // of the app understands the document again, so those are re-checked.
     const entries = (await outbox.all()).filter(
-      (e) => e.scope === scope && !e.error && e.pending.length > 0 && !isDocOpen(scope, e.docId),
+      (e) =>
+        e.scope === scope &&
+        (!e.error || e.error.reason === "outdated") &&
+        e.pending.length > 0 &&
+        !isDocOpen(scope, e.docId),
     );
     if (entries.length === 0) return;
     // One list call checks every target still exists, is the SAME document
@@ -38,9 +45,10 @@ export async function drainOutbox(): Promise<void> {
     if (!list) return;
     const byId = new Map(list.map((item) => [item.document.id, item]));
 
-    for (const entry of entries) {
+    for (const stored of entries) {
       if (currentScope() !== scope) return;
-      if (isDocOpen(scope, entry.docId)) continue;
+      if (isDocOpen(scope, stored.docId)) continue;
+      const entry: OutboxEntry = { ...stored, error: undefined };
       const item = byId.get(entry.docId);
       if (!item || item.document.created_at !== entry.docCreatedAt) {
         await markError(entry, "gone");
@@ -50,10 +58,18 @@ export async function drainOutbox(): Promise<void> {
         await markError(entry, "forbidden");
         continue;
       }
+      const docLevel = item.document.schema_level ?? 1;
+      if (docLevel > DOC_SCHEMA_LEVEL) {
+        // The document moved on to formatting this app doesn't know; the
+        // edits wait here for the updated app.
+        if (!stored.error) await markError(entry, "outdated");
+        continue;
+      }
+      const raiseTo = (entry.schema ?? 1) > docLevel ? entry.schema : undefined;
       let pending = [...entry.pending];
       while (pending.length > 0) {
         try {
-          await documentsApi.appendUpdate(entry.docId, b64encode(pending[0]));
+          await documentsApi.appendUpdate(entry.docId, b64encode(pending[0]), raiseTo);
           pending = pending.slice(1);
         } catch (e) {
           const kind = classifySendError(e);

@@ -155,7 +155,7 @@ fn export_kind(kind: &str) -> Option<(&'static str, &'static str)> {
 }
 
 /// Header values are ASCII, so the webview percent-encodes the file name.
-fn percent_decode(raw: &str) -> String {
+pub(crate) fn percent_decode(raw: &str) -> String {
     let bytes = raw.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -175,7 +175,7 @@ fn percent_decode(raw: &str) -> String {
 }
 
 /// A file name safe on every platform, ending in `.{ext}`.
-fn export_file_name(raw: &str, ext: &str) -> String {
+pub(crate) fn export_file_name(raw: &str, ext: &str) -> String {
     let cleaned: String = raw
         .chars()
         .map(|c| match c {

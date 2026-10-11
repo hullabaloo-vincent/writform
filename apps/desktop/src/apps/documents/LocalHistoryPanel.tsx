@@ -1,9 +1,10 @@
 import type { Editor } from "@tiptap/react";
-import { BookmarkPlus, FileDiff, RotateCcw, X } from "lucide-react";
+import { BookmarkPlus, FileDiff, GitCompareArrows, RotateCcw, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { confirmDialog, Modal } from "../../platform";
 import { compactDocString } from "./compactJson";
+import type { CompareSide } from "./CompareView";
 import { applyRestore } from "./restore";
 import {
   loadLocalVersion,
@@ -14,12 +15,21 @@ import {
   type LocalVersionMeta,
 } from "./history";
 import { useLocalDocs } from "./local";
-import { RevisionDiff, VersionList, VersionPreview, type VersionRow } from "./VersionHistoryPanel";
+import { RevisionDiff, VersionList, VersionPreview, versionTitle, type VersionRow } from "./VersionHistoryPanel";
 
 /** Document history for a document stored on this device. Same shape as the
  *  server panel minus the parts that need other people: no activity feed, no
  *  author column, and every revision is yours. */
-export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Editor | null }) {
+export function LocalHistoryPanel({
+  docId,
+  editor,
+  onCompare,
+}: {
+  docId: string;
+  editor: Editor | null;
+  /** Show a saved version beside the text as it is now. */
+  onCompare?: (before: CompareSide) => void;
+}) {
   const format = useLocalDocs((s) => s.items.find((d) => d.id === docId)?.format);
   const [versions, setVersions] = useState<LocalVersionMeta[]>([]);
   const [tab, setTab] = useState<"changes" | "drafts">("changes");
@@ -194,6 +204,17 @@ export function LocalHistoryPanel({ docId, editor }: { docId: string; editor: Ed
               )}
             </div>
             <span className="wf-statusbar-spacer" />
+            {onCompare && (
+              <button
+                title="This version beside the text as it is now, differences marked"
+                onClick={() => {
+                  onCompare({ title: versionTitle(preview.version.name, preview.version.created_at), doc: JSON.parse(preview.json) });
+                  setPreview(null);
+                }}
+              >
+                <GitCompareArrows size={15} /> Compare with now
+              </button>
+            )}
             <button onClick={() => void restore()}>
               <RotateCcw size={15} /> Restore
             </button>

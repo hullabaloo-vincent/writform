@@ -123,7 +123,10 @@ export interface Warning {
     | "overfull"
     | "image"
     | "page-count"
-    | "contact";
+    | "contact"
+    | "font"
+    /** Something a book can't set yet, kept as plain text (tables, notes). */
+    | "flattened";
   message: string;
   /** The manuscript block to show, when there is one. */
   src?: number;

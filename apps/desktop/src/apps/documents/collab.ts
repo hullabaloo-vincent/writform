@@ -10,6 +10,12 @@
  *
  * Awareness (cursors/presence) is ephemeral: throttled POSTs broadcast
  * y-protocols awareness updates that are never persisted.
+ *
+ * Schema levels (see editor/schema/levels.ts): the provider reads the level
+ * of every local edit off the Yjs transaction and, when that's above the
+ * document's, sends it with the update so the server raises the document as
+ * it accepts it. Updates above level 1 arrive on `docv{level}:{id}` rooms,
+ * which only clients that understand that level join.
  */
 
 import {
@@ -20,6 +26,7 @@ import {
 import * as Y from "yjs";
 
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
+import { DOC_SCHEMA_LEVEL, levels, UNKNOWN_LEVEL } from "../../editor/schema/levels";
 import { backend, type WsEvent } from "../../lib/backend";
 import { onResync } from "../../platform";
 import { documentsApi } from "./api";
@@ -31,8 +38,12 @@ import {
   takeBatch,
   type SendErrorKind,
 } from "./sync/batch";
+import { featureLevel } from "./sync/caps";
 import { INSTANCE_ID, outbox, outboxKey, type OutboxEntry } from "./sync/outbox";
 import { currentScope } from "./sync/scope";
+
+/** The Yjs fragment the editor binds to (TipTap Collaboration's default). */
+const CONTENT = "default";
 
 export function b64encode(bytes: Uint8Array): string {
   let bin = "";
@@ -106,7 +117,20 @@ export class DocProvider {
   private closed = false;
   /** A permanent refusal stops sending until the user retries. */
   private halted = false;
+  /** Why sending stopped; kept on the outbox entry until a retry. */
+  private stopped: OutboxEntry["error"];
   private unsubs: (() => void)[] = [];
+  /** The document's schema level on the server, as last heard. */
+  private docLevel = 1;
+  /** The level the content written here needs. */
+  private neededLevel = 1;
+  /** The level this document may use: the lower of the app's and the
+   *  server's. The editor's guard holds edits to it. */
+  private allowed = 1;
+  /** Content arrived that this app can't represent: its editor is deleting
+   *  it locally, and none of that may ever be sent. */
+  private tripped = false;
+  private rooms: string[] = [];
 
   constructor(
     readonly docId: number,
@@ -115,16 +139,22 @@ export class DocProvider {
 
   async open(): Promise<DocumentDetail> {
     this.scope = currentScope();
+    this.allowed = await featureLevel();
     const detail = await documentsApi.detail(this.docId);
     this.readonly = detail.my_access === "read";
     this.docCreatedAt = detail.document.created_at;
     this.title = detail.document.title;
+    // Absent on servers from before levels.
+    this.docLevel = detail.document.schema_level ?? 1;
     if (detail.state_b64) {
       Y.applyUpdate(this.doc, b64decode(detail.state_b64), REMOTE);
     }
     this.lastSeq = detail.seq;
-    await backend.wsSub([`document:${this.docId}`]);
+    this.rooms = [`document:${this.docId}`];
+    for (let level = 2; level <= this.allowed; level += 1) this.rooms.push(`docv${level}:${this.docId}`);
+    await backend.wsSub(this.rooms);
 
+    this.doc.getXmlFragment(CONTENT).observeDeep(this.onContent);
     this.doc.on("update", this.onLocalUpdate);
     if (this.opts.presence) {
       this.awareness.on("update", this.onAwarenessUpdate);
@@ -149,6 +179,11 @@ export class DocProvider {
     return this.status;
   }
 
+  /** The schema level this document may use (see `allowed`). */
+  get level(): number {
+    return this.allowed;
+  }
+
   /** Save-indicator updates; returns an unsubscribe fn. */
   subscribe(fn: (s: SyncState) => void): () => void {
     this.statusListeners.add(fn);
@@ -164,7 +199,10 @@ export class DocProvider {
 
   /** Clear a refusal and try again (the error popover's "Try Again"). */
   retry(): void {
+    // Nothing to retry once the editor's copy can't be trusted.
+    if (this.tripped) return;
     this.halted = false;
+    this.stopped = undefined;
     this.retryDelay = 1000;
     if (this.queue.length) this.setStatus({ kind: "pending" });
     void this.flushNow();
@@ -218,13 +256,14 @@ export class DocProvider {
       }
     }
     this.doc.off("update", this.onLocalUpdate);
+    this.doc.getXmlFragment(CONTENT).unobserveDeep(this.onContent);
     this.awareness.destroy();
     for (const u of this.unsubs) u();
     if (this.flushTimer) clearTimeout(this.flushTimer);
     if (this.persistTimer) clearTimeout(this.persistTimer);
     if (this.awarenessTimer) clearTimeout(this.awarenessTimer);
     this.statusListeners.clear();
-    void backend.wsUnsub([`document:${this.docId}`]);
+    void backend.wsUnsub(this.rooms.length ? this.rooms : [`document:${this.docId}`]);
     this.doc.destroy();
   }
 
@@ -240,9 +279,39 @@ export class DocProvider {
     for (const fn of [...this.statusListeners]) fn(next);
   }
 
+  /** Every change to the content: what level does it need? */
+  private onContent = (events: Y.YEvent<Y.AbstractType<unknown>>[], tr: Y.Transaction) => {
+    const level = levels.ofYEvents(events);
+    if (level === UNKNOWN_LEVEL) {
+      if (tr.origin === REMOTE) {
+        this.trip();
+      } else {
+        // Our own editor wrote something the tables don't list: a bug in the
+        // tables. The content is this build's, so send it at this build's level.
+        console.error("document content uses vocabulary missing from editor/schema/levels.ts");
+        this.neededLevel = Math.max(this.neededLevel, DOC_SCHEMA_LEVEL);
+      }
+      return;
+    }
+    if (tr.origin === REMOTE) this.docLevel = Math.max(this.docLevel, level);
+    else this.neededLevel = Math.max(this.neededLevel, level);
+  };
+
+  /** Stop for good: from here the editor's copy can't be trusted. Edits made
+   *  before this stay in the outbox for the updated app to send. */
+  private trip() {
+    if (this.tripped) return;
+    this.tripped = true;
+    this.halted = true;
+    const message = sendErrorMessage("outdated");
+    this.stopped = { reason: "outdated", message, at: Date.now() };
+    this.setStatus({ kind: "error", reason: "outdated", message });
+    this.persistNow();
+  }
+
   private onLocalUpdate = (update: Uint8Array, origin: unknown) => {
     this.onChange?.();
-    if (origin === REMOTE || this.readonly || this.closed) return;
+    if (origin === REMOTE || this.readonly || this.closed || this.tripped) return;
     this.queue.push(update);
     this.schedulePersist();
     if (!this.halted && this.status.kind !== "offline") this.setStatus({ kind: "pending" });
@@ -277,14 +346,18 @@ export class DocProvider {
         return;
       }
       const { update, count } = takeBatch(this.queue);
+      // Content newer than the document's level raises it with this update.
+      const raiseTo = this.neededLevel > this.docLevel ? this.neededLevel : undefined;
       try {
-        await documentsApi.appendUpdate(this.docId, b64encode(update));
+        const res = await documentsApi.appendUpdate(this.docId, b64encode(update), raiseTo);
+        this.docLevel = Math.max(this.docLevel, res?.schema_level ?? 1);
       } catch (e) {
         const kind = classifySendError(e);
         if (isPermanent(kind)) {
           this.halted = true;
+          this.stopped = { reason: kind, message: sendErrorMessage(kind), at: Date.now() };
           this.setStatus({ kind: "error", reason: kind, message: sendErrorMessage(kind) });
-          this.persistNow(!this.closed, { reason: kind, message: sendErrorMessage(kind), at: Date.now() });
+          this.persistNow(true);
           return;
         }
         this.setStatus({ kind: "offline", reason: kind === "auth" ? "auth" : "temporary" });
@@ -320,8 +393,13 @@ export class DocProvider {
    * Mirror the unsent queue into the outbox (or clear it when everything
    * landed). Captures synchronously — callable right before the doc is
    * destroyed — and writes in the background.
+   *
+   * `withRescue` adds a full copy of the document to rebuild from — never
+   * once tripped: by then this copy has the editor's deletions of content
+   * it couldn't represent, and replaying it would push them to everyone.
    */
-  private persistNow(withRescue = false, error?: OutboxEntry["error"]): void {
+  private persistNow(withRescue = false): void {
+    const error = this.stopped;
     if (!this.scope || !this.opts.presence || this.readonly) return;
     if (this.persistTimer) {
       clearTimeout(this.persistTimer);
@@ -336,7 +414,7 @@ export class DocProvider {
     let rescue: Uint8Array | undefined;
     try {
       pending = packUpdates(this.queue);
-      rescue = withRescue && !this.closed ? Y.encodeStateAsUpdate(this.doc) : undefined;
+      rescue = withRescue && !this.closed && !this.tripped ? Y.encodeStateAsUpdate(this.doc) : undefined;
     } catch {
       return;
     }
@@ -350,6 +428,7 @@ export class DocProvider {
       pending,
       rescue,
       error,
+      schema: this.neededLevel,
       updatedAt: Date.now(),
     };
     void outbox.put(entry).catch(() => {});
@@ -372,6 +451,7 @@ export class DocProvider {
       return;
     }
     for (const entry of entries) {
+      this.neededLevel = Math.max(this.neededLevel, entry.schema ?? 1);
       for (const update of entry.rescue ? [entry.rescue, ...entry.pending] : entry.pending) {
         try {
           Y.applyUpdate(this.doc, update, OUTBOX);
@@ -419,7 +499,7 @@ export class DocProvider {
   }
 
   private onWsEvent = (event: WsEvent) => {
-    if (event.ev !== "event" || event.room !== `document:${this.docId}`) return;
+    if (event.ev !== "event" || !this.rooms.includes(event.room)) return;
     // After a server switch the same room name means another document.
     if (currentScope() !== this.scope) return;
     if (event.kind === "document.update") {

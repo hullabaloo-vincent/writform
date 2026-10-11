@@ -9,4 +9,8 @@ format: string,
 /**
  * The owner's folder this document sits in (personal organization).
  */
-folder_id: number | null, created_at: number, updated_at: number, };
+folder_id: number | null, created_at: number, updated_at: number, 
+/**
+ * See [`MAX_DOC_SCHEMA_LEVEL`]. Absent from older servers (level 1).
+ */
+schema_level: number, };

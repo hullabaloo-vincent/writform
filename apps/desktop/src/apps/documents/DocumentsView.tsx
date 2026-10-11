@@ -20,20 +20,20 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
-import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import { backend, isCmdError, isWeb } from "../../lib/backend";
 import { confirmDialog, SkeletonRows, toast } from "../../platform";
 import { useSession } from "../../stores/session";
+import { useWhenConnected } from "../../stores/whenConnected";
 import { documentsApi } from "./api";
 import { DocumentEditor } from "./DocumentEditor";
-import { FORMAT_LABELS } from "./formats/elements";
 import { LocalDocumentEditor } from "./LocalDocumentEditor";
-import { useLocalDocs } from "./local";
+import { NewDocumentDialog } from "./NewDocumentDialog";
+import { searchLocalDocs, useLocalDocs } from "./local";
 import { openLocalDoc, openServerDoc } from "./navigation";
 import { deleteItems, duplicate, type ItemRef } from "./organizer/actions";
 import { ContextMenu, type MenuItem } from "./organizer/ContextMenu";
 import { DocCard } from "./organizer/DocCard";
-import { CombineDialog, ListShareDialog, MoveDialog, NameDialog } from "./organizer/dialogs";
+import { CombineDialog, ListShareDialog, MoveDialog, NameDialog, NewFolderDialog } from "./organizer/dialogs";
 import {
   compareNames,
   loadSort,
@@ -42,6 +42,7 @@ import {
   saveSort,
   serverItem,
   sortItems,
+  type OrgFolder,
   type OrgItem,
   type SortKey,
 } from "./organizer/model";
@@ -50,16 +51,16 @@ import { ShareLocalDialog } from "./ShareLocalDialog";
 import { useDocuments } from "./store";
 import { UnsavedBanner } from "./UnsavedBanner";
 
-type View = { kind: "all" } | { kind: "folder"; id: number } | { kind: "trash" };
+type View = { kind: "all" } | { kind: "folder"; id: number } | { kind: "localFolder"; id: string } | { kind: "trash" };
 
 type Dialog =
   | { kind: "move"; items: OrgItem[] }
   | { kind: "rename"; item: OrgItem }
-  | { kind: "renameFolder"; folder: DocumentFolder }
+  | { kind: "renameFolder"; folder: OrgFolder }
   | { kind: "newFolder" }
   | { kind: "share"; target: { kind: "document" | "folder"; id: number; name: string } }
   | { kind: "shareLocal"; meta: { id: string; title: string; format: string } }
-  | { kind: "combine"; sources: OrgItem[]; title: string; folderId: number | null };
+  | { kind: "combine"; sources: OrgItem[]; title: string; folderId: number | null; localFolderId: string | null };
 
 const IMPORT_TYPES = ".pdf,.docx,.rtf,.pages,.txt,.md,.markdown";
 
@@ -77,14 +78,14 @@ export function DocumentsView() {
   const clearError = useDocuments((s) => s.clearError);
 
   const localDocs = useLocalDocs((s) => s.items);
+  const localFolders = useLocalDocs((s) => s.folders);
+  const folderOf = useLocalDocs((s) => s.folderOf);
   const localLoaded = useLocalDocs((s) => s.loaded);
   const localTrash = useLocalDocs((s) => s.trash);
   const activeLocalId = useLocalDocs((s) => s.activeLocalId);
   const offline = useSession((s) => s.phase === "offline");
 
-  const [creating, setCreating] = useState(false);
-  const [title, setTitle] = useState("");
-  const [format, setFormat] = useState("none");
+  const [newDoc, setNewDoc] = useState(false);
   const [importing, setImporting] = useState<{ done: number; total: number; name: string } | null>(null);
   const [exporting, setExporting] = useState(false);
   const [dropping, setDropping] = useState(false);
@@ -92,6 +93,13 @@ export function DocumentsView() {
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<OrgItem[] | null>(null);
+  /** Documents on this device whose text matches a query: id → the words
+   *  around the match. */
+  const [localFound, setLocalFound] = useState<{ query: string; hits: Map<string, string> } | null>(null);
+  /** Publishing needs a server: not connected, it follows the connect sheet. */
+  const publish = useWhenConnected((meta: { id: string; title: string; format: string }) =>
+    setDialog({ kind: "shareLocal", meta }),
+  );
   const [sort, setSortState] = useState<SortKey>(loadSort);
   const [view, setView] = useState<View>({ kind: "all" });
   const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
@@ -125,6 +133,25 @@ export function DocumentsView() {
     }, 250);
     return () => clearTimeout(timer);
   }, [query, offline]);
+
+  // The text of documents on this device is searched on disk.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || isWeb) {
+      setLocalFound(null);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      void searchLocalDocs(q)
+        .then((hits) => live && setLocalFound({ query: q, hits }))
+        .catch(() => live && setLocalFound({ query: q, hits: new Map() }));
+    }, 250);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   // Native drag & drop. Tauri swallows OS file drags before the webview sees
   // them, so the HTML5 `onDrop` below never fires in the packaged app — the
@@ -174,23 +201,59 @@ export function DocumentsView() {
   };
 
   const searching = results !== null || (offline && !!query.trim());
+  // Only what was found for the words now in the field.
+  const localHits = localFound && localFound.query === query.trim() ? localFound.hits : null;
+  // A search looks everywhere, whatever folder is open.
+  const shown: View = searching ? { kind: "all" } : view;
   const serverAll = items.map(serverItem);
-  const localAll = isWeb ? [] : localDocs.map(localItem);
+  const placeOf = (id: string) => {
+    const place = folderOf[id];
+    return place && localFolders.some((f) => f.id === place) ? place : null;
+  };
+  const localAll = isWeb ? [] : localDocs.map((d) => localItem(d, placeOf(d.id), (searching && localHits?.get(d.id)) || null));
   const serverShown = searching ? (results ?? []) : serverAll;
-  const localShown = searching ? localAll.filter((i) => matchesLocal(i, query)) : localAll;
+  const localShown = searching
+    ? localAll.filter((i) => matchesLocal(i, query) || localHits?.has(i.id as string))
+    : localAll;
   const mine = sortItems(serverShown.filter((i) => i.access === "owner"), sort);
   const shared = sortItems(serverShown.filter((i) => i.access !== "owner"), sort);
   const local = sortItems(localShown, sort);
   const folder = view.kind === "folder" ? folders.find((f) => f.id === view.id) : undefined;
+  const localFolder = view.kind === "localFolder" ? localFolders.find((f) => f.id === view.id) : undefined;
   const inView = searching
     ? mine
     : view.kind === "folder"
       ? mine.filter((i) => i.folderId === view.id)
-      : mine.filter((i) => i.folderId === null);
+      : view.kind === "all"
+        ? mine.filter((i) => i.folderId === null)
+        : [];
+  /** The device's documents in view: a folder's, or (at the top) the ones in none. */
+  const localInView = searching
+    ? local
+    : view.kind === "localFolder"
+      ? local.filter((i) => i.folderId === view.id)
+      : view.kind === "all"
+        ? local.filter((i) => i.folderId === null)
+        : [];
   const sortedFolders = [...folders].sort((a, b) => compareNames(a.name, b.name));
+  const sortedLocalFolders = [...localFolders].sort((a, b) => compareNames(a.name, b.name));
+  const allFolders: OrgFolder[] = [
+    ...folders.map((f) => ({ key: `s:${f.id}`, kind: "server" as const, id: f.id, name: f.name, count: f.document_count })),
+    ...(isWeb
+      ? []
+      : localFolders.map((f) => ({
+          key: `l:${f.id}`,
+          kind: "local" as const,
+          id: f.id,
+          name: f.name,
+          count: localAll.filter((i) => i.folderId === f.id).length,
+        }))),
+  ].sort((a, b) => compareNames(a.name, b.name) || a.key.localeCompare(b.key));
   const trashCount = serverTrash.length + localTrash.length;
-  const everything = [...local, ...inView, ...shared];
+  const everything = [...localInView, ...inView, ...(shown.kind === "all" ? shared : [])];
   const selectedItems = everything.filter((i) => selected.has(i.key));
+  const openFolder = (f: OrgFolder) =>
+    setView(f.kind === "server" ? { kind: "folder", id: f.id as number } : { kind: "localFolder", id: f.id as string });
 
   const open = (item: OrgItem) =>
     void (item.kind === "server" ? openServerDoc(item.id as number) : openLocalDoc(item.id as string)).catch(fail);
@@ -221,34 +284,24 @@ export function DocumentsView() {
     });
   };
 
-  const create = async () => {
-    const t = title.trim();
-    if (!t) return;
-    try {
-      const doc = await documentsApi.create(t, format);
-      if (view.kind === "folder") await documentsApi.moveDocument(doc.id, view.id).catch(() => {});
-      setCreating(false);
-      setTitle("");
-      refresh();
-      await openServerDoc(doc.id);
-    } catch (e) {
-      fail(e);
-    }
-  };
-
-  /** Import files — one or many. Offline they land on this device;
-   *  connected, on the server (in the open folder). One file opens. */
+  /** Import files — one or many. Without a server, or with a folder on this
+   *  device open, they land on this device; otherwise on the server (in the
+   *  open folder). One file opens. */
   const importFiles = async (files: File[]) => {
     if (!files.length || importing) return;
     const mod = await import("./import/importFile");
+    // Into the folder that's open — a folder on this device keeps them here.
+    const toDevice = offline || view.kind === "localFolder";
     const made: ItemRef[] = [];
     const failed: string[] = [];
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
       setImporting({ done: i, total: files.length, name: file.name });
       try {
-        if (offline) {
-          made.push({ kind: "local", id: await mod.importFileToLocal(file) });
+        if (toDevice) {
+          const id = await mod.importFileToLocal(file);
+          if (view.kind === "localFolder") await useLocalDocs.getState().moveTo([id], view.id).catch(() => {});
+          made.push({ kind: "local", id });
         } else {
           const doc = await mod.importFile(file);
           if (view.kind === "folder") await documentsApi.moveDocument(doc.id, view.id).catch(() => {});
@@ -260,7 +313,7 @@ export function DocumentsView() {
     }
     setImporting(null);
     refresh();
-    if (offline) void useLocalDocs.getState().load().catch(() => {});
+    if (toDevice) void useLocalDocs.getState().load().catch(() => {});
     if (failed.length) fail(`Couldn’t import ${failed.join("; ")}`);
     if (made.length === 1 && files.length === 1) openRef(made[0]);
     else if (made.length) toast(`Imported ${made.length} document${made.length === 1 ? "" : "s"}.`, "success");
@@ -288,7 +341,10 @@ export function DocumentsView() {
     try {
       const { exportAllDocuments } = await import("./exportAll");
       // The save path shows its own "Saved … [Show in Finder]" toast.
-      await exportAllDocuments(items, folders, isWeb ? [] : localDocs);
+      await exportAllDocuments(items, folders, isWeb ? [] : localDocs, (id) => {
+        const place = placeOf(id);
+        return place ? (localFolders.find((f) => f.id === place)?.name ?? null) : null;
+      });
       useDocuments.setState({ error: null });
     } catch (e) {
       fail(e);
@@ -360,12 +416,16 @@ export function DocumentsView() {
     if (item.kind === "server" && !isWeb) {
       list.push({ label: "Save a copy to this device", icon: <HardDrive size={14} />, onClick: () => void saveToDevice(item) });
     }
-    if (item.kind === "local" && !offline) {
-      list.push({
-        label: "Share to server…",
-        icon: <Share2 size={14} />,
-        onClick: () => setDialog({ kind: "shareLocal", meta: { id: item.id as string, title: item.title, format: item.format } }),
-      });
+    if (item.kind === "local") {
+      const meta = { id: item.id as string, title: item.title, format: item.format };
+      list.push(
+        { label: "Move to folder…", icon: <FolderInput size={14} />, onClick: () => setDialog({ kind: "move", items: [item] }) },
+        {
+          label: "Publish to a server…",
+          icon: <Share2 size={14} />,
+          onClick: () => publish(meta),
+        },
+      );
     }
     if (item.kind === "server" && owner) {
       list.push(
@@ -387,7 +447,9 @@ export function DocumentsView() {
   const saveToDevice = async (item: OrgItem) => {
     try {
       const detail = await documentsApi.detailQuiet(item.id as number);
-      const id = await useLocalDocs.getState().create(item.title, item.format, detail.state_b64);
+      const id = await useLocalDocs
+        .getState()
+        .create(item.title, item.format, detail.state_b64, detail.document.schema_level ?? 1);
       toast(`Saved a copy of “${item.title}” to this device.`, "success", {
         action: { label: "Open", run: () => void openLocalDoc(id).catch(fail) },
       });
@@ -396,24 +458,38 @@ export function DocumentsView() {
     }
   };
 
-  const folderMenu = (f: DocumentFolder, x: number, y: number) =>
-    showMenu(x, y, [
-      { label: "Open", icon: <Folder size={14} />, onClick: () => setView({ kind: "folder", id: f.id }) },
+  const folderMenu = (f: OrgFolder, x: number, y: number) => {
+    const onDevice = f.kind === "local";
+    const list: MenuItem[] = [
+      { label: "Open", icon: <Folder size={14} />, onClick: () => openFolder(f) },
       { label: "Rename…", icon: <Pencil size={14} />, onClick: () => setDialog({ kind: "renameFolder", folder: f }) },
       {
         label: "Combine into a manuscript…",
         icon: <BookCopy size={14} />,
-        disabled: f.document_count < 2,
+        disabled: f.count < 2,
         onClick: () => {
-          const sources = sortItems(serverAll.filter((i) => i.folderId === f.id && i.access === "owner"), "name");
-          setDialog({ kind: "combine", sources, title: f.name, folderId: f.id });
+          const sources = sortItems(
+            (onDevice ? localAll : serverAll).filter((i) => i.folderId === f.id && i.access === "owner"),
+            "name",
+          );
+          setDialog({
+            kind: "combine",
+            sources,
+            title: f.name,
+            folderId: onDevice ? null : (f.id as number),
+            localFolderId: onDevice ? (f.id as string) : null,
+          });
         },
       },
-      {
+    ];
+    if (!onDevice) {
+      list.push({
         label: "Share all documents…",
         icon: <Share2 size={14} />,
-        onClick: () => setDialog({ kind: "share", target: { kind: "folder", id: f.id, name: f.name } }),
-      },
+        onClick: () => setDialog({ kind: "share", target: { kind: "folder", id: f.id as number, name: f.name } }),
+      });
+    }
+    list.push(
       {
         label: "Delete folder",
         icon: <Trash2 size={14} />,
@@ -425,16 +501,24 @@ export function DocumentsView() {
             danger: true,
           }).then((ok) => {
             if (!ok) return;
-            documentsApi
-              .deleteFolder(f.id)
+            (onDevice ? useLocalDocs.getState().deleteFolder(f.id as string) : documentsApi.deleteFolder(f.id as number))
               .then(() => {
-                if (view.kind === "folder" && view.id === f.id) setView({ kind: "all" });
-                refresh();
+                if ((view.kind === "folder" || view.kind === "localFolder") && view.id === f.id) setView({ kind: "all" });
+                if (!onDevice) refresh();
               })
               .catch(fail);
           }),
       },
-    ]);
+    );
+    showMenu(x, y, list);
+  };
+
+  /** A new, empty document on this device — in the folder that's open. */
+  const newOnDevice = async () => {
+    const id = await useLocalDocs.getState().create("Untitled", "none");
+    if (view.kind === "localFolder") await useLocalDocs.getState().moveTo([id], view.id).catch(() => {});
+    await openLocalDoc(id);
+  };
 
   const cards = (list: OrgItem[]) =>
     list.map((item) => (
@@ -469,14 +553,14 @@ export function DocumentsView() {
           <FileText size={18} /> Documents
         </h2>
         {offline && (
-          <span className="wf-doc-local-chip" title="Server documents appear when you connect">
-            <HardDrive size={13} /> offline — this device only
+          <span className="wf-doc-local-chip" title="Documents on a server appear here too once you're connected to one">
+            <HardDrive size={13} /> on this device
           </span>
         )}
         <div className="wf-doc-search">
           <Search size={14} />
           <input
-            placeholder={offline ? "Search titles on this device…" : "Search titles and text…"}
+            placeholder={offline ? "Search on this device…" : "Search titles and text…"}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             aria-label="Search documents"
@@ -500,15 +584,13 @@ export function DocumentsView() {
         >
           <CheckSquare size={15} /> Select
         </button>
-        {!offline && (
-          <button
-            title="Export every document as Markdown + JSON"
-            onClick={() => void exportAll()}
-            disabled={exporting || (items.length === 0 && localDocs.length === 0)}
-          >
-            <Download size={15} /> {exporting ? "Exporting…" : "Export all"}
-          </button>
-        )}
+        <button
+          title="Export every document as Markdown + JSON"
+          onClick={() => void exportAll()}
+          disabled={exporting || (items.length === 0 && localDocs.length === 0)}
+        >
+          <Download size={15} /> {exporting ? "Exporting…" : "Export all"}
+        </button>
         <button
           title={offline ? "Import files as documents on this device" : "Import files as documents"}
           onClick={() => fileRef.current?.click()}
@@ -516,16 +598,12 @@ export function DocumentsView() {
         >
           {busyLabel ?? "Import"}
         </button>
-        {!offline && (
-          <>
-            <button className="wf-icon" title="New folder" onClick={() => setDialog({ kind: "newFolder" })}>
-              <FolderPlus size={15} />
-            </button>
-            <button className="wf-primary" onClick={() => setCreating((c) => !c)}>
-              <FilePlus2 size={15} /> New document
-            </button>
-          </>
-        )}
+        <button className="wf-icon" title="New folder" onClick={() => setDialog({ kind: "newFolder" })}>
+          <FolderPlus size={15} />
+        </button>
+        <button className="wf-primary" onClick={() => setNewDoc(true)}>
+          <FilePlus2 size={15} /> New document
+        </button>
         <input
           ref={fileRef}
           type="file"
@@ -545,26 +623,13 @@ export function DocumentsView() {
         </p>
       )}
 
-      {creating && !offline && (
-        <form
-          className="wf-doc-create"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void create();
-          }}
-        >
-          <input autoFocus placeholder="Document title" value={title} maxLength={200} onChange={(e) => setTitle(e.target.value)} />
-          <select value={format} onChange={(e) => setFormat(e.target.value)} aria-label="Format">
-            {Object.entries(FORMAT_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <button type="submit" className="wf-primary" disabled={!title.trim()}>
-            Create {folder ? `in ${folder.name}` : ""}
-          </button>
-        </form>
+      {newDoc && (
+        <NewDocumentDialog
+          folderId={view.kind === "folder" ? view.id : null}
+          localFolderId={view.kind === "localFolder" ? view.id : null}
+          onClose={() => setNewDoc(false)}
+          onCreated={() => refresh()}
+        />
       )}
 
       <UnsavedBanner />
@@ -580,15 +645,21 @@ export function DocumentsView() {
               setDialog({
                 kind: "combine",
                 sources: selectedItems,
-                title: folder?.name ?? "Manuscript",
+                title: folder?.name ?? localFolder?.name ?? "Manuscript",
                 folderId: view.kind === "folder" ? view.id : null,
+                localFolderId: view.kind === "localFolder" ? view.id : null,
               })
             }
           >
             <BookCopy size={14} /> Combine
           </button>
           <button
-            disabled={!selectedItems.length || !selectedItems.every((i) => i.kind === "server" && i.access === "owner")}
+            disabled={
+              !selectedItems.length ||
+              // One kind at a time: a folder is on the server or on this device.
+              !(selectedItems.every((i) => i.kind === "server" && i.access === "owner") || selectedItems.every((i) => i.kind === "local"))
+            }
+            title="Move to a folder"
             onClick={() => setDialog({ kind: "move", items: selectedItems })}
           >
             <FolderInput size={14} /> Move
@@ -612,6 +683,7 @@ export function DocumentsView() {
             {mine.length + shared.length + local.length === 0
               ? `Nothing matches “${query.trim()}”.`
               : `${mine.length + shared.length + local.length} result${mine.length + shared.length + local.length === 1 ? "" : "s"} for “${query.trim()}”`}
+            {!isWeb && localHits === null && " · reading the documents on this device…"}
           </p>
         ) : view.kind !== "all" ? (
           <button className="wf-doc-breadcrumb" onClick={() => setView({ kind: "all" })}>
@@ -619,6 +691,13 @@ export function DocumentsView() {
             {view.kind === "trash" ? (
               <>
                 <Trash2 size={14} /> Recently Deleted
+              </>
+            ) : view.kind === "localFolder" ? (
+              <>
+                <Folder size={14} /> {localFolder?.name}
+                <span className="wf-doc-local-chip">
+                  <HardDrive size={12} /> on this device
+                </span>
               </>
             ) : (
               <>
@@ -628,22 +707,22 @@ export function DocumentsView() {
           </button>
         ) : null}
 
-        {view.kind === "trash" && !searching ? (
+        {shown.kind === "trash" ? (
           <TrashView onError={fail} />
         ) : (
           <>
-            {!searching && view.kind === "all" && (sortedFolders.length > 0 || trashCount > 0) && (
+            {shown.kind === "all" && !searching && (allFolders.length > 0 || trashCount > 0) && (
               <section className="wf-documents-section">
                 <h3>Folders</h3>
                 <div className="wf-documents-grid">
-                  {sortedFolders.map((f) => (
-                    <div key={f.id} className="wf-doc-card wf-folder-card" onContextMenu={(e) => {
+                  {allFolders.map((f) => (
+                    <div key={f.key} className="wf-doc-card wf-folder-card" onContextMenu={(e) => {
                       e.preventDefault();
                       folderMenu(f, e.clientX, e.clientY);
                     }}>
                       <button
                         className="wf-doc-card-open"
-                        onClick={() => setView({ kind: "folder", id: f.id })}
+                        onClick={() => openFolder(f)}
                         onKeyDown={(e) => {
                           if ((e.shiftKey && e.key === "F10") || e.key === "ContextMenu") {
                             e.preventDefault();
@@ -656,7 +735,12 @@ export function DocumentsView() {
                           <Folder size={15} /> {f.name}
                         </span>
                         <span className="wf-doc-card-meta">
-                          {f.document_count} document{f.document_count === 1 ? "" : "s"}
+                          {f.kind === "local" && (
+                            <span className="wf-folder-where" title="This folder is on this device">
+                              <HardDrive size={12} /> on this device ·{" "}
+                            </span>
+                          )}
+                          {f.count} document{f.count === 1 ? "" : "s"}
                         </span>
                       </button>
                       <button
@@ -688,46 +772,44 @@ export function DocumentsView() {
               </section>
             )}
 
-            {view.kind === "all" && !isWeb && (local.length > 0 || !searching) && (
+            {(shown.kind === "all" || shown.kind === "localFolder") && !isWeb && (localInView.length > 0 || !searching) && (
               <section className="wf-documents-section">
                 <h3>
-                  <HardDrive size={14} /> On this device
+                  <HardDrive size={14} /> {shown.kind === "localFolder" ? (localFolder?.name ?? "Folder") : "On this device"}
                 </h3>
                 <div className="wf-documents-grid">
-                  {cards(local)}
+                  {cards(localInView)}
                   {!searching && (
                     <div className="wf-doc-card wf-doc-card-new">
-                      <button
-                        className="wf-doc-card-open"
-                        onClick={() =>
-                          void useLocalDocs
-                            .getState()
-                            .create("Untitled", "none")
-                            .then((id) => openLocalDoc(id))
-                            .catch(fail)
-                        }
-                      >
+                      <button className="wf-doc-card-open" onClick={() => void newOnDevice().catch(fail)}>
                         <span className="wf-doc-card-title">
                           <FilePlus2 size={15} /> New document on this device
                         </span>
-                        <span className="wf-doc-card-meta">Stored on this computer only</span>
+                        <span className="wf-doc-card-meta">
+                          {shown.kind === "localFolder" ? "In this folder" : "Stored on this computer only"}
+                        </span>
                       </button>
                     </div>
                   )}
                 </div>
+                {shown.kind === "localFolder" && localInView.length === 0 && (
+                  <p className="wf-documents-empty">
+                    This folder is empty. Move documents here from their ⋯ menu, or import files while it’s open.
+                  </p>
+                )}
               </section>
             )}
 
             {inView.length > 0 && (
               <section className="wf-documents-section">
-                <h3>{view.kind === "folder" ? folder?.name ?? "Folder" : "My documents"}</h3>
+                <h3>{shown.kind === "folder" ? folder?.name ?? "Folder" : "My documents"}</h3>
                 <div className="wf-documents-grid">{cards(inView)}</div>
               </section>
             )}
-            {view.kind === "folder" && !searching && inView.length === 0 && loaded && (
+            {shown.kind === "folder" && inView.length === 0 && loaded && (
               <p className="wf-documents-empty">This folder is empty. Move documents here from their ⋯ menu, or import files while it’s open.</p>
             )}
-            {(searching || view.kind === "all") && shared.length > 0 && (
+            {shown.kind === "all" && shared.length > 0 && (
               <section className="wf-documents-section">
                 <h3>Shared with me</h3>
                 <div className="wf-documents-grid">{cards(shared)}</div>
@@ -752,7 +834,10 @@ export function DocumentsView() {
           </p>
         )}
         {offline && view.kind === "all" && !searching && (
-          <p className="wf-documents-empty">You’re working offline — server documents (and sharing) appear when you connect.</p>
+          <p className="wf-documents-empty">
+            These documents live on this device. Connect to a server to write with others — its documents appear
+            here beside yours.
+          </p>
         )}
       </div>
 
@@ -761,7 +846,14 @@ export function DocumentsView() {
       {dialog?.kind === "move" && (
         <MoveDialog
           items={dialog.items}
-          folders={sortedFolders}
+          folders={dialog.items[0]?.kind === "local" ? sortedLocalFolders : sortedFolders}
+          onMove={async (folderId) => {
+            if (dialog.items[0]?.kind === "local") {
+              await useLocalDocs.getState().moveTo(dialog.items.map((i) => i.id as string), folderId as string | null);
+            } else {
+              for (const item of dialog.items) await documentsApi.moveDocument(item.id as number, folderId as number | null);
+            }
+          }}
           onDone={() => {
             setDialog(null);
             clearSelection();
@@ -795,21 +887,27 @@ export function DocumentsView() {
           label="Rename"
           maxLength={80}
           onSave={async (name) => {
-            await documentsApi.renameFolder(dialog.folder.id, name);
-            refresh();
+            if (dialog.folder.kind === "local") {
+              await useLocalDocs.getState().renameFolder(dialog.folder.id as string, name);
+            } else {
+              await documentsApi.renameFolder(dialog.folder.id as number, name);
+              refresh();
+            }
           }}
           onClose={() => setDialog(null)}
         />
       )}
       {dialog?.kind === "newFolder" && (
-        <NameDialog
-          title="New folder"
-          initial=""
-          label="Create"
-          maxLength={80}
-          onSave={async (name) => {
-            await documentsApi.createFolder(name);
-            refresh();
+        <NewFolderDialog
+          canServer={!offline}
+          canDevice={!isWeb}
+          start={view.kind === "localFolder" || offline ? "device" : "server"}
+          onCreate={async (name, where) => {
+            if (where === "device") await useLocalDocs.getState().createFolder(name);
+            else {
+              await documentsApi.createFolder(name);
+              refresh();
+            }
           }}
           onClose={() => setDialog(null)}
         />
@@ -821,6 +919,7 @@ export function DocumentsView() {
           sources={dialog.sources}
           defaultTitle={dialog.title}
           folderId={dialog.folderId}
+          localFolderId={dialog.localFolderId}
           offline={offline}
           onDone={(ref) => {
             setDialog(null);

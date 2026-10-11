@@ -1,16 +1,19 @@
-import { HardDrive, Upload } from "lucide-react";
+import { HardDrive, MoreHorizontal, Search, Share2, Trash2, Upload } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
-import { isCmdError, isWeb } from "../../lib/backend";
+import { backend, isCmdError, isWeb } from "../../lib/backend";
 import { useSession } from "../../stores/session";
+import { useWhenConnected } from "../../stores/whenConnected";
+import { ContextMenu, type MenuItem } from "../documents/organizer/ContextMenu";
 import { GroupChip } from "../chat/GroupChip";
 import { useChat } from "../chat/store";
 import { canvasApi } from "./api";
 import { BoardRoom } from "./BoardRoom";
 import type { ImportDest } from "./boardFile";
 import { ImportBoardDialog } from "./ImportBoardDialog";
-import { useLocalBoards, type LocalBoardMeta } from "./local";
+import { searchLocalBoards, useLocalBoards, type LocalBoardMeta } from "./local";
+import { PublishBoardDialog } from "./PublishBoardDialog";
 import { useCanvas } from "./store";
 
 export function CanvasView() {
@@ -44,13 +47,60 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
   const [importJob, setImportJob] = useState<{ file: File; dest: ImportDest } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const pendingDest = useRef<ImportDest>({ kind: "local" });
+  const [query, setQuery] = useState("");
+  /** Boards on this device a search found: id → the words around the match. */
+  const [foundFor, setFoundFor] = useState<{ query: string; hits: Map<number, string> } | null>(null);
+  const [menu, setMenu] = useState<{ x: number; y: number; items: MenuItem[] } | null>(null);
+  const [publishing, setPublishing] = useState<{ id: number; name: string } | null>(null);
+  /** Publishing needs a server: not connected, it follows the connect sheet. */
+  const publish = useWhenConnected((board: { id: number; name: string }) => setPublishing(board));
 
   useEffect(() => {
     if (groupId !== null) void loadBoards(groupId).catch(() => {});
   }, [groupId, loadBoards]);
 
-  const boards = groupId !== null ? (byGroup[groupId] ?? []) : [];
+  // Names are matched from the list; the words on a board, on disk.
+  useEffect(() => {
+    const q = query.trim();
+    if (!q || isWeb) {
+      setFoundFor(null);
+      return;
+    }
+    let live = true;
+    const timer = setTimeout(() => {
+      void searchLocalBoards(q)
+        .then((hits) => live && setFoundFor({ query: q, hits }))
+        .catch(() => live && setFoundFor({ query: q, hits: new Map() }));
+    }, 200);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [query, localBoards]);
+
+  const q = query.trim().toLowerCase();
+  // Only what was found for the words now in the field.
+  const found = foundFor && foundFor.query === query.trim() ? foundFor.hits : null;
+  const boards = (groupId !== null ? (byGroup[groupId] ?? []) : []).filter((b) => !q || b.name.toLowerCase().includes(q));
+  const localShown = q ? localBoards.filter((b) => b.name.toLowerCase().includes(q) || found?.has(b.id)) : localBoards;
   const fail = (e: unknown) => setError(isCmdError(e) ? e.message : String(e));
+
+  const localMenu = (board: LocalBoardMeta, x: number, y: number) =>
+    setMenu({
+      x,
+      y,
+      items: [
+        { label: "Open", onClick: () => open(board.id) },
+        { label: "Publish to a server…", icon: <Share2 size={14} />, onClick: () => publish({ id: board.id, name: board.name }) },
+        {
+          label: "Delete",
+          icon: <Trash2 size={14} />,
+          danger: true,
+          // To Recently Deleted, with an Undo in the toast.
+          onClick: () => void useLocalBoards.getState().remove(board.id).catch(fail),
+        },
+      ],
+    });
 
   /** Opening marks the board active before it loads, so a failure has to put
    *  the list back rather than leave an empty room on screen. */
@@ -135,6 +185,22 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
     <div className="wf-sessions">
       <header className="wf-sessions-header">
         <h2>Canvas boards</h2>
+        {(localBoards.length > 0 || boards.length > 0 || q) && (
+          <div className="wf-doc-search">
+            <Search size={14} />
+            <input
+              placeholder={isWeb ? "Search boards…" : "Search boards and the words on them…"}
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              aria-label="Search boards"
+            />
+            {query && (
+              <button title="Clear search" onClick={() => setQuery("")}>
+                ×
+              </button>
+            )}
+          </div>
+        )}
         {groupId !== null && <GroupChip />}
       </header>
       {error && <p className="wf-connect-error">{error}</p>}
@@ -147,7 +213,7 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
         </p>
       ) : (
         <>
-          {boards.length === 0 && (
+          {boards.length === 0 && !q && (
             <p className="wf-app-empty-hint">
               Boards are shared visual spaces for your group — sticky notes, images, frames,
               connectors, and live document excerpts, all synced in real time. Create one to
@@ -188,8 +254,14 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
             <HardDrive size={14} /> On this device
           </h3>
           <div className="wf-sessions-grid">
-            {localBoards.map((b) => (
-              <LocalBoardCard key={b.id} board={b} onOpen={() => open(b.id)} />
+            {localShown.map((b) => (
+              <LocalBoardCard
+                key={b.id}
+                board={b}
+                snippet={q ? found?.get(b.id) || null : null}
+                onOpen={() => open(b.id)}
+                onMenu={(x, y) => localMenu(b, x, y)}
+              />
             ))}
             {creating === "local" ? (
               nameForm(createLocal)
@@ -212,8 +284,13 @@ function BoardList({ groupId, offline }: { groupId: number | null; offline: bool
               <Upload size={15} /> Import board
             </button>
           </div>
+          {q && localShown.length === 0 && <p className="wf-app-empty-hint">No board on this device matches “{query.trim()}”.</p>}
+          <DeletedBoards watch={localBoards.length} />
         </section>
       )}
+
+      {menu && <ContextMenu x={menu.x} y={menu.y} items={menu.items} onClose={() => setMenu(null)} />}
+      {publishing && <PublishBoardDialog board={publishing} onClose={() => setPublishing(null)} onOpen={open} />}
 
       <input
         ref={fileRef}
@@ -255,13 +332,87 @@ function BoardCard({ board, onOpen }: { board: CanvasBoard; onOpen: () => void }
   );
 }
 
-function LocalBoardCard({ board, onOpen }: { board: LocalBoardMeta; onOpen: () => void }) {
+function LocalBoardCard({
+  board,
+  snippet,
+  onOpen,
+  onMenu,
+}: {
+  board: LocalBoardMeta;
+  /** The words around a search match on the board. */
+  snippet: string | null;
+  onOpen: () => void;
+  onMenu: (x: number, y: number) => void;
+}) {
   return (
-    <button className="wf-session-card" onClick={onOpen}>
-      <strong>{board.name}</strong>
-      <span className="wf-session-meta">
-        on this device · edited {new Date(board.updated_at).toLocaleDateString()}
-      </span>
-    </button>
+    <div
+      className="wf-session-card-wrap wf-board-card"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onMenu(e.clientX, e.clientY);
+      }}
+    >
+      <button className="wf-session-card" onClick={onOpen}>
+        <strong>{board.name}</strong>
+        {snippet && <span className="wf-board-card-snippet">{snippet}</span>}
+        <span className="wf-session-meta">
+          on this device · edited {new Date(board.updated_at).toLocaleDateString()}
+        </span>
+      </button>
+      <button
+        className="wf-board-card-more"
+        title="Board options"
+        aria-haspopup="menu"
+        onClick={(e) => {
+          const r = e.currentTarget.getBoundingClientRect();
+          onMenu(r.left, r.bottom + 4);
+        }}
+      >
+        <MoreHorizontal size={15} />
+      </button>
+    </div>
+  );
+}
+
+/** Boards deleted from this device in the last 30 days: restore, or let go. */
+function DeletedBoards({ watch }: { watch: number }) {
+  const [items, setItems] = useState<{ id: string; name: string; updated_at: number }[]>([]);
+  const [open, setOpen] = useState(false);
+  const refresh = () => void backend.localboardTrashList().then(setItems).catch(() => {});
+  // Deleting or restoring changes the list beside this one.
+  useEffect(refresh, [watch]);
+  if (items.length === 0) return null;
+  return (
+    <div className="wf-board-trash">
+      <button className="wf-link" aria-expanded={open} onClick={() => setOpen((v) => !v)}>
+        Recently deleted ({items.length})
+      </button>
+      {open && (
+        <ul>
+          {items.map((b) => (
+            <li key={b.id}>
+              <span>
+                {b.name}
+                <small> · deleted {new Date(b.updated_at).toLocaleDateString()}</small>
+              </span>
+              <button
+                onClick={() =>
+                  void backend
+                    .localboardRestore(b.id)
+                    .then(() => useLocalBoards.getState().load())
+                    .then(refresh)
+                    .catch(() => {})
+                }
+              >
+                Restore
+              </button>
+              <button className="wf-danger" title="Delete for good" onClick={() => void backend.localboardPurge(b.id).then(refresh).catch(() => {})}>
+                Delete
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }

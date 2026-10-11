@@ -3,21 +3,21 @@
  * never freezes the editor, and keeps one session (parsed fonts, shaped
  * words, laid-out chapters) alive between jobs.
  *
- * Messages in: { id, type: "layout" | "pdf", req, fonts?, channel?, refill? }.
+ * Messages in: { id, type: "layout" | "pdf" | "pages", req, fonts?, channel?, refill? }.
  * Jobs run one at a time; a layout that's been overtaken by a newer one on
  * the same channel (the live preview while typing) is skipped. Out:
  * progress, then laidout (the display list), done (PDF bytes, transferred),
- * cancelled, or error — or fonts, asking for files the session doesn't have,
+ * pages (a document's page map), cancelled, or error — or fonts, asking for files the session doesn't have,
  * after which the client sends the request again with them (refill).
  */
 
 import type { FaceBytes } from "./faces";
-import { TypesetSession, type LayoutRequest } from "./run";
+import { TypesetSession, type AnyRequest } from "./run";
 
 interface Request {
   id: number;
-  type: "layout" | "pdf";
-  req: LayoutRequest;
+  type: "layout" | "pdf" | "pages";
+  req: AnyRequest;
   /** Font files the session doesn't have yet. */
   fonts?: FaceBytes[];
   /** Layouts on one channel supersede each other. */
@@ -62,6 +62,8 @@ async function run(msg: Request) {
     if (msg.type === "layout") {
       const { dl } = await session.layout(msg.req, progress);
       scope.postMessage({ id, type: "laidout", dl });
+    } else if (msg.type === "pages") {
+      scope.postMessage({ id, type: "pages", map: await session.pageMap(msg.req) });
     } else {
       const result = await session.pdf(msg.req, progress);
       scope.postMessage({ id, type: "done", result }, [result.bytes.buffer]);

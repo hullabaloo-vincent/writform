@@ -4,6 +4,7 @@ import type { SessionDetail } from "../../bindings/proto/SessionDetail";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { backend, isCmdError } from "../../lib/backend";
 import { toast } from "../../platform";
+import { freshState, onServerScope } from "../../platform/serverScope";
 import { noteSessionChannel } from "../chat/store";
 import { sessionApi } from "./api";
 
@@ -150,3 +151,7 @@ export function installSessionsWsHandler(): () => void {
     }
   });
 }
+
+// A writing session belongs to the server it's held on: leaving that server
+// leaves the room (its subscriptions went with the socket).
+onServerScope(() => useSessions.setState(freshState(useSessions.getInitialState()), true));

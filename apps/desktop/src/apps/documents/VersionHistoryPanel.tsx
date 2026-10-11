@@ -1,14 +1,15 @@
 import type { Editor } from "@tiptap/react";
-import { BookmarkPlus, Clock3, FileDiff, RotateCcw, X } from "lucide-react";
+import { BookmarkPlus, Clock3, FileDiff, GitCompareArrows, RotateCcw, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
-import { RichDoc } from "../../editor/RichEditor";
+import { DocPreview } from "../../editor/DocPreview";
 import { isCmdError } from "../../lib/backend";
 import { confirmDialog, Modal } from "../../platform";
 import { documentsApi } from "./api";
 import { compactDocString } from "./compactJson";
+import type { CompareSide } from "./CompareView";
 import { alignChanges, flatten } from "./history";
 import { applyRestore } from "./restore";
 import { useDocuments } from "./store";
@@ -45,7 +46,17 @@ interface Preview {
   mode: "draft" | "change";
 }
 
-export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
+/** What a saved version is called where it is compared with now. */
+export const versionTitle = (name: string | null, createdAt: number) => name ?? new Date(createdAt).toLocaleString();
+
+export function VersionHistoryPanel({
+  editor,
+  onCompare,
+}: {
+  editor: Editor | null;
+  /** Show a saved version beside the text as it is now. */
+  onCompare?: (before: CompareSide) => void;
+}) {
   const versions = useDocuments((s) => s.versions);
   const activities = useDocuments((s) => s.activities);
   const myAccess = useDocuments((s) => s.myAccess);
@@ -177,6 +188,17 @@ export function VersionHistoryPanel({ editor }: { editor: Editor | null }) {
               {preview.mode === "change" && <span className="wf-doc-version-meta">Only changes from the previous save are shown</span>}
             </div>
             <span className="wf-statusbar-spacer" />
+            {onCompare && (
+              <button
+                title="This version beside the text as it is now, differences marked"
+                onClick={() => {
+                  onCompare({ title: versionTitle(preview.meta.name, preview.meta.created_at), doc: JSON.parse(preview.json) });
+                  setPreview(null);
+                }}
+              >
+                <GitCompareArrows size={15} /> Compare with now
+              </button>
+            )}
             {canWrite && <button onClick={() => void restore()}><RotateCcw size={15} /> Restore</button>}
             <button className="wf-icon" title="Close" onClick={() => setPreview(null)}><X size={15} /></button>
           </header>
@@ -230,8 +252,8 @@ function ActivityList({ items }: { items: DocumentActivity[] }) {
 /** A saved version rendered read-only — parsed once per version, not on
  *  every panel render (a novel's JSON is megabytes). */
 export function VersionPreview({ json, format }: { json: string; format?: string }) {
-  const doc = useMemo(() => JSON.parse(json) as Parameters<typeof RichDoc>[0]["doc"], [json]);
-  return <RichDoc doc={doc} format={format} />;
+  const doc = useMemo(() => JSON.parse(json) as Parameters<typeof DocPreview>[0]["doc"], [json]);
+  return <DocPreview doc={doc} format={format} />;
 }
 
 export function RevisionDiff({ before, after }: { before: string | null; after: string }) {

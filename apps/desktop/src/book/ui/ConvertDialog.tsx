@@ -38,7 +38,7 @@ export function ConvertDialog({
 }: {
   editor: Editor;
   ydoc: Y.Doc;
-  /** "convert": Plain → Manuscript; "tidy": an existing manuscript. */
+  /** "convert": Document → Manuscript; "tidy": an existing manuscript. */
   mode: "convert" | "tidy";
   /** Switch the document to the Manuscript format (convert mode). */
   onSwitchFormat?: () => Promise<void>;

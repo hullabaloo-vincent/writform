@@ -51,6 +51,28 @@ impl WsHub {
         }
     }
 
+    /// Send an event to every connection in `room` that is *not* also in
+    /// `unless_in` (clients a document has outgrown: see `update_room`).
+    pub fn broadcast_excluding(
+        &self,
+        room: &str,
+        unless_in: &str,
+        kind: &str,
+        data: serde_json::Value,
+    ) {
+        let frame = ServerFrame::Event {
+            room: room.to_string(),
+            kind: kind.to_string(),
+            data,
+        };
+        let conns = self.conns.lock().expect("poisoned");
+        for conn in conns.values() {
+            if conn.rooms.contains(room) && !conn.rooms.contains(unless_in) {
+                let _ = conn.tx.send(frame.clone());
+            }
+        }
+    }
+
     /// Online user ids among `candidates` (for presence snapshots).
     pub fn online_among(&self, candidates: &[UserId]) -> Vec<UserId> {
         let online: HashSet<UserId> = self
@@ -273,6 +295,17 @@ async fn authenticate_first_frame(
 async fn room_allowed(state: &AppState, room: &str, user: UserId) -> Result<bool, ()> {
     let (kind, id) = room.split_once(':').ok_or(())?;
     let id: i64 = id.parse().map_err(|_| ())?;
+    // `docv{level}:{id}`: a document's updates at a newer schema level (see
+    // `documents::update_room`). Same access as the document itself.
+    if let Some(level) = kind.strip_prefix("docv") {
+        let level: u32 = level.parse().map_err(|_| ())?;
+        if level < 2 || level > state.max_doc_schema {
+            return Err(());
+        }
+        return crate::routes::documents::can_read(state, id, user)
+            .await
+            .map_err(|_| ());
+    }
     match kind {
         "user" => Ok(id == user.0),
         "group" => Ok(perms::member_role(&state.pool, GroupId(id), user)

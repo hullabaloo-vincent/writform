@@ -145,3 +145,34 @@
   font-style: italic;
   font-display: swap;
 }
+
+/* Carlito: the documents' sans-serif in print, metric-compatible with
+   Calibri. */
+@font-face {
+  font-family: "Carlito";
+  src: url("../../assets/fonts/carlito/Carlito-Regular.ttf") format("truetype");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("../../assets/fonts/carlito/Carlito-Italic.ttf") format("truetype");
+  font-weight: 400;
+  font-style: italic;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("../../assets/fonts/carlito/Carlito-Bold.ttf") format("truetype");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Carlito";
+  src: url("../../assets/fonts/carlito/Carlito-BoldItalic.ttf") format("truetype");
+  font-weight: 700;
+  font-style: italic;
+  font-display: swap;
+}

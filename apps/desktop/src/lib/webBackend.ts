@@ -237,6 +237,14 @@ export function webBackend(): Backend {
       setToken(null);
       ws.stop();
     },
+    // The browser client belongs to one server: leaving it is signing out.
+    disconnect: async () => {
+      await apiFetch("POST", "/api/v1/auth/logout").catch(() => {});
+      setToken(null);
+      ws.stop();
+    },
+    resumeTarget: async () => null,
+    resumeServer: async () => ({ session: null, reason: "expired", addr: location.host }),
     currentSession: async () => {
       const t = token();
       if (!t) return { session: null, reason: null, addr: null };
@@ -284,10 +292,18 @@ export function webBackend(): Backend {
     profileSave: notOnWeb("The portable profile"),
     profileUpdateFields: notOnWeb("The portable profile"),
     profileDelete: notOnWeb("The portable profile"),
+    profileSetImage: notOnWeb("The portable profile"),
+    profileClearImage: notOnWeb("The portable profile"),
     localdocList: async () => [],
     localdocRead: notOnWeb("Local documents"),
     localdocWrite: notOnWeb("Local documents"),
+    localdocSearch: async () => ({ hits: [], stale: [] }),
+    localdocTextWrite: notOnWeb("Local documents"),
+    localdocFoldersRead: async () => "",
+    localdocFoldersWrite: notOnWeb("Local documents"),
     localdocDelete: notOnWeb("Local documents"),
+    localdocMediaWrite: notOnWeb("Local documents"),
+    localdocMediaCopy: notOnWeb("Local documents"),
     localdocTrash: notOnWeb("Local documents"),
     localdocTrashList: async () => [],
     localdocRestore: notOnWeb("Local documents"),
@@ -306,6 +322,11 @@ export function webBackend(): Backend {
     localboardRead: notOnWeb("Local boards"),
     localboardWrite: notOnWeb("Local boards"),
     localboardDelete: notOnWeb("Local boards"),
+    localboardTrashList: async () => [],
+    localboardTrashRead: notOnWeb("Local boards"),
+    localboardRestore: notOnWeb("Local boards"),
+    localboardPurge: notOnWeb("Local boards"),
+    localboardSearch: async () => [],
     localmediaWrite: notOnWeb("Local boards"),
     localmediaPrune: async () => {},
     apiFetch,
@@ -330,6 +351,21 @@ export function webBackend(): Backend {
     },
     // Browser "save" is a download.
     saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
+    printPdf: async () => "frame",
+    // The browser only ever asks its own server for fonts (which fetches
+    // and keeps them): never a third party, whatever `online` says.
+    fontFetch: async (id, file) => {
+      const headers: Record<string, string> = {};
+      const t = token();
+      if (t) headers.Authorization = `Bearer ${t}`;
+      const res = await fetch(`/api/v1/fonts/${encodeURIComponent(id)}/${encodeURIComponent(file)}`, { headers });
+      if (!res.ok) throw { code: "font_unavailable", message: "that font couldn't be loaded" } satisfies CmdError;
+      return new Uint8Array(await res.arrayBuffer());
+    },
+    fontCacheInfo: async () => ({ bytes: 0, files: 0, limit: 0 }),
+    fontCacheClear: async () => {},
+    sysfontList: async () => [],
+    sysfontBytes: notOnWeb("Installed fonts"),
     readDroppedFile: notOnWeb("Native file drop"),
     // The browser raises its own permission prompts on getUserMedia.
     microphoneStatus: async () => "authorized",
@@ -345,6 +381,8 @@ export function webBackend(): Backend {
     vaultRead: notOnWeb("The notes vault"),
     vaultWrite: notOnWeb("The notes vault"),
     vaultDelete: notOnWeb("The notes vault"),
+    vaultRestore: notOnWeb("The notes vault"),
+    vaultWriteNew: notOnWeb("The notes vault"),
     vaultRename: notOnWeb("The notes vault"),
     vaultSearch: async () => [],
     vaultPath: notOnWeb("The notes vault"),

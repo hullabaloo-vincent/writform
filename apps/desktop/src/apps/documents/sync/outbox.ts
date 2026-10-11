@@ -30,6 +30,8 @@ export interface OutboxEntry {
    *  closed with edits still unsent — enough to rebuild a copy. */
   rescue?: Uint8Array;
   error?: { reason: SendErrorKind; message: string; at: number };
+  /** The schema level the unsent edits need (absent: level 1). */
+  schema?: number;
   updatedAt: number;
 }
 

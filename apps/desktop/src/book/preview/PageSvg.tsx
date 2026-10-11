@@ -21,7 +21,7 @@ export const PageSvg = memo(function PageSvg({
   width: number;
   paper: "cream" | "white";
 }) {
-  const { w, h } = dl.trim;
+  const { w, h } = page.size ?? dl.trim;
   return (
     <svg
       className={`wf-bp-page wf-bp-paper-${paper}`}
@@ -39,8 +39,11 @@ export const PageSvg = memo(function PageSvg({
 function item(it: DLItem, key: number, faces: FaceRef[]) {
   if (it.t === "text") return <TextRun key={key} it={it} face={faces[it.face]} />;
   if (it.t === "rule") {
-    return <line key={key} x1={it.x1} y1={it.y1} x2={it.x2} y2={it.y2} stroke="currentColor" strokeWidth={it.w} />;
+    return <line key={key} x1={it.x1} y1={it.y1} x2={it.x2} y2={it.y2} stroke={it.color ?? "currentColor"} strokeWidth={it.w} />;
   }
+  if (it.t === "rect") return <rect key={key} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.color} />;
+  // Links and anchors are for the PDF; the preview only shows the page.
+  if (it.t === "link" || it.t === "anchor") return null;
   return (
     <image
       key={key}
@@ -67,13 +70,17 @@ function TextRun({ it, face }: { it: DLText; face: FaceRef | undefined }) {
     ...(it.feat?.length ? { fontFeatureSettings: it.feat.map((f) => `"${f}" 1`).join(", ") } : {}),
     ...(it.cs ? { letterSpacing: it.cs } : {}),
   };
+  const color = it.color ?? "currentColor";
   return (
     <text
       x={it.x}
       y={it.y}
       style={style}
       data-src={it.src}
-      {...(fakeBold ? { stroke: "currentColor", strokeWidth: it.size * 0.035 } : {})}
+      {...(it.color ? { fill: it.color } : {})}
+      {...(fakeBold ? { stroke: color, strokeWidth: it.size * 0.035 } : {})}
+      // A family without an italic is slanted about its baseline, as in the PDF.
+      {...(face?.fakeItalic ? { transform: `translate(${0.21 * it.y} 0) skewX(-11.86)` } : {})}
     >
       {words.length === 1 || !it.xs
         ? it.text

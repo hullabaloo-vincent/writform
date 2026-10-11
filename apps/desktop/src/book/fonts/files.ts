@@ -4,6 +4,10 @@
  * the files are fetched only when a book is typeset.
  */
 
+import carlitoBold from "../../assets/fonts/carlito/Carlito-Bold.ttf?url";
+import carlitoBoldItalic from "../../assets/fonts/carlito/Carlito-BoldItalic.ttf?url";
+import carlitoItalic from "../../assets/fonts/carlito/Carlito-Italic.ttf?url";
+import carlitoRegular from "../../assets/fonts/carlito/Carlito-Regular.ttf?url";
 import cinzel from "../../assets/fonts/cinzel/Cinzel[wght].ttf?url";
 import courierBold from "../../assets/fonts/courier-prime/CourierPrime-Bold.ttf?url";
 import courierBoldItalic from "../../assets/fonts/courier-prime/CourierPrime-BoldItalic.ttf?url";
@@ -34,6 +38,8 @@ export const FONT_FILES: Record<string, Partial<Record<FontStyle, string>>> = {
   playfair: { regular: playfair, italic: playfairItalic },
   cinzel: { regular: cinzel },
   "courier-prime": { regular: courierRegular, italic: courierItalic, bold: courierBold, boldItalic: courierBoldItalic },
+  // Documents only (not a book face): the bundled sans-serif.
+  carlito: { regular: carlitoRegular, italic: carlitoItalic, bold: carlitoBold, boldItalic: carlitoBoldItalic },
 };
 
 /** Fetch every bundled style of the given families. */

@@ -5,6 +5,10 @@
 //! in `{app_data_dir}/profile/` with real extensions, because re-upload
 //! goes through `upload_attachment`'s file-path branch which derives the
 //! multipart filename from the path.
+//!
+//! It is also who you are on this device when no server is saying: the
+//! pictures can be set here directly (`profile_set_image`), and the webview
+//! shows them through `writform-att://profile/<avatar|banner>`.
 
 use serde::{Deserialize, Serialize};
 use tauri::Manager;
@@ -116,6 +120,151 @@ async fn fetch_image(
     Ok(path.display().to_string())
 }
 
+fn now_millis() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0)
+}
+
+/// The extension for a picture, from its own first bytes. Only the kinds a
+/// server takes as a profile picture and every webview draws.
+pub(crate) fn image_ext(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0x89, b'P', b'N', b'G']) {
+        Some("png")
+    } else if bytes.starts_with(&[0xFF, 0xD8, 0xFF]) {
+        Some("jpg")
+    } else if bytes.starts_with(b"GIF8") {
+        Some("gif")
+    } else if bytes.len() > 12 && &bytes[0..4] == b"RIFF" && &bytes[8..12] == b"WEBP" {
+        Some("webp")
+    } else {
+        None
+    }
+}
+
+/// "avatar" or "banner" — the only two pictures a profile has.
+fn image_stem(kind: &str) -> Result<&'static str, CmdError> {
+    match kind {
+        "avatar" => Ok("avatar"),
+        "banner" => Ok("banner"),
+        _ => Err(CmdError::new("bad_request", "no such profile picture")),
+    }
+}
+
+/// Store `bytes` as the profile's avatar or banner in `dir`, replacing any
+/// other; returns its path.
+pub(crate) fn store_image(
+    dir: &std::path::Path,
+    stem: &str,
+    bytes: &[u8],
+) -> Result<std::path::PathBuf, CmdError> {
+    if bytes.len() > MAX_IMAGE_BYTES {
+        return Err(CmdError::new(
+            "too_large",
+            "profile image is larger than 8 MB",
+        ));
+    }
+    let ext = image_ext(bytes).ok_or_else(|| {
+        CmdError::new(
+            "bad_image",
+            "That isn't a picture this can use — choose a PNG, JPEG, GIF or WebP.",
+        )
+    })?;
+    remove_stem(dir, stem);
+    let path = dir.join(format!("{stem}.{ext}"));
+    crate::localdocs::atomic_write(&path, bytes, false)
+        .map_err(|e| CmdError::new("io", e.to_string()))?;
+    Ok(path)
+}
+
+/// The stored avatar or banner, whatever its type.
+pub(crate) fn stored_image(dir: &std::path::Path, stem: &str) -> Option<Vec<u8>> {
+    let prefix = format!("{stem}.");
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .find(|entry| {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            name.starts_with(&prefix) && !name.ends_with(".tmp")
+        })
+        .and_then(|entry| std::fs::read(entry.path()).ok())
+}
+
+/// For the `writform-att://profile/<avatar|banner>` scheme.
+pub fn image_bytes(app: &tauri::AppHandle, kind: &str) -> Option<Vec<u8>> {
+    stored_image(&images_dir(app).ok()?, image_stem(kind).ok()?)
+}
+
+fn write_profile(app: &tauri::AppHandle, profile: &PortableProfile) -> Result<(), CmdError> {
+    let bytes = serde_json::to_vec_pretty(profile)
+        .map_err(|e| CmdError::new("serialize_failed", e.to_string()))?;
+    crate::localdocs::atomic_write(&config_path(app)?, &bytes, false)
+        .map_err(|e| CmdError::new("io", e.to_string()))
+}
+
+/// The saved profile, or an empty one to start from.
+fn profile_or_new(app: &tauri::AppHandle) -> Result<PortableProfile, CmdError> {
+    Ok(profile_get(app.clone())?.unwrap_or(PortableProfile {
+        display_name: None,
+        accent_color: None,
+        bio: None,
+        avatar_path: None,
+        banner_path: None,
+        saved_at: 0,
+    }))
+}
+
+/// Set the avatar or banner from a picture chosen on this device. The bytes
+/// arrive as the raw request body; `x-kind` says which picture.
+#[tauri::command]
+pub fn profile_set_image(
+    app: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<PortableProfile, CmdError> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(CmdError::new("bad_body", "expected raw image bytes"));
+    };
+    let kind = request
+        .headers()
+        .get("x-kind")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default();
+    let stem = image_stem(kind)?;
+    let path = store_image(&images_dir(&app)?, stem, bytes)?
+        .display()
+        .to_string();
+    let mut profile = profile_or_new(&app)?;
+    if stem == "avatar" {
+        profile.avatar_path = Some(path);
+    } else {
+        profile.banner_path = Some(path);
+    }
+    profile.saved_at = now_millis();
+    write_profile(&app, &profile)?;
+    Ok(profile)
+}
+
+/// Take the avatar or banner off the profile.
+#[tauri::command]
+pub fn profile_clear_image(
+    app: tauri::AppHandle,
+    kind: String,
+) -> Result<PortableProfile, CmdError> {
+    let stem = image_stem(&kind)?;
+    remove_stem(&images_dir(&app)?, stem);
+    let mut profile = profile_or_new(&app)?;
+    if stem == "avatar" {
+        profile.avatar_path = None;
+    } else {
+        profile.banner_path = None;
+    }
+    profile.saved_at = now_millis();
+    write_profile(&app, &profile)?;
+    Ok(profile)
+}
+
 #[tauri::command]
 pub fn profile_get(app: tauri::AppHandle) -> Result<Option<PortableProfile>, CmdError> {
     let path = config_path(&app)?;
@@ -161,14 +310,9 @@ pub async fn profile_save(
         bio: bio.filter(|s| !s.trim().is_empty()),
         avatar_path,
         banner_path,
-        saved_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0),
+        saved_at: now_millis(),
     };
-    let bytes = serde_json::to_vec_pretty(&profile)
-        .map_err(|e| CmdError::new("serialize_failed", e.to_string()))?;
-    std::fs::write(config_path(&app)?, bytes).map_err(|e| CmdError::new("io", e.to_string()))?;
+    write_profile(&app, &profile)?;
     Ok(profile)
 }
 
@@ -189,14 +333,9 @@ pub fn profile_update_fields(
         bio: bio.filter(|s| !s.trim().is_empty()),
         avatar_path: existing.as_ref().and_then(|p| p.avatar_path.clone()),
         banner_path: existing.as_ref().and_then(|p| p.banner_path.clone()),
-        saved_at: std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0),
+        saved_at: now_millis(),
     };
-    let bytes = serde_json::to_vec_pretty(&profile)
-        .map_err(|e| CmdError::new("serialize_failed", e.to_string()))?;
-    std::fs::write(config_path(&app)?, bytes).map_err(|e| CmdError::new("io", e.to_string()))?;
+    write_profile(&app, &profile)?;
     Ok(profile)
 }
 
@@ -208,4 +347,42 @@ pub fn profile_delete(app: tauri::AppHandle) -> Result<(), CmdError> {
         remove_stem(&dir, "banner");
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_picture_set_on_the_device_replaces_the_one_before() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let png = [0x89, b'P', b'N', b'G', 1, 2, 3];
+        let jpg = [0xFF, 0xD8, 0xFF, 9, 9];
+
+        let first = store_image(d, "avatar", &png).unwrap();
+        assert!(first.ends_with("avatar.png"));
+        assert_eq!(stored_image(d, "avatar").as_deref(), Some(&png[..]));
+        assert!(stored_image(d, "banner").is_none());
+
+        // Another type: the old file goes, so there is only ever one.
+        let second = store_image(d, "avatar", &jpg).unwrap();
+        assert!(second.ends_with("avatar.jpg"));
+        assert!(!first.exists());
+        assert_eq!(stored_image(d, "avatar").as_deref(), Some(&jpg[..]));
+
+        // Not a picture, or not one of the two: refused, nothing changed.
+        assert_eq!(
+            store_image(d, "avatar", b"<svg onload=alert(1)>")
+                .unwrap_err()
+                .code,
+            "bad_image"
+        );
+        assert_eq!(stored_image(d, "avatar").as_deref(), Some(&jpg[..]));
+        assert!(image_stem("../avatar").is_err());
+        assert!(image_stem("banner").is_ok());
+
+        remove_stem(d, "avatar");
+        assert!(stored_image(d, "avatar").is_none());
+    }
 }

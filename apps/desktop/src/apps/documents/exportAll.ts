@@ -6,11 +6,13 @@
  * opening a document.
  */
 
+import type { JSONContent } from "@tiptap/core";
 import { yDocToProsemirrorJSON } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
+import { finalJson } from "../../editor/review/final";
 import { backend, type SaveResult } from "../../lib/backend";
 import { saveExport } from "../../lib/saveFile";
 import { documentsApi } from "./api";
@@ -29,6 +31,8 @@ export async function exportAllDocuments(
   items: DocumentListItem[],
   folders: DocumentFolder[],
   local: LocalDocMeta[] = [],
+  /** The name of the folder a document on this device is in, if any. */
+  localFolder: (id: string) => string | null = () => null,
 ): Promise<SaveResult> {
   const { default: JSZip } = await import("jszip");
   const zip = new JSZip();
@@ -43,7 +47,9 @@ export async function exportAllDocuments(
       let base = `${dir}/${sanitize(title) || "Untitled"}`;
       if (used.has(base)) base = `${base} (${unique})`;
       used.add(base);
-      zip.file(`${base}.md`, pmToMarkdown(json));
+      // Markdown has no way to say "suggested": it gets the text with the
+      // suggestions accepted. The JSON beside it keeps them.
+      zip.file(`${base}.md`, pmToMarkdown(finalJson(json as JSONContent) as PmNode));
       zip.file(`${base}.json`, JSON.stringify(json, null, 2));
     } finally {
       ydoc.destroy();
@@ -63,7 +69,8 @@ export async function exportAllDocuments(
   }
   for (const d of local) {
     const file = JSON.parse(await backend.localdocRead(d.id)) as { state_b64?: string };
-    add("On this device", d.title, d.id.slice(0, 8), file.state_b64 ?? "");
+    const folder = localFolder(d.id);
+    add(folder ? `On this device/${sanitize(folder) || "Folder"}` : "On this device", d.title, d.id.slice(0, 8), file.state_b64 ?? "");
   }
 
   const bytes = await zip.generateAsync({ type: "uint8array" });
@@ -116,6 +123,10 @@ function blockToMd(node: PmNode, indent: string): string | null {
       return (node.content ?? [])
         .map((li, i) => listItem(li, indent, `${i + 1}. `))
         .join("\n");
+    case "taskList":
+      return (node.content ?? [])
+        .map((li) => listItem(li, indent, li.attrs?.checked === true ? "- [x] " : "- [ ] "))
+        .join("\n");
     case "blockquote":
       return (node.content ?? [])
         .map((n) => blockToMd(n, indent))
@@ -126,8 +137,27 @@ function blockToMd(node: PmNode, indent: string): string | null {
       return `${indent}\`\`\`\n${inline(node.content)}\n${indent}\`\`\``;
     case "horizontalRule":
       return `${indent}---`;
-    case "image":
-      return `${indent}![](${String(node.attrs?.src ?? "")})`;
+    case "image": {
+      const caption = typeof node.attrs?.caption === "string" ? node.attrs.caption : "";
+      return `${indent}![${caption}](${String(node.attrs?.src ?? "")})${caption ? `\n\n${indent}*${caption}*` : ""}`;
+    }
+    case "table": {
+      // A pipe table: its first row is the header (Markdown has to have one).
+      const flat = (cell: PmNode): string =>
+        (cell.content ?? [])
+          .map((n) => (n.type === "paragraph" || n.type === "heading" ? inline(n.content) : (blockToMd(n, "") ?? "")))
+          .join(" ")
+          .replace(/\|/g, "\\|")
+          .replace(/\s*\n\s*/g, " ")
+          .trim();
+      const rows = (node.content ?? []).map((row) => (row.content ?? []).map(flat));
+      if (!rows.length) return null;
+      const width = Math.max(...rows.map((r) => r.length));
+      const line = (cells: string[]) => `${indent}| ${Array.from({ length: width }, (_, i) => cells[i] ?? "").join(" | ")} |`;
+      return [line(rows[0]), `${indent}| ${Array.from({ length: width }, () => "---").join(" | ")} |`, ...rows.slice(1).map(line)].join("\n");
+    }
+    case "toc":
+      return null;
     default:
       // Unknown block: flatten to its text so nothing silently vanishes.
       return node.content ? indent + inline(node.content) : null;
@@ -149,6 +179,8 @@ function inline(nodes: PmNode[] | undefined): string {
     .map((n) => {
       if (n.type === "hardBreak") return "  \n";
       if (n.type === "image") return `![](${String(n.attrs?.src ?? "")})`;
+      // A note, where it is cited (Markdown has no one way to say more).
+      if (n.type === "footnote") return n.content?.length ? ` (${n.attrs?.kind === "end" ? "Endnote" : "Note"}: ${inline(n.content)})` : "";
       let text = n.text ?? "";
       for (const mark of n.marks ?? []) {
         if (mark.type === "bold") text = `**${text}**`;

@@ -8,12 +8,14 @@ import {
   ShieldCheck,
   UserRound,
   PenLine,
+  Type as TypeIcon,
 } from "lucide-react";
 
 import {
   setSmartPunctuationEnabled,
   smartPunctuationEnabled,
 } from "../../editor/SmartPunctuation";
+import { exactPageView, setExactPageView } from "../../doclayout/usePageMap";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -49,6 +51,9 @@ import {
 } from "../../lib/voiceSettings";
 import { Avatar, confirmDialog, toast } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { FontSettings } from "../../fonts/ui/FontSettings";
+import { AccountMenu } from "../../platform/AccountMenu";
+import { useLocalProfile } from "../../stores/localProfile";
 import { useSession } from "../../stores/session";
 
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
@@ -70,6 +75,7 @@ type Tab =
   | "notifications"
   | "devices"
   | "server"
+  | "fonts"
   | "app"
   | "admin";
 
@@ -82,11 +88,13 @@ function SettingsView() {
   const tabs: { id: Tab; label: string; icon: React.ReactNode; show: boolean }[] = [
     { id: "profile", label: "Profile", icon: <UserRound size={15} />, show: true },
     { id: "writing", label: "Writing", icon: <PenLine size={15} />, show: true },
-    { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: !offline },
-    { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: !offline },
+    // Devices, updates and which servers you know are this device's own.
+    { id: "voice", label: "Voice & Video", icon: <Mic size={15} />, show: true },
+    { id: "notifications", label: "Notifications", icon: <Bell size={15} />, show: true },
     { id: "devices", label: "Devices", icon: <MonitorSmartphone size={15} />, show: !offline },
-    { id: "server", label: "Server", icon: <Fingerprint size={15} />, show: !offline },
-    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: !offline && !isWeb },
+    { id: "server", label: offline ? "Servers" : "Server", icon: <Fingerprint size={15} />, show: !isWeb || !offline },
+    { id: "fonts", label: "Fonts", icon: <TypeIcon size={15} />, show: true },
+    { id: "app", label: "Application", icon: <ArrowDownToLine size={15} />, show: !isWeb },
     { id: "admin", label: "Admin", icon: <ShieldCheck size={15} />, show: !!me?.is_server_admin },
   ];
 
@@ -118,69 +126,106 @@ function SettingsView() {
         {tab === "devices" && <DevicesTab onError={setError} />}
         {tab === "server" && <ServerTab onError={setError} />}
         {tab === "app" && <AppTab onError={setError} />}
+        {tab === "fonts" && <FontSettings />}
         {tab === "admin" && <AdminTab onError={setError} />}
       </div>
     </div>
   );
 }
 
-/** Offline: view and edit the portable profile's text fields (stored images
- *  stay untouched — they can only be refreshed from a connected server). */
+/**
+ * Not connected: who you are on this device — the name on your work, your
+ * picture, the colour and words that go with them. The same profile can be
+ * applied to a server you join, in one step.
+ */
 function OfflineProfileTab({ onError }: { onError: (e: string | null) => void }) {
-  const [portable, setPortable] = useState<PortableProfile | null>(null);
-  const [loaded, setLoaded] = useState(false);
-  const [displayName, setDisplayName] = useState("");
-  const [bio, setBio] = useState("");
-  const [useColor, setUseColor] = useState(false);
-  const [color, setColor] = useState("#8ab6e8");
+  const loaded = useLocalProfile((s) => s.loaded);
+  const profile = useLocalProfile();
+  const [displayName, setDisplayName] = useState(profile.name);
+  const [bio, setBio] = useState(profile.bio ?? "");
+  const [useColor, setUseColor] = useState(!!profile.accent);
+  const [color, setColor] = useState(profile.accent ?? "#8ab6e8");
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const avatarRef = useRef<HTMLInputElement>(null);
+  const bannerRef = useRef<HTMLInputElement>(null);
 
+  // The saved profile arrives a moment after the app starts.
   useEffect(() => {
-    void backend
-      .profileGet()
-      .then((p) => {
-        setPortable(p);
-        setDisplayName(p?.display_name ?? "");
-        setBio(p?.bio ?? "");
-        setUseColor(!!p?.accent_color);
-        if (p?.accent_color) setColor(p.accent_color);
-      })
-      .catch(() => {})
-      .finally(() => setLoaded(true));
-  }, []);
+    if (!loaded) return;
+    const p = useLocalProfile.getState();
+    setDisplayName(p.name);
+    setBio(p.bio ?? "");
+    setUseColor(!!p.accent);
+    if (p.accent) setColor(p.accent);
+  }, [loaded]);
 
   if (!loaded) return null;
 
-  const save = () => {
+  const fail = (e: unknown) => onError(isCmdError(e) ? e.message : String(e));
+  const run = (work: Promise<unknown>) => {
     onError(null);
     setBusy(true);
-    backend
-      .profileUpdateFields({
-        displayName: displayName.trim() || null,
-        accentColor: useColor ? color : null,
-        bio: bio.trim() || null,
-      })
-      .then((p) => {
-        setPortable(p);
-        setSaved(true);
-      })
-      .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
-      .finally(() => setBusy(false));
+    return work.catch(fail).finally(() => setBusy(false));
   };
+  const save = () =>
+    void run(
+      profile
+        .setFields({ name: displayName, accent: useColor ? color : null, bio: bio.trim() || null })
+        .then(() => setSaved(true)),
+    );
+  const pick = (kind: "avatar" | "banner") => (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (file) void run(profile.setImage(kind, file));
+  };
+  const anything = !!(profile.name || profile.bio || profile.accent || profile.avatar || profile.banner);
 
   return (
     <section>
-      <h3>Portable profile</h3>
+      <h3>Your profile</h3>
       <p className="wf-session-meta">
-        This is the profile saved on this computer. When you join a server, you can apply it
-        there in one step. {portable === null && "Nothing is saved yet — fill it in below."}
+        Who you are on this device: the name on what you write and export, and the picture beside it. When you
+        join a server you can apply it there in one step — it isn’t sent anywhere until you do.
       </p>
+      <div className="wf-settings-field">
+        Picture
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          <Avatar name={displayName.trim() || "You"} src={profile.avatar} accentColor={useColor ? color : null} size={42} />
+          <input ref={avatarRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={pick("avatar")} />
+          <button disabled={busy} onClick={() => avatarRef.current?.click()}>
+            {profile.avatar ? "Change picture" : "Choose a picture"}
+          </button>
+          {profile.avatar && (
+            <button disabled={busy} onClick={() => void run(profile.setImage("avatar", null))}>
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="wf-settings-field">
+        Banner (behind your picture on a profile card)
+        <div className="wf-banner-preview" style={{ background: useColor ? color : "var(--wf-accent)" }}>
+          {profile.banner && <img className="wf-profile-banner-img" src={profile.banner} alt="" draggable={false} />}
+        </div>
+        <div className="wf-connect-row" style={{ alignItems: "center" }}>
+          <input ref={bannerRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp" hidden onChange={pick("banner")} />
+          <button disabled={busy} onClick={() => bannerRef.current?.click()}>
+            {profile.banner ? "Change banner" : "Choose a banner"}
+          </button>
+          {profile.banner && (
+            <button disabled={busy} onClick={() => void run(profile.setImage("banner", null))}>
+              Remove
+            </button>
+          )}
+        </div>
+      </div>
       <label className="wf-settings-field">
-        Display name
+        Name
         <input
           value={displayName}
-          placeholder="(none)"
+          maxLength={64}
+          placeholder="Your name, as an author"
           onChange={(e) => {
             setDisplayName(e.target.value);
             setSaved(false);
@@ -221,38 +266,31 @@ function OfflineProfileTab({ onError }: { onError: (e: string | null) => void })
           }}
         />
       </label>
-      <p className="wf-session-meta">
-        Avatar image: {portable?.avatar_path ? "saved ✓" : "none"} · Banner image:{" "}
-        {portable?.banner_path ? "saved ✓" : "none"} — images update from your profile on a
-        connected server (Settings → Profile → “Save current as portable”).
-      </p>
       <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
         <button className="wf-primary" disabled={busy} onClick={save}>
           {saved ? "Saved ✓" : "Save"}
         </button>
-        {portable && (
+        {anything && (
           <button
             disabled={busy}
             onClick={() =>
               void confirmDialog(
-                "Delete the portable profile saved on this computer? Server profiles are not affected.",
-                { title: "Delete portable profile", confirmLabel: "Delete", danger: true },
+                "Clear the profile saved on this device — name, pictures and all? Your profiles on servers are not affected.",
+                { title: "Clear profile", confirmLabel: "Clear", danger: true },
               ).then((ok) => {
                 if (!ok) return;
-                backend
-                  .profileDelete()
-                  .then(() => {
-                    setPortable(null);
+                void run(
+                  profile.clear().then(() => {
                     setDisplayName("");
                     setBio("");
                     setUseColor(false);
                     setSaved(false);
-                  })
-                  .catch((e) => onError(isCmdError(e) ? e.message : String(e)));
+                  }),
+                );
               })
             }
           >
-            Delete
+            Clear
           </button>
         )}
       </div>
@@ -480,6 +518,8 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
               })
               .then((p) => {
                 setPortable(p);
+                // It is also who you are here when no server is connected.
+                void useLocalProfile.getState().load();
                 toast("Portable profile saved on this computer.", "success");
               })
               .catch((e) => onError(isCmdError(e) ? e.message : String(e)))
@@ -525,7 +565,10 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
                 if (!ok) return;
                 backend
                   .profileDelete()
-                  .then(() => setPortable(null))
+                  .then(() => {
+                    setPortable(null);
+                    void useLocalProfile.getState().load();
+                  })
                   .catch((e) => onError(isCmdError(e) ? e.message : String(e)));
               })
             }
@@ -810,6 +853,7 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
 /** Per-device writing preferences. */
 function WritingTab() {
   const [smart, setSmart] = useState(smartPunctuationEnabled);
+  const [exact, setExact] = useState(exactPageView);
   return (
     <section>
       <h3>Writing</h3>
@@ -828,6 +872,24 @@ function WritingTab() {
         As you type: “curly” quotes and apostrophes, -- becomes an em dash (—), and ...
         becomes an ellipsis (…). Press Backspace right after a change to undo it. Quotes follow
         the book’s language in a manuscript. This applies on this device only.
+      </p>
+      <label className="wf-settings-field wf-field-row">
+        <input
+          type="checkbox"
+          checked={exact}
+          onChange={(e) => {
+            setExactPageView(e.target.checked);
+            setExact(e.target.checked);
+          }}
+        />
+        Page view shows the pages as they print
+      </label>
+      <p className="wf-session-meta">
+        With this on, page view breaks the text where the printed page does — in the middle of a
+        paragraph, between the rows of a table — and counts the same pages as the preview and the
+        PDF. Turn it off for the simpler view, which only moves whole paragraphs to the next page
+        and is an approximation. Takes effect the next time a document is opened. On this device
+        only.
       </p>
     </section>
   );
@@ -928,6 +990,20 @@ function ServerTab({ onError }: { onError: (e: string | null) => void }) {
     void backend.listServers().then(setServers).catch(() => {});
   }, []);
   const current = servers.find((s) => s.addr === session?.addr);
+
+  if (!session) {
+    return (
+      <section>
+        <h3>Servers</h3>
+        <p className="wf-session-meta">
+          A server is where you write with others. The ones you’ve joined are remembered here; your work on this
+          device doesn’t need one.
+        </p>
+        <AccountMenu inline />
+        <HostingSection onError={onError} />
+      </section>
+    );
+  }
 
   return (
     <section>

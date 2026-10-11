@@ -4,7 +4,7 @@
  * back matter by position and name, number the chapters the way the design
  * says, apply the first-paragraph rules, and normalize punctuation. Direct
  * formatting (fonts, sizes, spacing) is deliberately ignored — the design
- * owns typography. Plain documents work too: Heading 1 is a chapter.
+ * owns typography. Document-format files work too: Heading 1 is a chapter.
  */
 
 import type { JSONContent } from "@tiptap/core";
@@ -31,6 +31,7 @@ import type {
   Section,
   Warning,
 } from "./types";
+import { finalJson } from "../../editor/review/final";
 
 function runsOf(node: JSONContent): Run[] {
   const runs: Run[] = [];
@@ -41,6 +42,13 @@ function runsOf(node: JSONContent): Run[] {
     const bold = inherited.bold || marks.some((m) => m.type === "bold");
     const link = marks.find((m) => m.type === "link")?.attrs?.href as string | undefined;
     const href = inherited.href ?? link;
+    if (n.type === "footnote") {
+      // A book has no footnotes yet: the note is set where it's cited, in
+      // brackets, so its words aren't lost (preflight says so).
+      const said = (n.content ?? []).map((c) => c.text ?? "").join("").trim();
+      if (said) runs.push({ text: ` [${said}]`, ...(inherited.italic ? { italic: true } : {}), ...(inherited.bold ? { bold: true } : {}) });
+      return;
+    }
     if (n.type === "hardBreak") runs.push({ text: "\n", italic, bold });
     else if (n.text) runs.push({ text: n.text, ...(italic ? { italic } : {}), ...(bold ? { bold } : {}), ...(href ? { href } : {}) });
     for (const c of n.content ?? []) walk(c, { italic, bold, href });
@@ -81,8 +89,11 @@ export function validIsbn(raw: string): boolean {
   return false;
 }
 
-export function buildModel(doc: JSONContent, format: string, book: Book): BookModel {
+export function buildModel(source: JSONContent, format: string, book: Book): BookModel {
   const design = book.design;
+  // A book is set from the text as it would stand: suggested changes
+  // accepted, none of their markup.
+  const doc = finalJson(source);
   const blocks = doc.content ?? [];
   const warnings: Warning[] = [];
   const sections: Section[] = [];
@@ -188,6 +199,7 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
     return null;
   };
 
+  let tables = 0;
   blocks.forEach((node, src) => {
     const type = node.type ?? "paragraph";
     const element = (node.attrs?.element as string | null) ?? null;
@@ -313,7 +325,8 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
       return;
     }
 
-    if (type === "bulletList" || type === "orderedList") {
+    // (A checklist in a book is a list: print has no boxes to tick.)
+    if (type === "bulletList" || type === "orderedList" || type === "taskList") {
       const items = (node.content ?? []).map((item) =>
         fix((item.content ?? []).flatMap((c) => runsOf(c))),
       );
@@ -335,8 +348,38 @@ export function buildModel(doc: JSONContent, format: string, book: Book): BookMo
       for (const line of text.split("\n")) {
         if (line.trim()) pushPara({ type: "paragraph" }, src, [{ text: line }]);
       }
+      return;
+    }
+
+    if (type === "table") {
+      // A book doesn't set tables yet: each cell's text becomes a
+      // paragraph, in reading order, and preflight says so.
+      tables += 1;
+      const cellText = (n: JSONContent) => {
+        if (n.type === "paragraph" || n.type === "heading") {
+          const runs = fix(runsOf(n));
+          if (textOf(runs).trim()) pushPara({ type: "paragraph" }, src, runs);
+          return;
+        }
+        for (const c of n.content ?? []) cellText(c);
+      };
+      cellText(node);
     }
   });
+
+  if (tables) {
+    warnings.push({
+      kind: "flattened",
+      message: `${tables === 1 ? "A table is" : `${tables} tables are`} set as plain paragraphs, cell by cell: a book's pages don't have tables yet.`,
+    });
+  }
+  const notes = JSON.stringify(blocks).split('"type":"footnote"').length - 1;
+  if (notes) {
+    warnings.push({
+      kind: "flattened",
+      message: `${notes === 1 ? "A footnote is" : `${notes} footnotes are`} set in brackets where ${notes === 1 ? "it is" : "they are"} cited: a book's pages don't have footnotes yet.`,
+    });
+  }
 
   // Breaks. A scene break against a page break moves to the new page's
   // top, where the engine shows its ornament (as at any page turn); repeats

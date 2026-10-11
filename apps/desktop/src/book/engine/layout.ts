@@ -52,6 +52,8 @@ export interface LayoutOptions {
   /** Sections set by earlier runs (the live preview), reused when their
    *  text and the settings haven't changed. Must belong to `faces`. */
   cache?: SectionCache;
+  /** For a catalog family, its other scripts' families (see Composer). */
+  chains?: Record<string, string[]>;
 }
 
 interface CachedSection {
@@ -211,6 +213,7 @@ class Layout {
     this.design = designFor(o.model, o.target);
     const d = this.design;
     this.composer = new Composer(o.faces, d.hyphenate ? o.hyphenator : null, o.model.book.meta.language || "en-US");
+    this.composer.chains = o.chains ?? {};
     this.S = d.bodySize;
     this.L = d.leading;
     const g = o.geometry;
@@ -245,7 +248,7 @@ class Layout {
     }
     this.headingOrnament = !this.smf && d.headingOrnament ? ornamentFor(d.headingOrnament, d) : null;
     const { meta, smf } = o.model.book;
-    this.contextKey = JSON.stringify([o.target, d, g, meta.language, meta.title, smf.font, smf.italics, smf.paper]);
+    this.contextKey = JSON.stringify([o.target, d, g, meta.language, meta.title, smf.font, smf.italics, smf.paper, o.chains ?? {}]);
   }
 
   run(): DisplayList {

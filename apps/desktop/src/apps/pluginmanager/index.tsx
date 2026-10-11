@@ -79,6 +79,8 @@ export const pluginManagerApp: WritformApp = {
     name: "Plugins",
     icon: <Puzzle size={20} />,
     web: false,
+    // Plugins are installed on this device; they run with or without a server.
+    offline: true,
     permissions: ["ui", "commands"],
   },
   activate(ctx) {

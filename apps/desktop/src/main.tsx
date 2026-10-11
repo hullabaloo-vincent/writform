@@ -6,6 +6,7 @@ import { chatApp } from "./apps/chat";
 import { docsApp } from "./apps/docs";
 import { documentsApp } from "./apps/documents";
 import { friendsApp } from "./apps/friends";
+import { homeApp } from "./apps/home";
 import { notesApp } from "./apps/notes";
 import { pluginManagerApp } from "./apps/pluginmanager";
 import { settingsApp } from "./apps/settings";
@@ -21,6 +22,8 @@ import "./styles.css";
 
 // Core apps register here, in dock order. Third-party plugins load through
 // the plugin runtime (Phase 6) onto the same registry.
+// Home is first: the app opens on your own work, not on a server's chat.
+registerApp(homeApp);
 registerApp(chatApp);
 registerApp(sessionsApp);
 registerApp(documentsApp);

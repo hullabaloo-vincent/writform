@@ -12,6 +12,9 @@ import { useEffect, useRef, useState } from "react";
 import * as Y from "yjs";
 
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
+import { ChangesList } from "../../editor/review/ChangesList";
+import { showChange } from "../../editor/review/Suggesting";
+import type { ReviewState } from "../../editor/review/useReview";
 import { isCmdError } from "../../lib/backend";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
@@ -207,12 +210,47 @@ export function useFeedbackDecorations(
   }, [editor, provider, threads, enabled]);
 }
 
+export type FeedbackTab = "comments" | "changes";
+
+/** The panel's two lists — what people have said, and what they have
+ *  suggested changing — as tabs in its header. */
+export function FeedbackTabs({
+  tab,
+  onTab,
+  comments,
+  changes,
+  label,
+}: {
+  tab: FeedbackTab;
+  onTab: (tab: FeedbackTab) => void;
+  comments: number;
+  changes: number;
+  /** What the first list is called ("Feedback"; "Notes" on this device). */
+  label: string;
+}) {
+  return (
+    <div className="wf-panel-tabs" role="tablist">
+      <button type="button" role="tab" aria-selected={tab === "comments"} className={tab === "comments" ? "active" : ""} onClick={() => onTab("comments")}>
+        {label}
+        {comments > 0 && <span>{comments}</span>}
+      </button>
+      <button type="button" role="tab" aria-selected={tab === "changes"} className={tab === "changes" ? "active" : ""} onClick={() => onTab("changes")}>
+        Changes
+        {changes > 0 && <span>{changes}</span>}
+      </button>
+    </div>
+  );
+}
+
 export function FeedbackPanel({
   editor,
   provider,
   highlightsOn,
   onToggleHighlights,
   focus,
+  review,
+  tab = "comments",
+  onTab,
 }: {
   editor: Editor | null;
   provider: DocProvider;
@@ -221,6 +259,10 @@ export function FeedbackPanel({
   onToggleHighlights?: () => void;
   /** A thread to bring forward (its highlight was clicked). */
   focus?: ThreadFocus | null;
+  /** Suggested changes, listed beside the comments. */
+  review?: ReviewState;
+  tab?: FeedbackTab;
+  onTab?: (tab: FeedbackTab) => void;
 }) {
   void provider;
   useFlashThread(focus);
@@ -284,10 +326,33 @@ export function FeedbackPanel({
     }
   };
 
+  const showing: FeedbackTab = review && onTab ? tab : "comments";
+  const header = review && onTab ? <FeedbackTabs tab={showing} onTab={onTab} comments={open.length} changes={review.items.length} label="Feedback" /> : <h3>Feedback</h3>;
+  if (showing === "changes" && review) {
+    return (
+      <aside className="wf-doc-panel">
+        <header className="wf-doc-panel-header">{header}</header>
+        <ChangesList
+          editor={editor}
+          review={review}
+          onComment={(item) => {
+            if (!editor) return;
+            // The comment is anchored to the change's text, like any other.
+            showChange(editor, item, false);
+            const anchors = anchorsFromSelection(editor);
+            if (!anchors) return;
+            setSelectionDraft({ content: "", anchors });
+            onTab?.("comments");
+          }}
+        />
+      </aside>
+    );
+  }
+
   return (
     <aside className="wf-doc-panel">
       <header className="wf-doc-panel-header">
-        <h3>Feedback</h3>
+        {header}
         <span className="wf-statusbar-spacer" />
         {onToggleHighlights && (
           <button

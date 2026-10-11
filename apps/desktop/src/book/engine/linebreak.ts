@@ -352,3 +352,61 @@ export function lineStarts(items: Items, breaks: number[]): number[] {
   }
   return starts;
 }
+
+/**
+ * First-fit breaking — what word processors and browsers do: each line
+ * takes every word that fits, and the next line starts with the first that
+ * doesn't. Not the most even setting, but a stable one: typing at the end
+ * of a paragraph never moves the lines above it, so pages hold still while
+ * a document is being written.
+ */
+export function breakFirstFit(items: Items, widths: number[]): BreakResult {
+  const breaks: number[] = [];
+  const n = items.length;
+  const EPS = 1e-6;
+  let overfull = 0;
+  let from = 0;
+  while (from < n) {
+    const limit = widths[Math.min(breaks.length, widths.length - 1)];
+    // Glue and penalties at a line's start are dropped.
+    let s = from;
+    while (s < n && !items.isBox(s) && !(items.isPenalty(s) && items.cost[s] <= -INF_PENALTY)) s += 1;
+    let w = 0;
+    let best = -1;
+    let taken = -1;
+    for (let j = s; j < n; j += 1) {
+      if (items.isBox(j)) {
+        w += items.width[j];
+        if (w > limit + EPS && best >= 0) break;
+        continue;
+      }
+      const forced = items.isPenalty(j) && items.cost[j] <= -INF_PENALTY;
+      const legal = items.isPenalty(j) ? items.cost[j] < INF_PENALTY : j > s && items.isBox(j - 1);
+      if (legal) {
+        const fits = w + (items.isPenalty(j) ? items.width[j] : 0) <= limit + EPS;
+        if (forced) {
+          // The paragraph (or a hard line) ends here, unless the words
+          // before it already ran over.
+          if (fits || best < 0) {
+            taken = j;
+            if (!fits) overfull += 1;
+          }
+          break;
+        }
+        if (fits) best = j;
+        else if (best < 0) {
+          // A word wider than the line: it sticks out.
+          taken = j;
+          overfull += 1;
+          break;
+        } else break;
+      }
+      if (items.isGlue(j)) w += items.width[j];
+    }
+    const b = taken >= 0 ? taken : best >= 0 ? best : n - 1;
+    breaks.push(b);
+    from = b + 1;
+  }
+  if (!breaks.length) breaks.push(Math.max(0, n - 1));
+  return { breaks, ratios: breaks.map(() => 0), overfull, pass: 1 };
+}

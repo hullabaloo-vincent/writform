@@ -3,7 +3,7 @@
 ## Write a document with others
 
 1. Open **Documents** → **New document**, name it, and pick a format (or
-   leave it as Plain).
+   leave it as Document).
 2. Type — everyone with write access sees your changes and cursor live.
 3. Select text and click the comment button to leave feedback anchored to
    it; toggle the feedback panel with the speech-bubble icon.
@@ -11,6 +11,143 @@
    access. Group shares post a card in that group's chat.
 5. **Version history** shows autosaved snapshots and any you name yourself
    — preview or restore any of them.
+
+## Set up the page and print
+
+1. In a **Document**, open the **Layout** tab of the ribbon for margins,
+   paper, orientation and columns — or the sliders button for everything:
+   gutter, facing pages, headers and footers, page numbers.
+2. For a header or footer, type in its left, centre or right slot and use
+   **Add a field** for the page number, page count, title, author or date.
+   Tick *Different first page* to leave a title page clean.
+3. Press the eye button to **preview** every page as it will print.
+4. **⌘P** (Ctrl+P) prints; **Export** saves the same pages as a PDF, or the
+   document as Word.
+
+## Format a document
+
+1. Select words and use the ribbon's **Home** tab: font, size, bold,
+   colour, highlight, sub- and superscript. With nothing selected, a choice
+   applies to what you type next.
+2. For a whole paragraph: alignment, line spacing, the indent buttons,
+   shading and borders in the ribbon; exact indents (a hanging indent, a
+   first line), *exactly*/*at least* line heights and *keep with next* in
+   the inspector's **Text** tab (the sliders button).
+3. Use **styles** for anything you'll do twice. Pick Title, Heading 1 or
+   Caption from the styles button; to change how every heading looks, open
+   the styles button and choose **Modify Heading 1…** — or format one
+   heading by hand and choose **Update Heading 1 to match selection**.
+   **New style from selection…** saves a look under a name of your own.
+4. The **format painter** (the brush) copies formatting: click it, then
+   select the text to give it to.
+5. ⌘⇧9 (or the checklist button) starts a **checklist**; click a box to
+   tick it.
+
+## Add a table, a footnote or a table of contents
+
+1. **A table**: Insert ▸ Table and pick a size. Tab moves from cell to cell.
+   With the caret in the table, the **Table** tab has rows, columns, merge,
+   header row, lines and shading.
+2. **A footnote**: put the caret where the reference goes and choose
+   Insert ▸ Footnote (or Endnote). Write the note in the box that opens;
+   Enter goes back to the text. Click a note's number to read or change it.
+3. **A table of contents**: Insert ▸ Contents, usually near the top. It
+   lists Heading 1–3 and updates as you write. Page numbers show in the
+   preview, in print and in the PDF.
+4. **A landscape page, or a part in two columns**: put the caret in the
+   paragraph where it should start, choose Layout ▸ Section ▸ *Start a new
+   section*, then set that section's orientation or columns. Start another
+   section where it should end.
+
+## Suggest changes instead of making them
+
+1. On the ribbon's **Review** tab, set the mode to **Suggesting** (in the
+   other formats: open Feedback and choose **Changes**, where the same
+   switch is). A *Suggesting* tag stays on the ribbon while it is on.
+2. Edit as usual. What you add is underlined in your colour, what you
+   delete is struck through and stays in place, and a paragraph you split
+   or join shows a ¶ where the break is. Formatting — bold, styles, lists —
+   still changes directly.
+3. To decide: put the caret in a change and press **Accept** or **Reject**
+   on the Review tab (they move on to the next change), or open
+   **Changes** for the whole list — who, when and what — with the same two
+   buttons on each, *Accept all* and *Reject all*, and a button to comment
+   on a change.
+4. **Viewing** shows the text as it would read with everything accepted and
+   locks it; switch back to Editing or Suggesting to go on.
+
+The mode is your own: someone else can be editing the same document while
+you suggest. It is remembered for that document on that device, so you
+don't start editing by accident next time. Printing, PDFs and the word
+count use the text with the suggestions accepted; *Export Word* carries
+them as Word's tracked changes, and *Export Word, clean copy* leaves them
+out. Taking back your own suggestion (Backspace over what you just typed)
+simply removes it.
+
+## Listen to a document
+
+Put the caret where to start and choose **Read aloud** (Review tab; the
+speaker button in the header for the other formats). The sentence being
+read is highlighted. The bar that opens has pause, back and on a sentence,
+stop, speed and — where your system has more than one — a voice. It uses
+the voices installed on your device.
+
+## Compare two versions
+
+- **With an earlier version:** History, open a version, **Compare with
+  now**.
+- **With a Word file:** Review tab ▸ **Compare**, and pick the `.docx`.
+
+The two are shown side by side with the paragraphs lined up: what was taken
+out is marked on the left, what was put in on the right. The arrows step
+through the differences; *Whole text* shows the unchanged paragraphs too,
+*One column* puts both versions in one, and the swap button turns the
+sides round. Comparing doesn't change anything.
+
+Older versions of the app can't open a document once it uses colour,
+highlight, a font or size on part of a paragraph, indents, borders,
+checklists, tables, footnotes, a table of contents, sections or suggested
+changes — they're asked to update, and nothing is lost. If your server
+hasn't been updated yet those controls don't appear for its documents;
+update the server first (see [Setup](setup.md#updating-a-server)).
+
+## See the printed pages while you write
+
+Press the page-view button (the split sheet in the header). The sheet is
+divided into the pages the PDF will have: the same text on each, the same
+count, with the break falling inside a paragraph or between the rows of a
+table when that is where the page turns. It catches up a moment after you
+stop typing. The lines themselves are the screen's — for the page exactly
+as printed, line for line, open **Preview** (the eye). If page view
+misbehaves on your device, Settings ▸ Writing ▸ *Page view shows the pages
+as they print* switches to the simpler view.
+
+## Bring in a Word document
+
+Documents → **Import**, pick the `.docx`. Headings and styles, lists and
+checklists, tables, footnotes, a table of contents, links, pictures, fonts,
+colours, spacing, indents, sections and the page setup come across, and
+Word's tracked changes arrive as suggested changes you can accept or reject
+(see above); a note after the import says what couldn't be kept (text
+boxes, equations). A file that looks like a book comes in as
+a Manuscript with its chapters found.
+
+## Keep what's on this device in order
+
+- **Folders**: Documents → the folder-plus button → name it and choose *On
+  this device* (with no server connected there is nothing to choose). Open
+  a document's ⋯ menu → **Move to folder…** to put it in one, or select
+  several and press **Move**. Deleting a folder never deletes what's in it.
+- **Search**: type in the search field; documents on this device are found
+  by any word in them, with the passage shown on the card. The same field
+  in **Canvas** finds boards by name and by the words on them.
+- **Publish**: a document's or board's ⋯ menu → **Publish to a server…**
+  puts a copy on the server you're connected to (a board asks which group).
+  Not connected? It opens the connect sheet, and carries on once you are.
+  The original stays on this device and the two don't sync afterwards.
+- **Your picture**: Settings → Profile → **Choose a picture**. With no
+  server connected this is the profile on this device; connected, use
+  *Apply to this server* to copy it there.
 
 ## Run a writing session
 
@@ -75,7 +212,7 @@ server admin:
 
 1. Ask a server admin to open Settings → **Admin** and generate a one-time
    reset code for your account.
-2. On the connect screen, choose **Forgot password**, enter your username,
+2. On the server's sign-in form, choose **Forgot password**, enter your username,
    the code, and a new password.
 3. This revokes every existing session for your account — you'll need to
    log back in everywhere.

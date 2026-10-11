@@ -34,9 +34,12 @@ export function devPreviewBackend(): Backend {
   const localdocHistBlobs = new Map<string, Uint8Array>();
   const localdocFeedback = new Map<string, string>();
   const localdocMeta = new Map<string, string>();
+  const localdocText = new Map<string, string>();
+  let localdocFolders = "";
   /** Recently Deleted: everything a document had, and when it went. */
   const localdocTrash = new Map<string, { raw: string; meta?: string; deleted_at: number }>();
   const localboards = new Map<string, string>();
+  const localboardTrash = new Map<string, string>();
   const localboardTimes = new Map<string, number>();
   let pending: SavedServer | null = null;
   const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -145,6 +148,7 @@ export function devPreviewBackend(): Backend {
     folder_id: number | null;
     created_at: number;
     updated_at: number;
+    schema_level: number;
   }
   let previewDocs: { document: PreviewDoc; my_access: string }[] = [
     {
@@ -156,6 +160,7 @@ export function devPreviewBackend(): Backend {
         folder_id: null,
         created_at: Date.now() - 86_400_000,
         updated_at: Date.now() - 3_600_000,
+        schema_level: 1,
       },
       my_access: "read",
     },
@@ -171,6 +176,7 @@ export function devPreviewBackend(): Backend {
     { id: 90, group_id: 1, name: "Lounge", created_at: 0 },
   ];
   let voiceJoined: number | null = null;
+  const vaultTrash: Record<string, string> = {};
   const vault: Record<string, { content: string; mtime: number }> = {
     Welcome: {
       content: "# Welcome\n\nThis is your vault. Link notes like [[Ideas]].\n",
@@ -721,6 +727,10 @@ export function devPreviewBackend(): Backend {
     }
 
     // --- documents ---
+    if (path === "/api/v1/document-capabilities" && method === "GET") {
+      // The preview "server" is this build: it holds what this build writes.
+      return { status: 200, body: { max_schema_level: 2 } };
+    }
     if ((path === "/api/v1/documents" || path.startsWith("/api/v1/documents?")) && method === "GET") {
       const q = decodeURIComponent(path.split("q=")[1] ?? "").toLowerCase();
       const results = q
@@ -738,6 +748,7 @@ export function devPreviewBackend(): Backend {
         folder_id: null,
         created_at: Date.now(),
         updated_at: Date.now(),
+        schema_level: 1,
       };
       previewDocs = [{ document, my_access: "owner" }, ...previewDocs];
       return { status: 200, body: document };
@@ -803,7 +814,8 @@ export function devPreviewBackend(): Backend {
         body: { code: "ABCDE-FGHJK", expires_at: Date.now() + 3_600_000 },
       };
     }
-    if ((match = m(/^\/api\/v1\/documents\/(\d+)$/))) {
+    // Content routes carry `?sl=` (the app's schema level) and `?quiet=1`.
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)(?:\?.*)?$/))) {
       const did = Number(match[1]);
       const entry = previewDocs.find((d) => d.document.id === did);
       if (!entry) return { status: 404, body: { code: "no_such_document", message: "preview" } };
@@ -836,14 +848,14 @@ export function devPreviewBackend(): Backend {
       const did = Number(match[1]);
       if (method === "POST") {
         docSeqs[did] = (docSeqs[did] ?? 0) + 1;
-        return { status: 200, body: { seq: docSeqs[did] } };
+        return { status: 200, body: { seq: docSeqs[did], schema_level: 1 } };
       }
       return { status: 200, body: { updates: [], truncated: false } };
     }
     if (m(/^\/api\/v1\/documents\/(\d+)\/awareness$/)) {
       return { status: 204, body: null };
     }
-    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/snapshot$/)) && method === "POST") {
+    if ((match = m(/^\/api\/v1\/documents\/(\d+)\/snapshot(?:\?.*)?$/)) && method === "POST") {
       const did = Number(match[1]);
       const req = body as { doc_json: string; name?: string | null };
       const meta = {
@@ -1040,6 +1052,20 @@ export function devPreviewBackend(): Backend {
     requestCameraAccess: async () => "authorized",
     // Browser preview: a plain download.
     saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
+    printPdf: async () => "frame",
+    async fontFetch() {
+      throw { code: "font_unavailable", message: "no font library in the preview" };
+    },
+    async fontCacheInfo() {
+      return { bytes: 0, files: 0, limit: 0 };
+    },
+    async fontCacheClear() {},
+    async sysfontList() {
+      return [];
+    },
+    async sysfontBytes() {
+      throw { code: "not_found", message: "no installed fonts in the preview" };
+    },
     uploadAttachment: async () => ({
       status: 400,
       body: { code: "mock", message: "uploads need the real app" },
@@ -1065,7 +1091,21 @@ export function devPreviewBackend(): Backend {
       vault[name] = { content, mtime: Date.now() };
     },
     async vaultDelete(name) {
+      vaultTrash[name] = vault[name]?.content ?? "";
       delete vault[name];
+    },
+    async vaultRestore(name) {
+      let free = name;
+      for (let n = 2; free in vault; n += 1) free = `${name} ${n}`;
+      vault[free] = { content: vaultTrash[name] ?? "", mtime: Date.now() };
+      delete vaultTrash[name];
+      return free;
+    },
+    async vaultWriteNew(name, content) {
+      let free = name;
+      for (let n = 2; free in vault; n += 1) free = `${name} ${n}`;
+      vault[free] = { content, mtime: Date.now() };
+      return free;
     },
     async vaultSearch(query) {
       const needle = query.trim().toLowerCase();
@@ -1201,6 +1241,15 @@ export function devPreviewBackend(): Backend {
     async logout() {
       session = null;
     },
+    async disconnect() {
+      session = null;
+    },
+    async resumeTarget() {
+      return null;
+    },
+    async resumeServer(addr) {
+      return this.login(addr, "preview", "", true).then((s) => ({ session: s, reason: null, addr: null }));
+    },
     async currentSession() {
       return { session, reason: null, addr: null };
     },
@@ -1268,6 +1317,29 @@ export function devPreviewBackend(): Backend {
     async profileDelete() {
       portable = null;
     },
+    async profileSetImage(kind) {
+      // Dev preview has no custom URI scheme to show it through.
+      portable = {
+        display_name: portable?.display_name ?? null,
+        accent_color: portable?.accent_color ?? null,
+        bio: portable?.bio ?? null,
+        avatar_path: kind === "avatar" ? "/dev-preview/profile/avatar.png" : (portable?.avatar_path ?? null),
+        banner_path: kind === "banner" ? "/dev-preview/profile/banner.png" : (portable?.banner_path ?? null),
+        saved_at: Date.now(),
+      };
+      return portable;
+    },
+    async profileClearImage(kind) {
+      portable = {
+        display_name: portable?.display_name ?? null,
+        accent_color: portable?.accent_color ?? null,
+        bio: portable?.bio ?? null,
+        avatar_path: kind === "avatar" ? null : (portable?.avatar_path ?? null),
+        banner_path: kind === "banner" ? null : (portable?.banner_path ?? null),
+        saved_at: Date.now(),
+      };
+      return portable;
+    },
     async localdocList() {
       return [...localdocs.entries()]
         .map(([id, raw]) => {
@@ -1289,10 +1361,37 @@ export function devPreviewBackend(): Backend {
       if (raw === undefined) throw { code: "io", message: "no such local document" };
       return raw;
     },
-    async localdocWrite(id, content, meta) {
+    async localdocWrite(id, content, meta, text) {
       localdocs.set(id, content);
       localdocTimes.set(id, Date.now());
       if (meta) localdocMeta.set(id, meta);
+      if (text !== undefined) localdocText.set(id, text);
+    },
+    async localdocSearch(query) {
+      const needle = query.trim().toLowerCase();
+      const hits: { id: string; snippet: string }[] = [];
+      const stale: string[] = [];
+      if (!needle) return { hits, stale };
+      for (const id of localdocs.keys()) {
+        const text = localdocText.get(id);
+        if (text === undefined) {
+          stale.push(id);
+          continue;
+        }
+        const at = text.toLowerCase().indexOf(needle);
+        if (at < 0) continue;
+        hits.push({ id, snippet: text.slice(Math.max(0, at - 40), at + needle.length + 40).replace(/\s+/g, " ") });
+      }
+      return { hits, stale };
+    },
+    async localdocTextWrite(id, text) {
+      localdocText.set(id, text);
+    },
+    async localdocFoldersRead() {
+      return localdocFolders;
+    },
+    async localdocFoldersWrite(content) {
+      localdocFolders = content;
     },
     async localdocTrash(id) {
       const raw = localdocs.get(id);
@@ -1332,6 +1431,8 @@ export function devPreviewBackend(): Backend {
     async localdocTrashEmpty() {
       localdocTrash.clear();
     },
+    async localdocMediaWrite() {},
+    async localdocMediaCopy() {},
     async localdocDelete(id) {
       localdocs.delete(id);
       localdocTimes.delete(id);
@@ -1389,8 +1490,44 @@ export function devPreviewBackend(): Backend {
       localboardTimes.set(id, Date.now());
     },
     async localboardDelete(id) {
+      const content = localboards.get(id);
+      if (content !== undefined) localboardTrash.set(id, content);
       localboards.delete(id);
       localboardTimes.delete(id);
+    },
+    async localboardTrashList() {
+      return [...localboardTrash].map(([id, content]) => ({
+        id,
+        name: (JSON.parse(content) as { name?: string }).name ?? "Untitled",
+        updated_at: Date.now(),
+      }));
+    },
+    async localboardTrashRead(id) {
+      return localboardTrash.get(id) ?? "";
+    },
+    async localboardRestore(id) {
+      const content = localboardTrash.get(id);
+      if (content === undefined) return;
+      localboards.set(id, content);
+      localboardTimes.set(id, Date.now());
+      localboardTrash.delete(id);
+    },
+    async localboardPurge(id) {
+      localboardTrash.delete(id);
+    },
+    async localboardSearch(query) {
+      const needle = query.trim().toLowerCase();
+      if (!needle) return [];
+      const hits: { id: string; snippet: string }[] = [];
+      for (const [id, raw] of localboards) {
+        const board = JSON.parse(raw) as { name?: string; elements?: { kind: string; text: string }[] };
+        const el = (board.elements ?? []).find(
+          (e) => ["sticky", "text", "shape", "frame"].includes(e.kind) && e.text.toLowerCase().includes(needle),
+        );
+        if (el) hits.push({ id, snippet: el.text.slice(0, 90) });
+        else if ((board.name ?? "").toLowerCase().includes(needle)) hits.push({ id, snippet: "" });
+      }
+      return hits;
     },
     async localmediaWrite() {
       // Dev preview has no custom URI scheme to serve these back through.

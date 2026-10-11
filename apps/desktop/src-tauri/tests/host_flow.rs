@@ -51,3 +51,25 @@ async fn host_start_pins_and_serves() {
     assert_eq!(config.port, status.port);
     assert!(config.auto_start);
 }
+
+#[tokio::test]
+async fn two_starts_at_once_make_one_server() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let dir = tempfile::tempdir().unwrap();
+    let host = HostManager::default();
+    host.init(dir.path().join("config"), dir.path().join("data"));
+    let conn = ConnectionManager::default();
+    conn.load(dir.path().join("config"));
+
+    // Launch's auto-start and a click on "open my server", together.
+    let (a, b) = tokio::join!(
+        start_impl(&host, &conn, 0, "Twice".into()),
+        start_impl(&host, &conn, 0, "Twice".into()),
+    );
+    let a = a.expect("the first start succeeds");
+    let b = b.expect("the second finds it running rather than failing to bind");
+    assert_eq!(a.port, b.port);
+    assert!(a.running && b.running);
+    assert_eq!(host.local_addr().as_deref(), a.addr.as_deref());
+    assert!(host.is_running());
+}

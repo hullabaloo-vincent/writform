@@ -10,37 +10,48 @@ import {
 import { useEffect, useState } from "react";
 import type * as Y from "yjs";
 
+import { curRun, type FormatContext } from "../../editor/format/effective";
+import { curParaFormat, setBlockAttrs, setLineHeight } from "../../editor/format/ParaFormat";
+import { setRunFont, setRunSize } from "../../editor/format/run";
+import { roundPt } from "../../editor/schema/sanitize";
+import { SINGLE, styleFonts } from "../../editor/styles/sheet";
 import {
   curTypography,
   DOC_FONT_SIZES,
-  DOC_FONTS,
   DOC_LINE_SPACINGS,
   DOC_PARA_SPACES,
   setDocAlign,
-  setDocFont,
-  setDocFontSize,
-  setDocLineSpacing,
   setDocSpaceAbove,
   setDocSpaceBelow,
   setTypography,
   toggleDropCap,
 } from "../../editor/TextFormat";
+import type { FontInfo } from "../../fonts/css";
+import { fontKey, noteDocFont, readDocFontTable } from "../../fonts/docFonts";
+import { FontPicker } from "../../fonts/ui/FontPicker";
+import { NumberField } from "../../editor/ui/NumberField";
 import {
+  CUSTOM_PAGE,
   DOC_INDENTS,
   DOC_PARA_DEFAULTS,
   MARGIN_MAX,
   MARGIN_MIN,
+  PAGE_NUMBER_FORMATS,
   PAGE_SIZES,
-  pageSizeDef,
+  PAPER_MAX,
+  PAPER_MIN,
+  pageDims,
   updateDocSettings,
   type DocSettings,
+  type PageNumberFormat,
 } from "./docSettings";
+import { HeaderFooterForm } from "./HeaderFooterForm";
 
 /**
  * The document inspector — Pages-style right panel with two tabs: Text
  * (styles the current selection through TextFormat attributes) and
  * Document (paper, margins, body-text defaults — the Y.Map-backed
- * per-document settings). Plain format only; the scripted formats carry
+ * per-document settings). Document format only; the scripted formats carry
  * their own fixed conventions.
  */
 export function DocSettingsPanel({
@@ -48,13 +59,33 @@ export function DocSettingsPanel({
   ydoc,
   settings,
   readonly,
+  format,
 }: {
   editor: Editor | null;
   ydoc: Y.Doc;
   settings: DocSettings;
   readonly: boolean;
+  /** The document's styles, and the schema level it may use here. */
+  format: FormatContext;
 }) {
   const [tab, setTab] = useState<"text" | "document">(readonly ? "document" : "text");
+  // What the document uses and knows about its fonts, for the pickers.
+  const [table, setTable] = useState(() => readDocFontTable(ydoc));
+  useEffect(() => {
+    const map = ydoc.getMap("fonts");
+    const onChange = () => setTable(readDocFontTable(ydoc));
+    map.observe(onChange);
+    return () => map.unobserve(onChange);
+  }, [ydoc]);
+  const fonts: PanelFonts = {
+    used: [
+      ...(settings.bodyFont ? [settings.bodyFont] : []),
+      ...styleFonts(format.styles),
+      ...(editor ? fontKey(editor).split("|").filter(Boolean) : []),
+    ],
+    table,
+    onUsed: (id, info) => noteDocFont(ydoc, id, info),
+  };
   return (
     <aside className="wf-doc-panel wf-inspector">
       <header className="wf-doc-panel-header wf-inspector-tabs">
@@ -69,12 +100,13 @@ export function DocSettingsPanel({
         </button>
       </header>
       {tab === "text" ? (
-        <TextTab editor={editor} disabled={readonly || !editor} />
+        <TextTab editor={editor} disabled={readonly || !editor} fonts={fonts} format={format} />
       ) : (
         <DocumentTab
           settings={settings}
           disabled={readonly}
           onPatch={(patch) => updateDocSettings(ydoc, patch)}
+          fonts={fonts}
         />
       )}
     </aside>
@@ -89,7 +121,23 @@ const LINE_LABELS: Record<string, string> = {
   "2": "Double",
 };
 
-function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolean }) {
+interface PanelFonts {
+  used: string[];
+  table: Record<string, FontInfo>;
+  onUsed: (id: string, info?: FontInfo) => void;
+}
+
+function TextTab({
+  editor,
+  disabled,
+  fonts,
+  format,
+}: {
+  editor: Editor | null;
+  disabled: boolean;
+  fonts: PanelFonts;
+  format: FormatContext;
+}) {
   // Track the caret so the controls always show the selection's values.
   const [, bump] = useState(0);
   useEffect(() => {
@@ -102,8 +150,16 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
   }, [editor]);
 
   const cur = editor ? curTypography(editor) : null;
-  const ptOptions = (list: readonly number[]) =>
-    list.map((v) => (
+  // What the selected text is set in (its own, its paragraph's, its style's).
+  const run = editor ? curRun(editor, format) : null;
+  const para = editor ? curParaFormat(editor) : null;
+  const rich = format.level >= 2;
+  const inches = (pt: number | null | undefined) => Math.round(((pt ?? 0) / 72) * 1000) / 1000;
+  const first = para?.indF ?? 0;
+  // The menus' choices, plus the value in force when it isn't one of them
+  // (a size that came in from a Word file).
+  const ptOptions = (list: readonly number[], current: number | null | undefined = null) =>
+    withCurrent(list, current ?? null).map((v) => (
       <option key={v} value={v}>
         {v} pt
       </option>
@@ -113,34 +169,38 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
     <div className="wf-inspector-body">
       <section>
         <h4>Font</h4>
-        <label className="wf-inspector-row">
+        <div className="wf-inspector-row">
           <span>Family</span>
-          <select
+          <FontPicker
+            value={run && !run.mixed.font ? run.font : null}
+            docFonts={fonts.used}
+            docTable={fonts.table}
+            defaultLabel={run?.mixed.font ? "Mixed" : "Body font"}
+            title={rich ? "Font" : "Paragraph font"}
             disabled={disabled}
-            value={cur?.font ?? ""}
-            onChange={(e) => editor && setDocFont(editor, e.target.value || null)}
-          >
-            <option value="">Default</option>
-            {DOC_FONTS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="wf-inspector-row">
+            className="wf-inspector-font"
+            onPick={(id, info) => {
+              if (!editor) return;
+              setRunFont(editor, id, format.level);
+              if (id) fonts.onUsed(id, info);
+            }}
+          />
+        </div>
+        <div className="wf-inspector-row">
           <span>Size</span>
-          <select
-            disabled={disabled}
-            value={cur?.size ?? ""}
-            onChange={(e) =>
-              editor && setDocFontSize(editor, e.target.value ? Number(e.target.value) : null)
-            }
-          >
-            <option value="">Default</option>
-            {ptOptions(DOC_FONT_SIZES)}
-          </select>
-        </label>
+          <span className="wf-inspector-unit">
+            <NumberField
+              value={run?.size ?? 12}
+              min={4}
+              max={200}
+              step={0.5}
+              disabled={disabled}
+              onCommit={(v) => editor && v !== null && setRunSize(editor, Math.round(v * 2) / 2, format.level)}
+            />
+            pt
+          </span>
+        </div>
+        {!rich && <p className="wf-inspector-hint">This server is on an older version: font and size apply to whole paragraphs.</p>}
       </section>
 
       <section>
@@ -176,19 +236,43 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
           <span>Line spacing</span>
           <select
             disabled={disabled}
-            value={cur?.line ?? ""}
-            onChange={(e) =>
-              editor && setDocLineSpacing(editor, e.target.value ? Number(e.target.value) : null)
-            }
+            value={para?.lineRule ?? cur?.line ?? ""}
+            onChange={(e) => {
+              if (!editor) return;
+              const v = e.target.value;
+              if (v === "exact" || v === "atLeast") {
+                // Start from what single spacing is at this size.
+                setLineHeight(editor, { rule: v, at: para?.lineAt ?? roundPt((run?.size ?? 12) * SINGLE) });
+              } else if (rich) setLineHeight(editor, { multiple: v ? Number(v) : null });
+              else setTypography(editor, { line: v ? Number(v) : null });
+            }}
           >
             <option value="">Default</option>
-            {DOC_LINE_SPACINGS.map((v) => (
+            {withCurrent(DOC_LINE_SPACINGS, cur?.line ?? null).map((v) => (
               <option key={v} value={v}>
-                {LINE_LABELS[String(v)]}
+                {LINE_LABELS[String(v)] ?? String(v)}
               </option>
             ))}
+            {rich && <option value="exact">Exactly…</option>}
+            {rich && <option value="atLeast">At least…</option>}
           </select>
         </label>
+        {rich && para?.lineRule && (
+          <div className="wf-inspector-row">
+            <span>{para.lineRule === "exact" ? "Exactly" : "At least"}</span>
+            <span className="wf-inspector-unit">
+              <NumberField
+                value={para.lineAt ?? 14}
+                min={4}
+                max={400}
+                step={1}
+                disabled={disabled}
+                onCommit={(v) => editor && v !== null && setLineHeight(editor, { rule: para.lineRule!, at: roundPt(v) })}
+              />
+              pt
+            </span>
+          </div>
+        )}
         <label className="wf-inspector-row">
           <span>Before paragraph</span>
           <select
@@ -200,7 +284,7 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
             }
           >
             <option value="">Default</option>
-            {ptOptions(DOC_PARA_SPACES)}
+            {ptOptions(DOC_PARA_SPACES, cur?.sa)}
           </select>
         </label>
         <label className="wf-inspector-row">
@@ -214,13 +298,109 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
             }
           >
             <option value="">Default</option>
-            {ptOptions(DOC_PARA_SPACES)}
+            {ptOptions(DOC_PARA_SPACES, cur?.sb)}
           </select>
         </label>
       </section>
 
+      {rich && (
+        <section>
+          <h4>Indents</h4>
+          <div className="wf-inspector-row">
+            <span>Left</span>
+            <span className="wf-inspector-unit">
+              <NumberField
+                value={inches(para?.indL)}
+                min={0}
+                max={10}
+                step={0.125}
+                disabled={disabled}
+                onCommit={(v) => editor && v !== null && setBlockAttrs(editor, { indL: v ? roundPt(v * 72) : null })}
+              />
+              in
+            </span>
+          </div>
+          <div className="wf-inspector-row">
+            <span>Right</span>
+            <span className="wf-inspector-unit">
+              <NumberField
+                value={inches(para?.indR)}
+                min={0}
+                max={10}
+                step={0.125}
+                disabled={disabled}
+                onCommit={(v) => editor && v !== null && setBlockAttrs(editor, { indR: v ? roundPt(v * 72) : null })}
+              />
+              in
+            </span>
+          </div>
+          <label className="wf-inspector-row">
+            <span>First line</span>
+            <select
+              disabled={disabled}
+              value={para?.indF === null || para?.indF === undefined ? "" : first === 0 ? "none" : first < 0 ? "hanging" : "first"}
+              onChange={(e) => {
+                if (!editor) return;
+                const by = Math.abs(first) || 36;
+                const v = e.target.value;
+                setBlockAttrs(editor, { indF: v === "" ? null : v === "none" ? 0 : v === "hanging" ? -by : by });
+              }}
+            >
+              <option value="">As the style</option>
+              <option value="none">None</option>
+              <option value="first">Indented</option>
+              <option value="hanging">Hanging</option>
+            </select>
+          </label>
+          {first !== 0 && (
+            <div className="wf-inspector-row">
+              <span>By</span>
+              <span className="wf-inspector-unit">
+                <NumberField
+                  value={inches(Math.abs(first))}
+                  min={0.05}
+                  max={10}
+                  step={0.125}
+                  disabled={disabled}
+                  onCommit={(v) => editor && v !== null && setBlockAttrs(editor, { indF: roundPt((first < 0 ? -v : v) * 72) })}
+                />
+                in
+              </span>
+            </div>
+          )}
+        </section>
+      )}
+
       <section>
         <h4>Paragraph</h4>
+        {rich && (
+          <label className="wf-inspector-check">
+            <span>
+              Keep with next
+              <small>Never the last thing on a page</small>
+            </span>
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={para?.keepNext === true}
+              onChange={() => editor && setBlockAttrs(editor, { keepNext: para?.keepNext ? null : true })}
+            />
+          </label>
+        )}
+        {rich && (
+          <label className="wf-inspector-check">
+            <span>
+              Keep lines together
+              <small>Never split across two pages</small>
+            </span>
+            <input
+              type="checkbox"
+              disabled={disabled}
+              checked={para?.keepLines === true}
+              onChange={() => editor && setBlockAttrs(editor, { keepLines: para?.keepLines ? null : true })}
+            />
+          </label>
+        )}
         <label className="wf-inspector-check">
           <span>
             Drop cap
@@ -252,16 +432,37 @@ function TextTab({ editor, disabled }: { editor: Editor | null; disabled: boolea
   );
 }
 
+const PN_LABELS: Record<PageNumberFormat, string> = {
+  "1": "1, 2, 3",
+  i: "i, ii, iii",
+  I: "I, II, III",
+  a: "a, b, c",
+  A: "A, B, C",
+};
+
 function DocumentTab({
   settings,
   disabled,
   onPatch,
+  fonts,
 }: {
   settings: DocSettings;
   disabled: boolean;
   onPatch: (patch: Partial<DocSettings>) => void;
+  fonts: PanelFonts;
 }) {
-  const page = pageSizeDef(settings.pageSize);
+  const page = pageDims(settings);
+  const custom = settings.pageSize === CUSTOM_PAGE;
+  const landscape = custom ? settings.pw > settings.ph : settings.landscape;
+  const turn = (wantLandscape: boolean) => {
+    if (wantLandscape === landscape) return;
+    // A custom paper is turned by swapping its sides.
+    onPatch(custom ? { pw: settings.ph, ph: settings.pw } : { landscape: wantLandscape });
+  };
+  const sizes = withCurrent(DOC_FONT_SIZES, settings.bodySize);
+  const lines = withCurrent(DOC_LINE_SPACINGS, settings.bodyLine);
+  const spaces = withCurrent(DOC_PARA_DEFAULTS, settings.paraSpacing);
+  const indents = withCurrent(DOC_INDENTS, settings.firstIndent);
   return (
     <div className="wf-inspector-body">
       <section>
@@ -271,67 +472,122 @@ function DocumentTab({
           <select
             disabled={disabled}
             value={settings.pageSize}
-            onChange={(e) => onPatch({ pageSize: e.target.value })}
+            onChange={(e) => {
+              const next = e.target.value;
+              // Start a custom paper from the one it replaces.
+              if (next === CUSTOM_PAGE) onPatch({ pageSize: next, pw: page.w, ph: page.h });
+              else onPatch({ pageSize: next });
+            }}
           >
             {PAGE_SIZES.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.label}
               </option>
             ))}
+            <option value={CUSTOM_PAGE}>Custom…</option>
           </select>
         </label>
+        {custom && (
+          <div className="wf-inspector-grid">
+            <InchStepper label="Width" value={settings.pw} min={PAPER_MIN} max={PAPER_MAX} step={0.125} disabled={disabled} onChange={(pw) => onPatch({ pw })} />
+            <InchStepper label="Height" value={settings.ph} min={PAPER_MIN} max={PAPER_MAX} step={0.125} disabled={disabled} onChange={(ph) => onPatch({ ph })} />
+          </div>
+        )}
+        <div className="wf-inspector-row">
+          <span>Orientation</span>
+          <div className="wf-inspector-seg">
+            <button disabled={disabled} className={landscape ? "" : "active"} onClick={() => turn(false)}>
+              Portrait
+            </button>
+            <button disabled={disabled} className={landscape ? "active" : ""} onClick={() => turn(true)}>
+              Landscape
+            </button>
+          </div>
+        </div>
         <p className="wf-inspector-dim">
-          {page.w} × {page.h} inches
+          {trim(page.w)} × {trim(page.h)} inches
         </p>
       </section>
 
       <section>
         <h4>Margins</h4>
         <div className="wf-inspector-grid">
-          <InchStepper
-            label="Top"
-            value={settings.mt}
-            disabled={disabled}
-            onChange={(mt) => onPatch({ mt })}
-          />
-          <InchStepper
-            label="Bottom"
-            value={settings.mb}
-            disabled={disabled}
-            onChange={(mb) => onPatch({ mb })}
-          />
-          <InchStepper
-            label="Left"
-            value={settings.ml}
-            disabled={disabled}
-            onChange={(ml) => onPatch({ ml })}
-          />
-          <InchStepper
-            label="Right"
-            value={settings.mr}
-            disabled={disabled}
-            onChange={(mr) => onPatch({ mr })}
-          />
+          <InchStepper label="Top" value={settings.mt} disabled={disabled} onChange={(mt) => onPatch({ mt })} />
+          <InchStepper label="Bottom" value={settings.mb} disabled={disabled} onChange={(mb) => onPatch({ mb })} />
+          <InchStepper label={settings.mirror ? "Inside" : "Left"} value={settings.ml} disabled={disabled} onChange={(ml) => onPatch({ ml })} />
+          <InchStepper label={settings.mirror ? "Outside" : "Right"} value={settings.mr} disabled={disabled} onChange={(mr) => onPatch({ mr })} />
+          <InchStepper label="Gutter" value={settings.gutter} min={0} max={2} step={0.125} disabled={disabled} onChange={(gutter) => onPatch({ gutter })} />
+        </div>
+        <label className="wf-inspector-check">
+          <input type="checkbox" disabled={disabled} checked={settings.mirror} onChange={(e) => onPatch({ mirror: e.target.checked })} />
+          <span>Facing pages (mirror the margins)</span>
+        </label>
+      </section>
+
+      <section>
+        <h4>Columns</h4>
+        <div className="wf-inspector-row">
+          <span>Columns</span>
+          <div className="wf-inspector-seg">
+            {[1, 2, 3].map((n) => (
+              <button key={n} disabled={disabled} className={settings.cols === n ? "active" : ""} onClick={() => onPatch({ cols: n })}>
+                {n}
+              </button>
+            ))}
+          </div>
+        </div>
+        {settings.cols > 1 && (
+          <div className="wf-inspector-grid">
+            <InchStepper label="Space between" value={settings.colGap} min={0.125} max={2} step={0.125} disabled={disabled} onChange={(colGap) => onPatch({ colGap })} />
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h4>Header and footer</h4>
+        <HeaderFooterForm settings={settings} disabled={disabled} onPatch={onPatch} />
+        <div className="wf-inspector-grid">
+          <InchStepper label="Header from top" value={settings.hd} min={0.125} max={2} step={0.125} disabled={disabled} onChange={(hd) => onPatch({ hd })} />
+          <InchStepper label="Footer from bottom" value={settings.fd} min={0.125} max={2} step={0.125} disabled={disabled} onChange={(fd) => onPatch({ fd })} />
         </div>
       </section>
 
       <section>
-        <h4>Body text</h4>
+        <h4>Page numbers</h4>
         <label className="wf-inspector-row">
-          <span>Font</span>
-          <select
-            disabled={disabled}
-            value={settings.bodyFont ?? ""}
-            onChange={(e) => onPatch({ bodyFont: e.target.value || null })}
-          >
-            <option value="">Georgia (default)</option>
-            {DOC_FONTS.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.label}
+          <span>Style</span>
+          <select disabled={disabled} value={settings.pnFormat} onChange={(e) => onPatch({ pnFormat: e.target.value as PageNumberFormat })}>
+            {PAGE_NUMBER_FORMATS.map((f) => (
+              <option key={f} value={f}>
+                {PN_LABELS[f]}
               </option>
             ))}
           </select>
         </label>
+        <label className="wf-inspector-row">
+          <span>Start at</span>
+          <NumberField value={settings.pnStart} min={0} max={99999} step={1} disabled={disabled} onCommit={(pnStart) => onPatch({ pnStart: Math.round(pnStart ?? 1) })} />
+        </label>
+      </section>
+
+      <section>
+        <h4>Body text</h4>
+        <div className="wf-inspector-row">
+          <span>Font</span>
+          <FontPicker
+            value={settings.bodyFont}
+            docFonts={fonts.used}
+            docTable={fonts.table}
+            defaultLabel="Georgia"
+            title="Body font"
+            disabled={disabled}
+            className="wf-inspector-font"
+            onPick={(id, info) => {
+              onPatch({ bodyFont: id });
+              if (id) fonts.onUsed(id, info);
+            }}
+          />
+        </div>
         <label className="wf-inspector-row">
           <span>Size</span>
           <select
@@ -342,7 +598,7 @@ function DocumentTab({
             }
           >
             <option value="">12 pt (default)</option>
-            {DOC_FONT_SIZES.map((v) => (
+            {sizes.map((v) => (
               <option key={v} value={v}>
                 {v} pt
               </option>
@@ -359,9 +615,9 @@ function DocumentTab({
             }
           >
             <option value="">Default</option>
-            {DOC_LINE_SPACINGS.map((v) => (
+            {lines.map((v) => (
               <option key={v} value={v}>
-                {LINE_LABELS[String(v)]}
+                {LINE_LABELS[String(v)] ?? String(v)}
               </option>
             ))}
           </select>
@@ -376,7 +632,7 @@ function DocumentTab({
             }
           >
             <option value="">Default</option>
-            {DOC_PARA_DEFAULTS.map((v) => (
+            {spaces.map((v) => (
               <option key={v} value={v}>
                 {v} pt
               </option>
@@ -393,7 +649,7 @@ function DocumentTab({
             }
           >
             <option value="">None</option>
-            {DOC_INDENTS.map((v) => (
+            {indents.map((v) => (
               <option key={v} value={v}>
                 {v}″
               </option>
@@ -405,6 +661,21 @@ function DocumentTab({
         </p>
       </section>
 
+      <section>
+        <h4>Print</h4>
+        <label className="wf-inspector-check">
+          <input type="checkbox" disabled={disabled} checked={settings.hyphenate} onChange={(e) => onPatch({ hyphenate: e.target.checked })} />
+          <span>Hyphenate words at line ends</span>
+        </label>
+        <label className="wf-inspector-check">
+          <input type="checkbox" disabled={disabled} checked={settings.lineNumbers} onChange={(e) => onPatch({ lineNumbers: e.target.checked })} />
+          <span>Number the lines</span>
+        </label>
+        <p className="wf-inspector-dim">
+          Headers, footers, columns and line numbers show in Preview, in print and in the PDF.
+        </p>
+      </section>
+
       <p className="wf-inspector-dim wf-inspector-foot">
         Saved with the document — everyone who opens it sees the same layout.
       </p>
@@ -412,6 +683,16 @@ function DocumentTab({
   );
 }
 
+const trim = (n: number) => String(Math.round(n * 100) / 100);
+
+/** The choices, plus the value in force when it isn't one of them (a size
+ *  that came in from a Word file). */
+function withCurrent(options: readonly number[], current: number | null): number[] {
+  if (current === null || options.includes(current)) return [...options];
+  return [...options, current].sort((a, b) => a - b);
+}
+
+/** A number typed in, committed on Enter or on leaving the field. */
 /** A ¼-inch stepper (margins, trim sizes). Exported for the book inspector. */
 export function InchStepper({
   label,

@@ -11,11 +11,16 @@ import {
   setLocalThreadResolved,
   type LocalThread,
 } from "./feedbackLocal";
+import { ChangesList } from "../../editor/review/ChangesList";
+import { showChange } from "../../editor/review/Suggesting";
+import type { ReviewState } from "../../editor/review/useReview";
 import {
   anchorsFromSelection,
+  FeedbackTabs,
   inDocumentOrder,
   resolveThreadRange,
   useFlashThread,
+  type FeedbackTab,
   type ThreadFocus,
 } from "./FeedbackPanel";
 
@@ -29,6 +34,9 @@ export function LocalFeedbackPanel({
   highlightsOn,
   onToggleHighlights,
   focus,
+  review,
+  tab = "comments",
+  onTab,
 }: {
   docId: string;
   editor: Editor | null;
@@ -37,6 +45,10 @@ export function LocalFeedbackPanel({
   onToggleHighlights?: () => void;
   /** A note to bring forward (its highlight was clicked). */
   focus?: ThreadFocus | null;
+  /** Suggested changes, listed beside the notes. */
+  review?: ReviewState;
+  tab?: FeedbackTab;
+  onTab?: (tab: FeedbackTab) => void;
 }) {
   useFlashThread(focus);
   const [threads, setThreads] = useState<LocalThread[]>([]);
@@ -83,10 +95,32 @@ export function LocalFeedbackPanel({
     editor.chain().focus().setTextSelection(range).scrollIntoView().run();
   };
 
+  const showing: FeedbackTab = review && onTab ? tab : "comments";
+  const header = review && onTab ? <FeedbackTabs tab={showing} onTab={onTab} comments={open.length} changes={review.items.length} label="Notes" /> : <h3>Notes</h3>;
+  if (showing === "changes" && review) {
+    return (
+      <aside className="wf-doc-panel">
+        <header className="wf-doc-panel-header">{header}</header>
+        <ChangesList
+          editor={editor}
+          review={review}
+          onComment={(item) => {
+            if (!editor) return;
+            showChange(editor, item, false);
+            const anchors = anchorsFromSelection(editor);
+            if (!anchors) return;
+            setSelectionDraft({ content: "", anchors });
+            onTab?.("comments");
+          }}
+        />
+      </aside>
+    );
+  }
+
   return (
     <aside className="wf-doc-panel">
       <header className="wf-doc-panel-header">
-        <h3>Notes</h3>
+        {header}
         <span className="wf-statusbar-spacer" />
         {onToggleHighlights && (
           <button

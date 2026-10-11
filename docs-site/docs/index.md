@@ -1,9 +1,15 @@
 # subScribe
 
-subScribe is a **self-hosted group creative-writing app**. One of you runs the
-server (one click, inside the app); everyone else connects to your address.
-Nothing touches a third-party cloud: writing, chat, voice signaling, and
-files all live on the server you run.
+subScribe is a **writing suite you own**: documents and book publishing,
+boards, and notes that work on your own device with no account and no
+connection — and, when you want to write with other people, a **self-hosted
+server** for chat, voice, live sessions and shared documents. One of you
+runs the server (one click, inside the app); everyone else connects to that
+address. Nothing touches a third-party cloud: what you write lives on your
+device, or on the server you and your friends run.
+
+Open the app and you're at **Home**: start a document, a board or a note,
+pick up what you were last working on, or join the people you write with.
 
 ## What's inside
 

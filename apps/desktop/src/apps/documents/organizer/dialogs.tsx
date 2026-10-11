@@ -1,7 +1,6 @@
 import { ArrowDown, ArrowUp, FileText, Folder, HardDrive, Server } from "lucide-react";
 import { useState } from "react";
 
-import type { DocumentFolder } from "../../../bindings/proto/DocumentFolder";
 import { isCmdError, isWeb } from "../../../lib/backend";
 import { Modal } from "../../../platform";
 import { documentsApi } from "../api";
@@ -11,26 +10,32 @@ import type { OrgItem } from "./model";
 
 const message = (e: unknown) => (isCmdError(e) ? e.message : String(e));
 
-/** Move one or more of your server documents into a folder (or out). */
+/** Move one or more of your documents into a folder (or out): server
+ *  documents among the server's folders, documents on this device among
+ *  the device's. */
 export function MoveDialog({
   items,
   folders,
+  onMove,
   onDone,
   onClose,
 }: {
   items: OrgItem[];
-  folders: DocumentFolder[];
+  folders: { id: number | string; name: string }[];
+  /** Put them in this folder (null: in none). */
+  onMove: (folderId: number | string | null) => Promise<void>;
   onDone: () => void;
   onClose: () => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const here = items.length === 1 ? items[0].folderId : undefined;
-  const move = async (folderId: number | null) => {
+  const onDevice = items[0]?.kind === "local";
+  const move = async (folderId: number | string | null) => {
     setBusy(true);
     setError(null);
     try {
-      for (const item of items) await documentsApi.moveDocument(item.id as number, folderId);
+      await onMove(folderId);
       onDone();
     } catch (e) {
       setError(message(e));
@@ -54,6 +59,7 @@ export function MoveDialog({
           <li key={f.id}>
             <button className="wf-doc-move-target" disabled={busy || here === f.id} onClick={() => void move(f.id)}>
               <Folder size={14} /> {f.name}
+              {onDevice && <HardDrive size={12} className="wf-doc-move-where" aria-label="on this device" />}
             </button>
           </li>
         ))}
@@ -120,6 +126,67 @@ export function NameDialog({
   );
 }
 
+/** A new folder: its name and — when there is a choice — whether it lives
+ *  on the server or on this device. */
+export function NewFolderDialog({
+  canServer,
+  canDevice,
+  start,
+  onCreate,
+  onClose,
+}: {
+  canServer: boolean;
+  canDevice: boolean;
+  start: "server" | "device";
+  onCreate: (name: string, where: "server" | "device") => Promise<unknown>;
+  onClose: () => void;
+}) {
+  const [name, setName] = useState("");
+  const [where, setWhere] = useState<"server" | "device">(
+    start === "server" && canServer ? "server" : canDevice ? "device" : "server",
+  );
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  return (
+    <Modal onClose={onClose}>
+      <header className="wf-doc-panel-header">
+        <h3>New folder</h3>
+      </header>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = name.trim();
+          if (!n || busy) return;
+          setBusy(true);
+          setError(null);
+          onCreate(n, where)
+            .then(onClose)
+            .catch((err) => setError(message(err)))
+            .finally(() => setBusy(false));
+        }}
+      >
+        <div className="wf-doc-panel-row">
+          <input autoFocus value={name} maxLength={80} placeholder="Folder name" aria-label="Folder name" onChange={(e) => setName(e.target.value)} />
+          <button type="submit" className="wf-primary" disabled={!name.trim() || busy}>
+            Create
+          </button>
+        </div>
+        {canServer && canDevice && (
+          <div className="wf-inspector-seg wf-combine-dest" role="radiogroup" aria-label="Where the folder lives">
+            <button type="button" role="radio" aria-checked={where === "server"} className={where === "server" ? "active" : ""} disabled={busy} onClick={() => setWhere("server")}>
+              <Server size={13} /> On the server
+            </button>
+            <button type="button" role="radio" aria-checked={where === "device"} className={where === "device" ? "active" : ""} disabled={busy} onClick={() => setWhere("device")}>
+              <HardDrive size={13} /> On this device
+            </button>
+          </div>
+        )}
+      </form>
+      {error && <p className="wf-connect-error">{error}</p>}
+    </Modal>
+  );
+}
+
 /** Share a document or every document in a folder, straight from the list. */
 export function ListShareDialog({
   target,
@@ -173,6 +240,7 @@ export function CombineDialog({
   sources,
   defaultTitle,
   folderId,
+  localFolderId = null,
   offline,
   onDone,
   onClose,
@@ -180,6 +248,8 @@ export function CombineDialog({
   sources: OrgItem[];
   defaultTitle: string;
   folderId: number | null;
+  /** A folder on this device the result goes in, when it's saved here. */
+  localFolderId?: string | null;
   offline: boolean;
   onDone: (ref: ItemRef) => void;
   onClose: () => void;
@@ -205,7 +275,7 @@ export function CombineDialog({
   const run = async () => {
     setError(null);
     try {
-      const ref = await combineInto(order, { title: title.trim() || "Manuscript", titleHeadings: headings, dest, folderId: dest === "server" ? folderId : null }, setBusy);
+      const ref = await combineInto(order, { title: title.trim() || "Manuscript", titleHeadings: headings, dest, folderId: dest === "server" ? folderId : null, localFolderId: dest === "local" ? localFolderId : null }, setBusy);
       onDone(ref);
     } catch (e) {
       setError(message(e));

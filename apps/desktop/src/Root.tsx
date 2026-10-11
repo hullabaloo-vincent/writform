@@ -9,7 +9,11 @@ import {
 } from "./platform";
 import { useSession } from "./stores/session";
 
-/** Gate: connect + auth first, then the platform shell. */
+/**
+ * The apps open straight into the shell: what's on this device is always
+ * there, and a server is something you connect from inside it. Only the
+ * browser client — which has no device storage — signs in first.
+ */
 export function Root() {
   const phase = useSession((s) => s.phase);
   if (phase === "loading") {
@@ -21,7 +25,7 @@ export function Root() {
   }
   return (
     <>
-      {phase === "connected" || phase === "offline" ? <AppShell /> : <ConnectScreen />}
+      {phase === "disconnected" ? <ConnectScreen /> : <AppShell />}
       <ConfirmHost />
       <ProfileCardHost />
       <LightboxHost />

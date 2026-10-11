@@ -196,12 +196,26 @@ pub fn trust_impl(manager: &ConnectionManager, addr: String) -> CmdResult<()> {
         last_username: None,
         session_token: None,
         last_active_at: None,
+        paused: false,
     });
     Ok(())
 }
 
+/// A saved server as the UI lists it: never its token, but whether one is
+/// kept (so "Connect" can skip the password).
+#[derive(Debug, Clone, Serialize)]
+pub struct ServerListing {
+    #[serde(flatten)]
+    pub server: SavedServer,
+    pub signed_in: bool,
+}
+
 #[tauri::command]
-pub fn list_servers(manager: State<'_, ConnectionManager>) -> Vec<SavedServer> {
+pub fn list_servers(manager: State<'_, ConnectionManager>) -> Vec<ServerListing> {
+    list_impl(&manager)
+}
+
+pub fn list_impl(manager: &ConnectionManager) -> Vec<ServerListing> {
     manager
         .servers
         .lock()
@@ -209,9 +223,12 @@ pub fn list_servers(manager: State<'_, ConnectionManager>) -> Vec<SavedServer> {
         .iter()
         // The token never crosses into the webview; the UI only needs to
         // know the server can be resumed.
-        .map(|s| SavedServer {
-            session_token: None,
-            ..s.clone()
+        .map(|s| ServerListing {
+            signed_in: s.session_token.is_some(),
+            server: SavedServer {
+                session_token: None,
+                ..s.clone()
+            },
         })
         .collect()
 }
@@ -306,6 +323,9 @@ pub async fn login(
     remember: bool,
 ) -> CmdResult<SessionInfo> {
     let info = login_impl(&manager, addr, username, password, remember).await?;
+    // Switching servers: the old socket and the rooms it was subscribed to
+    // belong to the server being left.
+    ws.disconnect();
     start_ws_for_active(app, &manager, &ws);
     Ok(info)
 }
@@ -345,6 +365,7 @@ pub async fn register(
     remember: bool,
 ) -> CmdResult<SessionInfo> {
     let info = register_impl(&manager, addr, username, password, remember).await?;
+    ws.disconnect();
     start_ws_for_active(app, &manager, &ws);
     Ok(info)
 }
@@ -403,6 +424,7 @@ fn finish_auth(
         // a previous login left behind.
         saved.session_token = remember.then(|| auth.token.clone());
         saved.last_active_at = Some(now_ms());
+        saved.paused = false;
         manager.upsert(saved);
     }
     let client = pinned_client_for(manager, &addr)?;
@@ -443,7 +465,29 @@ pub async fn logout(
     Ok(())
 }
 
-/// What startup resume produced: a live session, or why there isn't one.
+/// Leave the server without signing out: the socket closes and nothing is
+/// connected, but the remembered token stays, so coming back is one click
+/// (see `resume_server`). Launch won't reconnect by itself until then.
+#[tauri::command]
+pub fn disconnect(
+    manager: State<'_, ConnectionManager>,
+    ws: State<'_, std::sync::Arc<crate::wsclient::WsManager>>,
+) {
+    ws.disconnect();
+    disconnect_impl(&manager);
+}
+
+pub fn disconnect_impl(manager: &ConnectionManager) {
+    let session = manager.active.lock().expect("poisoned").take();
+    if let Some(s) = session {
+        if let Some(mut saved) = manager.find(&s.addr) {
+            saved.paused = true;
+            manager.upsert(saved);
+        }
+    }
+}
+
+/// What a resume produced: a live session, or why there isn't one.
 /// `reason` is "expired" (stored token rejected — show the login with a
 /// notice) or "unreachable" (server down; the token is kept for next time).
 #[derive(Debug, Clone, Serialize)]
@@ -453,10 +497,151 @@ pub struct ResumeResult {
     pub addr: Option<String>,
 }
 
+impl ResumeResult {
+    fn none() -> Self {
+        Self {
+            session: None,
+            reason: None,
+            addr: None,
+        }
+    }
+
+    fn failed(reason: &str, addr: String) -> Self {
+        Self {
+            session: None,
+            reason: Some(reason.into()),
+            addr: Some(addr),
+        }
+    }
+}
+
+/// Which server launch would resume — a file read, no network — so the app
+/// can open at once and say "reconnecting to …" while `current_session`
+/// does the asking.
+#[derive(Debug, Clone, Serialize)]
+pub struct ResumeTarget {
+    pub addr: String,
+    pub server_name: String,
+    pub last_username: Option<String>,
+}
+
+fn resume_candidate(manager: &ConnectionManager) -> Option<SavedServer> {
+    manager
+        .servers
+        .lock()
+        .expect("poisoned")
+        .iter()
+        .filter(|s| s.session_token.is_some() && !s.paused)
+        .max_by_key(|s| s.last_active_at.unwrap_or(0))
+        .cloned()
+}
+
+#[tauri::command]
+pub fn resume_target(manager: State<'_, ConnectionManager>) -> Option<ResumeTarget> {
+    target_impl(&manager)
+}
+
+pub fn target_impl(manager: &ConnectionManager) -> Option<ResumeTarget> {
+    if manager.active.lock().expect("poisoned").is_some() {
+        return None;
+    }
+    resume_candidate(manager).map(|s| ResumeTarget {
+        addr: s.addr,
+        server_name: s.server_name,
+        last_username: s.last_username,
+    })
+}
+
+/// How long one resume attempt may take. A server that doesn't answer in
+/// this time is treated as unreachable; the app is already open by then.
+const RESUME_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Ask a saved server whether its remembered token still stands, and make
+/// it the active session if so. `patience` keeps trying through connection
+/// failures for that long — for the server this app hosts, which may still
+/// be starting when launch gets here.
+pub async fn resume_impl(
+    manager: &ConnectionManager,
+    saved: SavedServer,
+    patience: std::time::Duration,
+) -> ResumeResult {
+    let Some(token) = saved.session_token.clone() else {
+        return ResumeResult::none();
+    };
+    let Ok(client) = pinned_client_for(manager, &saved.addr) else {
+        return ResumeResult::none();
+    };
+    let started = std::time::Instant::now();
+    let res = loop {
+        let attempt = client
+            .get(format!("https://{}/api/v1/auth/me", saved.addr))
+            .bearer_auth(&token)
+            .timeout(RESUME_TIMEOUT)
+            .send()
+            .await;
+        match attempt {
+            Err(e) if e.is_connect() && started.elapsed() < patience => {
+                tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+            }
+            other => break other,
+        }
+    };
+    match res {
+        Ok(r) if r.status().is_success() => match r.json::<User>().await {
+            Ok(user) => {
+                let mut refreshed = manager.find(&saved.addr).unwrap_or_else(|| saved.clone());
+                refreshed.last_active_at = Some(now_ms());
+                refreshed.paused = false;
+                manager.upsert(refreshed);
+                let info = SessionInfo {
+                    addr: saved.addr.clone(),
+                    user: user.clone(),
+                };
+                *manager.active.lock().expect("poisoned") = Some(ActiveSession {
+                    addr: saved.addr,
+                    client,
+                    token,
+                    user,
+                });
+                ResumeResult {
+                    session: Some(info),
+                    reason: None,
+                    addr: None,
+                }
+            }
+            Err(_) => ResumeResult::failed("unreachable", saved.addr),
+        },
+        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
+            // The token is dead (expired or revoked) — forget it and say so,
+            // so this server's login can open with a notice.
+            if let Some(mut cleared) = manager.find(&saved.addr) {
+                cleared.session_token = None;
+                manager.upsert(cleared);
+            }
+            ResumeResult::failed("expired", saved.addr)
+        }
+        _ => ResumeResult::failed("unreachable", saved.addr),
+    }
+}
+
+/// How long launch waits on the server this app hosts to come up.
+const OWN_SERVER_PATIENCE: std::time::Duration = std::time::Duration::from_secs(6);
+
+fn patience_for(host: &crate::host::HostManager, addr: &str) -> std::time::Duration {
+    if host.local_addr().as_deref() == Some(addr) {
+        OWN_SERVER_PATIENCE
+    } else {
+        std::time::Duration::ZERO
+    }
+}
+
+/// Launch: the session already in memory (a dev reload), or the most
+/// recently used server that kept a token and wasn't left on purpose.
 #[tauri::command]
 pub async fn current_session(
     app: tauri::AppHandle,
     manager: State<'_, ConnectionManager>,
+    host: State<'_, crate::host::HostManager>,
     ws: State<'_, std::sync::Arc<crate::wsclient::WsManager>>,
 ) -> CmdResult<ResumeResult> {
     let in_memory = manager
@@ -475,84 +660,43 @@ pub async fn current_session(
             addr: None,
         });
     }
-
-    // Cold start: resume the most recently used server that kept a token.
-    let candidate = manager
-        .servers
-        .lock()
-        .expect("poisoned")
-        .iter()
-        .filter(|s| s.session_token.is_some())
-        .max_by_key(|s| s.last_active_at.unwrap_or(0))
-        .cloned();
-    let Some(saved) = candidate else {
-        return Ok(ResumeResult {
-            session: None,
-            reason: None,
-            addr: None,
-        });
+    let Some(saved) = resume_candidate(&manager) else {
+        return Ok(ResumeResult::none());
     };
-    let token = saved.session_token.clone().expect("filtered above");
-    let Ok(client) = pinned_client_for(&manager, &saved.addr) else {
-        return Ok(ResumeResult {
-            session: None,
-            reason: None,
-            addr: None,
-        });
-    };
-
-    let res = client
-        .get(format!("https://{}/api/v1/auth/me", saved.addr))
-        .bearer_auth(&token)
-        .send()
-        .await;
-    match res {
-        Ok(r) if r.status().is_success() => match r.json::<User>().await {
-            Ok(user) => {
-                let mut refreshed = saved.clone();
-                refreshed.last_active_at = Some(now_ms());
-                manager.upsert(refreshed);
-                let info = SessionInfo {
-                    addr: saved.addr.clone(),
-                    user: user.clone(),
-                };
-                *manager.active.lock().expect("poisoned") = Some(ActiveSession {
-                    addr: saved.addr,
-                    client,
-                    token,
-                    user,
-                });
-                start_ws_for_active(app, &manager, &ws);
-                Ok(ResumeResult {
-                    session: Some(info),
-                    reason: None,
-                    addr: None,
-                })
-            }
-            Err(_) => Ok(ResumeResult {
-                session: None,
-                reason: Some("unreachable".into()),
-                addr: Some(saved.addr),
-            }),
-        },
-        Ok(r) if r.status() == reqwest::StatusCode::UNAUTHORIZED => {
-            // The token is dead (expired or revoked) — forget it and tell the
-            // connect screen to open this server's login with a notice.
-            let mut cleared = saved.clone();
-            cleared.session_token = None;
-            manager.upsert(cleared);
-            Ok(ResumeResult {
-                session: None,
-                reason: Some("expired".into()),
-                addr: Some(saved.addr),
-            })
-        }
-        _ => Ok(ResumeResult {
-            session: None,
-            reason: Some("unreachable".into()),
-            addr: Some(saved.addr),
-        }),
+    let patience = patience_for(&host, &saved.addr);
+    let result = resume_impl(&manager, saved, patience).await;
+    if result.session.is_some() {
+        ws.disconnect();
+        start_ws_for_active(app, &manager, &ws);
     }
+    Ok(result)
+}
+
+/// Come back to a saved server with its remembered token (after a
+/// Disconnect, or from the list of servers). No token: `reason` is
+/// "expired" and the login opens.
+#[tauri::command]
+pub async fn resume_server(
+    app: tauri::AppHandle,
+    manager: State<'_, ConnectionManager>,
+    host: State<'_, crate::host::HostManager>,
+    ws: State<'_, std::sync::Arc<crate::wsclient::WsManager>>,
+    addr: String,
+) -> CmdResult<ResumeResult> {
+    let addr = normalize_addr(&addr)?;
+    let Some(saved) = manager.find(&addr) else {
+        return Err(CmdError::new("not_trusted", "that server isn't saved"));
+    };
+    if saved.session_token.is_none() {
+        return Ok(ResumeResult::failed("expired", addr));
+    }
+    let patience = patience_for(&host, &addr);
+    let result = resume_impl(&manager, saved, patience).await;
+    if result.session.is_some() {
+        ws.disconnect();
+        start_ws_for_active(app, &manager, &ws);
+    }
+    Ok(result)
 }
 
 fn now_ms() -> i64 {

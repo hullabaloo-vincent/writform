@@ -30,6 +30,10 @@ pub struct SavedServer {
     /// Last successful auth on this server (ms) — picks the resume target.
     #[serde(default)]
     pub last_active_at: Option<i64>,
+    /// The user disconnected on purpose: the token is kept (reconnecting is
+    /// one click), but launch doesn't connect by itself.
+    #[serde(default)]
+    pub paused: bool,
 }
 
 /// Result of a probe, held until the user accepts trust.

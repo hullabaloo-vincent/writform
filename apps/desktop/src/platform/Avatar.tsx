@@ -26,6 +26,7 @@ export function initials(name: string): string {
 export function Avatar({
   name,
   attachmentId,
+  src,
   accentColor,
   size = 24,
   singleInitial = false,
@@ -33,6 +34,9 @@ export function Avatar({
   /** Display name or username — used for initials + fallback color. */
   name: string;
   attachmentId?: number | null;
+  /** A picture that isn't a server attachment (your own, saved on this
+   *  device). Used when there is no `attachmentId`. */
+  src?: string | null;
   accentColor?: string | null;
   size?: number;
   /** One letter instead of two — reads better in large call tiles. */
@@ -42,6 +46,7 @@ export function Avatar({
   // initials instead of the browser's broken-image glyph. Keyed by id so a
   // changed avatar gets a fresh chance.
   const [failedId, setFailedId] = useState<number | null>(null);
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
   const style: React.CSSProperties = {
     width: size,
     height: size,
@@ -57,6 +62,18 @@ export function Avatar({
         alt={name}
         draggable={false}
         onError={() => setFailedId(attachmentId)}
+      />
+    );
+  }
+  if (src && src !== failedSrc) {
+    return (
+      <img
+        className="wf-avatar"
+        style={{ ...style, objectFit: "cover" }}
+        src={src}
+        alt={name}
+        draggable={false}
+        onError={() => setFailedSrc(src)}
       />
     );
   }

@@ -13,7 +13,7 @@ import { toast } from "../../../platform/toast";
 import { documentsApi } from "../api";
 import { b64decode } from "../collab";
 import { snapshotDocMaps, type DocMapsSnapshot } from "../docMaps";
-import { useLocalDocs } from "../local";
+import { folderOfLocal, useLocalDocs } from "../local";
 import { useDocuments } from "../store";
 import type { OrgItem } from "./model";
 
@@ -49,15 +49,19 @@ export async function duplicate(item: OrgItem): Promise<ItemRef> {
   const title = `${item.title} (copy)`;
   if (item.kind === "local") {
     // On this device the stored state is copied exactly.
-    const file = JSON.parse(await backend.localdocRead(item.id as string)) as { state_b64?: string };
-    const id = await useLocalDocs.getState().create(title, item.format, file.state_b64 ?? "");
+    const file = JSON.parse(await backend.localdocRead(item.id as string)) as { state_b64?: string; schema?: number };
+    const id = await useLocalDocs.getState().create(title, item.format, file.state_b64 ?? "", file.schema ?? 1);
+    // Its own copies of the pictures, so it keeps them if the original goes.
+    await backend.localdocMediaCopy(item.id as string, id).catch(() => {});
+    const folder = folderOfLocal(item.id as string);
+    if (folder) await useLocalDocs.getState().moveTo([id], folder).catch(() => {});
     return { kind: "local", id };
   }
   const { content, maps } = await readContent(item);
   const { createServerDocument } = await import("../import/importFile");
   const doc = await createServerDocument(title, item.format, content, maps, `Duplicated from “${item.title}”`);
   if (item.folderId !== null && item.access === "owner") {
-    await documentsApi.moveDocument(doc.id, item.folderId).catch(() => {});
+    await documentsApi.moveDocument(doc.id, item.folderId as number).catch(() => {});
   }
   refreshServer();
   return { kind: "server", id: doc.id };
@@ -93,6 +97,8 @@ export interface CombineOptions {
   dest: "server" | "local";
   /** Server folder for the result. */
   folderId: number | null;
+  /** Folder on this device for the result. */
+  localFolderId?: string | null;
 }
 
 /** Combine documents, in this order, into a new book manuscript. The
@@ -120,6 +126,7 @@ export async function combineInto(
   const { createLocalDocument, createServerDocument } = await import("../import/importFile");
   if (opts.dest === "local") {
     const id = await createLocalDocument(opts.title, "manuscript", content, maps);
+    if (opts.localFolderId) await useLocalDocs.getState().moveTo([id], opts.localFolderId).catch(() => {});
     return { kind: "local", id };
   }
   const doc = await createServerDocument(opts.title, "manuscript", content, maps, `Combined from ${sources.length} documents`);

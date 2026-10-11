@@ -12,6 +12,11 @@
 //! format, word count, opening words) so the organizer can list documents
 //! without reading whole manuscripts. Deleting moves a document — with its
 //! history and notes — into `.trash/{id}/` for 30 days (Recently Deleted).
+//!
+//! Two more things the webview keeps here: `text/{id}.txt`, each document's
+//! plain text, which is what a search reads (the document itself is Yjs
+//! state the core can't see into); and `folders.json`, the folders and which
+//! document is in which.
 
 use serde::Serialize;
 use tauri::Manager;
@@ -28,6 +33,20 @@ const MAX_META_BYTES: usize = 64 * 1024;
 /// Recently Deleted keeps a document this long.
 const TRASH_RETENTION_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 const TRASH_DIR: &str = ".trash";
+/// Pictures in on-device documents: `media/{doc id}/{picture id}`, the raw
+/// bytes as they were added. A document's pictures travel with it — into
+/// Recently Deleted and back, and away for good when it is.
+const MEDIA_DIR: &str = "media";
+/// One picture.
+const MAX_MEDIA_BYTES: usize = 24 * 1024 * 1024;
+/// A document's plain text, for searching.
+const TEXT_DIR: &str = "text";
+const MAX_TEXT_BYTES: usize = 8 * 1024 * 1024;
+/// The folders, and which document is in which (JSON the webview owns).
+const FOLDERS_FILE: &str = "folders.json";
+const MAX_FOLDERS_BYTES: usize = 1024 * 1024;
+/// A search stops collecting matches here.
+const MAX_SEARCH_HITS: usize = 200;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct LocalDocMeta {
@@ -40,6 +59,21 @@ pub struct LocalDocMeta {
     /// document is saved by a version that writes it).
     pub words: i64,
     pub excerpt: String,
+}
+
+/// One document a search found: the words around the first match.
+#[derive(Debug, Clone, Serialize)]
+pub struct LocalSearchHit {
+    pub id: String,
+    pub snippet: String,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct LocalSearch {
+    pub hits: Vec<LocalSearchHit>,
+    /// Documents whose text hasn't been written since they last changed
+    /// (or ever): the webview writes it and asks again.
+    pub stale: Vec<String>,
 }
 
 /// A document in Recently Deleted.
@@ -258,13 +292,15 @@ pub fn localdoc_read(app: tauri::AppHandle, id: String) -> Result<String, CmdErr
 }
 
 /// Save a document; `meta` (title, format, words, excerpt — JSON the webview
-/// owns) is written beside it for the organizer's list.
+/// owns) is written beside it for the organizer's list, and `text` (its
+/// plain text, when the webview has just worked it out) for searching.
 #[tauri::command(async)]
 pub fn localdoc_write(
     app: tauri::AppHandle,
     id: String,
     content: String,
     meta: Option<String>,
+    text: Option<String>,
 ) -> Result<(), CmdError> {
     if content.len() > MAX_DOC_BYTES {
         return Err(CmdError::new(
@@ -283,6 +319,10 @@ pub fn localdoc_write(
                 false,
             );
         }
+    }
+    if let Some(text) = text {
+        // Search falls back to asking for it again if this fails.
+        let _ = write_text_in(&docs_dir(&app)?, &id, &text);
     }
     Ok(())
 }
@@ -311,9 +351,212 @@ pub fn localdoc_delete(app: tauri::AppHandle, id: String) -> Result<(), CmdError
         let _ = std::fs::remove_file(path);
     }
     let _ = std::fs::remove_file(docs_dir(&app)?.join("meta").join(format!("{id}.json")));
+    let _ = std::fs::remove_file(text_file(&docs_dir(&app)?, &id));
+    let _ = std::fs::remove_dir_all(docs_dir(&app)?.join(MEDIA_DIR).join(&id));
     let path = doc_path(&app, &id)?;
     let _ = std::fs::remove_file(with_suffix(&path, ".bak"));
     std::fs::remove_file(path).map_err(io_err)
+}
+
+// ---------------------------------------------------------------- pictures
+
+fn media_file(dir: &std::path::Path, doc: &str, media: &str) -> std::path::PathBuf {
+    dir.join(MEDIA_DIR).join(doc).join(media)
+}
+
+/// A picture's bytes. Looked for under the document named first; a copy of
+/// a document keeps the addresses its original wrote, so failing that, under
+/// any document (picture ids are unique). `None` when there is no such file.
+pub(crate) fn media_bytes_in(dir: &std::path::Path, doc: &str, media: &str) -> Option<Vec<u8>> {
+    if validate_id(doc).is_err() || validate_id(media).is_err() {
+        return None;
+    }
+    if let Ok(bytes) = std::fs::read(media_file(dir, doc, media)) {
+        return Some(bytes);
+    }
+    let entries = std::fs::read_dir(dir.join(MEDIA_DIR)).ok()?;
+    for entry in entries.flatten() {
+        if let Ok(bytes) = std::fs::read(entry.path().join(media)) {
+            return Some(bytes);
+        }
+    }
+    None
+}
+
+/// For the `writform-att://localdoc/<doc>/<picture>` scheme.
+pub fn media_bytes(app: &tauri::AppHandle, rest: &str) -> Option<Vec<u8>> {
+    let (doc, media) = rest.split_once('/')?;
+    media_bytes_in(&docs_dir(app).ok()?, doc, media)
+}
+
+/// Give a copy of a document its own copies of the original's pictures, so
+/// it keeps them when the original is deleted.
+pub(crate) fn copy_media_in(dir: &std::path::Path, from: &str, to: &str) -> std::io::Result<()> {
+    let source = dir.join(MEDIA_DIR).join(from);
+    let Ok(entries) = std::fs::read_dir(&source) else {
+        return Ok(());
+    };
+    let dest = dir.join(MEDIA_DIR).join(to);
+    std::fs::create_dir_all(&dest)?;
+    for entry in entries.flatten() {
+        if entry.path().is_file() {
+            std::fs::copy(entry.path(), dest.join(entry.file_name()))?;
+        }
+    }
+    Ok(())
+}
+
+/// Store one picture for a document. The bytes arrive as the raw request
+/// body (base64 would inflate a photo by a third for no gain).
+#[tauri::command]
+pub fn localdoc_media_write(
+    app: tauri::AppHandle,
+    request: tauri::ipc::Request<'_>,
+) -> Result<(), CmdError> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(CmdError::new("bad_body", "expected raw image bytes"));
+    };
+    if bytes.len() > MAX_MEDIA_BYTES {
+        return Err(CmdError::new("too_large", "image exceeds the 24 MB limit"));
+    }
+    let header = |name: &str| {
+        request
+            .headers()
+            .get(name)
+            .and_then(|v| v.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| CmdError::new("bad_request", "missing id"))
+    };
+    let doc = header("x-doc")?;
+    let media = header("x-media")?;
+    validate_id(&doc)?;
+    validate_id(&media)?;
+    atomic_write(&media_file(&docs_dir(&app)?, &doc, &media), bytes, false).map_err(io_err)
+}
+
+#[tauri::command(async)]
+pub fn localdoc_media_copy(
+    app: tauri::AppHandle,
+    from: String,
+    to: String,
+) -> Result<(), CmdError> {
+    validate_id(&from)?;
+    validate_id(&to)?;
+    copy_media_in(&docs_dir(&app)?, &from, &to).map_err(io_err)
+}
+
+// ---------------------------------------------------------------- search
+
+fn text_file(dir: &std::path::Path, id: &str) -> std::path::PathBuf {
+    dir.join(TEXT_DIR).join(format!("{id}.txt"))
+}
+
+/// Keep a document's plain text for searching. Text past the limit isn't
+/// kept at all (a search then finds the document by its title only).
+pub(crate) fn write_text_in(dir: &std::path::Path, id: &str, text: &str) -> std::io::Result<()> {
+    if text.len() > MAX_TEXT_BYTES {
+        return Ok(());
+    }
+    atomic_write(&text_file(dir, id), text.as_bytes(), false)
+}
+
+/// The documents whose text holds `query` (any case), newest first, each
+/// with the words around its first match — and the ones whose text is
+/// missing or older than the document, which the caller brings up to date.
+pub(crate) fn search_in(dir: &std::path::Path, query: &str) -> std::io::Result<LocalSearch> {
+    let needle = query.trim().to_lowercase();
+    let mut out = LocalSearch::default();
+    if needle.is_empty() {
+        return Ok(out);
+    }
+    let mut docs = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(id) = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .map(str::to_string)
+        else {
+            continue;
+        };
+        if validate_id(&id).is_err() {
+            continue;
+        }
+        docs.push((mtime_millis(&path).unwrap_or(0), id));
+    }
+    docs.sort_by(|a, b| b.0.cmp(&a.0));
+    for (updated_at, id) in docs {
+        let path = text_file(dir, &id);
+        // Written with the document, so never meaningfully older than it.
+        let fresh = mtime_millis(&path).is_some_and(|at| at + 2000 >= updated_at);
+        if !fresh {
+            out.stale.push(id.clone());
+        }
+        if out.hits.len() >= MAX_SEARCH_HITS {
+            continue;
+        }
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        if let Some(snippet) = crate::vault::snippet_around(&text, &needle) {
+            out.hits.push(LocalSearchHit { id, snippet });
+        }
+    }
+    Ok(out)
+}
+
+#[tauri::command(async)]
+pub fn localdoc_search(app: tauri::AppHandle, query: String) -> Result<LocalSearch, CmdError> {
+    search_in(&docs_dir(&app)?, &query).map_err(io_err)
+}
+
+/// A document's plain text on its own (bringing an older document's up to
+/// date for a search).
+#[tauri::command(async)]
+pub fn localdoc_text_write(
+    app: tauri::AppHandle,
+    id: String,
+    text: String,
+) -> Result<(), CmdError> {
+    validate_id(&id)?;
+    let dir = docs_dir(&app)?;
+    if !dir.join(format!("{id}.json")).exists() {
+        return Err(CmdError::new("not_found", "no such document"));
+    }
+    write_text_in(&dir, &id, &text).map_err(io_err)
+}
+
+// ---------------------------------------------------------------- folders
+
+/// The folders file, as the JSON the webview wrote; empty when there are no
+/// folders yet.
+#[tauri::command(async)]
+pub fn localdoc_folders_read(app: tauri::AppHandle) -> Result<String, CmdError> {
+    match read_with_backup(&docs_dir(&app)?.join(FOLDERS_FILE)) {
+        Ok(bytes) => String::from_utf8(bytes)
+            .map_err(|_| CmdError::new("corrupt", "folders file is not text")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(String::new()),
+        Err(e) => Err(io_err(e)),
+    }
+}
+
+#[tauri::command(async)]
+pub fn localdoc_folders_write(app: tauri::AppHandle, content: String) -> Result<(), CmdError> {
+    if content.len() > MAX_FOLDERS_BYTES {
+        return Err(CmdError::new("too_large", "too many folders"));
+    }
+    if serde_json::from_str::<serde_json::Value>(&content).is_err() {
+        return Err(CmdError::new("bad_request", "folders must be JSON"));
+    }
+    atomic_write(
+        &docs_dir(&app)?.join(FOLDERS_FILE),
+        content.as_bytes(),
+        true,
+    )
+    .map_err(io_err)
 }
 
 // ---------------------------------------------------------------- recently deleted
@@ -342,6 +585,8 @@ fn trash_moves(dir: &std::path::Path, id: &str) -> Vec<(std::path::PathBuf, &'st
             "feedback.json",
         ),
         (dir.join("history").join(id), "history"),
+        (dir.join(MEDIA_DIR).join(id), "media"),
+        (text_file(dir, id), "text.txt"),
         (legacy.clone(), "history-v1.json"),
         (with_suffix(&legacy, ".v1.bak"), "history-v1.json.bak"),
     ]
@@ -629,6 +874,54 @@ mod tests {
     use super::*;
 
     #[test]
+    fn a_documents_pictures_travel_with_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let docs = dir.path();
+        let doc = "aaaa-1111";
+        let pic = "bbbb-2222";
+        std::fs::write(docs.join(format!("{doc}.json")), "{}").unwrap();
+        atomic_write(&media_file(docs, doc, pic), b"png-bytes", false).unwrap();
+        assert_eq!(
+            media_bytes_in(docs, doc, pic).as_deref(),
+            Some(&b"png-bytes"[..])
+        );
+
+        // Into Recently Deleted, and back.
+        trash_in(docs, doc, 1).unwrap();
+        assert!(media_bytes_in(docs, doc, pic).is_none());
+        assert!(docs
+            .join(TRASH_DIR)
+            .join(doc)
+            .join("media")
+            .join(pic)
+            .exists());
+        restore_in(docs, doc).unwrap();
+        assert_eq!(
+            media_bytes_in(docs, doc, pic).as_deref(),
+            Some(&b"png-bytes"[..])
+        );
+
+        // A copy gets its own, found under the address the original wrote
+        // even once the original is gone for good.
+        let copy = "cccc-3333";
+        copy_media_in(docs, doc, copy).unwrap();
+        trash_in(docs, doc, 2).unwrap();
+        purge_in(docs, doc).unwrap();
+        assert_eq!(
+            media_bytes_in(docs, doc, pic).as_deref(),
+            Some(&b"png-bytes"[..])
+        );
+        assert!(media_file(docs, copy, pic).exists());
+
+        // Nothing outside the store can be named.
+        assert!(media_bytes_in(docs, "../..", pic).is_none());
+        assert!(media_bytes_in(docs, doc, "../../secret").is_none());
+        assert!(media_bytes_in(docs, doc, "dddd-4444").is_none());
+        // A document with no pictures copies nothing, without error.
+        copy_media_in(docs, "eeee-5555", "ffff-6666").unwrap();
+    }
+
+    #[test]
     fn atomic_write_keeps_a_backup_and_reads_fall_back() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("doc.json");
@@ -703,6 +996,48 @@ mod tests {
         trash_in(d, id, 1_000).unwrap();
         empty_trash_in(d).unwrap();
         assert!(trash_list_in(d, 2_000).unwrap().is_empty());
+    }
+
+    #[test]
+    fn search_reads_each_documents_text() {
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let (a, b, c) = ("aaaa-0001", "bbbb-0002", "cccc-0003");
+        for id in [a, b, c] {
+            std::fs::write(d.join(format!("{id}.json")), "{}").unwrap();
+        }
+        // The folders file and stray files are never taken for documents.
+        std::fs::write(d.join(FOLDERS_FILE), "{}").unwrap();
+        write_text_in(d, a, "The lighthouse keeper counted the ships.\nNone came.").unwrap();
+        write_text_in(d, b, "A recipe for bread").unwrap();
+
+        let found = search_in(d, "  LIGHTHOUSE ").unwrap();
+        assert_eq!(found.hits.len(), 1);
+        assert_eq!(found.hits[0].id, a);
+        assert!(found.hits[0].snippet.contains("lighthouse keeper"));
+        assert!(!found.hits[0].snippet.contains('\n'), "one line");
+        // The document with no text yet is the one to bring up to date.
+        assert_eq!(found.stale, vec![c.to_string()]);
+        assert!(search_in(d, "").unwrap().hits.is_empty());
+        assert!(search_in(d, "zeppelin").unwrap().hits.is_empty());
+
+        // Its text goes to Recently Deleted with it, and comes back.
+        trash_in(d, a, 1).unwrap();
+        assert!(search_in(d, "lighthouse").unwrap().hits.is_empty());
+        restore_in(d, a).unwrap();
+        assert_eq!(search_in(d, "lighthouse").unwrap().hits.len(), 1);
+
+        // Text older than its document is stale (and still searched).
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
+        std::fs::File::options()
+            .write(true)
+            .open(text_file(d, b))
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        let found = search_in(d, "bread").unwrap();
+        assert_eq!(found.hits.len(), 1);
+        assert!(found.stale.contains(&b.to_string()));
     }
 
     #[test]

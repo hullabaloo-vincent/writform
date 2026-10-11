@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import { onBookChange, readBook, type Book } from "../../../book/model/bookMap";
-import { bookFont } from "../../../book/fonts/registry";
+import { bookFont, isCatalogBookFont } from "../../../book/fonts/registry";
 import { blockOffsets } from "../../../book/model/structure";
 import type { BookExportKind } from "../../../book/ui/ExportBookDialog";
 import type { DocProvider, SyncState } from "../collab";
@@ -92,6 +92,16 @@ export function useBook(doc: Y.Doc, fallbacks: { title?: string; author?: string
     reread();
     return onBookChange(doc, reread);
   }, [doc, title, author]);
+  // A book designed in a font from the online catalog: fetch it, so the
+  // manuscript view (and the inspector's specimen) draw in it.
+  const { bodyFont, headingFont } = book.design;
+  useEffect(() => {
+    const ids = [bodyFont, headingFont].filter(isCatalogBookFont);
+    if (!ids.length) return;
+    void import("../../../fonts/store")
+      .then(({ resolveFont, showFamilies }) => Promise.all(ids.map((id) => resolveFont(id))).then((faces) => showFamilies(faces.map((f) => f.family))))
+      .catch(() => {});
+  }, [bodyFont, headingFont]);
   return { book, ref };
 }
 
@@ -109,9 +119,18 @@ export function manuscriptVars(book: Book): Record<string, string> {
  * Editor props shared by both document editors. A module constant on
  * purpose: TipTap compares `editorProps` by identity, and an inline object
  * made every parent render reconfigure and redraw the whole editor view.
- * WebViews default contenteditable spellcheck off — writers want the squiggle.
+ * WebViews default contenteditable spellcheck off — writers want the squiggle
+ * (on macOS the app also turns "check spelling while typing" on by default;
+ * see src-tauri/src/lib.rs).
  */
-export const EDITOR_PROPS = { attributes: { spellcheck: "true" } };
+export const EDITOR_PROPS = {
+  attributes: {
+    spellcheck: "true",
+    // The spell checker picks its dictionary from the text's language; the
+    // device's is the best guess for what's being written.
+    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en",
+  },
+};
 
 /** ⌘F / Ctrl+F opens find (with the selected words); ⌥⌘F / Ctrl+H opens
  *  find and replace. Pressed again while the bar is open, they refocus it. */
@@ -129,6 +148,21 @@ export function useFindShortcut(editor: Editor | null, open: (replace: boolean, 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, open]);
+}
+
+/** ⌘P / Ctrl+P prints the document instead of the app's window. */
+export function usePrintShortcut(enabled: boolean, open: () => void) {
+  useEffect(() => {
+    if (!enabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      const p = e.code === "KeyP" || e.key.toLowerCase() === "p";
+      if (!p || !(e.metaKey || e.ctrlKey) || e.altKey || e.shiftKey) return;
+      e.preventDefault();
+      open();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [enabled, open]);
 }
 
 /** What opening find asks of the bar. `n` changes with every request. */

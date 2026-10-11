@@ -63,8 +63,9 @@ function SharedNoteCard({ content }: { content: string }) {
       <button
         disabled={saved}
         onClick={() => {
+          // As a NEW note: one of yours with the same name is never replaced.
           void backend
-            .vaultWrite(title, note.content_md ?? "")
+            .vaultWriteNew(title, note.content_md ?? "")
             .then(() => setSaved(true))
             .catch(() => {});
         }}

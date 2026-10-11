@@ -17,8 +17,8 @@ import { bookFont } from "../fonts/registry";
 import type { Run } from "../model/types";
 import type { FaceSet } from "./faces";
 import type { Hyphenator } from "./hyphenate";
-import { breakLines, FIL, INF_PENALTY, Items, lineStarts } from "./linebreak";
-import type { DLItem, DLRule, DLText, StyleKey } from "./types";
+import { breakFirstFit, breakLines, FIL, INF_PENALTY, Items, lineStarts } from "./linebreak";
+import type { DLItem, DLLink, DLRect, DLRule, DLText, StyleKey } from "./types";
 
 export type Caps = "none" | "small" | "all" | "upper";
 
@@ -36,6 +36,32 @@ export interface TextStyle {
   features?: string[];
   /** Italic is drawn as underlined roman (the manuscript convention). */
   underlineItalic?: boolean;
+  /** Documents: a real underline, a line through, a colour, a link. */
+  underline?: boolean;
+  strike?: boolean;
+  /** `#rrggbb`. */
+  color?: string;
+  link?: string;
+  /** A highlighter colour behind the text, `#rrggbb`. */
+  highlight?: string;
+  /** Raised (or, negative, lowered) from the baseline, pt. */
+  rise?: number;
+}
+
+/** A book's run, plus what a document's run may also carry. */
+export interface RichRun extends Run {
+  underline?: boolean;
+  strike?: boolean;
+  /** A typeface and size of the run's own (inline code). */
+  family?: string;
+  size?: number;
+  color?: string;
+  /** A web address the run links to (drawn as a link, unlike `href`,
+   *  which a book keeps for its ebook only). */
+  link?: string;
+  highlight?: string;
+  /** Superscript (positive) or subscript (negative) shift, pt. */
+  rise?: number;
 }
 
 export type Align = "justify" | "left" | "center" | "right";
@@ -48,7 +74,7 @@ export interface DropCap {
 }
 
 export interface ParaInput {
-  runs: Run[];
+  runs: RichRun[];
   style: TextStyle;
   width: number;
   align: Align;
@@ -66,6 +92,9 @@ export interface ParaInput {
   balance?: boolean;
   /** Manuscript block (click-to-source). */
   src?: number;
+  /** Break first-fit, as a word processor does (documents), instead of
+   *  weighing the whole paragraph. */
+  firstFit?: boolean;
 }
 
 export interface SetLine {
@@ -73,6 +102,10 @@ export interface SetLine {
   items: DLItem[];
   /** Width the line's text occupies (from its first glyph). */
   width: number;
+  /** How many of the paragraph's characters it holds — spaces, soft
+   *  hyphens and a hyphen added at its end aside. (Counting through the
+   *  lines says where in the text each one starts.) */
+  chars: number;
 }
 
 export interface SetPara {
@@ -80,6 +113,8 @@ export interface SetPara {
   overfull: number;
   /** The first lines that must stay on one page (a drop cap's height). */
   keepFirst: number;
+  /** Characters taken out of the lines altogether (a drop cap's initial). */
+  skipped: number;
   /** The same paragraph one line looser (+1) or tighter (−1), when that's
    *  possible within tolerance; null otherwise. */
   rebreak(looseness: number): SetPara | null;
@@ -93,6 +128,11 @@ interface Glyphs {
   /** Letter spacing, pt. */
   cs: number;
   underline: boolean;
+  strike?: boolean;
+  color?: string;
+  link?: string;
+  highlight?: string;
+  rise?: number;
   w: number;
 }
 
@@ -131,6 +171,8 @@ interface Prepared {
   dropLines: number;
   /** Lead-in words requested. */
   lead: number;
+  /** Characters the drop cap took. */
+  skipped: number;
 }
 
 // Breaking spaces only: no-break, figure and narrow no-break spaces stay
@@ -143,22 +185,69 @@ const LETTER = /\p{L}/u;
 
 const featKey = (f?: string[]) => (f && f.length ? f.join(",") : "");
 
-function sameRun(a: { face: number; size: number; feat?: string[]; cs?: number }, b: Glyphs, aUnderline: boolean) {
-  return a.face === b.face && a.size === b.size && featKey(a.feat) === featKey(b.feat) && (a.cs ?? 0) === b.cs && aUnderline === b.underline;
+function sameRun(a: { face: number; size: number; feat?: string[]; cs?: number; color?: string }, b: Glyphs, aUnderline: boolean) {
+  return (
+    a.face === b.face &&
+    a.size === b.size &&
+    featKey(a.feat) === featKey(b.feat) &&
+    (a.cs ?? 0) === b.cs &&
+    aUnderline === b.underline &&
+    a.color === b.color
+  );
+}
+
+/** Line-through, link, highlight and shift: what two neighbouring runs
+ *  must share to be one. */
+const sameDeco = (a: Glyphs, b: Glyphs) =>
+  !!a.strike === !!b.strike && a.link === b.link && a.highlight === b.highlight && (a.rise ?? 0) === (b.rise ?? 0);
+
+/** A style's decorations, as the fields a glyph run carries. */
+function deco(style: TextStyle): { strike?: boolean; color?: string; link?: string; highlight?: string; rise?: number } {
+  if (!style.strike && !style.color && !style.link && !style.highlight && !style.rise) return {};
+  return {
+    ...(style.strike ? { strike: true } : {}),
+    ...(style.color ? { color: style.color } : {}),
+    ...(style.link ? { link: style.link } : {}),
+    ...(style.highlight ? { highlight: style.highlight } : {}),
+    ...(style.rise ? { rise: style.rise } : {}),
+  };
 }
 
 export class Composer {
+  /**
+   * For a family, the further families tried — in order — for characters
+   * it lacks: a catalog family comes split by script, Latin in one file
+   * and Cyrillic in another, and a book set in it needs both.
+   */
+  chains: Record<string, string[]> = {};
+
   constructor(
     private readonly faces: FaceSet,
     private readonly hyphenator: Hyphenator | null,
     private readonly lang: string,
   ) {}
 
+  /** A piece of a word as the pieces each family draws (one, almost
+   *  always: its own). */
+  private cover(text: string, style: TextStyle): Piece[] {
+    const chain = this.chains[style.family];
+    if (!chain?.length || this.faces.covers(this.faces.face(style.family, "regular"), text)) return [{ text, style }];
+    const options = [style.family, ...chain.filter((f) => this.faces.has(f))];
+    const out: Piece[] = [];
+    for (const ch of text) {
+      const family = options.find((f) => this.faces.covers(this.faces.face(f, "regular"), ch)) ?? style.family;
+      const last = out[out.length - 1];
+      if (last && last.style.family === family) last.text += ch;
+      else out.push({ text: ch, style: family === style.family ? style : { ...style, family } });
+    }
+    return out;
+  }
+
   /** When a style draws its text as-is in one run (no case change, no
    *  reduced capitals), the run's parameters; null otherwise. */
   private plain(style: TextStyle, lead: boolean): Omit<Glyphs, "text" | "w"> | null {
     const caps: Caps = lead && (!style.caps || style.caps === "none") ? "small" : (style.caps ?? "none");
-    const underline = !!(style.underlineItalic && style.italic);
+    const underline = !!(style.underlineItalic && style.italic) || !!style.underline;
     const italic = !!style.italic && !style.underlineItalic;
     const face = this.faces.face(style.family, style.bold ? (italic ? "boldItalic" : "bold") : italic ? "italic" : "regular");
     const base = style.features?.length ? style.features : undefined;
@@ -169,13 +258,14 @@ export class Composer {
     } else if (caps !== "none") {
       return null;
     }
-    return { face, size: style.size, feat, cs: (style.tracking ?? 0) * style.size, underline };
+    return { face, size: style.size, feat, cs: (style.tracking ?? 0) * style.size, underline, ...deco(style) };
   }
 
   /** Shape one piece of text in a style: one glyph run, or several when
    *  small capitals are drawn as reduced capitals. */
   shape(text: string, style: TextStyle, lead = false): Glyphs[] {
-    const underline = !!(style.underlineItalic && style.italic);
+    const underline = !!(style.underlineItalic && style.italic) || !!style.underline;
+    const extra = deco(style);
     const italic = !!style.italic && !style.underlineItalic;
     const key: StyleKey = style.bold ? (italic ? "boldItalic" : "bold") : italic ? "italic" : "regular";
     const face = this.faces.face(style.family, key);
@@ -187,7 +277,7 @@ export class Composer {
     const add = (t: string, sz: number, feat?: string[]) => {
       if (!t) return;
       const cs = tracking * sz;
-      out.push({ text: t, face, size: sz, feat, cs, underline, w: this.faces.measure(face, sz, t, feat, cs) });
+      out.push({ text: t, face, size: sz, feat, cs, underline, ...extra, w: this.faces.measure(face, sz, t, feat, cs) });
     };
     const info = bookFont(style.family);
     const real = this.faces.hasFeature(face, "smcp");
@@ -229,7 +319,7 @@ export class Composer {
     words.forEach((word, wi) => {
       const glyphs = this.shape(word, style);
       glyphs.forEach((g, gi) => {
-        if (cur && gi === 0 && wi > 0 && sameRun(cur, g, false)) {
+        if (cur && gi === 0 && wi > 0 && sameRun(cur, g, false) && cur.y === -(g.rise ?? 0)) {
           cur.text += ` ${g.text}`;
           cur.xs!.push(x);
         } else {
@@ -281,6 +371,14 @@ export class Composer {
       }
       const italic = input.italicBlock ? !run.italic : !!run.italic || !!base.italic;
       const style: TextStyle = { ...base, italic, bold: !!run.bold || !!base.bold };
+      if (run.family) style.family = run.family;
+      if (run.size) style.size = run.size;
+      if (run.underline) style.underline = true;
+      if (run.strike) style.strike = true;
+      if (run.color) style.color = run.color;
+      if (run.link) style.link = run.link;
+      if (run.highlight) style.highlight = run.highlight;
+      if (run.rise) style.rise = run.rise;
       for (const part of run.text.replace(INVISIBLE, "").split(SPACES)) {
         if (!part) continue;
         if (ONLY_SPACES.test(part)) {
@@ -289,8 +387,9 @@ export class Composer {
           continue;
         }
         const prev = last();
-        if (prev?.k === "word") prev.w.pieces.push({ text: part, style });
-        else tokens.push({ k: "word", w: { pieces: [{ text: part, style }], lead: false } });
+        const pieces = this.cover(part, style);
+        if (prev?.k === "word") prev.w.pieces.push(...pieces);
+        else tokens.push({ k: "word", w: { pieces, lead: false } });
       }
     }
     while (last()?.k === "space" || last()?.k === "br") tokens.pop();
@@ -307,6 +406,7 @@ export class Composer {
     const dropItems: DLItem[] = [];
     let dropW = 0;
     let dropLines = 0;
+    let skipped = 0;
     const dc = input.dropCap;
     const first = tokens[0];
     if (dc && dc.lines >= 2 && first?.k === "word") {
@@ -314,6 +414,7 @@ export class Composer {
       const m = /^([“"‘'([«„]*)(\p{L}|\p{N})/u.exec(piece.text);
       if (m) {
         piece.text = piece.text.slice(m[0].length);
+        skipped = m[0].length;
         if (!piece.text) first.w.pieces.shift();
         const capFace = this.faces.face(dc.family, "regular");
         const bodyCap = this.faces.capHeight(bodyFace) * style.size;
@@ -431,7 +532,7 @@ export class Composer {
       offsets.push(off);
       widths.push(Math.max(style.size * 2, input.width - off));
     }
-    return { input, items, syl, widths, offsets, avail: widths.slice(), dropItems, dropLines, lead: leadWords };
+    return { input, items, syl, widths, offsets, avail: widths.slice(), dropItems, dropLines, lead: leadWords, skipped };
   }
 
   /** A word's style pieces (soft hyphens removed), its syllables as parts
@@ -526,14 +627,16 @@ export class Composer {
     let widths = p.widths;
     // A looser or tighter setting (to fill a page) is only worth having
     // when its spacing stays comfortable.
-    const result0 = breakLines(
-      p.items,
-      looseness
-        ? { widths, looseness, emergencyStretch: 0, tolerance: 100, finalTolerance: 100 }
-        : { widths, emergencyStretch: input.style.size * 1.5 },
-    );
+    const result0 = input.firstFit
+      ? breakFirstFit(p.items, widths)
+      : breakLines(
+          p.items,
+          looseness
+            ? { widths, looseness, emergencyStretch: 0, tolerance: 100, finalTolerance: 100 }
+            : { widths, emergencyStretch: input.style.size * 1.5 },
+        );
     let result = result0;
-    if (input.balance && result.breaks.length > 1 && !looseness) {
+    if (input.balance && result.breaks.length > 1 && !looseness && !input.firstFit) {
       // The narrowest measure with the same number of lines.
       let lo = input.width / (result.breaks.length + 1);
       let hi = input.width;
@@ -564,8 +667,9 @@ export class Composer {
       lines,
       overfull: result.overfull,
       keepFirst: p.dropLines,
+      skipped: p.skipped,
       rebreak: (loose: number) => {
-        if (looseness || input.balance || (p.lead && input.leadIn === "first-line")) return null;
+        if (looseness || input.balance || input.firstFit || (p.lead && input.leadIn === "first-line")) return null;
         const alt = this.set(p, loose).para;
         if (alt.overfull || Math.sign(alt.lines.length - lines.length) !== Math.sign(loose)) return null;
         return alt;
@@ -586,6 +690,7 @@ export class Composer {
       let cur: Glyphs[] = [];
       let gap = false;
       let indentW = 0;
+      let chars = 0;
       for (let i = starts[li]; i < b; i += 1) {
         if (items.isBox(i)) {
           const d = items.data[i];
@@ -599,8 +704,9 @@ export class Composer {
           }
           gap = false;
           for (const g of syl[d].glyphs) {
+            chars += g.text.length;
             const prev = cur[cur.length - 1];
-            if (prev && sameRun(prev, g, prev.underline)) cur[cur.length - 1] = { ...prev, text: prev.text + g.text };
+            if (prev && sameRun(prev, g, prev.underline) && sameDeco(prev, g)) cur[cur.length - 1] = { ...prev, text: prev.text + g.text };
             else cur.push({ ...g });
           }
         } else if (items.isGlue(i)) {
@@ -647,9 +753,12 @@ export class Composer {
       let text: DLText | null = null;
       let textUnderline = false;
       let ulStart: number | null = null;
+      let ulColor: string | undefined;
+      // Runs with a line through them or a link, where they were set.
+      const placed: { g: Glyphs; x1: number; x2: number }[] = [];
       words.forEach((word, wi) => {
         word.forEach((g, gi) => {
-          if (text && gi === 0 && wi > 0 && sameRun(text, g, textUnderline)) {
+          if (text && gi === 0 && wi > 0 && sameRun(text, g, textUnderline) && text.y === -(g.rise ?? 0)) {
             text.text += ` ${g.text}`;
             text.xs!.push(x);
           } else {
@@ -658,41 +767,96 @@ export class Composer {
             textUnderline = g.underline;
             out.push(text);
           }
-          if (g.underline && ulStart === null) ulStart = x;
+          if (g.underline && ulStart === null) {
+            ulStart = x;
+            ulColor = g.color;
+          }
           if (!g.underline && ulStart !== null) {
-            rules.push(underlineRule(ulStart, x, g.size));
+            rules.push(underlineRule(ulStart, x, g.size, ulColor));
             ulStart = null;
           }
+          if (g.strike || g.link || g.highlight) placed.push({ g, x1: x, x2: x + g.w });
+          else if (placed.length) placed.push({ g, x1: x, x2: x });
           x += g.w;
         });
         if (wi < words.length - 1) {
           const nextUnderlined = words[wi + 1][0]?.underline;
           if (ulStart !== null && !nextUnderlined) {
-            rules.push(underlineRule(ulStart, x, word[word.length - 1].size));
+            rules.push(underlineRule(ulStart, x, word[word.length - 1].size, ulColor));
             ulStart = null;
           }
           x += gaps[wi] + adj;
         }
       });
-      if (ulStart !== null) rules.push(underlineRule(ulStart, x, input.style.size));
+      if (ulStart !== null) rules.push(underlineRule(ulStart, x, input.style.size, ulColor));
+      // Neighbours sharing a line-through (or one link) share it across the
+      // space between them.
+      const extras: DLItem[] = [];
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && !!placed[j + 1].g.strike === !!first.g.strike && first.g.strike) j += 1;
+        if (first.g.strike) extras.push(strikeRule(first.x1, placed[j].x2, first.g.size, first.g.color));
+        i = j + 1;
+      }
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && placed[j + 1].g.link === first.g.link && first.g.link) j += 1;
+        if (first.g.link) {
+          const size = Math.max(...placed.slice(i, j + 1).map((e) => e.g.size));
+          const link: DLLink = { t: "link", x: first.x1, y: -size * 0.85, w: placed[j].x2 - first.x1, h: size * 1.15, url: first.g.link };
+          extras.push(link);
+        }
+        i = j + 1;
+      }
+      // Highlighter goes down before the ink: one bar under each stretch of
+      // neighbours sharing a colour, as tall as their type.
+      const bars: DLItem[] = [];
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && placed[j + 1].g.highlight === first.g.highlight && first.g.highlight) j += 1;
+        if (first.g.highlight) {
+          let top = 0;
+          let bottom = 0;
+          for (const e of placed.slice(i, j + 1)) {
+            top = Math.max(top, this.faces.ascent(e.g.face) * e.g.size + (e.g.rise ?? 0));
+            bottom = Math.max(bottom, this.faces.descent(e.g.face) * e.g.size - (e.g.rise ?? 0));
+          }
+          const bar: DLRect = { t: "rect", x: first.x1, y: -top, w: placed[j].x2 - first.x1, h: top + bottom, color: first.g.highlight };
+          bars.push(bar);
+        }
+        i = j + 1;
+      }
       if (li === 0 && p.dropItems.length) out.unshift(...p.dropItems.map((d) => ({ ...d })));
-      lines.push({ items: [...out, ...rules], width: x });
+      lines.push({ items: bars.length || extras.length ? [...bars, ...out, ...rules, ...extras] : [...out, ...rules], width: x, chars });
     });
     return lines;
   }
 }
 
 function textItem(g: Glyphs, x: number, src?: number): DLText {
-  const t: DLText = { t: "text", x, y: 0, face: g.face, size: g.size, text: g.text, xs: [x] };
+  const t: DLText = { t: "text", x, y: g.rise ? -g.rise : 0, face: g.face, size: g.size, text: g.text, xs: [x] };
   if (g.feat?.length) t.feat = g.feat;
   if (g.cs) t.cs = g.cs;
   if (src !== undefined) t.src = src;
+  if (g.color) t.color = g.color;
   return t;
 }
 
-function underlineRule(x1: number, x2: number, size: number): DLRule {
+function underlineRule(x1: number, x2: number, size: number, color?: string): DLRule {
   const y = size * 0.13;
-  return { t: "rule", x1, y1: y, x2, y2: y, w: Math.max(0.4, size * 0.05) };
+  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w: Math.max(0.4, size * 0.05) };
+  if (color) rule.color = color;
+  return rule;
+}
+
+function strikeRule(x1: number, x2: number, size: number, color?: string): DLRule {
+  const y = -size * 0.27;
+  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w: Math.max(0.4, size * 0.05) };
+  if (color) rule.color = color;
+  return rule;
 }
 
 /** Move items by (dx, dy) — in place, returning them. */
@@ -707,6 +871,8 @@ export function shift<T extends DLItem>(items: T[], dx: number, dy: number): T[]
       it.x2 += dx;
       it.y1 += dy;
       it.y2 += dy;
+    } else if (it.t === "anchor") {
+      it.y += dy;
     } else {
       it.x += dx;
       it.y += dy;

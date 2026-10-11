@@ -3,34 +3,33 @@ import { ChevronLeft, ChevronRight, Crosshair, Maximize2, X } from "lucide-react
 import { useEffect, useRef, useState } from "react";
 
 import type { DisplayList } from "../engine/types";
-import type { Book } from "../model/bookMap";
 import { pickSource, useSize } from "./BookPreview";
 import { PageSvg } from "./PageSvg";
-import { mapPosition, pageForBlock, usePreviewLayout } from "./usePreviewLayout";
+import { mapPosition, pageForBlock, usePreviewLayout, type PreviewSource } from "./usePreviewLayout";
 
 /**
- * The live book preview, docked beside the manuscript on wide screens: one
- * page fitted to the panel, re-set 800 ms after the writing stops (only the
- * chapter being edited is re-set), keeping your place. "Go to the cursor"
+ * The live preview (a book's pages, or a document's), docked beside the
+ * writing on wide screens: one page fitted to the panel, re-set a moment
+ * after the writing stops (only what was edited is re-set), keeping your
+ * place. "Go to the cursor"
  * finds the page you're writing on; the expand button opens the full
  * preview with spreads.
  */
 export function DockedPreview({
   editor,
-  format,
-  book,
+  source,
   onExpand,
   onClose,
   onShowSource,
 }: {
   editor: Editor;
-  format: string;
-  book: Book;
+  source: PreviewSource;
   onExpand: () => void;
   onClose: () => void;
   onShowSource: (src: number) => void;
 }) {
-  const { dl, busy, message, error, retry } = usePreviewLayout(editor, format, book, true, "dock");
+  // A document's pages are cheap to re-flow, so they follow the typing closely.
+  const { dl, busy, message, error, retry } = usePreviewLayout(editor, source, true, "dock", source.noun === "book" ? 800 : 250);
   const [at, setAt] = useState(0);
   const [pick, setPick] = useState<{ src: number; x: number; y: number } | null>(null);
   const shown = useRef<DisplayList | null>(null);
@@ -77,12 +76,18 @@ export function DockedPreview({
   const pageW = dl ? Math.max(40, Math.min(size.w - 28, ((size.h - 20) * dl.trim.w) / dl.trim.h)) : 0;
 
   return (
-    <aside className="wf-doc-panel wf-bp-dock" aria-label="Book preview">
+    <aside className="wf-doc-panel wf-bp-dock" aria-label="Page preview">
       <header className="wf-doc-panel-header wf-bp-dock-bar">
         <button className="wf-icon" title="Previous page" disabled={!dl || at === 0} onClick={() => setAt(Math.max(0, at - 1))}>
           <ChevronLeft size={16} />
         </button>
-        <span className="wf-bp-where">{dl ? `${page?.folio ? `p. ${page.folio}` : "—"} · ${at + 1} of ${count}` : "Book preview"}</span>
+        <span className="wf-bp-where">
+          {!dl
+            ? "Preview"
+            : source.noun === "book"
+              ? `${page?.folio ? `p. ${page.folio}` : "—"} · ${at + 1} of ${count}`
+              : `Page ${at + 1} of ${count}`}
+        </span>
         <button
           className="wf-icon"
           title="Next page"
@@ -111,14 +116,14 @@ export function DockedPreview({
           setPick(p);
         }}
       >
-        {!dl && !error && <p className="wf-bp-status">{message || "Setting the book…"}</p>}
+        {!dl && !error && <p className="wf-bp-status">{message || `Setting the ${source.noun}…`}</p>}
         {error && (
           <div className="wf-bp-status">
             <p>{error}</p>
             <button onClick={retry}>Try again</button>
           </div>
         )}
-        {dl && page && pageW > 0 && <PageSvg page={page} dl={dl} width={pageW} paper={book.print.paper} />}
+        {dl && page && pageW > 0 && <PageSvg page={page} dl={dl} width={pageW} paper={source.paper} />}
       </div>
       {pick && (
         <div className="wf-bp-pick" style={{ left: pick.x, top: pick.y + 14 }}>

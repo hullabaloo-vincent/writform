@@ -2,7 +2,6 @@ import Collaboration from "@tiptap/extension-collaboration";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import {
   BookOpen,
   Search,
@@ -17,6 +16,7 @@ import {
   SlidersHorizontal,
   SquareSplitVertical,
   Trash2,
+  Volume2,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
@@ -28,10 +28,27 @@ import { loadGoal, noteGoalProgress, saveGoal } from "../../lib/writingGoals";
 import { confirmDialog, toast } from "../../platform";
 import { Avatar } from "../../platform/Avatar";
 import { useSession } from "../../stores/session";
-import { Paginate, reflowPagination, type PageLayoutResult, type PageSpec } from "../../editor/Paginate";
-import { Toolbar, WfImage } from "../../editor/RichEditor";
+import { Paginate, reflowPagination, type PageLayoutResult, type PageMapFor, type PageSpec } from "../../editor/Paginate";
+import { Toolbar } from "../../editor/RichEditor";
+import { PasteFormat } from "../../editor/format/paste";
+import { RunShortcuts } from "../../editor/format/run";
+import { ViewingBar } from "../../editor/review/ChangesList";
+import { Suggesting } from "../../editor/review/Suggesting";
+import { useReview } from "../../editor/review/useReview";
+import { canReadAloud, ReadAloudHighlight } from "../../editor/speech/readAloud";
+import { ReadAloudBar } from "../../editor/speech/ReadAloudBar";
+import { styleFonts } from "../../editor/styles/sheet";
+import { useDocStyles } from "../../editor/styles/useDocStyles";
+import { KeyboardDock } from "../../editor/ui/KeyboardDock";
+import { Ribbon } from "../../editor/ui/Ribbon";
+import type { FontInfo } from "../../fonts/css";
+import { fontKey, noteDocFont, readDocFontTable, replaceDocFont } from "../../fonts/docFonts";
+import { MissingFonts } from "../../fonts/ui/MissingFonts";
+import { useDocFonts } from "../../fonts/ui/useDocFonts";
+import { uploadToServer } from "../../lib/upload";
+import { docContentExtensions } from "../../editor/schema/content";
+import { SchemaGuard } from "../../editor/schema/guard";
 import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
-import { TextFormat } from "../../editor/TextFormat";
 import { ManuscriptLabels, refreshManuscriptLabels } from "../../book/editor/manuscriptLabels";
 import { ManuscriptPaste } from "../../book/editor/manuscriptPaste";
 import { BookInspector } from "../../book/ui/BookInspector";
@@ -39,18 +56,24 @@ import { ConvertDialog } from "../../book/ui/ConvertDialog";
 import { ExportBookDialog, type BookExportKind } from "../../book/ui/ExportBookDialog";
 import { BookPreview } from "../../book/preview/BookPreview";
 import { DockedPreview } from "../../book/preview/DockedPreview";
+import { bookSource } from "../../book/preview/usePreviewLayout";
+import { scriptedAsDocument } from "../../doclayout/scripted";
+import { docSource, scriptSource } from "../../doclayout/useDocLayout";
+import { exactPageView, usePageMap } from "../../doclayout/usePageMap";
 import { scanStructure } from "../../book/model/structure";
 import { documentsApi } from "./api";
 import { b64encode, type DocProvider } from "./collab";
+import { sideFromFile } from "./compareFile";
+import { CompareView, type CompareSide } from "./CompareView";
 import {
   onDocSettingsChange,
   pageSpecFor,
   readDocSettings,
   settingsVars,
   type DocSettings,
+  updateDocSettings,
 } from "./docSettings";
 import { DocSettingsPanel } from "./DocSettingsPanel";
-import { DocElement } from "./formats/DocElement";
 import { FORMAT_LABELS, FORMAT_SPECS, type ElementSpec } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import {
@@ -59,31 +82,20 @@ import {
   resolveThreadRange,
   useFeedbackDecorations,
   useThreadClicks,
+  type FeedbackTab,
   type ThreadFocus,
 } from "./FeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
 import { PageGuides } from "./PageGuides";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
+import { PrintDialog } from "./PrintDialog";
 import { useLocalDocs } from "./local";
 import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
 import { countDocWords, countRangeWords } from "./stats";
 import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
-import {
-  bookExportItems,
-  canDockPreview,
-  EDITOR_PROPS,
-  inputRulesFor,
-  manuscriptVars,
-  pasteRulesFor,
-  showBlock,
-  useBook,
-  selectedPhrase,
-  useFindShortcut,
-  type FindRequest,
-  useServerSyncState,
-} from "./shell/hooks";
+import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, useBook, selectedPhrase, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveAction } from "./shell/SyncStatus";
 import { openServerDoc } from "./navigation";
@@ -223,22 +235,39 @@ function EditorInner({
     () => onDocSettingsChange(provider.doc, () => setDocSettings(readDocSettings(provider.doc))),
     [provider],
   );
+  // The document's fonts: kept on screen as they come into use, with a
+  // note of any this device has to stand in for.
+  const [fontTable, setFontTable] = useState(() => readDocFontTable(provider.doc));
+  useEffect(() => {
+    const map = provider.doc.getMap("fonts");
+    const onChange = () => setFontTable(readDocFontTable(provider.doc));
+    map.observe(onChange);
+    return () => map.unobserve(onChange);
+  }, [provider]);
+  // Its paragraph styles, and the level of formatting it may use (the
+  // lower of this app's and its server's).
+  const docStyles = useDocStyles(provider.doc, docSettings, provider.level, fontTable);
   const [pageLayout, setPageLayout] = useState<PageLayoutResult | null>(null);
   const specRef = useRef<PageSpec | null>(null);
+  // Where the printed pages fall (the layout engine's answer), for page view.
+  const pageMapRef = useRef<PageMapFor | "pending" | null>(null);
   // The book's details and design (Y.Map "book"): the manuscript view's
   // fonts, ornaments and chapter labels come from it.
   const { book, ref: bookRef } = useBook(provider.doc, { title: meta.title, author: state.me });
+  // Whose suggestions this person's are.
+  const meRef = useRef(state.me);
+  useEffect(() => {
+    meRef.current = state.me;
+  }, [state.me]);
 
   const extensions = useMemo(
     () => [
-      StarterKit.configure({ undoRedo: false }),
-      WfImage,
-      Placeholder.configure({ placeholder: "Write…" }),
-      DocElement,
-      TextFormat.configure({
-        shortcuts: format === "none",
-        alignShortcuts: format === "manuscript",
+      ...docContentExtensions({
+        history: false,
+        textFormat: { shortcuts: format === "none", alignShortcuts: format === "manuscript" },
+        resizeImages: true,
       }),
+      Placeholder.configure({ placeholder: "Write…" }),
       formatKeymap(format),
       ...(format === "none" || format === "manuscript" || format === "poetry"
         ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(bookRef.current.meta.language) })]
@@ -247,7 +276,16 @@ function EditorInner({
         ? [ManuscriptLabels.configure({ getDesign: () => bookRef.current.design }), ManuscriptPaste]
         : []),
       FeedbackHighlights,
-      Paginate.configure({ getSpec: () => specRef.current, onLayout: setPageLayout }),
+      ReadAloudHighlight,
+      Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: setPageLayout }),
+      // Hold edits to what this server can store (a paste from a newer
+      // document is down-converted).
+      SchemaGuard.configure({ level: () => provider.level }),
+      // Editing, Suggesting or Viewing — this person's own choice.
+      Suggesting.configure({ author: () => meRef.current }),
+      RunShortcuts.configure({ shortcuts: format === "none", context: () => docStyles.formatRef.current }),
+      // Pastes from Word and the web are tidied into this document's terms.
+      ...(format === "none" ? [PasteFormat.configure({ level: () => provider.level })] : []),
       Collaboration.configure({ document: provider.doc }),
       CollaborationCaret.configure({
         provider: { awareness: provider.awareness },
@@ -267,15 +305,31 @@ function EditorInner({
     enablePasteRules: pasteRulesFor(format),
   });
 
+  // Word goals are per-device; the key carries the server so ids don't mix.
+  const addr = useSession((s) => s.session?.addr);
+  const goalKey = `${addr ?? "server"}:${meta.id}`;
+  // Review: this person's mode (it also says whether the text can be
+  // edited at all) and the suggested changes. Suggesting needs a server
+  // that can store them.
+  const review = useReview(editor, { storeKey: goalKey, canSuggest: docStyles.format.level >= 2, readonly });
+  const [feedbackTab, setFeedbackTab] = useState<FeedbackTab>("comments");
+  const [reading, setReading] = useState(false);
+  const speaks = useMemo(() => canReadAloud(), []);
+  const lang = (format === "manuscript" && book.meta.language) || (typeof navigator !== "undefined" && navigator.language) || "en";
+  const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
+  const compareWith = (before: CompareSide) => {
+    if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
+  };
+  const compareFileRef = useRef<HTMLInputElement>(null);
+  const openThreads = state.threads.filter((t) => !t.resolved).length;
+  const pending = openThreads + review.items.length;
+  const tracked = review.items.length > 0;
+
   // A change of numbering style or label word re-labels the chapters.
   const { chapterNumber, chapterLabel, restartNumbersInParts } = book.design;
   useEffect(() => {
     if (format === "manuscript") refreshManuscriptLabels(editor);
   }, [editor, format, chapterNumber, chapterLabel, restartNumbersInParts]);
-
-  useEffect(() => {
-    editor?.setEditable(!readonly);
-  }, [editor, readonly]);
 
   const sync = useServerSyncState(provider);
   const syncActions: SaveAction[] = [
@@ -310,6 +364,7 @@ function EditorInner({
   // Clicking a highlighted passage opens its thread.
   const [threadFocus, setThreadFocus] = useState<ThreadFocus | null>(null);
   useThreadClicks(editor, (id) => {
+    setFeedbackTab("comments");
     setPanel("feedback");
     setThreadFocus((f) => ({ id, n: (f?.n ?? 0) + 1 }));
   });
@@ -319,7 +374,7 @@ function EditorInner({
   useEffect(() => {
     specRef.current = pageGuides ? pageSpecFor(format, docSettings) : null;
     if (editor) reflowPagination(editor);
-  }, [editor, pageGuides, docSettings, format]);
+  }, [editor, pageGuides, docSettings, docStyles.css, format]);
 
   const sheetStyle = useMemo(() => {
     const vars: Record<string, string> =
@@ -335,8 +390,57 @@ function EditorInner({
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
   useFindShortcut(editor, openFind);
 
+  // What the preview shows: a manuscript's book pages, a Document's own.
+  const author = useSession((st) => st.session?.user.display_name || st.session?.user.username || undefined);
+  const previewSource = useMemo(
+    () =>
+      format === "manuscript"
+        ? bookSource(format, book)
+        : format === "none"
+          ? docSource(meta.title, author, docSettings, docStyles.overrides)
+          : scriptSource(format, meta.title, author),
+    [format, book, meta.title, author, docSettings, docStyles.overrides],
+  );
+  // (Every format has pages to show: a book's, a document's, a script's.)
+  const hasPreview = true;
+  // Page view shows those same pages — unless this device asks for the
+  // simple view (Settings ▸ Writing).
+  usePageMap(
+    editor,
+    pageGuides && exactPageView(),
+    (json) =>
+      format === "none"
+        ? { doc: json, title: meta.title, author, settings: docSettings, styles: docStyles.overrides }
+        : { ...scriptedAsDocument(json, format, meta.title), title: meta.title, author },
+    [format, meta.title, author, docSettings, docStyles.overrides],
+    pageMapRef,
+  );
+
+  // ⌘P: a manuscript prints through its book exports; everything else here.
+  const missingFonts = useDocFonts(editor, docSettings.bodyFont, format === "none", styleFonts(docStyles.styles));
+  const replaceFont = (from: string, to: string | null, info?: FontInfo) => {
+    if (!editor) return;
+    if (to) noteDocFont(provider.doc, to, info);
+    replaceDocFont(editor, from, to);
+    for (const [id, entry] of Object.entries(docStyles.overrides)) {
+      if (entry.props.font === from) docStyles.save(id, { ...entry, props: { ...entry.props, font: to } });
+    }
+    if (docSettings.bodyFont === from) updateDocSettings(provider.doc, { bodyFont: to });
+  };
+
+  const [printOpen, setPrintOpen] = useState(false);
+  const [showMarks, setShowMarks] = useState(() => localStorage.getItem("wf-doc-marks") === "on");
+  const toggleMarks = () => {
+    const next = !showMarks;
+    setShowMarks(next);
+    localStorage.setItem("wf-doc-marks", next ? "on" : "off");
+  };
+  const canPrint = format !== "manuscript";
+  const openPrint = useCallback(() => setPrintOpen(true), []);
+  usePrintShortcut(canPrint && !!editor, openPrint);
+
   const exportItems: ExportItem[] = useMemo(() => {
-    const run = (kind: "pdf" | "booklet" | "docx") => async () => {
+    const run = (kind: "pdf" | "booklet" | "docx" | "docx-clean") => async () => {
       if (!editor) return;
       const { exportDocument } = await import("./export");
       await exportDocument(
@@ -345,6 +449,7 @@ function EditorInner({
         format,
         kind,
         format === "none" ? docSettings : undefined,
+        docStyles.overrides,
       );
     };
     return [
@@ -352,6 +457,7 @@ function EditorInner({
       ...(format === "manuscript"
         ? []
         : [
+            { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
             { label: "Export PDF", run: run("pdf") },
             {
               label: "Export booklet PDF",
@@ -359,7 +465,8 @@ function EditorInner({
               run: run("booklet"),
             },
           ]),
-      { label: WORD_EXPORT, run: run("docx") },
+      { label: WORD_EXPORT, ...(tracked ? { title: "With the suggested changes, as Word's tracked changes" } : {}), run: run("docx") },
+      ...(tracked ? [{ label: "Export Word, clean copy", title: "The text as it would be with every suggestion accepted", run: run("docx-clean") }] : []),
       ...(format === "manuscript" && editor
         ? bookExportItems(setBookExport, async () => {
             const { exportSubmissionDocx } = await import("../../book/exportBook");
@@ -377,7 +484,7 @@ function EditorInner({
           ]
         : []),
     ];
-  }, [editor, meta.title, format, docSettings, readonly, bookRef]);
+  }, [editor, meta.title, format, docSettings, docStyles.overrides, readonly, bookRef, tracked]);
 
   /** Delete: to Recently Deleted with Undo (servers that predate it delete
    *  for good, so they still ask first). Unsent edits go out first, so the
@@ -419,9 +526,6 @@ function EditorInner({
 
   const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
   useTypewriterScroll(editor, focus && typewriter);
-  // Word goals are per-device; the key carries the server so ids don't mix.
-  const addr = useSession((s) => s.session?.addr);
-  const goalKey = `${addr ?? "server"}:${meta.id}`;
   // Reopen where you left off.
   const scrollRef = useRef<HTMLDivElement>(null);
   useReopenPosition(editor, `s:${goalKey}`, scrollRef);
@@ -454,7 +558,7 @@ function EditorInner({
           value={format}
           disabled={readonly}
           onChange={(e) => {
-            // Plain → Manuscript offers to turn the text's structure into
+            // Document → Manuscript offers to turn the text's structure into
             // book elements first.
             if (format === "none" && e.target.value === "manuscript" && editor) {
               setConverting("convert");
@@ -477,14 +581,16 @@ function EditorInner({
           className={panel === "feedback" ? "active" : ""}
           onClick={() => {
             const next = panel === "feedback" ? "none" : "feedback";
+            // With only suggestions waiting, that is the list to open on.
+            if (next === "feedback" && !openThreads && review.items.length) setFeedbackTab("changes");
             setPanel(next);
             localStorage.setItem("wf-doc-feedback", next === "feedback" ? "on" : "off");
           }}
         >
           <MessageSquare size={16} />
-          {state.threads.filter((t) => !t.resolved).length > 0 && (
-            <span className="wf-doc-badge">
-              {state.threads.filter((t) => !t.resolved).length}
+          {pending > 0 && (
+            <span className="wf-doc-badge" title={`${openThreads} open ${openThreads === 1 ? "comment" : "comments"}, ${review.items.length} suggested ${review.items.length === 1 ? "change" : "changes"}`}>
+              {pending}
             </span>
           )}
         </button>
@@ -510,9 +616,19 @@ function EditorInner({
         >
           <ListTree size={16} />
         </button>
-        {format === "manuscript" ? (
+        {/* (A Document has this on its Review tab.) */}
+        {speaks && format !== "none" && (
+          <button title="Read aloud, from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
+            <Volume2 size={16} />
+          </button>
+        )}
+        {hasPreview && (
           <button
-            title="Preview the book — every page as it will print"
+            title={
+              format === "manuscript"
+                ? "Preview the book — every page as it will print"
+                : "Preview — every page as it will print"
+            }
             className={panel === "preview" || previewOpen ? "active" : ""}
             disabled={!editor}
             onClick={() => {
@@ -522,7 +638,8 @@ function EditorInner({
           >
             <Eye size={16} />
           </button>
-        ) : (
+        )}
+        {format !== "manuscript" && (
           <button
             title="Page view — paginate the sheet into real pages"
             className={pageGuides ? "active" : ""}
@@ -605,42 +722,123 @@ function EditorInner({
 
       {editor && !readonly && (
         <div className="wf-doc-toolbar">
-          <Toolbar
-            editor={editor}
-            richBlocks={format === "none"}
-            typography={format === "none"}
-            manuscript={format === "manuscript"}
-            leading={
-              <>
-                <ElementSelect editor={editor} format={format} />
-                {format === "screenplay" && (
-                  <span className="wf-doc-shortcuts" title="Screenplay element shortcuts">
-                    Tab cycles · ⌘1–6 selects
-                  </span>
-                )}
-              </>
-            }
-            trailing={
-              <DocumentStats
-                editor={editor}
-                format={format}
-                goalKey={goalKey}
-                pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
-              />
-            }
-          />
+          {review.mode === "view" ? (
+            <ViewingBar
+              review={review}
+              trailing={
+                speaks ? (
+                  <button className="wf-icon" title="Read aloud, from the caret" onClick={() => setReading(!reading)}>
+                    <Volume2 size={15} />
+                  </button>
+                ) : undefined
+              }
+            />
+          ) : (
+            <KeyboardDock editor={editor}>
+              {format === "none" ? (
+            <Ribbon
+              editor={editor}
+              settings={docSettings}
+              onPatchSettings={(patch) => updateDocSettings(provider.doc, patch)}
+              uploadImage={uploadToServer}
+              showMarks={showMarks}
+              onToggleMarks={toggleMarks}
+              fontTable={fontTable}
+              onFontUsed={(id, info) => noteDocFont(provider.doc, id, info)}
+              format={docStyles.format}
+              onSaveStyle={docStyles.save}
+              review={review}
+              actions={{
+                find: () => openFind(false, selectedPhrase(editor)),
+                comments: () => {
+                  setFeedbackTab("comments");
+                  setPanel("feedback");
+                },
+                changes: () => {
+                  setFeedbackTab("changes");
+                  setPanel("feedback");
+                },
+                ...(speaks ? { readAloud: () => setReading(true) } : {}),
+                compareFile: () => compareFileRef.current?.click(),
+                history: () => setPanel("history"),
+                pageSetup: () => setPanel("settings"),
+                preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)),
+                print: openPrint,
+              }}
+              trailing={
+                <DocumentStats
+                  editor={editor}
+                  format={format}
+                  goalKey={goalKey}
+                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                />
+              }
+            />
+          ) : (
+            <Toolbar
+              editor={editor}
+              richBlocks={format === "none"}
+              typography={format === "none"}
+              manuscript={format === "manuscript"}
+              leading={
+                FORMAT_SPECS[format] ? (
+                  <>
+                    <ElementSelect editor={editor} format={format} />
+                    {format === "screenplay" && (
+                      <span className="wf-doc-shortcuts" title="Screenplay element shortcuts">
+                        Tab cycles · ⌘1–6 selects
+                      </span>
+                    )}
+                  </>
+                ) : undefined
+              }
+              trailing={
+                <DocumentStats
+                  editor={editor}
+                  format={format}
+                  goalKey={goalKey}
+                  pagesExact={pageGuides ? (pageLayout?.pages ?? null) : null}
+                />
+              }
+            />
+              )}
+            </KeyboardDock>
+          )}
+          {format === "none" && editor && (
+            <MissingFonts
+              missing={missingFonts}
+              docFonts={[...new Set([...fontKey(editor).split("|").filter(Boolean), ...styleFonts(docStyles.styles)])]}
+              docTable={fontTable}
+              onReplace={replaceFont}
+            />
+          )}
         </div>
       )}
 
-      {find && editor && <FindBar editor={editor} readonly={readonly} request={find} onClose={() => setFind(null)} />}
+      {find && editor && <FindBar editor={editor} readonly={readonly || review.mode === "view"} request={find} onClose={() => setFind(null)} />}
+      {reading && editor && <ReadAloudBar editor={editor} lang={lang} onClose={() => setReading(false)} />}
+      <input
+        ref={compareFileRef}
+        type="file"
+        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void sideFromFile(file).then(compareWith).catch((err) => state.setError(isCmdError(err) ? err.message : `That file couldn't be read: ${String(err)}`));
+        }}
+      />
 
       <div className="wf-doc-body" {...panelSwipe}>
         <div className="wf-doc-scroll" ref={scrollRef}>
           <div
-            className={`wf-page wf-fmt-${format}`}
+            className={`wf-page wf-fmt-${format}${showMarks && format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
             style={sheetStyle}
             data-paged={pageGuides ? "" : undefined}
+            data-wfs={docStyles.scope}
           >
+            {/* The styles this document has changed (see editor/styles/css.ts). */}
+            {format === "none" && docStyles.css && <style>{docStyles.css}</style>}
             {pageGuides && <PageGuides layout={pageLayout} />}
             <EditorContent className={`wf-rich editable wf-doc-content`} editor={editor} />
           </div>
@@ -653,13 +851,13 @@ function EditorInner({
             ydoc={provider.doc}
             settings={docSettings}
             readonly={readonly}
+            format={docStyles.format}
           />
         )}
-        {panel === "preview" && format === "manuscript" && editor && (
+        {panel === "preview" && hasPreview && editor && (
           <DockedPreview
             editor={editor}
-            format={format}
-            book={book}
+            source={previewSource}
             onExpand={() => setPreviewOpen(true)}
             onClose={() => setPanel("none")}
             onShowSource={(src) => showBlock(editor, src)}
@@ -678,12 +876,15 @@ function EditorInner({
             }
           />
         )}
-        {panel === "history" && <VersionHistoryPanel editor={editor} />}
+        {panel === "history" && <VersionHistoryPanel editor={editor} onCompare={compareWith} />}
         {panel === "feedback" && (
           <FeedbackPanel
             focus={threadFocus}
             editor={editor}
             provider={provider}
+            review={review}
+            tab={feedbackTab}
+            onTab={setFeedbackTab}
             highlightsOn={highlightsOn}
             onToggleHighlights={() => {
               const next = !highlightsOn;
@@ -734,11 +935,10 @@ function EditorInner({
           onClose={() => setBookExport(null)}
         />
       )}
-      {previewOpen && editor && format === "manuscript" && (
+      {previewOpen && editor && hasPreview && (
         <BookPreview
           editor={editor}
-          format={format}
-          book={book}
+          source={previewSource}
           onClose={() => setPreviewOpen(false)}
           onShowSource={(src) => {
             setPreviewOpen(false);
@@ -747,10 +947,22 @@ function EditorInner({
           }}
           onExport={() => {
             setPreviewOpen(false);
-            setBookExport("paperback");
+            if (format === "manuscript") setBookExport("paperback");
+            else void exportItems.find((item) => item.label === "Export PDF")?.run();
           }}
         />
       )}
+      {printOpen && editor && canPrint && (
+        <PrintDialog
+          title={meta.title}
+          build={async (booklet) => {
+            const { buildPrintable } = await import("./export");
+            return buildPrintable(editor.getJSON(), meta.title, format, format === "none" ? docSettings : undefined, booklet, docStyles.overrides);
+          }}
+          onClose={() => setPrintOpen(false)}
+        />
+      )}
+      {compare && <CompareView before={compare.before} after={compare.after} onClose={() => setCompare(null)} />}
       {state.shareOpen && <ShareDialog onClose={() => state.setShareOpen(false)} />}
       {state.canvasOpen && (
         <SendToCanvasDialog editor={editor} onClose={() => state.setCanvasOpen(false)} />
@@ -804,7 +1016,7 @@ export function ElementSelect({ editor, format }: { editor: Editor; format: stri
       editor.off("transaction", update);
     };
   }, [editor]);
-  if (!spec) return <span className="wf-doc-mode-label">Rich text</span>;
+  if (!spec) return null;
   const current =
     (editor.getAttributes("paragraph").element as string | undefined) ?? spec.defaultElement;
   return (

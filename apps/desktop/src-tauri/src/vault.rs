@@ -95,12 +95,100 @@ pub fn vault_write(app: tauri::AppHandle, name: String, content: String) -> Resu
             message: "note is too large".into(),
         });
     }
-    std::fs::write(note_path(&app, &name)?, content).map_err(io_err)
+    // Temp file → fsync → rename: a crash or a full disk mid-save leaves
+    // the note as it was, never half-written. No backup file beside it —
+    // the vault is the user's own folder of plain files.
+    crate::localdocs::atomic_write(&note_path(&app, &name)?, content.as_bytes(), false)
+        .map_err(io_err)
 }
 
+/// A name no note in `dir` has: `name`, else "name 2", "name 3"…
+pub fn free_note_name(dir: &std::path::Path, name: &str) -> String {
+    let taken = |candidate: &str| dir.join(format!("{candidate}.md")).exists();
+    if !taken(name) {
+        return name.to_string();
+    }
+    (2..10_000)
+        .map(|n| format!("{name} {n}"))
+        .find(|candidate| !taken(candidate))
+        .unwrap_or_else(|| name.to_string())
+}
+
+/// Save as a NEW note: never over one that's there. Returns the name used
+/// (a note someone shared with you mustn't replace your own of that name).
+#[tauri::command]
+pub fn vault_write_new(
+    app: tauri::AppHandle,
+    name: String,
+    content: String,
+) -> Result<String, CmdError> {
+    // Validates the name.
+    note_path(&app, &name)?;
+    let free = free_note_name(&vault_dir(&app)?, name.trim());
+    vault_write(app, free.clone(), content)?;
+    Ok(free)
+}
+
+/// How long a deleted note waits in the vault's trash.
+const TRASH_DAYS: u64 = 30;
+
+fn trash_dir(vault: &std::path::Path) -> std::path::PathBuf {
+    // Hidden, so other Markdown apps reading the folder don't list it.
+    vault.join(".trash")
+}
+
+/// Move a note into the vault's trash. A note of the same name already
+/// there is replaced (the newer deletion is the one to undo).
+pub fn trash_note(vault: &std::path::Path, name: &str) -> std::io::Result<()> {
+    let from = vault.join(format!("{name}.md"));
+    let dir = trash_dir(vault);
+    std::fs::create_dir_all(&dir)?;
+    let bytes = std::fs::read(&from)?;
+    std::fs::write(dir.join(format!("{name}.md")), bytes)?;
+    std::fs::remove_file(from)
+}
+
+/// Put a trashed note back. If a note of that name has appeared since, the
+/// restored one takes a free name; returns the name it has.
+pub fn restore_note(vault: &std::path::Path, name: &str) -> std::io::Result<String> {
+    let from = trash_dir(vault).join(format!("{name}.md"));
+    let free = free_note_name(vault, name);
+    std::fs::rename(from, vault.join(format!("{free}.md")))?;
+    Ok(free)
+}
+
+/// Drop trashed notes that have waited out their days.
+pub fn sweep_note_trash(vault: &std::path::Path, now: std::time::SystemTime) {
+    let Ok(entries) = std::fs::read_dir(trash_dir(vault)) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let age = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| now.duration_since(t).ok());
+        if age.is_some_and(|a| a.as_secs() > TRASH_DAYS * 24 * 3600) {
+            let _ = std::fs::remove_file(entry.path());
+        }
+    }
+}
+
+/// Deleting a note moves it to the vault's trash, where it waits 30 days.
 #[tauri::command]
 pub fn vault_delete(app: tauri::AppHandle, name: String) -> Result<(), CmdError> {
-    std::fs::remove_file(note_path(&app, &name)?).map_err(io_err)
+    note_path(&app, &name)?;
+    let dir = vault_dir(&app)?;
+    sweep_note_trash(&dir, std::time::SystemTime::now());
+    trash_note(&dir, name.trim()).map_err(io_err)
+}
+
+/// Undo a delete. Returns the note's name (changed if one of that name has
+/// been made since).
+#[tauri::command]
+pub fn vault_restore(app: tauri::AppHandle, name: String) -> Result<String, CmdError> {
+    note_path(&app, &name)?;
+    restore_note(&vault_dir(&app)?, name.trim()).map_err(io_err)
 }
 
 /// Absolute path of the vault folder, for reveal-in-file-manager.
@@ -156,7 +244,7 @@ pub fn vault_search(app: tauri::AppHandle, query: String) -> Result<Vec<SearchHi
 
 /// ~40 chars of context either side of the first case-insensitive match,
 /// clamped to char boundaries and flattened to one line.
-fn snippet_around(content: &str, needle_lower: &str) -> Option<String> {
+pub(crate) fn snippet_around(content: &str, needle_lower: &str) -> Option<String> {
     let lower = content.to_lowercase();
     let pos = lower.find(needle_lower)?;
     // Byte offsets in `lower` can differ from `content` under non-ASCII
@@ -313,6 +401,62 @@ pub fn rewrite_wiki_links(content: &str, old: &str, new: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_deleted_note_waits_in_the_trash_and_comes_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path();
+        std::fs::write(vault.join("Ideas.md"), "first draft").unwrap();
+
+        trash_note(vault, "Ideas").unwrap();
+        assert!(!vault.join("Ideas.md").exists());
+        assert_eq!(
+            std::fs::read_to_string(vault.join(".trash").join("Ideas.md")).unwrap(),
+            "first draft"
+        );
+        assert_eq!(restore_note(vault, "Ideas").unwrap(), "Ideas");
+        assert_eq!(
+            std::fs::read_to_string(vault.join("Ideas.md")).unwrap(),
+            "first draft"
+        );
+
+        // A note of the same name made in the meantime is never replaced.
+        trash_note(vault, "Ideas").unwrap();
+        std::fs::write(vault.join("Ideas.md"), "a new note").unwrap();
+        assert_eq!(restore_note(vault, "Ideas").unwrap(), "Ideas 2");
+        assert_eq!(
+            std::fs::read_to_string(vault.join("Ideas.md")).unwrap(),
+            "a new note"
+        );
+        assert_eq!(
+            std::fs::read_to_string(vault.join("Ideas 2.md")).unwrap(),
+            "first draft"
+        );
+    }
+
+    #[test]
+    fn the_note_trash_lets_go_after_thirty_days() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path();
+        std::fs::write(vault.join("Old.md"), "x").unwrap();
+        trash_note(vault, "Old").unwrap();
+        let now = std::time::SystemTime::now();
+        sweep_note_trash(vault, now + std::time::Duration::from_secs(29 * 24 * 3600));
+        assert!(vault.join(".trash").join("Old.md").exists());
+        sweep_note_trash(vault, now + std::time::Duration::from_secs(31 * 24 * 3600));
+        assert!(!vault.join(".trash").join("Old.md").exists());
+    }
+
+    #[test]
+    fn saving_as_new_never_takes_a_name_in_use() {
+        let dir = tempfile::tempdir().unwrap();
+        let vault = dir.path();
+        assert_eq!(free_note_name(vault, "Shared"), "Shared");
+        std::fs::write(vault.join("Shared.md"), "mine").unwrap();
+        assert_eq!(free_note_name(vault, "Shared"), "Shared 2");
+        std::fs::write(vault.join("Shared 2.md"), "also mine").unwrap();
+        assert_eq!(free_note_name(vault, "Shared"), "Shared 3");
+    }
 
     #[test]
     fn wiki_link_extraction() {

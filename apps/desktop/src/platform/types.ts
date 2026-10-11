@@ -56,6 +56,8 @@ export interface Command {
   title: string;
   /** Optional keybinding hint, e.g. "mod+k". Binding itself comes later. */
   keybinding?: string;
+  /** Offer it only while this holds (the palette asks each time it opens). */
+  available?: () => boolean;
   run: () => void | Promise<void>;
 }
 

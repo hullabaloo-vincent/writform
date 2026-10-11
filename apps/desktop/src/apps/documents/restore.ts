@@ -15,6 +15,7 @@
 import type { Editor, JSONContent } from "@tiptap/core";
 import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
 
+import { UNTRACKED_META } from "../../editor/review/TrackMarks";
 import { compactDocJson } from "./compactJson";
 
 /** JSON size of one transaction's inserted blocks (well under any server cap). */
@@ -272,7 +273,7 @@ export async function applyRestore(
         .map((json) => schema.nodeFromJSON(json));
       const chunks = chunkNodes(nodes, CHUNK_JSON_BYTES);
       if (chunks.length === 0) {
-        editor.view.dispatch(editor.state.tr.delete(from, to));
+        editor.view.dispatch(editor.state.tr.delete(from, to).setMeta(UNTRACKED_META, true));
       } else {
         let insertAt = from;
         chunks.forEach((chunk, k) => {
@@ -281,7 +282,9 @@ export async function applyRestore(
           if (k === 0) tr.replaceWith(from, to, fragment);
           else tr.insert(insertAt, fragment);
           insertAt += fragment.size;
-          editor.view.dispatch(tr);
+          // A restore puts a version back as it was — suggestions and all —
+          // whatever mode the person restoring is in.
+          editor.view.dispatch(tr.setMeta(UNTRACKED_META, true));
         });
       }
       // Let the page breathe on long restores (and the sync batch).
@@ -295,6 +298,6 @@ export async function applyRestore(
   } catch (e) {
     console.warn("[restore] incremental restore failed; replacing", e);
   }
-  editor.commands.setContent(target);
+  editor.chain().setMeta(UNTRACKED_META, true).setContent(target).run();
   return "replaced";
 }

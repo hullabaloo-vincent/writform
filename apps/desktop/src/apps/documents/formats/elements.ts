@@ -33,7 +33,7 @@ export interface FormatSpec {
 }
 
 export const FORMAT_LABELS: Record<string, string> = {
-  none: "Plain",
+  none: "Document",
   screenplay: "Screenplay",
   stageplay: "Stage Play",
   manuscript: "Manuscript",

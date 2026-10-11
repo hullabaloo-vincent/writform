@@ -9,7 +9,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "bindings": "rm -rf src/bindings/proto && cd ../.. && TS_RS_EXPORT_DIR=../../apps/desktop/src/bindings/proto cargo test -p writform-proto export_bindings && ! grep -rl bigint apps/desktop/src/bindings/proto",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "harness": "node harness/run.mjs"
   },
   "dependencies": {
     "@codemirror/lang-markdown": "^6.5.1",
@@ -34,7 +35,6 @@
     "hyphen": "^1.14.1",
     "jszip": "^3.10.1",
     "lucide-react": "^1.25.0",
-    "mammoth": "^1.12.0",
     "marked": "^18.0.6",
     "pdfjs-dist": "^6.1.200",
     "pdfkit": "^0.20.2",
@@ -52,8 +52,10 @@
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
+    "esbuild": "0.28.1",
     "eslint": "^10.7.0",
     "eslint-plugin-react-hooks": "^7.1.1",
+    "jsdom": "^29.1.1",
     "typescript": "~5.8.3",
     "typescript-eslint": "^8.65.0",
     "vite": "^7.0.4"

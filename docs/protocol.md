@@ -69,6 +69,18 @@ documents, a read/write share); the server validates on `sub`.
   cards. The endpoint can reach anything the *server* can reach (including
   its LAN) — it is authenticated and intended for trusted friend-servers; do
   not expose a WritForm server to untrusted registration.
+- `GET /api/v1/fonts/{id}/{file}` (auth required): a file of the open font
+  catalog (Fontsource's mirror of the Google Fonts library). `id` is a
+  catalog family id (`[a-z0-9-]`), `file` is `{subset}-{weight}-{normal|
+  italic}.ttf`; anything else is 400, so the path is never a client-chosen
+  URL. On a miss the server fetches `cdn.jsdelivr.net/fontsource/fonts/
+  {id}@latest/{file}` (20 s timeout, 32 MB cap, must be a font by its
+  magic bytes), stores it under `{data}/fonts/` (1 GiB cap, least recently
+  written dropped first) and serves its own copy from then on.
+  `WRITFORM_FONT_PROXY=off` stops fetching (404 `font_proxy_off`; cached
+  files are still served). Desktop and mobile clients ask this route first
+  when connected, then — if the user's online-library switch is on — the CDN
+  directly; the browser client only ever asks this route.
 - Canvas element kinds now include `image` (attachment id in `text`), `link`
   (URL in `text`), and `document` (JSON `{document_id, mode, anchor_b64?,
   head_b64?}` in `text` — a live reference to a document or a selection
@@ -113,3 +125,45 @@ WS events on `document:{id}`: `document.update`, `document.awareness`,
 `document.meta`, `document.deleted`, `document.version`,
 `document.thread.created/replied/updated/deleted`. `document.listchanged`
 fires on a user's or group's room when a share is granted or revoked.
+
+**Document schema levels.** The CRDT carries the editor's own structure, and
+an editor bound to structure its schema doesn't know deletes it — for every
+collaborator. So each document has a `schema_level` (the newest vocabulary
+its content uses; 1 = everything through 1.0.6), and the server keeps
+clients below it away from the content: `?sl=N` on detail, `updates` and
+`snapshot` (absent = 1), 403 `client_too_old` below the document's level.
+A client reads the level of each edit off the Yjs transaction
+(`apps/desktop/src/editor/schema/levels.ts`) and sends it with the update
+when it is above the document's; the server raises the document in the same
+statement that accepts the update. Updates above level 1 are broadcast to
+`docv{level}:{id}`, which only clients that understand that level join;
+clients left in `document:{id}` when a document is raised get
+`document.deleted {doc_id, outdated: level}` instead — every release closes
+the editor on that, so an older client's unsent edits stay clean and replay
+after it updates. A server never stores a level above its own web client's
+(`GET /document-capabilities`), and a newer app on an older server holds its
+documents to the server's level.
+
+Level 2 (the release after 1.0.6) adds formatting on a run of text — marks
+`fontFamily {f}`, `fontSize {pt}`, `textColor {c}`, `highlight {c}`,
+`vscript {v}`, one property each so concurrent changes merge — paragraph
+attributes `indL`, `indR`, `indF` (negative = hanging), `lineRule`/`lineAt`,
+`keepNext`, `keepLines`, `shade`, `bdr`; `taskList`/`taskItem {checked}`; and
+`marker` on bullet lists; tables (`table {cols, head, lines}` — column widths
+are one string on the table, not an array on each cell — of `tableRow` of
+`tableCell {colspan, rowspan, bg}`); `footnote {kind}`, an inline node whose
+content is the note's own text; a `toc {depth}` block; `align` and `caption`
+on images; and `sect` (a section starts here: one encoded string) and
+`colBreak` on paragraphs. Lengths are points, colours `#rrggbb`, every value
+a primitive (a border is one encoded string). Tracked changes are level 2 as
+well: the marks `insertion {a, t}` and `deletion {a, t}` on text (who, and
+when in seconds since 1970), and — since the sync engine keeps marks on text
+only — one attribute, `tc`, on everything else that can be added or removed:
+on a paragraph or heading it speaks of the paragraph break before it, on an
+image, table, divider, line break, code block, footnote or contents block of
+the node itself. `tc` is one string, `ins:<when>:<who>` or `del:<when>:<who>`
+(both, on separate lines, when one person's addition is another's deletion).
+Which mode a person is in — editing, suggesting, viewing — is theirs alone
+and is not stored. A document's paragraph styles are not content: they live in its
+`styles` map beside `settings`, and a paragraph names one in the level-1
+`element` attribute, so older clients keep the name and draw body text.

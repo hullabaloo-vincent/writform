@@ -8,6 +8,7 @@ import type { Message } from "../../bindings/proto/Message";
 import type { UserRef } from "../../bindings/proto/UserRef";
 import { backend } from "../../lib/backend";
 import { toastError } from "../../platform";
+import { freshState, onServerScope } from "../../platform/serverScope";
 import { useSession } from "../../stores/session";
 import { useFriends } from "../friends/store";
 import { chatApi } from "./api";
@@ -955,3 +956,19 @@ export function installChatPresenceSync(): () => void {
       });
   });
 }
+
+// Groups, channels, messages, unread counts and who's online all belong to
+// one server (their ids mean something else on another): start over when it
+// changes. Read markers and mutes are stored per server and load again with
+// the groups.
+onServerScope(() => {
+  countedIds.clear();
+  loadingOlder.clear();
+  for (const key of Object.keys(typingSentAt)) delete typingSentAt[Number(key)];
+  for (const key of Object.keys(readSyncTimers)) {
+    clearTimeout(readSyncTimers[Number(key)]);
+    delete readSyncTimers[Number(key)];
+  }
+  for (const key of Object.keys(readSynced)) delete readSynced[Number(key)];
+  useChat.setState(freshState(useChat.getInitialState()), true);
+});

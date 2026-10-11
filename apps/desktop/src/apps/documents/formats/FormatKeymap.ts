@@ -3,6 +3,7 @@ import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/core";
 
 import { SCENE_MARK } from "../../../book/model/chapters";
+import { tableTab } from "../../../editor/tables/Table";
 import { insertPageBreak } from "../../../editor/TextFormat";
 import { opensSection } from "./DocElement";
 import { FORMAT_SPECS } from "./elements";
@@ -77,7 +78,8 @@ function tabHintOnce() {
 }
 
 /**
- * Tab, in priority order: indent the list item; cycle the format's element
+ * Tab, in priority order: the next cell of a table; indent the list item
+ * (or checklist item); cycle the format's element
  * vocabulary (script formats anywhere, prose formats only on an empty line);
  * otherwise what the format says — swallow (Manuscript: indents are
  * automatic, and Tab must never turn body text into a heading), or insert a
@@ -86,10 +88,13 @@ function tabHintOnce() {
  * focus can still leave the editor.
  */
 function handleTab(editor: Editor, format: string, dir: 1 | -1): boolean {
-  if (editor.isActive("listItem")) {
+  // In a table, Tab is the next cell (a new row after the last).
+  if (tableTab(editor, dir)) return true;
+  const item = editor.isActive("taskItem") ? "taskItem" : editor.isActive("listItem") ? "listItem" : null;
+  if (item) {
     return dir === 1
-      ? editor.commands.sinkListItem("listItem") || indent(editor)
-      : editor.commands.liftListItem("listItem") || outdent(editor);
+      ? editor.commands.sinkListItem(item) || indent(editor)
+      : editor.commands.liftListItem(item) || outdent(editor);
   }
   const spec = FORMAT_SPECS[format];
   const { $from } = editor.state.selection;
@@ -219,7 +224,7 @@ function breakPage(editor: Editor, format: string): boolean {
  * Per-format keymap: Tab / Shift-Tab cycle the paragraph's element type,
  * Enter starts the format-defined follower element. Typing `INT.`/`EXT.`
  * at the start of a screenplay paragraph promotes it to a scene heading.
- * Tab is bound for every format, including plain documents, where it
+ * Tab is bound for every format, including the Document format, where it
  * indents instead.
  */
 export function formatKeymap(format: string) {

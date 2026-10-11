@@ -40,12 +40,30 @@ pub struct HostManager {
     config_path: Mutex<Option<PathBuf>>,
     data_dir: Mutex<Option<PathBuf>>,
     running: Mutex<Option<RunningHost>>,
+    /// Held while a start is under way: launch's auto-start and a click on
+    /// "open my server" can arrive together, and only one may bind the port.
+    starting: tokio::sync::Mutex<()>,
 }
 
 impl HostManager {
     pub fn init(&self, config_dir: PathBuf, data_dir: PathBuf) {
         *self.config_path.lock().expect("poisoned") = Some(config_dir.join("host.json"));
         *self.data_dir.lock().expect("poisoned") = Some(data_dir.join("server"));
+    }
+
+    /// The local address of the server this app hosts (running or about to
+    /// be, when it's set to start with the app).
+    pub fn local_addr(&self) -> Option<String> {
+        if let Some(running) = self.running.lock().expect("poisoned").as_ref() {
+            return Some(format!("127.0.0.1:{}", running.port));
+        }
+        self.config()
+            .filter(|c| c.auto_start)
+            .map(|c| format!("127.0.0.1:{}", c.port))
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.running.lock().expect("poisoned").is_some()
     }
 
     pub fn config(&self) -> Option<HostConfig> {
@@ -169,6 +187,8 @@ pub async fn start_impl(
         }
     };
 
+    // One start at a time; whoever waited finds it running.
+    let _starting = host.starting.lock().await;
     if host.running.lock().expect("poisoned").is_some() {
         return Ok(status_of(host));
     }
@@ -206,6 +226,7 @@ pub async fn start_impl(
         last_username: existing.as_ref().and_then(|s| s.last_username.clone()),
         session_token: existing.as_ref().and_then(|s| s.session_token.clone()),
         last_active_at: existing.as_ref().and_then(|s| s.last_active_at),
+        paused: existing.as_ref().is_some_and(|s| s.paused),
     });
 
     let actual_port = started.local_addr.port();

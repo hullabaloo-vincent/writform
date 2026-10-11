@@ -1,6 +1,10 @@
 //! `writform-att://` custom URI scheme: lets the webview render attachment
 //! images while every byte still travels over the pinned TLS client.
 //!
+//! Pictures on this device ride the same scheme: `localboard/<id>` for boards,
+//! `localdoc/<doc>/<id>` for documents, `profile/<avatar|banner>` for your
+//! own profile — read off disk, no server involved.
+//!
 //! URL shape: `writform-att://attachment/<id>` (the webview can't pin certs,
 //! so it never fetches from the server directly). Windows is the exception:
 //! WebView2 refuses bare custom schemes, so Tauri serves this same handler
@@ -75,6 +79,43 @@ pub fn handle(
                         header::CACHE_CONTROL,
                         "private, max-age=31536000, immutable",
                     )
+                    .body(bytes)
+                    .expect("valid response"),
+            );
+        }
+
+        // `localdoc/<doc>/<picture>`: a picture in a document on this device.
+        if kind == "localdoc" {
+            let Some(bytes) = crate::localdocs::media_bytes(&app, rest) else {
+                return respond_err(responder, StatusCode::NOT_FOUND);
+            };
+            return responder.respond(
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .header(header::CONTENT_TYPE, sniff_image(&bytes))
+                    .header(
+                        header::CACHE_CONTROL,
+                        "private, max-age=31536000, immutable",
+                    )
+                    .body(bytes)
+                    .expect("valid response"),
+            );
+        }
+
+        // `profile/<avatar|banner>`: your own picture, as saved on this device.
+        if kind == "profile" {
+            let Some(bytes) = crate::profile::image_bytes(&app, rest) else {
+                return respond_err(responder, StatusCode::NOT_FOUND);
+            };
+            return responder.respond(
+                Response::builder()
+                    .status(StatusCode::OK)
+                    .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
+                    .header(header::CONTENT_TYPE, sniff_image(&bytes))
+                    // The picture can change; its address carries a stamp
+                    // (a query the handler ignores) when it does.
+                    .header(header::CACHE_CONTROL, "private, no-cache")
                     .body(bytes)
                     .expect("valid response"),
             );

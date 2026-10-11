@@ -17,10 +17,10 @@ use std::collections::HashMap;
 use writform_proto::chat::UserRef;
 use writform_proto::documents::{
     AppendUpdateRequest, AppendUpdateResponse, AwarenessRequest, CreateDocumentRequest,
-    CreateFolderRequest, CreateThreadRequest, Document, DocumentActivity, DocumentDetail,
-    DocumentFolder, DocumentListItem, DocumentShare, DocumentThread, DocumentThreadMessage,
-    DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion, DocumentVersionMeta,
-    MoveDocumentRequest, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
+    CreateFolderRequest, CreateThreadRequest, Document, DocumentActivity, DocumentCapabilities,
+    DocumentDetail, DocumentFolder, DocumentListItem, DocumentShare, DocumentThread,
+    DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion,
+    DocumentVersionMeta, MoveDocumentRequest, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
     UpdateDocumentRequest, UpdateThreadRequest,
 };
 use writform_proto::{GroupId, UserId};
@@ -96,11 +96,12 @@ type DocRow = (
     Option<String>,
     Option<i64>,
     Option<String>,
+    u32,
 );
 
 const DOC_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.folder_id,
     d.created_at, d.updated_at,
-    u.username, u.display_name, u.avatar_attachment_id, u.accent_color
+    u.username, u.display_name, u.avatar_attachment_id, u.accent_color, d.schema_level
     FROM documents d JOIN users u ON u.id = d.owner_id";
 
 fn row_to_document(row: DocRow) -> (Document, i64) {
@@ -116,6 +117,7 @@ fn row_to_document(row: DocRow) -> (Document, i64) {
         display_name,
         avatar,
         accent,
+        schema_level,
     ) = row;
     (
         Document {
@@ -126,6 +128,7 @@ fn row_to_document(row: DocRow) -> (Document, i64) {
             folder_id,
             created_at,
             updated_at,
+            schema_level,
         },
         owner_id,
     )
@@ -271,6 +274,69 @@ fn doc_room(doc_id: i64) -> String {
     format!("document:{doc_id}")
 }
 
+/// Where a document's content updates are sent. Level-1 content goes to the
+/// room every client joins; anything newer goes to `docv{level}:{id}`, which
+/// only clients that understand that level ask for — an older client must
+/// never receive content its editor would delete (it would keep those
+/// deletions as unsent edits and push them once it's updated).
+fn update_room(doc_id: i64, level: u32) -> String {
+    if level <= 1 {
+        doc_room(doc_id)
+    } else {
+        format!("docv{level}:{doc_id}")
+    }
+}
+
+/// Query string of the content routes: the newest schema level the client
+/// understands. Clients from before levels send nothing, which is level 1.
+#[derive(Debug, Default, Deserialize)]
+pub struct LevelParam {
+    #[serde(default)]
+    pub sl: Option<u32>,
+}
+
+impl LevelParam {
+    fn level(&self) -> u32 {
+        self.sl.unwrap_or(1).max(1)
+    }
+}
+
+fn client_too_old() -> AppError {
+    AppError::new(
+        StatusCode::FORBIDDEN,
+        "client_too_old",
+        "This document uses formatting from a newer version of subScribe. Update the app to open it.",
+    )
+}
+
+/// Refuse a client that doesn't understand the document's content.
+fn require_level(doc: &Document, client: u32) -> Result<(), AppError> {
+    if client < doc.schema_level {
+        return Err(client_too_old());
+    }
+    Ok(())
+}
+
+/// A level this server may store, or 400.
+fn storable_level(state: &AppState, level: u32) -> Result<u32, AppError> {
+    if level > state.max_doc_schema {
+        return Err(AppError::bad_request(
+            "schema_unsupported",
+            "this server doesn't support that document format yet — update the server",
+        ));
+    }
+    Ok(level.max(1))
+}
+
+pub async fn capabilities(
+    State(state): State<AppState>,
+    _auth: AuthUser,
+) -> Json<DocumentCapabilities> {
+    Json(DocumentCapabilities {
+        max_schema_level: state.max_doc_schema,
+    })
+}
+
 /// Merge a compacted state (if any) and tail updates into one v1 update.
 /// Malformed rows are skipped rather than poisoning the document.
 fn merge_updates(state_blob: Option<&[u8]>, tail: &[Vec<u8>]) -> Vec<u8> {
@@ -315,14 +381,17 @@ pub async fn create_document(
         return Err(AppError::bad_request("bad_format", "unknown format"));
     }
 
+    let level = storable_level(&state, req.schema_level.unwrap_or(1))?;
+
     let now = now_millis();
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO documents (owner_id, title, format, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?) RETURNING id",
+        "INSERT INTO documents (owner_id, title, format, schema_level, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?) RETURNING id",
     )
     .bind(auth.user_id.0)
     .bind(title)
     .bind(format)
+    .bind(level)
     .bind(now)
     .bind(now)
     .fetch_one(&state.pool)
@@ -345,23 +414,24 @@ type DocShareRow = (
     Option<String>,
     Option<i64>,
     Option<String>,
+    u32,
     String,
 );
 
 const DOC_SHARE_SELECT: &str = "SELECT d.id, d.owner_id, d.title, d.format, d.folder_id,
     d.created_at, d.updated_at,
-    u.username, u.display_name, u.avatar_attachment_id, u.accent_color, s.access
+    u.username, u.display_name, u.avatar_attachment_id, u.accent_color, d.schema_level, s.access
     FROM documents d JOIN users u ON u.id = d.owner_id
     JOIN document_shares s ON s.doc_id = d.id";
 
 fn share_row_split(r: DocShareRow) -> (DocRow, Access) {
-    let access = if r.11 == "write" {
+    let access = if r.12 == "write" {
         Access::Write
     } else {
         Access::Read
     };
     (
-        (r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10),
+        (r.0, r.1, r.2, r.3, r.4, r.5, r.6, r.7, r.8, r.9, r.10, r.11),
         access,
     )
 }
@@ -517,6 +587,9 @@ pub struct DetailParams {
     /// user opening the document, so they don't log an "opened" entry.
     #[serde(default)]
     pub quiet: Option<u8>,
+    /// See [`LevelParam`].
+    #[serde(default)]
+    pub sl: Option<u32>,
 }
 
 pub async fn document_detail(
@@ -526,6 +599,7 @@ pub async fn document_detail(
     Query(params): Query<DetailParams>,
 ) -> Result<Json<DocumentDetail>, AppError> {
     let (doc, access) = require_access(&state, doc_id, auth.user_id, false).await?;
+    require_level(&doc, params.sl.unwrap_or(1))?;
     let (ydoc_state, state_seq, last_seq): (Option<Vec<u8>>, i64, i64) =
         sqlx::query_as("SELECT ydoc_state, state_seq, last_seq FROM documents WHERE id = ?")
             .bind(doc_id)
@@ -986,9 +1060,21 @@ pub async fn append_update(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(doc_id): Path<i64>,
+    Query(level): Query<LevelParam>,
     Json(req): Json<AppendUpdateRequest>,
 ) -> Result<Json<AppendUpdateResponse>, AppError> {
-    require_access(&state, doc_id, auth.user_id, true).await?;
+    let (doc, _) = require_access(&state, doc_id, auth.user_id, true).await?;
+    let client = level.level();
+    require_level(&doc, client)?;
+    // The level this update's content needs: never above what the sender
+    // itself understands, or what this server may store.
+    let wanted = storable_level(&state, req.schema_level.unwrap_or(1))?;
+    if wanted > client {
+        return Err(AppError::bad_request(
+            "schema_unsupported",
+            "an update can't need a newer format than its sender understands",
+        ));
+    }
     let bytes = B64
         .decode(&req.update_b64)
         .map_err(|_| AppError::bad_request("bad_update", "update is not valid base64"))?;
@@ -1013,15 +1099,24 @@ pub async fn append_update(
     }
 
     let now = now_millis();
-    // last_seq is the atomic per-document sequence source.
-    let seq: i64 = sqlx::query_scalar(
-        "UPDATE documents SET last_seq = last_seq + 1, updated_at = ? WHERE id = ?
-         RETURNING last_seq",
+    // last_seq is the atomic per-document sequence source. The same
+    // statement raises the document's level and re-checks the sender's —
+    // someone else may have raised it since the check above.
+    let row: Option<(i64, u32)> = sqlx::query_as(
+        "UPDATE documents
+         SET last_seq = last_seq + 1, schema_level = MAX(schema_level, ?), updated_at = ?
+         WHERE id = ? AND schema_level <= ?
+         RETURNING last_seq, schema_level",
     )
+    .bind(wanted)
     .bind(now)
     .bind(doc_id)
-    .fetch_one(&state.pool)
+    .bind(client)
+    .fetch_optional(&state.pool)
     .await?;
+    let Some((seq, doc_level)) = row else {
+        return Err(client_too_old());
+    };
     sqlx::query(
         "INSERT INTO document_updates (doc_id, seq, update_data, author_id, created_at)
          VALUES (?, ?, ?, ?, ?)",
@@ -1034,8 +1129,27 @@ pub async fn append_update(
     .execute(&state.pool)
     .await?;
 
+    let room = update_room(doc_id, doc_level);
+    if doc_level > doc.schema_level {
+        // The document just outgrew some of the clients that have it open.
+        // They get a "deleted" (which every release closes the editor on)
+        // instead of the update, tagged so newer clients can tell why.
+        state.ws.broadcast_excluding(
+            &doc_room(doc_id),
+            &room,
+            "document.deleted",
+            serde_json::json!({ "doc_id": doc_id, "outdated": doc_level }),
+        );
+        let (raised, _) = fetch_document(&state, doc_id).await?;
+        state.ws.broadcast(
+            &doc_room(doc_id),
+            "document.meta",
+            serde_json::to_value(&raised).expect("serializable"),
+        );
+        list_changed(&state, doc.owner.id);
+    }
     state.ws.broadcast(
-        &doc_room(doc_id),
+        &room,
         "document.update",
         serde_json::json!({
             "doc_id": doc_id,
@@ -1046,7 +1160,10 @@ pub async fn append_update(
     );
 
     maybe_compact(&state, doc_id).await?;
-    Ok(Json(AppendUpdateResponse { seq }))
+    Ok(Json(AppendUpdateResponse {
+        seq,
+        schema_level: doc_level,
+    }))
 }
 
 /// Fold the update tail into `ydoc_state` once it grows past COMPACT_AFTER,
@@ -1119,6 +1236,9 @@ async fn maybe_compact(state: &AppState, doc_id: i64) -> Result<(), AppError> {
 pub struct SinceParam {
     #[serde(default)]
     pub since: i64,
+    /// See [`LevelParam`].
+    #[serde(default)]
+    pub sl: Option<u32>,
 }
 
 pub async fn get_updates(
@@ -1127,7 +1247,8 @@ pub async fn get_updates(
     Path(doc_id): Path<i64>,
     Query(params): Query<SinceParam>,
 ) -> Result<Json<DocumentUpdateBatch>, AppError> {
-    require_access(&state, doc_id, auth.user_id, false).await?;
+    let (doc, _) = require_access(&state, doc_id, auth.user_id, false).await?;
+    require_level(&doc, params.sl.unwrap_or(1))?;
     let (_, last_seq): (i64, i64) =
         sqlx::query_as("SELECT state_seq, last_seq FROM documents WHERE id = ?")
             .bind(doc_id)
@@ -1353,9 +1474,12 @@ pub async fn snapshot(
     State(state): State<AppState>,
     auth: AuthUser,
     Path(doc_id): Path<i64>,
+    Query(level): Query<LevelParam>,
     Json(req): Json<SnapshotRequest>,
 ) -> Result<Json<Option<DocumentVersionMeta>>, AppError> {
-    require_access(&state, doc_id, auth.user_id, true).await?;
+    let (doc, _) = require_access(&state, doc_id, auth.user_id, true).await?;
+    // A client that can't read the content would save a mangled revision.
+    require_level(&doc, level.level())?;
     if req.doc_json.is_empty() || req.doc_json.len() > MAX_SNAPSHOT_BYTES {
         return Err(AppError::bad_request(
             "bad_snapshot",

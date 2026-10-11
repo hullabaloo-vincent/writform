@@ -6,7 +6,7 @@ import type { WritformApp } from "../../platform";
 import { useChat } from "../chat/store";
 import { canvasApi } from "./api";
 import { CanvasView } from "./CanvasView";
-import { useLocalBoards } from "./local";
+import { isLocalBoard, useLocalBoards } from "./local";
 import { installCanvasWsHandler, useCanvas } from "./store";
 
 export const canvasApp: WritformApp = {
@@ -23,7 +23,11 @@ export const canvasApp: WritformApp = {
     installCanvasWsHandler();
     onResync(() => {
       const s = useCanvas.getState();
-      if (s.activeBoardId !== null) void s.openBoard(s.activeBoardId).catch(() => {});
+      // A board on this device has nothing to catch up on — and reopening
+      // it would throw away what's on screen.
+      if (s.activeBoardId !== null && !isLocalBoard(s.activeBoardId)) {
+        void s.openBoard(s.activeBoardId).catch(() => {});
+      }
       for (const groupId of Object.keys(s.byGroup)) {
         void s.loadBoards(Number(groupId)).catch(() => {});
       }

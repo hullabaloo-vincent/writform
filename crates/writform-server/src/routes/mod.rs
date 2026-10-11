@@ -5,6 +5,7 @@ mod canvas;
 mod channels;
 pub mod documents;
 mod emotes;
+pub mod fonts;
 mod friends;
 mod groups;
 mod healthz;
@@ -50,6 +51,11 @@ pub struct AppState {
     pub voice: Arc<voice::VoiceRegistry>,
     pub previews: Arc<link_preview::PreviewCache>,
     pub attachments_dir: Arc<PathBuf>,
+    /// Catalog fonts this server has fetched and keeps (see routes/fonts.rs).
+    pub fonts: Arc<fonts::FontCache>,
+    /// The newest document schema level this server stores (what its web
+    /// client understands). A field so tests can run a newer level.
+    pub max_doc_schema: u32,
 }
 
 impl AppState {
@@ -84,7 +90,9 @@ impl AppState {
             ws: Arc::new(WsHub::default()),
             voice: Arc::new(voice::VoiceRegistry::default()),
             previews: Arc::new(link_preview::PreviewCache::default()),
+            fonts: Arc::new(fonts::FontCache::new(&data_dir)),
             attachments_dir: Arc::new(data_dir.join("attachments")),
+            max_doc_schema: writform_proto::documents::MAX_DOC_SCHEMA_LEVEL,
         }
     }
 }
@@ -206,6 +214,7 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/voice/leave", post(voice::leave))
         .route("/api/v1/voice/{id}/signal", post(voice::signal))
         .route("/api/v1/link-preview", get(link_preview::link_preview))
+        .route("/api/v1/fonts/{id}/{file}", get(fonts::font_file))
         .route(
             "/api/v1/groups/{id}/boards",
             get(canvas::list_boards).post(canvas::create_board),
@@ -266,6 +275,10 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v1/documents/{id}/restore",
             post(documents::restore_document),
+        )
+        .route(
+            "/api/v1/document-capabilities",
+            get(documents::capabilities),
         )
         .route("/api/v1/document-trash", get(documents::list_trash))
         .route("/api/v1/document-trash/empty", post(documents::empty_trash))

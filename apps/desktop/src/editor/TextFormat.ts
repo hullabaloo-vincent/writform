@@ -1,6 +1,11 @@
 import { Extension } from "@tiptap/core";
 import type { Editor } from "@tiptap/core";
 
+import { fontCssFamily } from "../fonts/css";
+import { isFontId } from "../fonts/ids";
+import { MENU_FONTS } from "../fonts/registry";
+import { lineCss } from "./styles/sheet";
+
 /**
  * Paragraph-level typography: alignment, font family, font size, and an
  * explicit page break — all as node ATTRIBUTES on paragraphs/headings
@@ -12,28 +17,16 @@ import type { Editor } from "@tiptap/core";
  * format CSS simply outranks these attributes where it has opinions.
  */
 
-export const DOC_FONTS = [
-  { id: "times", label: "Times", css: "'Times New Roman', Times, serif" },
-  {
-    id: "palatino",
-    label: "Palatino",
-    css: "'Palatino Linotype', Palatino, 'Book Antiqua', serif",
-  },
-  // Bundled with the app (book faces): they look the same everywhere.
-  { id: "garamond", label: "Garamond", css: "'EB Garamond', Garamond, Georgia, serif" },
-  { id: "libertinus", label: "Libertinus", css: "'Libertinus Serif', 'Linux Libertine', Georgia, serif" },
-  { id: "baskerville", label: "Baskerville", css: "'Libre Baskerville', Baskerville, Georgia, serif" },
-  { id: "literata", label: "Literata", css: "Literata, Georgia, serif" },
-  { id: "sans", label: "Sans", css: "-apple-system, 'Segoe UI', Arial, sans-serif" },
-  { id: "mono", label: "Typewriter", css: "'Courier Prime', 'Courier New', Courier, monospace" },
-  {
-    id: "comic",
-    label: "Comic Sans",
-    css: "'Comic Sans MS', 'Comic Sans', 'Chalkboard SE', 'Comic Neue', cursive",
-  },
-] as const;
+/** The document font menu (the app's own fonts; see fonts/registry.ts). */
+export const DOC_FONTS = MENU_FONTS.map((f) => ({ id: f.id, label: f.menu ?? f.name, css: f.css }));
 
+/** The sizes the menus offer. Any size in range is valid (a Word file's
+ *  13 pt stays 13 pt); these are just the ones worth a click. */
 export const DOC_FONT_SIZES = [10, 11, 12, 14, 16, 18, 24] as const;
+export const FONT_SIZE_MIN = 4;
+export const FONT_SIZE_MAX = 200;
+/** Word's own ladder, for "grow" and "shrink". */
+export const SIZE_LADDER = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 36, 48, 72] as const;
 
 /** Word-processor line-spacing multiples (data-line values; CSS maps each to
  *  a visually equivalent line-height, exports map to real spacing). */
@@ -64,10 +57,15 @@ export interface Typography {
   pageBreakBefore: true | null;
 }
 
-const FONT_IDS = new Set<string>(DOC_FONTS.map((f) => f.id));
-const SIZES = new Set<number>(DOC_FONT_SIZES);
-const LINES = new Set<number>(DOC_LINE_SPACINGS);
-const SPACES = new Set<number>(DOC_PARA_SPACES);
+/** The fonts the stylesheet has a `[data-font]` rule for. Any other font id
+ *  (a book face, a catalog or system font) renders its own stack. */
+const STYLED_FONT_IDS = new Set<string>(DOC_FONTS.map((f) => f.id));
+const within = (v: unknown, min: number, max: number): v is number =>
+  typeof v === "number" && Number.isFinite(v) && v >= min && v <= max;
+/** Values are numbers within sane bounds; the menus' lists are a subset. */
+export const isFontSize = (v: unknown): v is number => within(v, FONT_SIZE_MIN, FONT_SIZE_MAX);
+export const isLineSpacing = (v: unknown): v is number => within(v, 0.5, 5);
+export const isParaSpace = (v: unknown): v is number => within(v, 0, 200);
 const ALIGNS = new Set(["center", "right", "justify"]);
 const TYPO_KEYS = [
   "align",
@@ -80,8 +78,8 @@ const TYPO_KEYS = [
   "pageBreakBefore",
 ] as const;
 
-interface TextFormatOptions {
-  /** Bind ⌘⇧L/E/R/J + ⌘↩. Off for previews and non-Plain formats. */
+export interface TextFormatOptions {
+  /** Bind ⌘⇧L/E/R/J + ⌘↩. Off for previews and the scripted formats. */
   shortcuts: boolean;
   /** Bind just ⌘⇧L/E/R (left/center/right) — Manuscript, where alignment
    *  is meaning (a centered sign, a right-set sign-off) but justification
@@ -115,28 +113,31 @@ export const TextFormat = Extension.create<TextFormatOptions>({
             default: null,
             parseHTML: (el: HTMLElement) => {
               const v = el.getAttribute("data-font");
-              return v && FONT_IDS.has(v) ? v : null;
+              return v && isFontId(v) ? v : null;
             },
-            renderHTML: (attrs: { font?: string | null }) =>
-              attrs.font ? { "data-font": attrs.font } : {},
+            renderHTML: (attrs: { font?: string | null }) => {
+              if (!attrs.font) return {};
+              const css = STYLED_FONT_IDS.has(attrs.font) ? null : fontCssFamily(attrs.font);
+              return css ? { "data-font": attrs.font, style: `font-family: ${css}` } : { "data-font": attrs.font };
+            },
           },
           size: {
             default: null,
             parseHTML: (el: HTMLElement) => {
               const v = Number(el.getAttribute("data-size"));
-              return SIZES.has(v) ? v : null;
+              return isFontSize(v) ? v : null;
             },
             renderHTML: (attrs: { size?: number | null }) =>
-              attrs.size ? { "data-size": String(attrs.size) } : {},
+              isFontSize(attrs.size) ? { "data-size": String(attrs.size), style: `--wf-sz: ${attrs.size}pt` } : {},
           },
           line: {
             default: null,
             parseHTML: (el: HTMLElement) => {
               const v = Number(el.getAttribute("data-line"));
-              return LINES.has(v) ? v : null;
+              return isLineSpacing(v) ? v : null;
             },
             renderHTML: (attrs: { line?: number | null }) =>
-              attrs.line ? { "data-line": String(attrs.line) } : {},
+              isLineSpacing(attrs.line) ? { "data-line": String(attrs.line), style: `--wf-lh: ${lineCss(attrs.line)}` } : {},
           },
           sa: {
             default: null,
@@ -144,10 +145,10 @@ export const TextFormat = Extension.create<TextFormatOptions>({
               const raw = el.getAttribute("data-sa");
               if (raw === null) return null;
               const v = Number(raw);
-              return SPACES.has(v) ? v : null;
+              return isParaSpace(v) ? v : null;
             },
             renderHTML: (attrs: { sa?: number | null }) =>
-              attrs.sa === null || attrs.sa === undefined ? {} : { "data-sa": String(attrs.sa) },
+              isParaSpace(attrs.sa) ? { "data-sa": String(attrs.sa), style: `--wf-sa: ${attrs.sa}pt` } : {},
           },
           sb: {
             default: null,
@@ -155,10 +156,10 @@ export const TextFormat = Extension.create<TextFormatOptions>({
               const raw = el.getAttribute("data-sb");
               if (raw === null) return null;
               const v = Number(raw);
-              return SPACES.has(v) ? v : null;
+              return isParaSpace(v) ? v : null;
             },
             renderHTML: (attrs: { sb?: number | null }) =>
-              attrs.sb === null || attrs.sb === undefined ? {} : { "data-sb": String(attrs.sb) },
+              isParaSpace(attrs.sb) ? { "data-sb": String(attrs.sb), style: `--wf-sb: ${attrs.sb}pt` } : {},
           },
           dropCap: {
             default: null,
@@ -223,23 +224,23 @@ export function setDocAlign(editor: Editor, align: DocAlign | "left"): boolean {
 }
 
 export function setDocFont(editor: Editor, font: string | null): boolean {
-  return setTypography(editor, { font: font && FONT_IDS.has(font) ? font : null });
+  return setTypography(editor, { font: font && isFontId(font) ? font : null });
 }
 
 export function setDocFontSize(editor: Editor, size: number | null): boolean {
-  return setTypography(editor, { size: size !== null && SIZES.has(size) ? size : null });
+  return setTypography(editor, { size: isFontSize(size) ? size : null });
 }
 
 export function setDocLineSpacing(editor: Editor, line: number | null): boolean {
-  return setTypography(editor, { line: line !== null && LINES.has(line) ? line : null });
+  return setTypography(editor, { line: isLineSpacing(line) ? line : null });
 }
 
 export function setDocSpaceAbove(editor: Editor, sa: number | null): boolean {
-  return setTypography(editor, { sa: sa !== null && SPACES.has(sa) ? sa : null });
+  return setTypography(editor, { sa: isParaSpace(sa) ? sa : null });
 }
 
 export function setDocSpaceBelow(editor: Editor, sb: number | null): boolean {
-  return setTypography(editor, { sb: sb !== null && SPACES.has(sb) ? sb : null });
+  return setTypography(editor, { sb: isParaSpace(sb) ? sb : null });
 }
 
 export function toggleDropCap(editor: Editor): boolean {

@@ -1,7 +1,8 @@
 /**
- * A document's word count and opening words, read straight from its Yjs
- * state (no editor needed) — for the organizer's cards. Mirrors the
- * server's list details: headings ("Chapter One") never make the excerpt.
+ * A document's word count, opening words and plain text, read straight from
+ * its Yjs state (no editor needed) — for the organizer's cards and for
+ * searching. Mirrors the server's list details: headings ("Chapter One")
+ * never make the excerpt.
  */
 
 import * as Y from "yjs";
@@ -38,14 +39,28 @@ export function shorten(text: string, max = EXCERPT_CHARS): string {
   return `${kept.replace(/[\s,;:.!?—–-]+$/, "")}…`;
 }
 
+export interface DocDigest {
+  words: number;
+  excerpt: string;
+  /** Every block's text, one to a line: what a search reads. */
+  text: string;
+}
+
 export function ydocStats(doc: Y.Doc): { words: number; excerpt: string } {
+  const { words, excerpt } = ydocDigest(doc);
+  return { words, excerpt };
+}
+
+export function ydocDigest(doc: Y.Doc): DocDigest {
   let words = 0;
   let excerpt = "";
   let first = "";
+  const lines: string[] = [];
   for (const block of doc.getXmlFragment("default").toArray()) {
     const text = textOf(block).trim();
     if (!text) continue;
     words += text.split(/\s+/).length;
+    lines.push(text);
     if (!first) first = text;
     if (
       !excerpt &&
@@ -56,15 +71,15 @@ export function ydocStats(doc: Y.Doc): { words: number; excerpt: string } {
       excerpt = text;
     }
   }
-  return { words, excerpt: shorten(excerpt || first) };
+  return { words, excerpt: shorten(excerpt || first), text: lines.join("\n") };
 }
 
 /** The same for an encoded state (a copy being created). */
-export function stateStats(state: Uint8Array): { words: number; excerpt: string } {
+export function stateDigest(state: Uint8Array): DocDigest {
   const doc = new Y.Doc();
   try {
     if (state.length) Y.applyUpdate(doc, state);
-    return ydocStats(doc);
+    return ydocDigest(doc);
   } finally {
     doc.destroy();
   }

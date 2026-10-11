@@ -13,6 +13,8 @@
  * grows, so it settles).
  */
 
+import { layoutDoc, ParaCache } from "../../doclayout/layout";
+import type { DocModel } from "../../doclayout/model";
 import { trimSize } from "../model/bookMap";
 import { estimatePages, geometryFor, kdpMinInside } from "../model/trims";
 import type { BookModel, Warning } from "../model/types";
@@ -20,7 +22,7 @@ import { renderPdf } from "../render/pdf";
 import { FaceSet, type FaceBytes } from "./faces";
 import { loadHyphenator, type Hyphenator } from "./hyphenate";
 import { designFor, layoutBook, SectionCache, smfGeometry } from "./layout";
-import type { DisplayList } from "./types";
+import type { DisplayList, PageStart } from "./types";
 
 export type PrintKind = "paperback" | "submission-pdf" | "booklet";
 
@@ -42,7 +44,30 @@ export interface LayoutRequest {
   images: JobImage[];
   /** Copyright year default (ms since epoch). */
   now: number;
+  /** A catalog family's other scripts, when the book needs them. */
+  chains?: Record<string, string[]>;
 }
+
+/** A document (as opposed to a book): its own model and layout. */
+export interface DocRequest {
+  kind: "document" | "document-booklet";
+  doc: DocModel;
+  families: string[];
+  images: JobImage[];
+}
+
+/** A document's pages without their contents: how many, where each begins
+ *  in the editor's text, how tall each one's text area is (pt). What the
+ *  editor's page view needs, and a fraction of a display list to send. */
+export interface PageMap {
+  pages: number;
+  starts: (PageStart | null)[];
+  bodyH: number[];
+}
+
+export type AnyRequest = LayoutRequest | DocRequest;
+
+const isDoc = (req: AnyRequest): req is DocRequest => "doc" in req;
 
 export interface PrintResult {
   bytes: Uint8Array;
@@ -67,6 +92,7 @@ export interface PrintJob {
 export class TypesetSession {
   private readonly files = new Map<string, FaceBytes[]>();
   private readonly sets = new Map<string, { faces: FaceSet; cache: SectionCache }>();
+  private readonly docSets = new Map<string, { faces: FaceSet; cache: ParaCache }>();
   private readonly hyphenators = new Map<string, Promise<Hyphenator | null>>();
 
   addFonts(fonts: FaceBytes[]) {
@@ -93,6 +119,41 @@ export class TypesetSession {
     return entry;
   }
 
+  /** A document's faces: the same files, but a family without an italic is
+   *  slanted rather than left upright. */
+  private docFacesFor(families: string[]) {
+    const wanted = [...new Set(families)].sort();
+    const key = wanted.join(",");
+    let entry = this.docSets.get(key);
+    if (!entry) {
+      const bytes = wanted.flatMap((f) => this.files.get(f) ?? []);
+      if (!bytes.length) throw new Error("The document’s fonts didn’t load.");
+      entry = { faces: new FaceSet(bytes, true), cache: new ParaCache() };
+      this.docSets.set(key, entry);
+    }
+    return entry;
+  }
+
+  private async layoutDocument(req: DocRequest): Promise<{ dl: DisplayList; faces: FaceSet }> {
+    const { faces, cache } = this.docFacesFor(req.families);
+    faces.resetMissing();
+    const hyphenator = req.doc.settings.hyphenate ? await this.hyphenator(req.doc.meta.lang || "en-US") : null;
+    const images = new Map(req.images.map((i) => [i.url, { w: i.w, h: i.h }]));
+    try {
+      return { dl: layoutDoc({ model: req.doc, faces, hyphenator, images, cache }), faces };
+    } finally {
+      cache.sweep();
+    }
+  }
+
+  /** Where a document's pages fall (the same layout as its preview and
+   *  PDF; its paragraphs are shared with those between runs). */
+  async pageMap(req: AnyRequest): Promise<PageMap> {
+    if (!isDoc(req)) throw new Error("Only a document has a page map.");
+    const { dl } = await this.layoutDocument(req);
+    return { pages: dl.pages.length, starts: dl.starts ?? [], bodyH: dl.bodyH ?? [] };
+  }
+
   private hyphenator(lang: string): Promise<Hyphenator | null> {
     let h = this.hyphenators.get(lang);
     if (!h) {
@@ -102,7 +163,8 @@ export class TypesetSession {
     return h;
   }
 
-  async layout(req: LayoutRequest, progress: (message: string) => void = () => {}): Promise<{ dl: DisplayList; faces: FaceSet }> {
+  async layout(req: AnyRequest, progress: (message: string) => void = () => {}): Promise<{ dl: DisplayList; faces: FaceSet }> {
+    if (isDoc(req)) return this.layoutDocument(req);
     const { faces, cache } = this.facesFor(req.families);
     faces.resetMissing();
     const target = req.kind === "submission-pdf" ? "smf" : "paperback";
@@ -114,7 +176,7 @@ export class TypesetSession {
     try {
       if (target === "smf") {
         progress("Setting the manuscript…");
-        const dl = layoutBook({ model, target, faces, hyphenator, geometry: smfGeometry(model.book.smf.paper), images, now, cache });
+        const dl = layoutBook({ model, target, faces, hyphenator, geometry: smfGeometry(model.book.smf.paper), images, now, cache, chains: req.chains });
         return { dl, faces };
       }
       const print = model.book.print;
@@ -124,7 +186,7 @@ export class TypesetSession {
       for (let pass = 0; pass < 3; pass += 1) {
         progress(pass === 0 ? "Setting the text…" : "Adjusting the gutter for the page count…");
         const geometry = geometryFor(print, pages);
-        dl = layoutBook({ model, target, faces, hyphenator, geometry, images, now, cache });
+        dl = layoutBook({ model, target, faces, hyphenator, geometry, images, now, cache, chains: req.chains });
         const needed = geometryFor(print, dl.pages.length).inside;
         pages = dl.pages.length;
         if (Math.abs(needed - geometry.inside) < 1e-9) break;
@@ -142,15 +204,24 @@ export class TypesetSession {
     }
   }
 
-  async pdf(req: LayoutRequest, progress: (message: string) => void = () => {}): Promise<PrintResult> {
+  async pdf(req: AnyRequest, progress: (message: string) => void = () => {}): Promise<PrintResult> {
     const { dl, faces } = await this.layout(req, progress);
-    const booklet = req.kind === "booklet";
+    const booklet = req.kind === "booklet" || req.kind === "document-booklet";
     progress(`Writing ${dl.pages.length} pages…`);
     const images = new Map<string, Uint8Array>();
     for (const i of req.images) if (i.bytes) images.set(i.url, i.bytes);
     const fonts = dl.faces.map((_, i) => faces.font(i));
-    const bytes = await renderPdf(dl, fonts, images, (done, total) => progress(`Writing page ${done} of ${total}…`), { booklet });
-    const trim = req.kind === "submission-pdf" ? { w: dl.trim.w / 72, h: dl.trim.h / 72 } : trimSize(req.model.book.print);
+    const bytes = await renderPdf(
+      dl,
+      fonts,
+      images,
+      (done, total) => progress(`Writing page ${done} of ${total}…`),
+      // A document keeps its colours and its links; a book is black ink for
+      // a press, and a booklet's imposed pages have nowhere for a link to go.
+      isDoc(req) ? { booklet, color: "rgb", links: !booklet } : { booklet },
+    );
+    const trim =
+      isDoc(req) || req.kind === "submission-pdf" ? { w: dl.trim.w / 72, h: dl.trim.h / 72 } : trimSize(req.model.book.print);
     return {
       bytes,
       pages: dl.pages.length,

@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type * as Y from "yjs";
 
 import { InchStepper } from "../../apps/documents/DocSettingsPanel";
-import { BOOK_FONTS, bookFont, ORNAMENTS } from "../fonts/registry";
+import { FontPicker } from "../../fonts/ui/FontPicker";
+import { bookFont, ORNAMENTS } from "../fonts/registry";
 import { choosePreset, TRIMS, updateBook, type Book } from "../model/bookMap";
 import { validIsbn } from "../model/buildModel";
 import { numberLabel, type NumberStyle } from "../model/chapters";
@@ -407,6 +408,28 @@ function AlsoBy({ value, patch, disabled }: { value: string[]; patch: Patch; dis
   );
 }
 
+/** A book font: one of the app's typefaces, or any family of the online
+ *  library (fetched when chosen, embedded in what the book prints as). */
+function BookFontRow({ label, value, used, onPick, disabled }: { label: string; value: string; used: string[]; onPick: (id: string) => void; disabled: boolean }) {
+  return (
+    <div className="wf-inspector-row">
+      <span>{label}</span>
+      <FontPicker
+        value={value}
+        docFonts={[...new Set(used)]}
+        defaultLabel={bookFont(value).label}
+        title={label}
+        disabled={disabled}
+        className="wf-inspector-font"
+        scope="book"
+        onPick={(id) => {
+          if (id) onPick(id);
+        }}
+      />
+    </div>
+  );
+}
+
 /** A preset's look, drawn in its own fonts. */
 function Specimen({ design }: { design: BookDesign }) {
   const label = numberLabel(1, design.chapterNumber === "as-written" ? "word" : design.chapterNumber, design.chapterLabel);
@@ -464,7 +487,6 @@ function DesignTab({
 }) {
   const d = book.design;
   const set = <K extends keyof BookDesign>(key: K, value: BookDesign[K]) => patch({ [`design.${key}`]: value });
-  const fonts = BOOK_FONTS.map((f) => [f.id, f.label] as const);
   const customized = book.overridden.length > 0;
   return (
     <div className="wf-inspector-body">
@@ -496,7 +518,7 @@ function DesignTab({
 
       <section>
         <h4>Body text</h4>
-        <Select label="Font" value={d.bodyFont} options={fonts} onChange={(v) => set("bodyFont", v)} disabled={disabled} />
+        <BookFontRow label="Font" value={d.bodyFont} used={[d.bodyFont, d.headingFont]} onPick={(v) => set("bodyFont", v)} disabled={disabled} />
         <Select
           label="Size"
           value={d.bodySize}
@@ -562,7 +584,7 @@ function DesignTab({
           disabled={disabled}
         />
         <Check label="Italic titles" checked={d.titleItalic} onChange={(v) => set("titleItalic", v)} disabled={disabled} />
-        <Select label="Heading font" value={d.headingFont} options={fonts} onChange={(v) => set("headingFont", v)} disabled={disabled} />
+        <BookFontRow label="Heading font" value={d.headingFont} used={[d.bodyFont, d.headingFont]} onPick={(v) => set("headingFont", v)} disabled={disabled} />
         <Select
           label="Alignment"
           value={d.headingAlign}

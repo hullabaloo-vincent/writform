@@ -7,9 +7,10 @@ Hate sharing your info with big tech so they can serve you even MORE ads?
 
 For me, that's a yes, yes, yes, and a big ol' YES.
 
-subScribe is a fully self-hosted app for group creative-writing sessions. Run your own server, connect with the
-desktop app, and write together with groups, chat (text, voice, and video), timed writing prompts with full session history, friends & DMs, and an
-Obsidian-compatible personal notes vault.
+subScribe is a writing suite you own. On your own device, with no account: documents with a Word-style ribbon,
+real page layout, print, PDF and Word in and out; book publishing; boards; and an Obsidian-compatible notes vault.
+With a server one of you runs: write together live, with groups, chat (text, voice, and video), timed writing
+prompts with full session history, and friends & DMs. Fully self-hosted — nothing touches a third-party cloud.
 
 Every feature is an "app" on an internal platform layer (dock, UI slots, command
 palette), and third-party plugins use the exact same extension points — see
@@ -135,6 +136,8 @@ they drift from the Rust types.
   bump, commits it, tags, and publishes installers + the server image to GitHub
   Releases/GHCR (auto-update via the Tauri updater once signing keys are
   configured — see `.github/workflows/release.yml` for the one-time setup).
+  What to check before pressing it — above all whether the document format's
+  schema level has to rise — is in [`docs/release.md`](docs/release.md).
 
 ## Security model
 

@@ -82,18 +82,28 @@ export function ExportBookDialog({
           uuid = crypto.randomUUID();
           if (!readonly) updateBook(ydoc, { "ebook.uuid": uuid });
         }
+        // The book's own fonts, when it asks for them inside the file.
+        let fonts: Awaited<ReturnType<typeof import("../fonts/embed").epubFonts>> | null = null;
+        if (book.ebook.embedFonts) {
+          setProgress("Gathering the fonts…");
+          const { epubFonts } = await import("../fonts/embed");
+          fonts = await epubFonts(model);
+        }
         setProgress("Writing the ebook…");
         const { buildEpub } = await import("../epub/epub");
-        const bytes = await buildEpub(model, { uuid, cover, images });
+        const bytes = await buildEpub(model, { uuid, cover, images, ...(fonts?.fonts.length ? { fonts: fonts.fonts } : {}) });
         const extra: Warning[] = failed
           ? [{ kind: "image", message: `${failed} image${failed === 1 ? "" : "s"} couldn’t be loaded and ${failed === 1 ? "was" : "were"} left out.` }]
           : [];
+        if (fonts?.missing.length) {
+          extra.push({ kind: "font", message: `${fonts.missing.join(" and ")} couldn’t be fetched and ${fonts.missing.length === 1 ? "isn’t" : "aren’t"} in the file; readers will see their device’s own type there.` });
+        }
         result = {
           bytes,
           fileName: `${bookFileName(book)}.epub`,
           saveKind: "epub",
           warnings: extra,
-          summary: `${model.sections.length} sections · ${model.words.toLocaleString()} words${cover ? " · with cover" : ""}`,
+          summary: `${model.sections.length} sections · ${model.words.toLocaleString()} words${cover ? " · with cover" : ""}${fonts?.fonts.length ? " · fonts embedded" : ""}`,
         };
       } else {
         const { buildPrintFile } = await import("../exportBook");

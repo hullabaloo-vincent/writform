@@ -49,13 +49,14 @@ The next time subScribe asks, the real system prompt appears.
 
 ## Host on this computer (easiest)
 
-1. Install subScribe and open it.
-2. Choose **Host on this computer**, pick a server name and port
-   (default `7311`), and press **Start hosting**.
+1. Install subScribe and open it. You're at Home, and can already write
+   on this device.
+2. Choose **Host on this computer** (on Home, or from the account button at
+   the foot of the rail), pick a server name and port (default `7311`),
+   and press **Start hosting**.
 3. Create the first account — the first registration becomes the
    **server admin**.
-4. Open the server card on the connect screen (or Settings → Server) for
-   the addresses to share with friends.
+4. Open Settings → Server for the addresses to share with friends.
 
 Your server starts automatically whenever the app runs. Data lives in the
 app's data directory under `server/`.
@@ -90,6 +91,14 @@ documents, canvas, sessions, and voice, in a mobile-friendly layout. The
 Docker image ships with this enabled. For a bare-metal server, build the
 client once (`npm run build` in `apps/desktop`) and start the server with
 `--web-dir apps/desktop/dist` (or set `WRITFORM_WEB_DIR`).
+
+**Fonts.** Documents can use families from an online library of open
+fonts. Your server fetches each font file the first time anyone needs it
+(from the library's CDN, jsDelivr) and keeps it under `fonts/` in its data
+folder, so everyone else — and every browser — gets it from you. To keep
+the server from making that request, set `WRITFORM_FONT_PROXY=off`; fonts
+already fetched keep working, and the desktop apps can still download
+directly if their own switch (Settings ▸ Fonts) is on.
 
 Notes to know: your browser will warn about the self-signed certificate the
 first time — proceed after checking the fingerprint with the host (the
@@ -165,6 +174,16 @@ that's newer than the server will tell you when it needs something the
 server doesn't have yet ("the server is running an older subScribe
 version…") — that message is the cue to run the update above.
 
+**Update the server before the apps start using new formatting.** Text
+colour, highlight, fonts and sizes on part of a paragraph, indents, borders,
+checklists, tables, footnotes, a table of contents, sections and suggested
+changes (the release after 1.0.6) are stored in a newer document format. A server that hasn't been updated can't hold it: the apps simply
+don't offer those controls for its documents, and a document from a device
+that already uses them can only be published there as a simplified copy.
+Once the server is updated the controls appear (within a few minutes, or
+the next time a document is opened). After a document uses them, people on
+an older app are told to update before they can open it.
+
 **Permission denied on an old volume:** volumes first created by releases up
 through v0.5.0 are owned by root, so after an update the (unprivileged)
 server can exit with `permission denied (os error 13)`. Fix the ownership
@@ -200,5 +219,5 @@ docker volume rm writform
 - **Bare binary** — stop the process (`systemctl disable --now
   writform-server` if you use the unit) and delete its `--data-dir`.
 
-Friends who had the server saved can tidy it off their connect screen with
+Friends who had the server saved can tidy it off their list of servers with
 the **Forget this server** button on its card.

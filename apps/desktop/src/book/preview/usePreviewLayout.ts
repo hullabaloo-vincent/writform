@@ -24,29 +24,64 @@ async function fontsReady(dl: DisplayList) {
   );
 }
 
+/** What a preview shows: a book's pages, or a document's. */
+export interface PreviewSource {
+  /** Lay the writing out as it is now. Null when a newer layout on the same
+   *  channel overtook this one. */
+  layout(editor: Editor, channel: string, onProgress: (message: string) => void): Promise<DisplayList | null>;
+  /** What the layout depends on besides the text (the book's design, the
+   *  page setup): a new value lays the pages out again. */
+  key: unknown;
+  paper: "cream" | "white";
+  /** "book" or "document", for the words on screen. */
+  noun: string;
+}
+
+/** A book manuscript, typeset as its paperback. */
+export function bookSource(format: string, book: Book): PreviewSource {
+  return {
+    key: book,
+    paper: book.print.paper,
+    noun: "book",
+    layout: async (editor, channel, onProgress) => {
+      const model = buildModel(editor.getJSON(), format, book);
+      const { typesetter } = await import("../engine/client");
+      const dl = await typesetter().layout("paperback", model, onProgress, channel);
+      // A book set in a catalog family: the page needs its files to draw it.
+      if (dl?.faces.some((f) => f.family.startsWith("gf:"))) {
+        const { showFamilies } = await import("../../fonts/store");
+        await showFamilies(dl.faces.map((f) => f.family));
+      }
+      return dl;
+    },
+  };
+}
+
 /**
- * The book laid out for the preview, from the manuscript as it is now.
- * Re-laid when the book's design or details change; with `live`, also 800 ms
- * after the writing stops (the worker re-sets only the chapters that
- * changed). The last good layout stays up while a new one is made.
+ * The pages laid out for the preview, from the writing as it is now.
+ * Re-laid when the source's key changes; with `live`, also a moment after
+ * the writing stops (the worker re-sets only what changed). The last good
+ * layout stays up while a new one is made.
  */
-export function usePreviewLayout(editor: Editor, format: string, book: Book, live: boolean, channel: string): PreviewState {
-  const [state, setState] = useState<Omit<PreviewState, "retry">>({ dl: null, busy: true, message: "Setting the book…", error: null });
-  const bookRef = useRef(book);
+export function usePreviewLayout(editor: Editor, source: PreviewSource, live: boolean, channel: string, idleMs = 800): PreviewState {
+  const [state, setState] = useState<Omit<PreviewState, "retry">>({ dl: null, busy: true, message: `Setting the ${source.noun}…`, error: null });
+  const sourceRef = useRef(source);
   const seq = useRef(0);
   useEffect(() => {
-    bookRef.current = book;
-  }, [book]);
+    sourceRef.current = source;
+  }, [source]);
 
   const run = useCallback(async () => {
     const mine = ++seq.current;
     setState((s) => ({ ...s, busy: true, error: null }));
     try {
-      const model = buildModel(editor.getJSON(), format, bookRef.current);
-      const { typesetter } = await import("../engine/client");
-      const dl = await typesetter().layout("paperback", model, (message) => {
-        if (mine === seq.current) setState((s) => ({ ...s, message }));
-      }, channel);
+      const dl = await sourceRef.current.layout(
+        editor,
+        channel,
+        (message) => {
+          if (mine === seq.current) setState((s) => ({ ...s, message }));
+        },
+      );
       if (!dl || mine !== seq.current) return;
       await fontsReady(dl);
       if (mine !== seq.current) return;
@@ -54,11 +89,13 @@ export function usePreviewLayout(editor: Editor, format: string, book: Book, liv
     } catch (e) {
       if (mine === seq.current) setState((s) => ({ ...s, busy: false, error: e instanceof Error ? e.message : String(e) }));
     }
-  }, [editor, format, channel]);
+  }, [editor, channel]);
 
+  const key = source.key;
   useEffect(() => {
+    // The ref is updated by an effect declared above, so it's current here.
     void run();
-  }, [run, book]);
+  }, [run, key]);
 
   useEffect(() => {
     if (!live) return;
@@ -66,14 +103,14 @@ export function usePreviewLayout(editor: Editor, format: string, book: Book, liv
     const onUpdate = ({ transaction }: { transaction: { docChanged: boolean } }) => {
       if (!transaction.docChanged) return;
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void run(), 800);
+      timer = setTimeout(() => void run(), idleMs);
     };
     editor.on("update", onUpdate);
     return () => {
       editor.off("update", onUpdate);
       if (timer) clearTimeout(timer);
     };
-  }, [editor, live, run]);
+  }, [editor, live, run, idleMs]);
 
   return { ...state, retry: () => void run() };
 }

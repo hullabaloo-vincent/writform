@@ -4317,12 +4317,6 @@ textarea.wf-el-shape-text {
   letter-spacing: normal;
 }
 
-.wf-doc-mode-label {
-  color: var(--wf-text-dim);
-  font-size: 12px;
-  font-weight: 600;
-}
-
 .wf-doc-shortcuts,
 .wf-doc-stats {
   color: var(--wf-text-dim);
@@ -4547,7 +4541,7 @@ textarea.wf-el-shape-text {
 
 /* The writing surface at the browser's 96dpi CSS inch. Geometry comes from
    the document's settings via the --wfd-* variables (set inline on .wf-page
-   for the Plain format); the fallbacks are the original letter sheet, which
+   for the Document format); the fallbacks are the original letter sheet, which
    every scripted format keeps. */
 .wf-page {
   width: min(var(--wfd-w, 8.5in), calc(100% - 16px));
@@ -4661,7 +4655,7 @@ textarea.wf-el-shape-text {
 }
 
 .wf-fmt-none .ProseMirror {
-  font-family: var(--wfd-font, Georgia, "Times New Roman", serif);
+  font-family: var(--wfd-font, Georgia, "wf-gf-gelasio", "Times New Roman", serif);
   font-size: var(--wfd-size, 12pt);
   line-height: var(--wfd-line, 1.65);
 }
@@ -8408,7 +8402,7 @@ body {
 }
 
 /* ---- document typography (TextFormat paragraph attributes) ----
-   Scoped to the Plain-format page and to RichDoc previews; the scripted
+   Scoped to the Document-format page and to RichDoc previews; the scripted
    formats (screenplay, manuscript…) keep their own conventions, so stale
    attributes are simply outranked there instead of invalidated. */
 
@@ -8462,33 +8456,11 @@ body {
   font-family: "Comic Sans MS", "Comic Sans", "Chalkboard SE", "Comic Neue", cursive;
 }
 
-.wf-fmt-none .ProseMirror [data-size="10"],
-.wf-rich-wrap .ProseMirror [data-size="10"] {
-  font-size: 10pt;
-}
-.wf-fmt-none .ProseMirror [data-size="11"],
-.wf-rich-wrap .ProseMirror [data-size="11"] {
-  font-size: 11pt;
-}
-.wf-fmt-none .ProseMirror [data-size="12"],
-.wf-rich-wrap .ProseMirror [data-size="12"] {
-  font-size: 12pt;
-}
-.wf-fmt-none .ProseMirror [data-size="14"],
-.wf-rich-wrap .ProseMirror [data-size="14"] {
-  font-size: 14pt;
-}
-.wf-fmt-none .ProseMirror [data-size="16"],
-.wf-rich-wrap .ProseMirror [data-size="16"] {
-  font-size: 16pt;
-}
-.wf-fmt-none .ProseMirror [data-size="18"],
-.wf-rich-wrap .ProseMirror [data-size="18"] {
-  font-size: 18pt;
-}
-.wf-fmt-none .ProseMirror [data-size="24"],
-.wf-rich-wrap .ProseMirror [data-size="24"] {
-  font-size: 24pt;
+/* Size, line spacing and the space around a paragraph take any value: the
+   attribute says there is one, the inline custom property says what. */
+.wf-fmt-none .ProseMirror [data-size],
+.wf-rich-wrap .ProseMirror [data-size] {
+  font-size: var(--wf-sz);
 }
 
 /* Explicit page break: semantic in every format, so it lives on the
@@ -8496,13 +8468,21 @@ body {
    and export it's a real break. (Drawn by ::after, placed above the
    paragraph: ::before carries a manuscript's chapter labels.) */
 .wf-doc-content .ProseMirror [data-page-break],
-.wf-rich .ProseMirror [data-page-break] {
+.wf-rich .ProseMirror [data-page-break],
+.wf-doc-content .ProseMirror [data-break],
+.wf-rich .ProseMirror [data-break] {
   break-before: page;
   position: relative;
   margin-top: 30px;
 }
+.wf-doc-content .ProseMirror [data-break="column"],
+.wf-rich .ProseMirror [data-break="column"] {
+  break-before: column;
+}
 .wf-doc-content .ProseMirror [data-page-break]::after,
-.wf-rich .ProseMirror [data-page-break]::after {
+.wf-rich .ProseMirror [data-page-break]::after,
+.wf-doc-content .ProseMirror [data-break]::after,
+.wf-rich .ProseMirror [data-break]::after {
   content: "page break";
   position: absolute;
   top: -21px;
@@ -8597,10 +8577,12 @@ body {
 }
 
 /* In page view the physical gap replaces the dashed break marker. */
-.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break] {
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break],
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-break="section"] {
   margin-top: 0;
 }
-.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break]::after {
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-page-break]::after,
+.wf-page[data-paged] .wf-doc-content .ProseMirror [data-break="section"]::after {
   display: none;
 }
 
@@ -8627,56 +8609,18 @@ body {
 
 /* ---- paragraph spacing / line spacing / drop cap (TextFormat) ---- */
 
-.wf-fmt-none .ProseMirror [data-line="1"],
-.wf-rich-wrap .ProseMirror [data-line="1"] {
-  line-height: 1.2;
+.wf-fmt-none .ProseMirror [data-line],
+.wf-rich-wrap .ProseMirror [data-line] {
+  line-height: var(--wf-lh);
 }
-.wf-fmt-none .ProseMirror [data-line="1.15"],
-.wf-rich-wrap .ProseMirror [data-line="1.15"] {
-  line-height: 1.4;
+.wf-fmt-none .ProseMirror [data-sa],
+.wf-rich-wrap .ProseMirror [data-sa] {
+  margin-top: var(--wf-sa);
 }
-.wf-fmt-none .ProseMirror [data-line="1.3"],
-.wf-rich-wrap .ProseMirror [data-line="1.3"] {
-  line-height: 1.55;
+.wf-fmt-none .ProseMirror [data-sb],
+.wf-rich-wrap .ProseMirror [data-sb] {
+  margin-bottom: var(--wf-sb);
 }
-.wf-fmt-none .ProseMirror [data-line="1.5"],
-.wf-rich-wrap .ProseMirror [data-line="1.5"] {
-  line-height: 1.8;
-}
-.wf-fmt-none .ProseMirror [data-line="2"],
-.wf-rich-wrap .ProseMirror [data-line="2"] {
-  line-height: 2.4;
-}
-
-.wf-fmt-none .ProseMirror [data-sa="0"],
-.wf-rich-wrap .ProseMirror [data-sa="0"] { margin-top: 0; }
-.wf-fmt-none .ProseMirror [data-sa="4"],
-.wf-rich-wrap .ProseMirror [data-sa="4"] { margin-top: 4pt; }
-.wf-fmt-none .ProseMirror [data-sa="8"],
-.wf-rich-wrap .ProseMirror [data-sa="8"] { margin-top: 8pt; }
-.wf-fmt-none .ProseMirror [data-sa="12"],
-.wf-rich-wrap .ProseMirror [data-sa="12"] { margin-top: 12pt; }
-.wf-fmt-none .ProseMirror [data-sa="16"],
-.wf-rich-wrap .ProseMirror [data-sa="16"] { margin-top: 16pt; }
-.wf-fmt-none .ProseMirror [data-sa="24"],
-.wf-rich-wrap .ProseMirror [data-sa="24"] { margin-top: 24pt; }
-.wf-fmt-none .ProseMirror [data-sa="36"],
-.wf-rich-wrap .ProseMirror [data-sa="36"] { margin-top: 36pt; }
-
-.wf-fmt-none .ProseMirror [data-sb="0"],
-.wf-rich-wrap .ProseMirror [data-sb="0"] { margin-bottom: 0; }
-.wf-fmt-none .ProseMirror [data-sb="4"],
-.wf-rich-wrap .ProseMirror [data-sb="4"] { margin-bottom: 4pt; }
-.wf-fmt-none .ProseMirror [data-sb="8"],
-.wf-rich-wrap .ProseMirror [data-sb="8"] { margin-bottom: 8pt; }
-.wf-fmt-none .ProseMirror [data-sb="12"],
-.wf-rich-wrap .ProseMirror [data-sb="12"] { margin-bottom: 12pt; }
-.wf-fmt-none .ProseMirror [data-sb="16"],
-.wf-rich-wrap .ProseMirror [data-sb="16"] { margin-bottom: 16pt; }
-.wf-fmt-none .ProseMirror [data-sb="24"],
-.wf-rich-wrap .ProseMirror [data-sb="24"] { margin-bottom: 24pt; }
-.wf-fmt-none .ProseMirror [data-sb="36"],
-.wf-rich-wrap .ProseMirror [data-sb="36"] { margin-bottom: 36pt; }
 
 /* Chapter-opener drop cap. ::first-letter pulls leading punctuation in
    with the initial, which is the classic book setting. */
@@ -9742,4 +9686,2985 @@ body {
   .wf-doc-find.with-replace .wf-find-row:last-child {
     padding-left: 0;
   }
+}
+
+/* ---- Print dialog ---- */
+
+.wf-print-modal {
+  width: min(440px, calc(100vw - 32px));
+}
+.wf-print-summary {
+  margin: 4px 0 12px;
+  color: var(--wf-text-dim, #9aa0a6);
+  font-variant-numeric: tabular-nums;
+}
+.wf-print-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.wf-print-option input {
+  margin-top: 3px;
+}
+.wf-print-option span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-print-option small {
+  color: var(--wf-text-dim, #9aa0a6);
+  line-height: 1.35;
+}
+.wf-print-notes {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+  color: var(--wf-text-dim, #9aa0a6);
+  font-size: 0.86em;
+  line-height: 1.4;
+}
+.wf-print-modal .wf-connect-row {
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---- Page setup: headers and footers, small fields ---- */
+
+.wf-inspector-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.wf-inspector-number {
+  width: 84px;
+  height: 28px;
+  min-height: 0;
+  font-size: 12px;
+  text-align: right;
+}
+.wf-hf {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-hf-pages {
+  width: 100%;
+}
+.wf-hf-pages button {
+  flex: 1;
+}
+.wf-hf-band {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-hf-band-title {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-hf-slots {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+}
+.wf-hf-slot {
+  min-width: 0;
+  height: 28px;
+  min-height: 0;
+  padding: 0 6px;
+  font-size: 12px;
+}
+.wf-hf-slot.wf-hf-C {
+  text-align: center;
+}
+.wf-hf-slot.wf-hf-R {
+  text-align: right;
+}
+.wf-hf-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11.5px;
+  color: var(--wf-text-dim);
+}
+.wf-hf-fields button {
+  height: 24px;
+  min-height: 0;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border-radius: var(--wf-radius-pill);
+}
+@media (pointer: coarse) {
+  .wf-hf-slot,
+  .wf-inspector-number {
+    height: 34px;
+  }
+  .wf-hf-fields button {
+    height: 30px;
+  }
+  /* One slot to a row leaves room to type on a phone. */
+  .wf-hf-slots {
+    grid-template-columns: 1fr;
+  }
+  .wf-hf-slot.wf-hf-C,
+  .wf-hf-slot.wf-hf-R {
+    text-align: left;
+  }
+}
+
+/* ---- Document format: the built-in look, pinned to editor/styles/sheet.ts
+   so the screen, the PDF and the Word export agree. (h1 and h2 are the
+   browser's own, which the sheet records.) ---- */
+
+.wf-fmt-none .ProseMirror h1,
+.wf-fmt-none .ProseMirror h2,
+.wf-fmt-none .ProseMirror h3,
+.wf-fmt-none .ProseMirror h4,
+.wf-fmt-none .ProseMirror h5,
+.wf-fmt-none .ProseMirror h6 {
+  font-weight: 700;
+  text-indent: 0;
+}
+.wf-fmt-none .ProseMirror h1 {
+  font-size: 2em;
+  margin: 0.67em 0;
+}
+.wf-fmt-none .ProseMirror h2 {
+  font-size: 1.5em;
+  margin: 0.83em 0;
+}
+.wf-fmt-none .ProseMirror h3 {
+  font-size: 1.25em;
+  margin: 0.96em 0 0.48em;
+}
+.wf-fmt-none .ProseMirror h4 {
+  font-size: 1.1em;
+  margin: 1em 0 0.45em;
+}
+.wf-fmt-none .ProseMirror h5 {
+  font-size: 1em;
+  margin: 1em 0 0.4em;
+}
+.wf-fmt-none .ProseMirror h6 {
+  font-size: 1em;
+  font-style: italic;
+  margin: 1em 0 0.4em;
+}
+.wf-fmt-none .ProseMirror blockquote {
+  margin: 1em 30pt;
+}
+.wf-fmt-none .ProseMirror ul,
+.wf-fmt-none .ProseMirror ol {
+  margin: 1em 0;
+  padding-left: 30pt;
+}
+.wf-fmt-none .ProseMirror li > ul,
+.wf-fmt-none .ProseMirror li > ol {
+  margin: 0;
+}
+.wf-fmt-none .ProseMirror ul {
+  list-style-type: disc;
+}
+.wf-fmt-none .ProseMirror ul ul {
+  list-style-type: circle;
+}
+.wf-fmt-none .ProseMirror ul ul ul {
+  list-style-type: square;
+}
+.wf-fmt-none .ProseMirror pre {
+  margin: 1em 0;
+  font-family: "Courier Prime", "Courier New", Courier, monospace;
+  font-size: 0.9em;
+  line-height: 1.35;
+  white-space: pre-wrap;
+}
+.wf-fmt-none .ProseMirror code {
+  font-family: "Courier Prime", "Courier New", Courier, monospace;
+  font-size: 0.9em;
+}
+.wf-fmt-none .ProseMirror pre code {
+  font-size: 1em;
+}
+.wf-fmt-none .ProseMirror {
+  hyphens: var(--wfd-hyph, manual);
+  -webkit-hyphens: var(--wfd-hyph, manual);
+}
+
+/* ---- The Document ribbon ---- */
+
+.wf-ribbon {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wf-ribbon-tabs {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 12px 0;
+}
+.wf-ribbon-tabs > button {
+  height: 26px;
+  min-height: 0;
+  padding: 0 11px;
+  border: 0;
+  border-radius: var(--wf-radius-sm) var(--wf-radius-sm) 0 0;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-ribbon-tabs > button:hover {
+  color: var(--wf-text);
+}
+.wf-ribbon-tabs > button.active {
+  color: var(--wf-text);
+  box-shadow: inset 0 -2px 0 var(--wf-accent);
+}
+.wf-ribbon-tail {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.wf-ribbon-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 5px 12px;
+  gap: 0;
+  overflow: hidden;
+}
+.wf-ribbon-row.scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding: 5px 8px;
+}
+.wf-ribbon-row.scroll::-webkit-scrollbar {
+  display: none;
+}
+.wf-ribbon-group {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 0 8px;
+}
+.wf-ribbon-row > .wf-ribbon-group + .wf-ribbon-group,
+.wf-ribbon-measure > .wf-ribbon-group + .wf-ribbon-group {
+  border-left: 1px solid var(--wf-border);
+}
+.wf-ribbon-row > .wf-ribbon-group:first-child {
+  padding-left: 0;
+}
+.wf-ribbon-measure {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: flex;
+  width: max-content;
+  height: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+.wf-ribbon button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 28px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 5px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+.wf-ribbon button.labelled {
+  padding: 0 8px;
+}
+.wf-ribbon button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-ribbon button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-accent);
+}
+.wf-ribbon button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.wf-ribbon .wf-flyout-caret {
+  opacity: 0.7;
+  margin-left: -2px;
+}
+.wf-ribbon button.wf-ribbon-narrow {
+  min-width: 14px;
+  padding: 0 1px;
+  margin-left: -3px;
+}
+.wf-ribbon-select {
+  height: 28px;
+  min-height: 0;
+  padding: 0 22px 0 8px;
+  font-size: 12.5px;
+  max-width: 150px;
+}
+.wf-ribbon-select.wf-ribbon-size {
+  width: 62px;
+}
+.wf-ribbon-select.wf-ribbon-font {
+  width: 128px;
+}
+.wf-ribbon-select.wf-ribbon-style {
+  width: 118px;
+}
+.wf-ribbon-seg {
+  display: inline-flex;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  overflow: hidden;
+  margin-left: 4px;
+}
+.wf-ribbon .wf-ribbon-seg button {
+  border-radius: 0;
+  height: 26px;
+  padding: 0 9px;
+}
+
+/* On a phone: one row that scrolls, bigger targets. */
+.wf-ribbon[data-phone] button {
+  min-width: 36px;
+  height: 36px;
+}
+.wf-ribbon[data-phone] .wf-ribbon-select {
+  height: 36px;
+  font-size: 15px;
+}
+.wf-ribbon[data-phone] .wf-ribbon-tabpick {
+  padding: 0 10px;
+  margin-right: 4px;
+  color: var(--wf-text);
+  background: var(--wf-bg-hover);
+  flex-shrink: 0;
+}
+.wf-ribbon[data-phone] .wf-ribbon-tail {
+  padding-left: 8px;
+}
+
+/* ---- Flyouts: menus on a desktop, sheets on a phone ---- */
+
+.wf-flyout {
+  position: fixed;
+  /* Above a dialog (100): a font list opens from the style dialog too. */
+  z-index: 106;
+  min-width: 190px;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 6px;
+  overflow-y: auto;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.38);
+  animation: wf-modal-in 0.12s ease-out;
+}
+.wf-flyout hr {
+  height: 1px;
+  margin: 5px 4px;
+  border: 0;
+  background: var(--wf-border);
+}
+.wf-flyout-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 10px 4px 6px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 13px;
+  text-align: left;
+}
+.wf-flyout-item:hover:not(:disabled),
+.wf-flyout-item:focus-visible {
+  background: var(--wf-bg-hover);
+}
+.wf-flyout-check {
+  width: 14px;
+  flex-shrink: 0;
+  color: var(--wf-accent);
+  font-size: 12px;
+}
+.wf-flyout-text {
+  flex: 1;
+  min-width: 0;
+}
+.wf-flyout-hint {
+  color: var(--wf-text-dim);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.wf-flyout-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 105;
+  background: var(--wf-scrim);
+}
+.wf-flyout.sheet {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  max-width: none;
+  max-height: min(70vh, 520px);
+  padding: 6px 10px calc(12px + env(safe-area-inset-bottom));
+  border-radius: var(--wf-radius-lg) var(--wf-radius-lg) 0 0;
+  border-bottom: 0;
+  animation: wf-sheet-up 0.16s ease-out;
+}
+.wf-flyout.sheet .wf-flyout-item {
+  min-height: 44px;
+  font-size: 15px;
+}
+.wf-flyout-grip {
+  width: 38px;
+  height: 4px;
+  margin: 4px auto 8px;
+  border-radius: 2px;
+  background: var(--wf-border);
+}
+@keyframes wf-sheet-up {
+  from {
+    transform: translateY(24px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.wf-ribbon-more {
+  min-width: 240px;
+}
+.wf-ribbon-more-group {
+  padding: 6px 4px;
+}
+.wf-ribbon-more-group + .wf-ribbon-more-group {
+  border-top: 1px solid var(--wf-border);
+}
+.wf-ribbon-more-group > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-ribbon-more .wf-ribbon-group {
+  flex-wrap: wrap;
+  padding: 0;
+}
+.wf-ribbon-more button:not(.wf-flyout-item) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 30px;
+  height: 30px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-ribbon-more button:not(.wf-flyout-item):hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-ribbon-more button.active {
+  color: var(--wf-accent);
+}
+
+.wf-symbols {
+  width: 318px;
+}
+.wf-symbol-group > span {
+  display: block;
+  margin: 6px 4px 3px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-symbol-group > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+  gap: 2px;
+}
+.wf-symbol-group button {
+  height: 32px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 16px;
+  font-family: Georgia, "Times New Roman", serif;
+}
+.wf-symbol-group button:hover {
+  background: var(--wf-bg-hover);
+}
+.wf-flyout.sheet.wf-symbols {
+  width: auto;
+}
+.wf-flyout.sheet .wf-symbol-group > div {
+  grid-template-columns: repeat(auto-fill, minmax(42px, 1fr));
+}
+.wf-flyout.sheet .wf-symbol-group button {
+  height: 42px;
+  font-size: 19px;
+}
+
+.wf-link-flyout {
+  width: 300px;
+}
+.wf-link-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 6px;
+}
+.wf-link-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  color: var(--wf-text-dim);
+}
+.wf-link-form input {
+  width: 100%;
+  height: 32px;
+  min-height: 0;
+}
+.wf-link-form input[aria-invalid="true"] {
+  border-color: var(--wf-danger);
+}
+.wf-link-bad {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wf-danger);
+}
+.wf-link-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.wf-flyout.sheet.wf-link-flyout {
+  width: auto;
+}
+.wf-flyout.sheet .wf-link-form input {
+  height: 42px;
+  font-size: 16px;
+}
+
+/* ---- Pictures: corner handles for resizing ---- */
+
+.ProseMirror [data-resize-container] {
+  max-width: 100%;
+  margin: 0 0 var(--wfd-psp, 0.85em);
+}
+.ProseMirror [data-resize-wrapper] {
+  max-width: 100%;
+  line-height: 0;
+}
+.ProseMirror [data-resize-wrapper] > img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+.ProseMirror [data-resize-handle] {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--wf-accent);
+  border-radius: 3px;
+  background: #fff;
+  opacity: 0;
+  transition: opacity 0.12s;
+  z-index: 2;
+  touch-action: none;
+}
+.ProseMirror [data-resize-handle="top-left"],
+.ProseMirror [data-resize-handle="bottom-right"] {
+  cursor: nwse-resize;
+}
+.ProseMirror [data-resize-handle="top-right"],
+.ProseMirror [data-resize-handle="bottom-left"] {
+  cursor: nesw-resize;
+}
+.ProseMirror [data-resize-handle="top-left"] {
+  top: -6px;
+  left: -6px;
+}
+.ProseMirror [data-resize-handle="top-right"] {
+  top: -6px;
+  right: -6px;
+}
+.ProseMirror [data-resize-handle="bottom-left"] {
+  bottom: -6px;
+  left: -6px;
+}
+.ProseMirror [data-resize-handle="bottom-right"] {
+  bottom: -6px;
+  right: -6px;
+}
+.ProseMirror [data-resize-container]:hover [data-resize-handle],
+.ProseMirror [data-resize-container].ProseMirror-selectednode [data-resize-handle],
+.ProseMirror [data-resize-container][data-resize-state="true"] [data-resize-handle] {
+  opacity: 1;
+}
+.ProseMirror [data-resize-container].ProseMirror-selectednode [data-resize-wrapper] > img {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .ProseMirror [data-resize-handle] {
+    width: 20px;
+    height: 20px;
+    opacity: 1;
+  }
+  .ProseMirror [data-resize-handle="top-left"] {
+    top: -10px;
+    left: -10px;
+  }
+  .ProseMirror [data-resize-handle="top-right"] {
+    top: -10px;
+    right: -10px;
+  }
+  .ProseMirror [data-resize-handle="bottom-left"] {
+    bottom: -10px;
+    left: -10px;
+  }
+  .ProseMirror [data-resize-handle="bottom-right"] {
+    bottom: -10px;
+    right: -10px;
+  }
+}
+
+/* ---- Show paragraph marks ---- */
+
+.wf-show-marks.wf-fmt-none .ProseMirror p:not([data-page-break]):not([data-break])::after,
+.wf-show-marks.wf-fmt-none .ProseMirror :is(h1, h2, h3, h4, h5, h6):not([data-page-break]):not([data-break])::after {
+  content: "¶";
+  margin-left: 0.15em;
+  color: var(--wf-accent);
+  opacity: 0.6;
+  font-weight: 400;
+  font-style: normal;
+  text-decoration: none;
+}
+/* An empty paragraph is held open by a line break; the mark takes its place
+   so the paragraph doesn't grow a second line. */
+.wf-show-marks.wf-fmt-none .ProseMirror :is(p, h1, h2, h3, h4, h5, h6):not([data-page-break]):not([data-break]) > br.ProseMirror-trailingBreak:only-child {
+  display: none;
+}
+
+/* ---- The always-open shell: account menu, server gate, connect sheet ---- */
+
+.wf-account {
+  position: relative;
+  margin-top: auto;
+}
+.wf-account-button {
+  position: relative;
+  color: var(--wf-text-dim);
+}
+.wf-account-dot {
+  position: absolute;
+  right: 4px;
+  bottom: 4px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--wf-bg-raised);
+  background: var(--wf-text-dim);
+}
+.wf-account-dot.connected {
+  background: var(--wf-success);
+}
+.wf-account-dot.resuming {
+  background: var(--wf-warn);
+  animation: wf-pulse 1.2s ease-in-out infinite;
+}
+.wf-account-dot.unreachable,
+.wf-account-dot.expired {
+  background: var(--wf-danger);
+}
+.wf-account-dot.local {
+  display: none;
+}
+@keyframes wf-pulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+.wf-account-panel {
+  position: absolute;
+  left: calc(100% + 8px);
+  bottom: 0;
+  z-index: 90;
+  width: 286px;
+  max-height: min(70vh, 560px);
+  overflow-y: auto;
+  padding: 8px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.4);
+  animation: wf-modal-in 0.12s ease-out;
+  text-align: left;
+}
+.wf-account-panel.inline {
+  position: static;
+  width: auto;
+  max-height: none;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  animation: none;
+}
+.wf-account-me {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 6px 10px;
+}
+.wf-account-me > span {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.wf-account-me strong,
+.wf-account-me small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-account-me small,
+.wf-account-text small {
+  color: var(--wf-text-dim);
+  font-size: 11.5px;
+}
+.wf-account-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 6px 0;
+  border-top: 1px solid var(--wf-border);
+}
+.wf-account-label {
+  padding: 2px 8px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-account-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 34px;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 13px;
+  text-align: left;
+}
+.wf-account-item:hover {
+  background: var(--wf-bg-hover);
+}
+.wf-account-icon {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+}
+.wf-account-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.wf-gate {
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px 16px;
+  overflow-y: auto;
+}
+.wf-gate-card {
+  max-width: 460px;
+  text-align: center;
+}
+.wf-gate-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  margin-bottom: 8px;
+  border-radius: 16px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  color: var(--wf-accent);
+}
+.wf-gate-icon svg {
+  width: 26px;
+  height: 26px;
+}
+.wf-gate-card h2 {
+  margin: 4px 0 8px;
+  font-size: 19px;
+}
+.wf-gate-card p {
+  margin: 0 0 16px;
+  color: var(--wf-text-dim);
+  line-height: 1.5;
+}
+.wf-gate-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-gate-actions,
+.wf-home-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+.wf-gate-actions button,
+.wf-home-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-connect-sheet {
+  width: min(460px, calc(100vw - 24px));
+  max-height: min(88vh, 720px);
+  overflow-y: auto;
+}
+.wf-connect-sheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.wf-connect-sheet-head h2 {
+  margin: 0;
+  font-size: 17px;
+}
+
+/* "All apps" on a phone: everything the tab bar doesn't have room for. */
+.wf-allapps {
+  position: fixed;
+  inset: 0;
+  z-index: 79;
+  background: var(--wf-scrim);
+  display: flex;
+  align-items: flex-end;
+}
+.wf-allapps-sheet {
+  width: 100%;
+  max-height: 78vh;
+  overflow-y: auto;
+  padding: 6px 14px calc(var(--wf-tabbar-total, 64px) + var(--wf-statusrow-h, 0px) + 14px);
+  background: var(--wf-bg-raised);
+  border-radius: var(--wf-radius-lg) var(--wf-radius-lg) 0 0;
+  border-top: 1px solid var(--wf-border);
+  animation: wf-sheet-up 0.16s ease-out;
+}
+.wf-allapps-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(76px, 1fr));
+  gap: 6px;
+  padding: 4px 0 12px;
+}
+.wf-allapps-grid .wf-rail-item {
+  position: relative;
+  width: auto;
+  height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 14px;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  outline: none;
+}
+.wf-allapps-grid .wf-rail-item.active {
+  color: var(--wf-accent);
+}
+.wf-allapps-grid .wf-rail-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ---- Home ---- */
+
+.wf-home {
+  height: 100%;
+  overflow-y: auto;
+}
+.wf-home-inner {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 36px 24px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+.wf-home-head h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+.wf-home section > h2 {
+  margin: 0 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-home-start {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 10px;
+}
+.wf-home-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  min-height: 108px;
+  padding: 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg-raised);
+  color: var(--wf-text);
+  text-align: left;
+  transition: border-color 0.12s, transform 0.12s;
+}
+.wf-home-tile:hover {
+  border-color: var(--wf-accent);
+  transform: translateY(-1px);
+}
+.wf-home-tile > svg {
+  color: var(--wf-accent);
+}
+.wf-home-tile span {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wf-home-tile small,
+.wf-home-recent-text small {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.wf-home-recents,
+.wf-home-servers {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg-raised);
+  overflow: hidden;
+}
+.wf-home-recents li + li,
+.wf-home-servers li + li {
+  border-top: 1px solid var(--wf-border);
+}
+.wf-home-recents button,
+.wf-home-servers button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+}
+.wf-home-recents button:hover,
+.wf-home-servers button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+}
+.wf-home-servers button:disabled {
+  opacity: 1;
+  cursor: default;
+}
+.wf-home-recent-icon {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+}
+.wf-home-recent-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wf-home-recent-text strong {
+  font-weight: 550;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-home-recents time,
+.wf-home-server-state {
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.wf-home-server-state.on {
+  color: var(--wf-success);
+}
+.wf-home-empty,
+.wf-home-linkline {
+  margin: 10px 0;
+  color: var(--wf-text-dim);
+  line-height: 1.5;
+}
+.wf-home-linkline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-home-actions {
+  justify-content: flex-start;
+}
+.wf-home-name {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg-raised);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-home-name small {
+  color: var(--wf-text-dim);
+}
+.wf-home-name .wf-connect-row {
+  flex-wrap: wrap;
+}
+.wf-home-name input {
+  flex: 1;
+  min-width: 160px;
+}
+
+/* ---- New document ---- */
+
+.wf-newdoc {
+  width: min(480px, calc(100vw - 24px));
+  max-height: 90vh;
+  overflow-y: auto;
+}
+.wf-newdoc h3 {
+  margin: 0 0 12px;
+  font-size: 17px;
+}
+.wf-newdoc form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-newdoc fieldset {
+  margin: 6px 0 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-newdoc legend {
+  padding: 0;
+  margin-bottom: 4px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-newdoc fieldset label {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  cursor: pointer;
+}
+.wf-newdoc fieldset label.on {
+  border-color: var(--wf-accent);
+  background: color-mix(in srgb, var(--wf-accent) 9%, transparent);
+}
+.wf-newdoc fieldset label.off {
+  opacity: 0.55;
+  cursor: default;
+}
+.wf-newdoc fieldset input {
+  margin-top: 3px;
+}
+.wf-newdoc fieldset span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wf-newdoc fieldset small {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.wf-newdoc .wf-connect-row {
+  margin-top: 10px;
+  justify-content: flex-end;
+}
+
+@media (max-width: 767px) {
+  .wf-home-inner {
+    padding: 22px 16px 40px;
+    gap: 24px;
+  }
+  .wf-home-head h1 {
+    font-size: 23px;
+  }
+  .wf-home-start {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .wf-home-recents time {
+    display: none;
+  }
+  .wf-account-item {
+    min-height: 44px;
+    font-size: 15px;
+  }
+}
+
+/* Buttons are single-line by default (right for chips); these hold a title
+   and a sentence. */
+.wf-home-tile,
+.wf-home-recents button,
+.wf-home-servers button,
+.wf-account-item,
+.wf-flyout-item {
+  white-space: normal;
+}
+.wf-home-tile span,
+.wf-home-recent-text,
+.wf-account-text {
+  min-width: 0;
+}
+
+.wf-board-trash {
+  margin-top: 12px;
+}
+.wf-board-trash ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 520px;
+}
+.wf-board-trash li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-board-trash li span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-board-trash small {
+  color: var(--wf-text-dim);
+}
+
+.wf-home-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  padding-top: 14px;
+  border-top: 1px solid var(--wf-border);
+  color: var(--wf-text-dim);
+}
+
+/* ---- Font picker ---- */
+
+.wf-font-button {
+  justify-content: space-between !important;
+  max-width: 100%;
+}
+.wf-font-button .wf-flyout-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.wf-ribbon button.wf-ribbon-font {
+  width: 132px;
+  padding: 0 6px 0 8px;
+  border: 1px solid var(--wf-border);
+  color: var(--wf-text);
+}
+.wf-inspector-font {
+  width: 140px;
+  height: 28px;
+  min-height: 0;
+  padding: 0 6px 0 8px;
+  flex-shrink: 0;
+}
+.wf-font-panel {
+  width: 320px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.wf-fontlist {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  max-height: inherit;
+}
+.wf-fontlist-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--wf-border);
+  color: var(--wf-text-dim);
+}
+.wf-fontlist-search input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 13.5px;
+}
+.wf-fontlist-kinds {
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--wf-border);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.wf-fontlist-kinds button {
+  height: 24px;
+  min-height: 0;
+  padding: 0 9px;
+  border-radius: var(--wf-radius-pill);
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.wf-fontlist-kinds button.active {
+  background: var(--wf-accent);
+  border-color: var(--wf-accent);
+  color: #fff;
+}
+.wf-fontlist-rows {
+  flex: 1;
+  min-height: 0;
+  max-height: min(52vh, 420px);
+  overflow-y: auto;
+  padding: 4px;
+}
+.wf-fontlist-section {
+  display: flex;
+  flex-direction: column;
+}
+.wf-fontlist-title {
+  padding: 8px 8px 3px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+.wf-fontlist-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+}
+.wf-fontlist-row:hover,
+.wf-fontlist-row:focus-visible {
+  background: var(--wf-bg-hover);
+}
+.wf-fontlist-row.current {
+  box-shadow: inset 2px 0 0 var(--wf-accent);
+}
+.wf-fontlist-name {
+  font-size: 16px;
+  line-height: 1.25;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-fontlist-note {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--wf-text-dim);
+}
+.wf-fontlist-more {
+  align-self: flex-start;
+  margin: 2px 8px 4px;
+  font-size: 12px;
+}
+.wf-fontlist-empty {
+  margin: 10px 8px;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.wf-flyout.sheet.wf-font-panel {
+  width: auto;
+  padding: 6px 0 calc(8px + env(safe-area-inset-bottom));
+  max-height: 76vh;
+}
+.wf-flyout.sheet .wf-fontlist-rows {
+  max-height: none;
+}
+.wf-flyout.sheet .wf-fontlist-row {
+  min-height: 44px;
+}
+.wf-flyout.sheet .wf-fontlist-search input {
+  height: 36px;
+  font-size: 16px;
+}
+.wf-flyout.sheet .wf-fontlist-kinds button {
+  height: 32px;
+  font-size: 13.5px;
+}
+
+.wf-missing-fonts {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  border-top: 1px solid var(--wf-border);
+  background: color-mix(in srgb, var(--wf-warn) 10%, transparent);
+  font-size: 12.5px;
+  line-height: 1.35;
+}
+.wf-missing-fonts > span {
+  flex: 1;
+  min-width: 0;
+}
+.wf-missing-fonts .wf-missing-replace {
+  flex-shrink: 0;
+  height: 26px;
+  min-height: 0;
+  padding: 0 8px;
+}
+.wf-fonts-licences {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ==== Document: formatting on a run of text (schema level 2) ====
+   Each mark names its value in a custom property; these rules — for the
+   Document format and its previews only — turn it into ink. A format with
+   its own conventions has no such rule, so there the marks are simply not
+   drawn. Sub/superscript sizes and shifts are the page layout's
+   (doclayout/layout.ts: SCRIPT_SIZE, SUPER_RISE, SUB_DROP). */
+
+.wf-fmt-none .ProseMirror [data-ff],
+.wf-rich-wrap .ProseMirror [data-ff] {
+  font-family: var(--wf-ff);
+}
+.wf-fmt-none .ProseMirror [data-fs],
+.wf-rich-wrap .ProseMirror [data-fs] {
+  font-size: var(--wf-fs);
+}
+.wf-fmt-none .ProseMirror [data-tc],
+.wf-rich-wrap .ProseMirror [data-tc] {
+  color: var(--wf-tc);
+}
+.wf-fmt-none .ProseMirror [data-hl],
+.wf-rich-wrap .ProseMirror [data-hl] {
+  background-color: var(--wf-hl);
+}
+.wf-fmt-none .ProseMirror [data-vs],
+.wf-rich-wrap .ProseMirror [data-vs] {
+  position: relative;
+  font-size: 0.65em;
+  /* Moved, not re-aligned: the line keeps its height. */
+  vertical-align: baseline;
+}
+.wf-fmt-none .ProseMirror [data-vs="super"],
+.wf-rich-wrap .ProseMirror [data-vs="super"] {
+  top: -0.51em;
+}
+.wf-fmt-none .ProseMirror [data-vs="sub"],
+.wf-rich-wrap .ProseMirror [data-vs="sub"] {
+  top: 0.215em;
+}
+
+/* ==== Document: paragraph indents, line heights, shading, borders ==== */
+
+.wf-fmt-none .ProseMirror [data-il],
+.wf-rich-wrap .ProseMirror [data-il] {
+  margin-left: var(--wf-il);
+}
+.wf-fmt-none .ProseMirror [data-ir],
+.wf-rich-wrap .ProseMirror [data-ir] {
+  margin-right: var(--wf-ir);
+}
+.wf-fmt-none .ProseMirror [data-if],
+.wf-rich-wrap .ProseMirror [data-if] {
+  text-indent: var(--wf-if);
+}
+.wf-fmt-none .ProseMirror [data-lr="exact"],
+.wf-rich-wrap .ProseMirror [data-lr="exact"] {
+  line-height: var(--wf-la);
+}
+.wf-fmt-none .ProseMirror [data-lr="atLeast"],
+.wf-rich-wrap .ProseMirror [data-lr="atLeast"] {
+  line-height: max(var(--wf-la), calc(var(--wf-lh, var(--wfd-line, 1.65)) * 1em));
+}
+.wf-fmt-none .ProseMirror [data-shade],
+.wf-rich-wrap .ProseMirror [data-shade] {
+  background-color: var(--wf-shade);
+}
+/* A border stands off the text (4pt at the sides, 1pt above and below, as
+   in Word), outside where the text would be anyway — so adding one doesn't
+   move the words sideways. */
+.wf-fmt-none .ProseMirror [data-bdr],
+.wf-rich-wrap .ProseMirror [data-bdr] {
+  border: 0 solid var(--wf-bc, #000);
+}
+.wf-fmt-none .ProseMirror [data-bdr*="t"],
+.wf-rich-wrap .ProseMirror [data-bdr*="t"] {
+  border-top-width: var(--wf-bw);
+  padding-top: 1pt;
+}
+.wf-fmt-none .ProseMirror [data-bdr*="b"],
+.wf-rich-wrap .ProseMirror [data-bdr*="b"] {
+  border-bottom-width: var(--wf-bw);
+  padding-bottom: 1pt;
+}
+.wf-fmt-none .ProseMirror [data-bdr*="l"],
+.wf-rich-wrap .ProseMirror [data-bdr*="l"] {
+  border-left-width: var(--wf-bw);
+  padding-left: 4pt;
+  margin-left: calc(var(--wf-il, 0pt) - 4pt - var(--wf-bw));
+}
+.wf-fmt-none .ProseMirror [data-bdr*="r"],
+.wf-rich-wrap .ProseMirror [data-bdr*="r"] {
+  border-right-width: var(--wf-bw);
+  padding-right: 4pt;
+  margin-right: calc(var(--wf-ir, 0pt) - 4pt - var(--wf-bw));
+}
+
+/* ==== Document: the built-in paragraph styles a paragraph can name ====
+   Pinned to editor/styles/sheet.ts. Each selector weighs exactly what the
+   plain `p` rule weighs, so these replace it by coming later — and still
+   lose to formatting on the paragraph itself, and to a document's own
+   changes (editor/styles/css.ts), which come later still. */
+
+.wf-fmt-none :where(.ProseMirror) p[data-element="title"],
+.wf-rich-wrap :where(.ProseMirror) p[data-element="title"] {
+  font-size: 2.2em;
+  font-weight: 700;
+  margin-bottom: 0.182em;
+  text-indent: 0;
+}
+.wf-fmt-none :where(.ProseMirror) p[data-element="subtitle"],
+.wf-rich-wrap :where(.ProseMirror) p[data-element="subtitle"] {
+  font-size: 1.3em;
+  color: #595959;
+  margin-bottom: 0.77em;
+  text-indent: 0;
+}
+.wf-fmt-none :where(.ProseMirror) p[data-element="caption"],
+.wf-rich-wrap :where(.ProseMirror) p[data-element="caption"] {
+  font-size: 0.85em;
+  font-style: italic;
+  color: #595959;
+  /* The body's space after, which is in the body's ems. */
+  margin-bottom: var(--wfd-psp, 1em);
+  text-indent: 0;
+}
+.wf-fmt-none :where(.ProseMirror) p[data-element="nospace"],
+.wf-rich-wrap :where(.ProseMirror) p[data-element="nospace"] {
+  line-height: 1.2;
+  margin-bottom: 0;
+  text-indent: 0;
+}
+
+/* ==== Document: bullet styles, legal numbering, checklists ==== */
+
+.wf-fmt-none .ProseMirror ul[data-marker="circle"] {
+  list-style-type: circle;
+}
+.wf-fmt-none .ProseMirror ul[data-marker="square"] {
+  list-style-type: square;
+}
+.wf-fmt-none .ProseMirror ul[data-marker="dash"] {
+  list-style-type: "–  ";
+}
+.wf-fmt-none .ProseMirror ul[data-marker="arrow"] {
+  list-style-type: "→  ";
+}
+.wf-fmt-none .ProseMirror ul[data-marker="check"] {
+  list-style-type: "✓  ";
+}
+/* "1.", "1.1.", "1.1.1.": a list of type legal, and the plain numbered
+   lists inside it. */
+.wf-fmt-none .ProseMirror ol[type="legal"],
+.wf-fmt-none .ProseMirror ol[type="legal"] ol:not([type]) {
+  list-style: none;
+  counter-reset: wf-legal;
+}
+.wf-fmt-none .ProseMirror ol[type="legal"] > li,
+.wf-fmt-none .ProseMirror ol[type="legal"] ol:not([type]) > li {
+  position: relative;
+  counter-increment: wf-legal;
+}
+.wf-fmt-none .ProseMirror ol[type="legal"] > li::before,
+.wf-fmt-none .ProseMirror ol[type="legal"] ol:not([type]) > li::before {
+  content: counters(wf-legal, ".") ".";
+  position: absolute;
+  right: 100%;
+  margin-right: 0.45em;
+  white-space: nowrap;
+}
+.ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+}
+.ProseMirror li[data-type="taskItem"] {
+  position: relative;
+}
+.ProseMirror li[data-type="taskItem"] > label {
+  position: absolute;
+  right: 100%;
+  top: 0;
+  display: flex;
+  align-items: center;
+  /* As tall as the first line, so the box sits on its middle. */
+  height: calc(var(--wfd-line, 1.65) * 1em);
+  margin-right: 0.45em;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ProseMirror li[data-type="taskItem"] > label > input {
+  width: 0.8em;
+  height: 0.8em;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--wf-accent);
+  cursor: pointer;
+}
+.ProseMirror li[data-type="taskItem"] > div > ul,
+.ProseMirror li[data-type="taskItem"] > div > ol {
+  margin: 0;
+}
+.wf-fmt-none .ProseMirror li[data-type="taskItem"] > div > p {
+  text-indent: 0;
+}
+/* On a touch screen the box needs a finger's width. */
+@media (pointer: coarse) {
+  .ProseMirror li[data-type="taskItem"] > label {
+    min-width: 28px;
+    justify-content: flex-end;
+  }
+  .ProseMirror li[data-type="taskItem"] > label > input {
+    width: 1em;
+    height: 1em;
+  }
+}
+
+/* The format painter is armed. */
+.ProseMirror.wf-painting {
+  cursor: copy;
+}
+
+/* ==== Ribbon: colours, styles ==== */
+
+.wf-color-icon {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+}
+.wf-color-icon::after {
+  content: "";
+  width: 15px;
+  height: 3px;
+  border-radius: 1px;
+  background: var(--wf-swatch, transparent);
+  box-shadow: 0 0 0 0.5px var(--wf-border);
+}
+.wf-colors {
+  min-width: 0;
+  width: 212px;
+}
+.wf-color-none {
+  display: block;
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.wf-color-none.current {
+  border-color: var(--wf-accent);
+}
+.wf-color-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 6px;
+  padding: 8px 2px;
+}
+.wf-color-swatch {
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgba(128, 128, 128, 0.45);
+  border-radius: var(--wf-radius-sm);
+  cursor: pointer;
+}
+.wf-color-swatch.current {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
+}
+.wf-color-more {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 4px 4px 2px;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-color-more input,
+.wf-style-colors input[type="color"] {
+  width: 34px;
+  height: 26px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+}
+.wf-flyout.sheet.wf-colors {
+  width: auto;
+}
+.wf-flyout.sheet .wf-color-grid {
+  grid-template-columns: repeat(5, minmax(0, 56px));
+  justify-content: space-between;
+  gap: 10px;
+}
+.wf-flyout.sheet .wf-color-none {
+  height: 44px;
+  font-size: 15px;
+}
+.wf-marker-sample {
+  display: inline-block;
+  width: 1.4em;
+  text-align: center;
+}
+
+.wf-ribbon button.wf-ribbon-style {
+  justify-content: space-between;
+  width: 124px;
+  padding: 0 8px;
+  border: 1px solid var(--wf-border);
+  color: var(--wf-text);
+}
+.wf-ribbon button.wf-ribbon-style .wf-flyout-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.wf-style-gallery {
+  width: 250px;
+  padding: 6px;
+}
+.wf-style-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.wf-style-item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 0;
+  border-left: 2px solid transparent;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+}
+.wf-style-item > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-style-item small {
+  flex-shrink: 0;
+  color: var(--wf-text-dim);
+  font-size: 10.5px;
+}
+.wf-style-item:hover,
+.wf-style-item:focus-visible {
+  background: var(--wf-bg-hover);
+}
+.wf-style-item.current {
+  border-left-color: var(--wf-accent);
+  background: var(--wf-bg-hover);
+}
+.wf-style-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--wf-border);
+}
+.wf-style-tools button {
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.wf-style-tools button:hover:not(:disabled) {
+  background: var(--wf-bg-hover);
+}
+.wf-style-tools button:disabled {
+  opacity: 0.45;
+}
+.wf-flyout.sheet.wf-style-gallery {
+  width: auto;
+}
+.wf-flyout.sheet .wf-style-item,
+.wf-flyout.sheet .wf-style-tools button {
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.wf-modal.wf-style-dialog {
+  width: min(430px, calc(100vw - 24px));
+  max-height: min(88vh, 760px);
+  overflow-y: auto;
+}
+.wf-style-dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.wf-style-sample {
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  /* Paper, whatever the app's theme: the style is for the page. */
+  background: #fff;
+  color: #1a1a1a;
+  font-family: Georgia, "Times New Roman", serif;
+  overflow: hidden;
+}
+.wf-style-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-style-unit,
+.wf-inspector-unit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+}
+.wf-style-unit select {
+  width: 104px;
+}
+.wf-style-dialog .wf-inspector-number {
+  width: 72px;
+}
+.wf-style-dialog .wf-inspector-row > input:not([type]) {
+  width: 62%;
+}
+.wf-style-colors {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  max-width: 68%;
+}
+.wf-style-colors .wf-color-none {
+  width: auto;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+}
+.wf-style-colors .wf-color-swatch {
+  width: 20px;
+  height: 20px;
+  aspect-ratio: auto;
+}
+.wf-style-actions {
+  align-items: center;
+  margin-top: 4px;
+}
+.wf-style-spacer {
+  flex: 1;
+}
+.wf-inspector-hint {
+  margin: 0;
+  color: var(--wf-text-dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+@media (max-width: 767px) {
+  .wf-style-dialog .wf-inspector-row {
+    flex-wrap: wrap;
+  }
+  .wf-style-colors {
+    max-width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* Neighbours with the same border are one box: no rule between them, and
+   the space between them is inside it (see ParaFormat's decorations). */
+.wf-fmt-none .ProseMirror .wf-join-next,
+.wf-rich-wrap .ProseMirror .wf-join-next {
+  border-bottom-width: 0;
+  margin-bottom: 0;
+  padding-bottom: var(--wf-sb, var(--wfd-psp, 0.85em));
+}
+.wf-fmt-none .ProseMirror .wf-join-prev,
+.wf-rich-wrap .ProseMirror .wf-join-prev {
+  border-top-width: 0;
+  margin-top: 0;
+  padding-top: 0;
+}
+
+/* ==== Document: sections and column breaks (drawn like a page break) ==== */
+
+.wf-doc-content .ProseMirror [data-break="section"]::after,
+.wf-rich .ProseMirror [data-break="section"]::after {
+  content: "section break";
+}
+.wf-doc-content .ProseMirror [data-break="column"]::after,
+.wf-rich .ProseMirror [data-break="column"]::after {
+  content: "column break";
+}
+
+/* ==== Document: tables ====
+   Cell padding and line weight are the page layout's (doclayout/layout.ts:
+   CELL_PAD_X, CELL_PAD_Y, CELL_LINE). A table wider than the sheet scrolls
+   sideways in its own strip (on a phone, mostly). */
+
+.ProseMirror .wf-table-wrap {
+  overflow-x: auto;
+  margin: 0 0 var(--wfd-psp, 0.85em);
+  -webkit-overflow-scrolling: touch;
+}
+.ProseMirror .wf-table-wrap table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  margin: 0;
+}
+.ProseMirror .wf-table-wrap td {
+  position: relative;
+  padding: 3pt 5pt;
+  vertical-align: top;
+  /* Where a table draws no line, a faint one shows where its cells are
+     (while editing; not where the document is only shown). */
+  border: 0.5pt dashed var(--wf-cell-guide, rgba(128, 128, 128, 0.45));
+  min-width: 18pt;
+  overflow-wrap: anywhere;
+}
+.ProseMirror .wf-table-wrap table:not([data-lines]) td {
+  border: 0.5pt solid #000;
+}
+.ProseMirror .wf-table-wrap table[data-lines="rows"] td {
+  border-top: 0.5pt solid #000;
+  border-bottom: 0.5pt solid #000;
+}
+.ProseMirror .wf-table-wrap table[data-lines="box"] tr:first-child td {
+  border-top: 0.5pt solid #000;
+}
+.ProseMirror .wf-table-wrap table[data-lines="box"] tr:last-child td {
+  border-bottom: 0.5pt solid #000;
+}
+.ProseMirror .wf-table-wrap table[data-lines="box"] td:first-child {
+  border-left: 0.5pt solid #000;
+}
+.ProseMirror .wf-table-wrap table[data-lines="box"] td:last-child {
+  border-right: 0.5pt solid #000;
+}
+.wf-rich:not(.editable) .ProseMirror .wf-table-wrap {
+  --wf-cell-guide: transparent;
+}
+.ProseMirror .wf-table-wrap td > :last-child {
+  margin-bottom: 0;
+}
+.ProseMirror .wf-table-wrap td > :first-child {
+  margin-top: 0;
+}
+/* The cells a drag has selected. */
+.ProseMirror .wf-table-wrap td.selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(124, 108, 240, 0.2);
+  pointer-events: none;
+}
+.ProseMirror .wf-table-wrap.wf-col-resize,
+.ProseMirror .wf-table-wrap.wf-col-resize td {
+  cursor: col-resize;
+}
+
+.wf-table-pick {
+  min-width: 0;
+  width: 204px;
+}
+.wf-table-grid {
+  display: grid;
+  gap: 3px;
+  padding: 4px;
+}
+.wf-table-grid button {
+  aspect-ratio: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 2px;
+  background: transparent;
+}
+.wf-table-grid button.on {
+  border-color: var(--wf-accent);
+  background: rgba(124, 108, 240, 0.28);
+}
+.wf-table-size {
+  margin: 2px 4px 4px;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  text-align: center;
+}
+.wf-flyout.sheet.wf-table-pick {
+  width: auto;
+}
+.wf-flyout.sheet .wf-table-grid {
+  gap: 6px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+
+/* ==== Document: footnotes and endnotes ====
+   In the text a note is its number (counted by the stylesheet, so nothing
+   is stored); selected, it opens underneath to be written in. Size and
+   lift are a superscript's. */
+
+.ProseMirror:not(.wf-fn-text) {
+  counter-reset: wf-fn wf-en;
+}
+.ProseMirror sup.wf-fn {
+  position: relative;
+  top: -0.51em;
+  vertical-align: baseline;
+  font-size: 0.65em;
+  font-weight: 400;
+  font-style: normal;
+  line-height: 0;
+  padding: 0 0.1em;
+  color: var(--wf-accent);
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.ProseMirror sup.wf-fn::before {
+  counter-increment: wf-fn;
+  content: counter(wf-fn);
+}
+.ProseMirror sup.wf-fn[data-kind="end"]::before {
+  counter-increment: wf-en;
+  content: counter(wf-en, lower-roman);
+}
+.ProseMirror sup.wf-fn.ProseMirror-selectednode,
+.ProseMirror sup.wf-fn.open {
+  outline: 1px solid var(--wf-accent);
+  outline-offset: 1px;
+  border-radius: 2px;
+}
+.wf-fn-pop {
+  /* Fixed where its number is (Footnote.ts places it): nothing that clips
+     or scrolls — the sheet, a table — can cut it off. */
+  position: fixed;
+  z-index: 40;
+  width: min(340px, 78vw);
+  padding: 8px 10px 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg-raised);
+  color: var(--wf-text);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+  font-family: var(--wf-font, system-ui, sans-serif);
+  font-size: 13px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  text-indent: 0;
+  white-space: normal;
+  cursor: auto;
+}
+.wf-fn-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  color: var(--wf-text-dim);
+  font-size: 11.5px;
+}
+.wf-fn-head > span {
+  flex: 1;
+  font-weight: 600;
+}
+.wf-fn-head button {
+  min-height: 0;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 11.5px;
+}
+.wf-fn-body .ProseMirror {
+  min-height: 2.9em;
+  max-height: 40vh;
+  overflow-y: auto;
+  padding: 6px 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg);
+  outline: none;
+  white-space: pre-wrap;
+  -webkit-user-select: text;
+  user-select: text;
+}
+.wf-fn-body .ProseMirror:focus {
+  border-color: var(--wf-accent);
+}
+@media (max-width: 767px) {
+  .wf-fn-head button {
+    height: 32px;
+    font-size: 13px;
+  }
+  .wf-fn-body .ProseMirror {
+    font-size: 16px;
+  }
+}
+
+/* ==== Document: table of contents ==== */
+
+.ProseMirror .wf-toc {
+  margin: 0 0 var(--wfd-psp, 0.85em);
+  padding: 2px 0;
+  border-radius: 3px;
+  line-height: 1.5;
+}
+.ProseMirror .wf-toc.ProseMirror-selectednode {
+  outline: 1px solid var(--wf-accent);
+  outline-offset: 3px;
+}
+.ProseMirror .wf-toc-row {
+  display: block;
+  color: inherit;
+  text-decoration: none;
+  text-indent: 0;
+  cursor: pointer;
+}
+.ProseMirror .wf-toc-row:hover {
+  text-decoration: underline;
+}
+.ProseMirror .wf-toc-row[data-level="1"] {
+  font-weight: 700;
+}
+.ProseMirror .wf-toc-row[data-level="2"] {
+  padding-left: 1.5em;
+}
+.ProseMirror .wf-toc-row[data-level="3"] {
+  padding-left: 3em;
+}
+.ProseMirror .wf-toc-row[data-level="4"] {
+  padding-left: 4.5em;
+}
+.ProseMirror .wf-toc-row[data-level="5"] {
+  padding-left: 6em;
+}
+.ProseMirror .wf-toc-row[data-level="6"] {
+  padding-left: 7.5em;
+}
+.ProseMirror .wf-toc-empty {
+  margin: 0;
+  color: #808080;
+  font-style: italic;
+  text-indent: 0;
+}
+
+/* ==== Document: where a picture sits, and its caption ==== */
+
+.ProseMirror [data-resize-container],
+.ProseMirror .wf-figure {
+  flex-direction: column;
+  align-items: flex-start;
+}
+.ProseMirror .wf-figure {
+  display: flex;
+  margin: 0 0 var(--wfd-psp, 0.85em);
+}
+.ProseMirror .wf-figure > img {
+  max-width: 100%;
+  height: auto;
+}
+.ProseMirror [data-resize-container][data-align="center"],
+.ProseMirror .wf-figure[data-align="center"] {
+  align-items: center;
+}
+.ProseMirror [data-resize-container][data-align="right"],
+.ProseMirror .wf-figure[data-align="right"] {
+  align-items: flex-end;
+}
+.ProseMirror .wf-img-caption {
+  margin-top: 0.35em;
+  font-size: 0.85em;
+  font-style: italic;
+  line-height: 1.4;
+  color: #595959;
+  text-indent: 0;
+}
+.ProseMirror [data-align="center"] > .wf-img-caption {
+  text-align: center;
+}
+.ProseMirror [data-align="right"] > .wf-img-caption {
+  text-align: right;
+}
+
+/* ==== Ribbon: tabs that come and go; the section form ==== */
+
+.wf-ribbon-tabs button.contextual {
+  color: var(--wf-accent);
+}
+.wf-section {
+  width: 290px;
+  padding: 8px;
+}
+.wf-section h4 {
+  margin: 2px 0 8px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.wf-section-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-section-start,
+.wf-section-remove {
+  width: 100%;
+  min-height: 30px;
+  padding: 4px 10px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  font-size: 12.5px;
+  text-align: left;
+}
+.wf-section-start:disabled {
+  opacity: 0.45;
+}
+.wf-section-remove {
+  margin-top: 2px;
+  color: var(--wf-danger, #e5484d);
+}
+.wf-section-hint {
+  margin: 8px 2px 4px;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.wf-section-margins {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+.wf-section-margins label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-section .wf-inspector-number {
+  width: 64px;
+}
+.wf-section .wf-inspector-row select {
+  width: 150px;
+}
+.wf-flyout.sheet.wf-section {
+  width: auto;
+}
+
+/* ---- Review: tracked changes ----
+   A suggestion is in the text: words to add are underlined in their
+   reviewer's colour, words to take out struck through in it. Anything that
+   isn't text — a paragraph break, a picture, a table — says the same on
+   its element (`data-rev-v`; marks have only `data-rev`). */
+.ProseMirror [data-rev] {
+  --wf-rev: #c0392b;
+}
+.ProseMirror [data-rev][data-c="1"] {
+  --wf-rev: #1d7a4c;
+}
+.ProseMirror [data-rev][data-c="2"] {
+  --wf-rev: #2667b0;
+}
+.ProseMirror [data-rev][data-c="3"] {
+  --wf-rev: #8a3fb0;
+}
+.ProseMirror [data-rev][data-c="4"] {
+  --wf-rev: #a8690f;
+}
+.ProseMirror [data-rev][data-c="5"] {
+  --wf-rev: #0c7a84;
+}
+.ProseMirror ins[data-rev] {
+  color: var(--wf-rev);
+  text-decoration: underline;
+  text-decoration-color: var(--wf-rev);
+  text-decoration-thickness: 1.5px;
+  text-underline-offset: 2px;
+}
+.ProseMirror del[data-rev] {
+  color: var(--wf-rev);
+  text-decoration: line-through;
+  text-decoration-color: var(--wf-rev);
+  opacity: 0.8;
+}
+/* Struck words that were themselves a suggestion: both. */
+.ProseMirror ins[data-rev] del[data-rev],
+.ProseMirror del[data-rev] ins[data-rev] {
+  text-decoration: underline line-through;
+}
+/* A paragraph break someone added, or wants gone: a pilcrow where the
+   paragraph it made (or would lose) begins. */
+.ProseMirror :is(p, h1, h2, h3, h4, h5, h6)[data-rev-v]::before {
+  content: "¶";
+  margin-right: 0.3em;
+  color: var(--wf-rev);
+  font-family: system-ui, sans-serif;
+  font-weight: 400;
+  font-style: normal;
+  font-size: 0.85em;
+  text-indent: 0;
+  text-decoration: underline;
+  text-decoration-color: var(--wf-rev);
+}
+.ProseMirror :is(p, h1, h2, h3, h4, h5, h6)[data-rev~="del"]::before {
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+/* Things added or removed whole. */
+.ProseMirror [data-rev-v]:not(p):not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(sup):not(br) {
+  outline: 2px solid var(--wf-rev);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+.ProseMirror [data-rev~="del"][data-rev-v]:not(p):not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(sup):not(br) {
+  outline-style: dashed;
+  opacity: 0.55;
+}
+.ProseMirror sup.wf-fn[data-rev-v] {
+  color: var(--wf-rev);
+  text-decoration: underline;
+}
+.ProseMirror sup.wf-fn[data-rev~="del"] {
+  text-decoration: line-through;
+  opacity: 0.8;
+}
+
+/* Viewing: the text as it would read with every suggestion accepted. */
+.wf-rev-final .ProseMirror ins[data-rev] {
+  color: inherit;
+  text-decoration: none;
+}
+.wf-rev-final .ProseMirror del[data-rev],
+.wf-rev-final .ProseMirror [data-rev~="del"][data-rev-v]:not(p):not(h1):not(h2):not(h3):not(h4):not(h5):not(h6) {
+  display: none;
+}
+.wf-rev-final .ProseMirror :is(p, h1, h2, h3, h4, h5, h6)[data-rev-v]::before {
+  content: none;
+}
+.wf-rev-final .ProseMirror [data-rev-v]:not(p):not(h1):not(h2):not(h3):not(h4):not(h5):not(h6):not(sup):not(br) {
+  outline: none;
+}
+.wf-rev-final .ProseMirror sup.wf-fn[data-rev-v] {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* The mode, wherever it is chosen. */
+.wf-review-modes {
+  display: inline-flex;
+  flex-shrink: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  overflow: hidden;
+}
+.wf-review-modes button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-review-modes button + button {
+  border-left: 1px solid var(--wf-border);
+}
+.wf-review-modes button.active {
+  background: var(--wf-accent);
+  color: #fff;
+}
+.wf-ribbon-select.wf-ribbon-mode {
+  width: 112px;
+}
+.wf-ribbon .wf-ribbon-suggesting {
+  height: 22px;
+  margin-left: 10px;
+  padding: 0 9px;
+  border-radius: 11px;
+  background: var(--wf-accent);
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.wf-ribbon[data-phone] .wf-ribbon-suggesting {
+  height: 28px;
+  min-width: 0;
+  margin: 0 6px 0 0;
+}
+.wf-viewing-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 6px 12px;
+  min-height: 40px;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-viewing-text {
+  min-width: 0;
+}
+
+/* The panel's two lists. */
+.wf-panel-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+.wf-panel-tabs button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 13px;
+  font-weight: 600;
+}
+.wf-panel-tabs button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-panel-tabs button span {
+  min-width: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--wf-accent);
+  color: #fff;
+  font-size: 11px;
+  line-height: 18px;
+  text-align: center;
+}
+.wf-changes {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.wf-changes-top {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--wf-border);
+}
+.wf-changes-top .wf-review-modes {
+  align-self: flex-start;
+  max-width: 100%;
+}
+.wf-changes-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.wf-changes-all {
+  display: flex;
+  gap: 6px;
+}
+.wf-changes-all button {
+  flex: 1;
+  justify-content: center;
+  min-height: 28px;
+  font-size: 12.5px;
+}
+.wf-change {
+  --wf-rev: #e0705f;
+  display: flex;
+  align-items: flex-start;
+  gap: 4px;
+  border: 1px solid var(--wf-border);
+  border-left: 3px solid var(--wf-rev);
+  border-radius: var(--wf-radius-md);
+  padding: 6px 6px 6px 8px;
+}
+.wf-change[data-c="1"] {
+  --wf-rev: #4fb783;
+}
+.wf-change[data-c="2"] {
+  --wf-rev: #5d9be0;
+}
+.wf-change[data-c="3"] {
+  --wf-rev: #b97ad8;
+}
+.wf-change[data-c="4"] {
+  --wf-rev: #d6a04a;
+}
+.wf-change[data-c="5"] {
+  --wf-rev: #45b3bd;
+}
+.wf-change-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 3px;
+  padding: 2px;
+  border: 0;
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+  white-space: normal;
+  height: auto;
+}
+.wf-change-who {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 12px;
+}
+.wf-change-who i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--wf-rev);
+  flex-shrink: 0;
+  align-self: center;
+}
+.wf-change-who small {
+  color: var(--wf-text-dim);
+  font-size: 11px;
+}
+.wf-change-what {
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--wf-text-dim);
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
+  line-clamp: 4;
+  overflow: hidden;
+}
+.wf-change-what q {
+  color: var(--wf-text);
+  quotes: "“" "”";
+}
+.wf-change[data-kind="del"] .wf-change-what q,
+.wf-change[data-kind="replace"] .wf-change-what q:first-of-type {
+  text-decoration: line-through;
+  text-decoration-color: var(--wf-rev);
+}
+.wf-change-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+/* ---- Read aloud ---- */
+.ProseMirror .wf-reading {
+  background: rgba(255, 208, 0, 0.42);
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px rgba(255, 208, 0, 0.42);
+}
+.wf-read-bar {
+  flex-wrap: wrap;
+}
+.wf-read-bar select {
+  height: 28px;
+  min-height: 0;
+  padding: 0 22px 0 8px;
+  font-size: 12.5px;
+}
+.wf-read-bar .wf-read-voice {
+  max-width: 200px;
+  min-width: 0;
+}
+.wf-read-status {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  min-width: 0;
+}
+
+/* ---- Compare ---- */
+.wf-cmp-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  animation: wf-backdrop-in 0.12s ease-out;
+}
+.wf-cmp-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 12px;
+  padding-top: max(8px, env(safe-area-inset-top));
+  border-bottom: 1px solid var(--wf-border);
+  background: var(--wf-bg-raised);
+}
+.wf-cmp-bar button:not(.wf-icon) {
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12.5px;
+}
+.wf-cmp-bar button.active {
+  color: var(--wf-accent);
+  border-color: var(--wf-accent);
+}
+.wf-cmp-summary {
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-cmp-heads {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 10px 20px 6px;
+  color: var(--wf-text-dim);
+  font-size: 12.5px;
+}
+.wf-cmp-heads.inline {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  width: min(760px, 100%);
+}
+.wf-cmp-heads > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-cmp-tag {
+  display: inline-block;
+  margin-right: 4px;
+  padding: 1px 7px;
+  border-radius: 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.wf-cmp-tag.del {
+  background: rgba(229, 72, 77, 0.22);
+  color: #f0888b;
+}
+.wf-cmp-tag.ins {
+  background: rgba(46, 160, 67, 0.24);
+  color: #6fd08a;
+}
+.wf-cmp-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 20px max(28px, env(safe-area-inset-bottom));
+}
+.wf-cmp-sheet {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-cmp-sheet.inline {
+  width: min(760px, 100%);
+}
+.wf-cmp-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  border-radius: var(--wf-radius-sm);
+  scroll-margin: 80px;
+}
+.wf-cmp-sheet.inline .wf-cmp-row {
+  grid-template-columns: 1fr;
+}
+.wf-cmp-row.current {
+  box-shadow: 0 0 0 2px var(--wf-accent);
+}
+.wf-cmp-cell {
+  min-width: 0;
+  padding: 6px 10px;
+  border-radius: var(--wf-radius-sm);
+  font-size: 14px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.wf-cmp-row[data-status="same"] .wf-cmp-cell {
+  color: var(--wf-text-dim);
+}
+.wf-cmp-row[data-status="changed"] .wf-cmp-cell,
+.wf-cmp-row[data-status="removed"] .wf-cmp-cell:first-child,
+.wf-cmp-row[data-status="added"] .wf-cmp-cell:last-child {
+  background: var(--wf-bg-raised);
+}
+.wf-cmp-row[data-status="removed"] .wf-cmp-cell:first-child {
+  box-shadow: inset 3px 0 0 #e5484d;
+}
+.wf-cmp-row[data-status="added"] .wf-cmp-cell:last-child {
+  box-shadow: inset 3px 0 0 #2ea043;
+}
+.wf-cmp-row[data-status="changed"] .wf-cmp-cell {
+  box-shadow: inset 3px 0 0 var(--wf-accent);
+}
+.wf-cmp-none {
+  background: transparent;
+}
+.wf-cmp-cell del {
+  background: rgba(229, 72, 77, 0.24);
+  color: #f3a3a6;
+  text-decoration: line-through;
+  border-radius: 2px;
+}
+.wf-cmp-cell ins {
+  background: rgba(46, 160, 67, 0.26);
+  color: #8fe0a6;
+  text-decoration: none;
+  border-radius: 2px;
+}
+.wf-cmp-heading {
+  font-weight: 700;
+  font-size: 15.5px;
+}
+.wf-cmp-code {
+  font-family: var(--wf-mono, ui-monospace, monospace);
+  font-size: 12.5px;
+}
+.wf-cmp-thing,
+.wf-cmp-blank {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  font-style: italic;
+  margin-right: 6px;
+}
+.wf-cmp-skip {
+  align-self: center;
+  margin: 6px 0;
+  padding: 2px 14px;
+  min-height: 24px;
+  border: 1px dashed var(--wf-border);
+  border-radius: 12px;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 11.5px;
+}
+
+@media (max-width: 767px) {
+  .wf-cmp-heads,
+  .wf-cmp-body {
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+  .wf-cmp-heads:not(.inline),
+  .wf-cmp-row {
+    gap: 8px;
+  }
+  .wf-cmp-cell {
+    padding: 6px 8px;
+    font-size: 15px;
+  }
+  .wf-cmp-summary {
+    flex-basis: 100%;
+    order: 9;
+  }
+  .wf-review-modes button {
+    min-height: 34px;
+    padding: 0 12px;
+    font-size: 14px;
+  }
+  .wf-change-actions .wf-icon {
+    min-width: 34px;
+    min-height: 34px;
+  }
+  .wf-viewing-text {
+    flex-basis: 100%;
+  }
+  .wf-read-bar select {
+    height: 34px;
+    font-size: 15px;
+  }
+  .wf-read-status {
+    display: none;
+  }
+}
+
+/* ---- Page view, as printed: a spacer where each printed page begins ----
+   (editor/Paginate.ts sizes them; the gap band is drawn over their end.) */
+.ProseMirror .wf-pg-space {
+  display: block;
+  height: 40px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  /* Nothing to select or click: the text around it is. */
+  user-select: none;
+  -webkit-user-select: none;
+  pointer-events: none;
+  /* (Inside a paragraph: no indent, no marker, no counter of its own.) */
+  text-indent: 0;
+  list-style: none;
+  counter-increment: none;
+}
+.ProseMirror .wf-pg-space::before,
+.ProseMirror .wf-pg-space::after {
+  content: none !important;
+}
+/* Between two rows of a table: a row of its own, with no lines. */
+.ProseMirror tr.wf-pg-row {
+  display: table-row;
+  height: auto;
+}
+.ProseMirror tr.wf-pg-row > td {
+  height: 40px;
+  padding: 0 !important;
+  border: 0 !important;
+  background: none !important;
+}
+
+/* ---- Folders on this device (the organizer) ---- */
+
+.wf-folder-where {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.wf-doc-move-where {
+  margin-left: auto;
+  color: var(--wf-text-dim);
+}
+.wf-doc-breadcrumb .wf-doc-local-chip {
+  margin-left: 4px;
+  padding: 1px 8px;
+}
+
+/* ---- Boards on this device: options and the words a search found ---- */
+
+.wf-board-card-more {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--wf-radius-md);
+  background: transparent;
+  color: var(--wf-text-dim);
+  cursor: pointer;
+}
+.wf-board-card-more:hover,
+.wf-board-card-more:focus-visible {
+  background: var(--wf-bg);
+  color: var(--wf-text);
+}
+/* The name stops short of the button. */
+.wf-board-card > .wf-session-card > strong {
+  padding-right: 30px;
+}
+.wf-board-card-snippet {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--wf-text-dim);
+}
+.wf-sessions-header .wf-doc-search {
+  flex: 0 1 300px;
+  min-width: 0;
+}
+@media (max-width: 767px) {
+  .wf-sessions-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .wf-sessions-header .wf-doc-search {
+    order: 3;
+    flex: 1 1 100%;
+  }
+}
+
+/* ---- A document's toolbar on the phone keyboard (editor/ui/KeyboardDock) ----
+   While the keyboard is up for the text, the toolbar leaves its place above
+   the page and sits on the keyboard; the text area gives up that much at
+   its foot, so the caret is never behind it. --wf-kb is the keyboard's
+   height and --wf-kbdock-h the strip's, both set only while docked. */
+
+.wf-kbdock.docked {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: var(--wf-kb, 0px);
+  z-index: 70;
+  background: var(--wf-bg-raised);
+  border-top: 1px solid var(--wf-border);
+  box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.18);
+}
+.wf-doc-room .wf-doc-body {
+  margin-bottom: var(--wf-kbdock-h, 0px);
+}
+/* A sheet opened while the keyboard is up rests on it, not behind it. */
+.wf-flyout.sheet {
+  bottom: max(var(--wf-kb, 0px), var(--wf-kb-inset, 0px));
+  max-height: min(70vh, 520px, calc(100vh - max(var(--wf-kb, 0px), var(--wf-kb-inset, 0px)) - 48px));
 }

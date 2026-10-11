@@ -6,7 +6,6 @@
  */
 
 import { generateJSON, type JSONContent } from "@tiptap/core";
-import StarterKit from "@tiptap/starter-kit";
 import { prosemirrorJSONToYXmlFragment, updateYFragment } from "@tiptap/y-tiptap";
 import { Node as PmNode } from "@tiptap/pm/model";
 import { getSchema } from "@tiptap/core";
@@ -15,17 +14,21 @@ import * as Y from "yjs";
 import type { Document } from "../../../bindings/proto/Document";
 import { documentsApi } from "../api";
 import { b64encode } from "../collab";
-import { DocElement } from "../formats/DocElement";
 import { applyDocMaps, docMapsUpdate, type DocMapsSnapshot } from "../docMaps";
 import { useLocalDocs } from "../local";
 import { toast } from "../../../platform/toast";
 import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
 import { rtfToText } from "./rtf";
 
-import { WfImage } from "../../../editor/RichEditor";
-import { TextFormat } from "../../../editor/TextFormat";
+import { mapImages, type DocxMedia } from "../../../docx/read";
+import { docContentExtensions } from "../../../editor/schema/content";
+import { downlevelJson } from "../../../editor/schema/downlevel";
+import { levelOfJson } from "../../../editor/schema/levels";
+import { attachmentRef, backend, localDocMediaId, localDocMediaUrl, type CmdError } from "../../../lib/backend";
+import { uploadBlob } from "../../../lib/upload";
+import { featureLevel } from "../sync/caps";
 
-const EXTENSIONS = [StarterKit, WfImage, DocElement, TextFormat];
+const EXTENSIONS = docContentExtensions();
 const SEED_BATCH_JSON_BYTES = 48 * 1024;
 // Leave headroom under the server's 256 KiB decoded-update ceiling.
 const MAX_SEED_UPDATE_BYTES = 240 * 1024;
@@ -34,10 +37,21 @@ interface ConvertedFile {
   stem: string;
   content: JSONContent;
   suggestedFormat: string;
-  /** Per-document maps to seed (a book manuscript's details). */
+  /** Per-document maps to seed (page setup, a book manuscript's details). */
   maps: DocMapsSnapshot;
-  /** What the import did, for the toast ("Imported as a Manuscript: …"). */
-  note: string | null;
+  /** The file's pictures; the content's image nodes point at them by key
+   *  until they're stored somewhere. */
+  media: DocxMedia[];
+  /** What the import did ("Imported as a Manuscript: …"). */
+  summary: string | null;
+  /** What didn't come across. */
+  warnings: string[];
+}
+
+/** The toast after an import: what it became, and what was left behind. */
+function importNote(file: Pick<ConvertedFile, "summary" | "warnings">): string | null {
+  if (!file.warnings.length) return file.summary;
+  return `${file.summary ?? "Imported"} (${file.warnings.join(", ")})`;
 }
 
 /** Client-side conversion shared by server import and import-to-device. */
@@ -49,6 +63,10 @@ async function convertFile(file: File): Promise<ConvertedFile> {
   let content: JSONContent;
   let suggestedFormat = "none";
   let fileMeta: { title?: string; author?: string } = {};
+  let fileSettings: Record<string, unknown> = {};
+  let fileFonts: Record<string, string> = {};
+  let fileStyles: Record<string, string> = {};
+  let media: DocxMedia[] = [];
   const warnings: string[] = [];
   switch (ext) {
     case "txt":
@@ -61,12 +79,14 @@ async function convertFile(file: File): Promise<ConvertedFile> {
       break;
     }
     case "docx": {
-      // Mammoth's document model, not its HTML: keeps alignment, page
-      // breaks and blank lines (what chapter detection keys on).
       const { docxToContent } = await import("../../../book/convert/docx");
       const imported = await docxToContent(await file.arrayBuffer());
       content = imported.content;
       fileMeta = imported.meta;
+      fileSettings = imported.settings;
+      fileFonts = imported.fonts;
+      fileStyles = imported.styles;
+      media = imported.media;
       warnings.push(...imported.warnings);
       break;
     }
@@ -117,9 +137,14 @@ async function convertFile(file: File): Promise<ConvertedFile> {
     content = { type: "doc", content: [{ type: "paragraph" }] };
   }
 
-  // A file that's clearly a book comes in as a book manuscript.
-  let maps: DocMapsSnapshot = {};
-  let note: string | null = null;
+  // A file that's clearly a book comes in as a book manuscript; anything
+  // else keeps the page setup it was written with.
+  let maps: DocMapsSnapshot = {
+    ...(Object.keys(fileSettings).length ? { settings: fileSettings } : {}),
+    ...(Object.keys(fileFonts).length ? { fonts: fileFonts } : {}),
+    ...(Object.keys(fileStyles).length ? { styles: fileStyles } : {}),
+  };
+  let summary: string | null = null;
   if (suggestedFormat === "none") {
     const { asManuscript } = await import("../../../book/convert/importAsBook");
     const book = asManuscript(content, { title: fileMeta.title ?? stem, author: fileMeta.author });
@@ -127,17 +152,48 @@ async function convertFile(file: File): Promise<ConvertedFile> {
       content = book.content;
       suggestedFormat = "manuscript";
       maps = { book: book.bookPatch };
-      note = `Imported as a Manuscript: ${book.summary}`;
+      summary = `Imported as a Manuscript: ${book.summary}`;
     }
   }
-  if (warnings.length) note = `${note ?? "Imported"} (${warnings.join(", ")})`;
 
-  return { stem, content, suggestedFormat, maps, note };
+  return { stem, content, suggestedFormat, maps, media, summary, warnings };
+}
+
+/** Store a file's pictures as attachments and point the content at them.
+ *  One that fails to upload is left out and counted. */
+async function uploadMedia(file: ConvertedFile): Promise<JSONContent> {
+  if (!file.media.length) return file.content;
+  const stored = new Map<string, string>();
+  let failed = 0;
+  for (const item of file.media) {
+    try {
+      const meta = await uploadBlob(new Blob([item.bytes as BlobPart], { type: item.type }), item.name);
+      stored.set(item.key, attachmentRef(meta.id));
+    } catch {
+      failed += 1;
+    }
+  }
+  if (failed) file.warnings.push(`${failed} picture${failed === 1 ? "" : "s"} couldn't be uploaded`);
+  return mapImages(file.content, (src) => stored.get(src) ?? null);
 }
 
 export async function importFile(file: File): Promise<Document> {
-  const { stem, content, suggestedFormat, maps, note } = await convertFile(file);
-  const doc = await createServerDocument(stem, suggestedFormat, content, maps, `Imported from ${file.name}`);
+  const converted = await convertFile(file);
+  const content = await uploadMedia(converted);
+  const doc = await createServerDocument(
+    converted.stem,
+    converted.suggestedFormat,
+    content,
+    converted.maps,
+    `Imported from ${file.name}`,
+    {
+      // A server that hasn't been updated yet takes the words and the
+      // formatting it knows; the rest is left out, and said.
+      simplify: true,
+      onSimplified: () => converted.warnings.push("some formatting left out (this server needs an update to hold it)"),
+    },
+  );
+  const note = importNote(converted);
   if (note) toast(note, "success");
   return doc;
 }
@@ -145,8 +201,24 @@ export async function importFile(file: File): Promise<Document> {
 /** Import a file as a document on this device — no server involved.
  *  Resolves to the new local document's id. */
 export async function importFileToLocal(file: File): Promise<string> {
-  const { stem, content, suggestedFormat, maps, note } = await convertFile(file);
-  const id = await createLocalDocument(stem, suggestedFormat, content, maps);
+  const converted = await convertFile(file);
+  // The file's pictures are stored beside the new document, on this device.
+  const id = crypto.randomUUID();
+  const stored = new Map<string, string>();
+  let failed = 0;
+  for (const item of converted.media) {
+    try {
+      const mediaId = crypto.randomUUID();
+      await backend.localdocMediaWrite(id, mediaId, item.bytes);
+      stored.set(item.key, localDocMediaUrl(id, mediaId));
+    } catch {
+      failed += 1;
+    }
+  }
+  if (failed) converted.warnings.push(`${failed} picture${failed === 1 ? "" : "s"} couldn't be stored`);
+  const content = mapImages(converted.content, (src) => stored.get(src) ?? null);
+  await createLocalDocument(converted.stem, converted.suggestedFormat, content, converted.maps, id);
+  const note = importNote(converted);
   if (note) toast(note, "success");
   return id;
 }
@@ -162,13 +234,36 @@ export async function createServerDocument(
   content: JSONContent,
   maps: DocMapsSnapshot,
   versionName: string,
+  opts: {
+    /** When the server can't hold the content's formatting (it hasn't been
+     *  updated), store a copy without it instead of refusing. */
+    simplify?: boolean;
+    onSimplified?: () => void;
+  } = {},
 ): Promise<Document> {
+  // The document starts at the level its content needs — which the server
+  // has to be able to store.
+  const allowed = await featureLevel();
+  if (levelOfJson(content) > allowed) {
+    if (!opts.simplify) {
+      throw {
+        code: "server_too_old",
+        message: "This server needs an update before it can hold this document's formatting.",
+      } satisfies CmdError;
+    }
+    content = downlevelJson(content, allowed, getSchema(EXTENSIONS));
+    opts.onSimplified?.();
+  }
+  // A document from this device brings its pictures: they become
+  // attachments on the server, and the content points at those.
+  content = await uploadDevicePictures(content);
   // Build before creating the server row so an unexpectedly huge individual
   // block cannot leave an empty document behind.
   const updates = buildImportSeedUpdates(content);
   const mapsUpdate = docMapsUpdate(maps);
   if (mapsUpdate) updates.push(mapsUpdate);
-  const doc = await documentsApi.create(title.trim().slice(0, 200) || "Untitled", format);
+  const level = levelOfJson(content);
+  const doc = await documentsApi.create(title.trim().slice(0, 200) || "Untitled", format, level);
   try {
     for (const update of updates) {
       await documentsApi.appendUpdate(doc.id, b64encode(update));
@@ -179,6 +274,45 @@ export async function createServerDocument(
     await discardServerDocument(doc.id);
     throw error;
   }
+}
+
+/**
+ * Upload every picture stored on this device that `content` shows, and
+ * return the content pointing at the uploads instead. One that can't be
+ * read or uploaded is left out rather than left pointing at this device
+ * (where nobody else could see it).
+ */
+export async function uploadDevicePictures(content: JSONContent): Promise<JSONContent> {
+  const sources = new Set<string>();
+  const find = (node: JSONContent) => {
+    const src = node.type === "image" ? node.attrs?.src : null;
+    if (typeof src === "string" && localDocMediaId(src)) sources.add(src);
+    node.content?.forEach(find);
+  };
+  find(content);
+  if (sources.size === 0) return content;
+  const uploaded = new Map<string, string | null>();
+  for (const src of sources) {
+    try {
+      const res = await fetch(src);
+      if (!res.ok) throw new Error(String(res.status));
+      const blob = await res.blob();
+      const ext = (blob.type.split("/")[1] ?? "png").replace("jpeg", "jpg");
+      uploaded.set(src, attachmentRef((await uploadBlob(blob, `picture.${ext}`)).id));
+    } catch {
+      uploaded.set(src, null);
+    }
+  }
+  const walk = (node: JSONContent): JSONContent | null => {
+    if (node.type === "image" && typeof node.attrs?.src === "string" && uploaded.has(node.attrs.src)) {
+      const next = uploaded.get(node.attrs.src);
+      return next ? { ...node, attrs: { ...node.attrs, src: next } } : null;
+    }
+    if (!node.content) return node;
+    const kids = node.content.map(walk).filter((n): n is JSONContent => n !== null);
+    return { ...node, content: kids.length || node.type !== "doc" ? kids : [{ type: "paragraph" }] };
+  };
+  return walk(content) ?? content;
 }
 
 /** Remove a document that never really existed (a failed import or copy):
@@ -194,6 +328,8 @@ export async function createLocalDocument(
   format: string,
   content: JSONContent,
   maps: DocMapsSnapshot,
+  /** An id chosen beforehand (its pictures are already stored under it). */
+  withId?: string,
 ): Promise<string> {
   // One-shot conversion: local docs have no per-update size ceiling.
   const ydoc = new Y.Doc();
@@ -204,7 +340,9 @@ export async function createLocalDocument(
     });
     applyDocMaps(ydoc, maps);
     const state_b64 = b64encode(Y.encodeStateAsUpdate(ydoc));
-    return await useLocalDocs.getState().create(title.trim().slice(0, 200) || "Untitled", format, state_b64);
+    return await useLocalDocs
+      .getState()
+      .create(title.trim().slice(0, 200) || "Untitled", format, state_b64, levelOfJson(content), withId);
   } finally {
     ydoc.destroy();
   }

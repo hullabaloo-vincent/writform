@@ -54,9 +54,19 @@ export function packUpdates(queue: Uint8Array[], limit = BATCH_BYTES): Uint8Arra
  * - auth: the session is gone — pause until signed in again.
  * - gone / forbidden: the document was deleted, or access was revoked.
  * - too_large: this server refuses an update this big.
+ * - outdated: the document now uses formatting newer than this app knows.
+ * - server_old: the edit uses formatting newer than this server stores.
  * - rejected: the server refused the update for any other reason.
  */
-export type SendErrorKind = "temporary" | "auth" | "gone" | "forbidden" | "too_large" | "rejected";
+export type SendErrorKind =
+  | "temporary"
+  | "auth"
+  | "gone"
+  | "forbidden"
+  | "too_large"
+  | "outdated"
+  | "server_old"
+  | "rejected";
 
 export function classifySendError(error: unknown): SendErrorKind {
   const e = (error ?? {}) as { code?: unknown; status?: unknown };
@@ -66,6 +76,9 @@ export function classifySendError(error: unknown): SendErrorKind {
     // Transport-level failures from the Rust core / fetch: no HTTP answer.
     return "temporary";
   }
+  // The schema-level refusals share their status with broader ones.
+  if (code === "client_too_old") return "outdated";
+  if (code === "schema_unsupported") return "server_old";
   if (status === 401) return "auth";
   if (status === 404) return "gone";
   if (status === 403) return "forbidden";
@@ -76,7 +89,7 @@ export function classifySendError(error: unknown): SendErrorKind {
 
 /** Permanent failures stop the retry loop; the rest keep trying. */
 export function isPermanent(kind: SendErrorKind): boolean {
-  return kind === "gone" || kind === "forbidden" || kind === "too_large" || kind === "rejected";
+  return kind !== "temporary" && kind !== "auth";
 }
 
 /** The user-facing reason for a permanent failure. */
@@ -88,6 +101,10 @@ export function sendErrorMessage(kind: SendErrorKind): string {
       return "You can no longer edit this document.";
     case "too_large":
       return "A change is too large for this server.";
+    case "outdated":
+      return "This document now uses formatting from a newer version of subScribe. Update the app to keep editing — your changes are kept on this device.";
+    case "server_old":
+      return "This server needs an update before it can save this formatting.";
     case "rejected":
       return "The server refused a change.";
     case "auth":

@@ -50,7 +50,7 @@ print-ready paperback, an ebook and a submission manuscript.
   headings and `***` lines become chapters and scene breaks.
 - **Smart quotes and dashes** as you type (Settings ▸ Writing to turn off):
   curly quotes in the book's language style, `--` → —, `...` → ….
-- **Make it a book manuscript**: switching a Plain document to Manuscript (or
+- **Make it a book manuscript**: switching a Document to Manuscript (or
   Export ▸ Make it a book manuscript…) detects chapters, parts, scene breaks
   and front matter and shows what it found before converting — one undo puts
   it back. Importing a Word manuscript does the same automatically.
@@ -59,7 +59,17 @@ print-ready paperback, an ebook and a submission manuscript.
   author, submission contact), its **design** (five presets — Classic,
   Literary, Fantasy, Romance, Modern — with every choice adjustable: fonts,
   size, leading, chapter labels, drop caps, small-caps lead-ins, ornaments,
-  running heads, page numbers), **print** settings (trim size, KDP-safe
+  running heads, page numbers). The body and heading fonts can be any of
+  the app's seven book faces or any family of the **online library** (the
+  same Google Fonts collection documents use): it downloads when chosen,
+  draws the manuscript view and the preview, and is embedded in the
+  paperback PDF; other scripts of the family (Cyrillic, Greek…) are fetched
+  when the text has them, and where a display face lacks an alphabet a
+  title in it is set in the body face. A library family has no small
+  capitals or old-style figures of its own (capitals are reduced instead),
+  and one with no italic is slanted. If it can't be fetched (offline and
+  never downloaded) the book is set in the nearest of the app's own and
+  the export says so. Also here: **print** settings (trim size, KDP-safe
   margins that grow with the page count, right-hand chapter starts, front and
   back matter, spine width) and **ebook** settings. Saved in the document, so
   collaborators see the same book.
@@ -73,7 +83,10 @@ print-ready paperback, an ebook and a submission manuscript.
   drop caps, running heads and roman/arabic page numbers, fonts embedded,
   trim box set, ready for KDP and IngramSpark; **Booklet PDF** to print and
   fold at home; **Ebook (EPUB)** for Kindle, Apple Books, Kobo and Google
-  Play; and the **Submission manuscript** (Standard Manuscript Format) as PDF
+  Play — with *Embed the book's fonts* on, the body and heading fonts'
+  files go inside it (the app's own or the library's, each script its own
+  file), so readers that honour a publisher's fonts show the book in them;
+  and the **Submission manuscript** (Standard Manuscript Format) as PDF
   or Word. Each shows a preflight list first (missing ISBN digits, glyphs a
   font lacks, a too-short book), each item with a "Show" button.
 - **Version history**: revisions are recorded at the seams of the work — a
@@ -96,21 +109,179 @@ print-ready paperback, an ebook and a submission manuscript.
 - **Word count**: on every screen, including phones; with text selected it
   reads "120 of 12,345 words". Click it to set a **word-count goal**;
   progress rides under the count as a thin bar, per document, on this device.
-- **Typography** (Plain format): set font (Times, Palatino, Garamond,
-  Libertinus, Baskerville, Literata, Sans, Typewriter, Comic Sans), size, and
-  alignment — left, center, right, justify (⌘⇧L/E/R/J) — on the selected
-  paragraphs, plus line spacing, space before/after, and a **drop cap** for
-  chapter openers (all in the inspector). Select-all restyles the whole
-  document; the scripted formats keep their own professional layouts.
-- **Document inspector** (the sliders button, Plain format): Pages-style
-  settings saved *in* the document, so collaborators see the same layout.
-  Text tab: the full paragraph styles for the selection. Document tab:
-  paper size (US Letter, Half Letter, US Trade 6×9, A4, A5), margins, and
-  body-text defaults — font, size, line spacing, paragraph spacing, and a
-  first-line indent (set indent + 0 pt spacing for the classic book look).
-- **Page view** (Plain and the scripted formats): the page toggle paginates
-  the sheet into real pages — physical gaps between them, page numbers on
-  the left, the exact count in the word-count bar.
+- **The ribbon** (Document format): four tabs of controls, Word-style.
+  **Home** — undo and the **format painter**; **styles** (below); font and
+  size for the words you select (*Larger*/*Smaller*, ⌘⇧. and ⌘⇧, step Word's
+  ladder; the inspector takes any size); bold, italic, underline,
+  strikethrough, **subscript** and **superscript** (⌘= and ⌘⇧=), **text
+  colour** and **highlight**, inline code, **change case**, **clear
+  formatting**; bulleted lists with a choice of marker, numbered lists with
+  a numbering style (1, a, A, i, I, or legal 1.1.1) and *restart* or
+  *continue*, **checklists** (⌘⇧9) with boxes you tick, and indent/outdent
+  — of a list item, or of a paragraph, half an inch at a time; alignment
+  (⌘⇧L/E/R/J), line and paragraph spacing, paragraph **shading** and
+  **borders** (a box, a line above or below, a bar at the left — neighbours
+  with the same border are one box), **sort A to Z**, and **show paragraph
+  marks** (¶).
+  **Insert** — page break (⌘↩), column break and section break; a **table**
+  (pick its size from a grid); **link** (⌘⇧K: an address, and the words to
+  show when nothing is selected), picture, quote, code block, divider;
+  **footnote**, **endnote** and a **table of contents**; a **symbol**
+  palette, and today's date. **Layout** — margins (Normal, Narrow, Moderate,
+  Wide, or custom), paper and orientation, columns, **sections**,
+  hyphenation, line numbers, headers and footers. A **Table** tab appears
+  while the caret is in a table, and a **Picture** tab while a picture is
+  selected. **Review** — Editing, Suggesting or Viewing, the suggested
+  changes (next, previous, accept, reject), comments, history, compare,
+  find, read aloud, preview and print. Groups that don't fit the window
+  fold into a ⋯ menu; on a phone the ribbon is one row that scrolls, and its
+  menus open as sheets. While the phone's keyboard is up for the text, the
+  row sits on the keyboard, under your thumbs — and goes back to the top
+  when you type somewhere else (the title, a comment, a search). The
+  scripted formats keep their own toolbars (which ride on the keyboard the
+  same way) and professional layouts.
+- **Styles** (Document format): Normal, No Spacing, Title, Subtitle,
+  Heading 1–6, Quote and Caption, each shown in its own look — and styles
+  of your own. *Modify…* changes what a style looks like everywhere it's
+  used (font, size, colour, alignment, spacing, indents); *Update to match
+  selection* makes the style look like the paragraph you formatted by hand;
+  *New style from selection* names that look. Styles are saved in the
+  document, so collaborators, the PDF and the Word file all have them.
+  Normal is the document's body text (Document tab of the inspector). After
+  a title, subtitle or caption, Enter goes back to body text.
+- **Format painter**: click it, then select other text — it takes the
+  formatting of the words you were on (and whole paragraphs take the
+  paragraph's alignment, spacing and indents too). Escape puts it down.
+- **Pasting from Word, Google Docs and the web** (Document format) keeps
+  bold, italics, colours, highlights, sub/superscripts and lists — Word's
+  typed-out bullets become real lists — and takes on this document's body
+  font and size, so a paste doesn't arrive in Calibri 11. Text that differed
+  from its surroundings (a larger line, another typeface) keeps the
+  difference. ⌘⇧V still pastes plain text.
+- **Tables** (Document format): Insert ▸ Table, then type; Tab moves to the
+  next cell and adds a row after the last. The Table tab adds and deletes
+  rows and columns, merges and splits cells, marks a **header row** (set
+  again at the top of each page the table runs onto), chooses which lines
+  are drawn (all, between rows, a box, none) and shades cells. Drag a
+  column's right edge to resize it, or use *Narrower*/*Wider* (on a touch
+  screen); *Even widths* shares the page out equally. A table from Word, a
+  spreadsheet or a web page pastes as a table. On a phone a wide table
+  scrolls sideways in its own strip. On paper a table breaks between rows,
+  and a row taller than a page between its lines.
+- **Footnotes and endnotes** (Document format): Insert ▸ Footnote puts a
+  numbered reference where the caret is and opens the note under it to
+  write in (bold, italic and underline work; Enter or Esc goes back to the
+  text). Notes are numbered by themselves — 1, 2, 3 for footnotes, i, ii,
+  iii for endnotes — and renumber as you move text about. A note travels
+  with its sentence when you cut and paste, and several people can write in
+  one at once. In preview, print and PDF a footnote sits at the foot of the
+  page that cites it (running over to the next page if it must) and
+  endnotes close the document; clicking a reference in the PDF goes to its
+  note. A note's words aren't counted in the word count.
+- **Table of contents** (Document format): Insert ▸ Contents lists the
+  document's headings and keeps itself up to date; click an entry to go to
+  it. On paper each entry has its page number and a row of dots, and in the
+  PDF each is a link.
+- **Sections** (Document format): Layout ▸ Section starts a new section at
+  the paragraph the caret is in. A section begins on a new page and can
+  have its own paper, orientation, margins, number of columns, and page
+  numbering that starts again; what it doesn't set is as the document. A
+  landscape page in the middle of a portrait document is a section. A
+  **column break** (Insert ▸ breaks) sends what follows to the top of the
+  next column.
+- **Pictures** (Document format): drag a corner handle to resize — the
+  proportions are kept. The Picture tab sets one at the left, in the middle
+  or at the right, and gives it a **caption**, which stays under it on the
+  page.
+- **Document inspector** (the sliders button, Document format): settings
+  saved *in* the document, so collaborators see the same layout. Text tab:
+  the selection's font and size (any size), alignment, line spacing (a
+  multiple, or *exactly* / *at least* so many points), space before and
+  after, **indents** (left, right, first line or hanging), **keep with
+  next**, **keep lines together**, start on a new page, plus a **drop cap**
+  for chapter openers. Document tab — the page setup: **paper** (US Letter, Legal,
+  Tabloid, Executive, Half Letter, US Trade 6×9, A3, A4, A5, B5, or a custom
+  size) and orientation; **margins**, a binding **gutter** and **facing
+  pages** (mirrored margins); one to three **columns**; **headers and
+  footers** with a left, centre and right slot each and live fields (page
+  number, page count, title, author, date), optionally different on the
+  first page and on even pages; **page numbers** in 1/i/I/a/A style from any
+  starting number; body-text defaults (font, size, line spacing, paragraph
+  spacing, first-line indent — indent + 0 pt spacing gives the classic book
+  look); hyphenation and line numbers.
+- **Preview** (the eye button; every format): every page exactly
+  as it will print — the same layout the PDF and the printer get. A
+  screenplay, a stage play and a poem preview on their format's own page. Docked
+  beside the text on a wide window, it follows your typing and shows *Page
+  3 of 12*; click any line for **Edit here**.
+- **Print** (⌘P, or Export ▸ Print…): the document is typeset to a PDF and
+  handed to the system's print panel — on a Mac the native one, on an iPhone
+  the system print sheet, in a browser or on Windows the browser's own.
+  Where that isn't possible it opens as a PDF you can print from. "As a
+  booklet" imposes the pages for folding.
+- **Screenplay, stage play and poetry pages**: their PDFs, printouts and
+  previews are typeset by the same engine as a Document's, on the format's
+  own page — a screenplay in twelve-point Courier, six lines to the inch,
+  with scene headings, action, character names, parentheticals, dialogue
+  and transitions at their standard measures and the page number at the
+  top right from page two; a stage play likewise, opening with its title;
+  a poem in a book face with long lines turned over and set in, its title
+  at the top. Any alphabet prints (the old typewriter pages turned
+  everything but Latin into question marks), a character's name is never
+  left at the foot of a page without the speech, and bold, italic and
+  underline are kept.
+- **PDF** (Document format): typeset in real typefaces with proper line
+  breaking — mixed fonts and sizes, bold and italic, underline and
+  strikethrough, lists, quotes, code, pictures, links you can click, page
+  breaks, an outline of your headings, headers, footers and page numbers,
+  with no line left alone at the top or foot of a page and headings kept
+  with their text. Every font prints as itself where it can (see **Fonts**);
+  where it can't, the export says what stood in.
+- **Fonts** (Document format): the font button opens one list of everything
+  you can set a paragraph (or the whole body) in, each drawn in itself and
+  searched together — the fonts **in this document**, your **recent** ones,
+  those **with the app**, the fonts **on this computer** (desktop), and an
+  **online library** of nearly 2,000 open-licensed families (the Google
+  Fonts collection), filtered by kind: serif, sans, mono, display, script.
+  A library font downloads the first time a document uses it and is kept
+  on the device; other scripts of a family (Cyrillic, Greek, Vietnamese…)
+  download only if your text has them. The same font files draw the editor,
+  the preview, the PDF and the printout, so they agree. Installed fonts are
+  embedded in a PDF only when the font's own licence setting allows it, and
+  are never uploaded. When a document names a font this device doesn't have
+  — a collaborator's, or one from a Word file — it's shown and printed in
+  the closest stand-in: a same-metrics family where one exists (Gelasio for
+  Georgia, Tinos for Times New Roman, Arimo for Arial, Carlito for Calibri),
+  so lines and pages fall the same; a line under the ribbon says so and
+  offers **Replace…**. Settings ▸ Fonts has the switch for the online
+  library, the downloaded fonts (and a way to remove them), and the
+  licences.
+- **Word (.docx)** in and out (fonts included: a Word file's fonts are
+  matched to the app's own, to those installed here, then to the online
+  library, and otherwise kept by name; exports carry real family names and
+  tell Word what to fall back to): headings 1–6, real nested and numbered
+  lists (bullet styles, legal numbering and checklists included),
+  bold/italic/underline/strikethrough, text colour, highlight,
+  sub/superscript and a font or size on part of a paragraph, links,
+  pictures with their sizes, alignment, spacing, indents, line-height
+  rules, borders and shading, keep-with-next, quotes, code, dividers, page
+  breaks and drop caps; **tables** (widths, merged cells, header row,
+  shading), **footnotes and endnotes**, a **table of contents** (a real
+  field Word can update), picture placement and captions, **sections** and
+  column breaks — plus **styles** (a Word file's Title, headings and
+  the writer's own styles come in as the document's styles, looking as they
+  did; yours go out as real Word styles) and the page setup, headers,
+  footers and page numbers. What Word shows is what the document says, and a file written by
+  subScribe reads back the same.
+- **Page view** (Document and the scripted formats): the page toggle shows
+  the sheet as its printed pages — gaps between them, page numbers on the
+  left, the count in the word-count bar. The pages are the printed ones: the
+  text breaks where the PDF's pages do, in the middle of a paragraph or
+  between the rows of a table, a moment after you stop typing, and the
+  count is the PDF's. Lines within a page are still the screen's own, so a
+  page on screen is as tall as its text needs (never shorter than the
+  paper); Preview shows the page line for line. Settings ▸ Writing has a
+  switch back to the simpler view that only moves whole paragraphs.
 - **Outline**: parts, chapters and sections with their labels and word
   counts; drag to reorder chapters (or use Reorder on a phone) — one undo
   puts them back.
@@ -127,9 +298,44 @@ print-ready paperback, an ebook and a submission manuscript.
   Shift-click, or Select on a phone) or use a folder's menu — put them in
   order, name the book, and each becomes a chapter. The originals stay.
 - **Folders**: organize your documents; move documents between folders,
-  rename or delete a folder (its documents stay put).
+  rename or delete a folder (its documents stay put). Documents on this
+  device have folders of their own, kept on the device — **New folder**
+  asks where when there's a choice, and a folder's card says *on this
+  device*. New documents, imports and combined manuscripts made with such a
+  folder open land in it, and a document restored from Recently Deleted
+  goes back to the folder it was in.
 - **Search**: full-text — matches titles and the words of every document
   (never the editor's internal markup), with the matching passage shown.
+  Documents on this device are searched the same way, with or without a
+  server: the first search after an update reads the documents once, and
+  after that it's instant.
+- **Suggested changes** (track changes): switch to **Suggesting** and what
+  you type, delete or paste is proposed instead of done — additions
+  underlined in your colour, deletions struck through, a new or removed
+  paragraph break marked with a ¶, a table, picture, divider or footnote
+  outlined. Each says who and when. Anyone who can edit accepts or rejects
+  them one at a time or all at once, from the Review tab or from the
+  **Changes** list beside the comments (where a change can also be
+  commented on); taking back your own suggestion just removes it. The mode
+  is yours alone — one person can suggest while another edits — and
+  **Viewing** shows the text as it would read with everything accepted,
+  locked. Formatting isn't tracked: bold, styles, lists and a table's rows
+  and columns change directly. Printing, PDFs, books and the word count
+  use the text with suggestions accepted. Suggested changes travel to and
+  from Word as its tracked changes; *Export Word, clean copy* leaves them
+  out. Works in every format (the mode switch is in the Changes list; a
+  Document also has it on its ribbon). Like the other newer formatting it
+  needs an up-to-date server; where the server is older, Suggesting isn't
+  offered.
+- **Read aloud**: the text spoken by your system's voice, a sentence at a
+  time, the sentence highlighted as it's read — from the caret, with pause,
+  back and on a sentence, speed and a choice of voice. Nothing is sent
+  anywhere. Struck (suggested-deleted) words and footnotes aren't read.
+- **Compare**: any saved version beside the text as it is now, or the
+  document beside a Word file — paragraphs aligned, what was taken out
+  marked on one side and what was put in on the other, word by word; on a
+  phone both in one column. Jump between differences, show only what
+  changed or the whole text, swap the sides.
 - **Feedback threads**: select text and leave a comment anchored to it;
   threads track the text even as it moves, resolve/reopen, reply inline,
   and list in the order they appear in the text. Click a highlighted
@@ -138,10 +344,13 @@ print-ready paperback, an ebook and a submission manuscript.
   same panel as **Notes**: comments to your future editing self.
 - **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into
   new documents — several at once, into the folder you have open. PDF import
-  recovers structure, not just text; Word import keeps italics, alignment,
-  page breaks and styles, and a Word *manuscript* arrives as a Manuscript
-  with its chapters detected.
-- **Booklet export** (Plain and scripted formats): beside the straight PDF,
+  recovers structure, not just text. Word import keeps headings, lists,
+  links, pictures, fonts, spacing and the page setup (see above), and says
+  what it couldn't keep yet — text boxes arrive as their text, a section
+  break that doesn't start a page is left out. Word's tracked changes come
+  in as suggested changes, under the names Word has for them. A Word
+  *manuscript* arrives as a Manuscript with its chapters detected.
+- **Booklet export** (Document and scripted formats): beside the straight PDF,
   "Export booklet PDF" imposes pages for saddle stitching — two per
   landscape sheet in fold order. Print two-sided flipping on the short edge,
   fold the stack in half, and it reads 1…N.
@@ -161,12 +370,18 @@ print-ready paperback, an ebook and a submission manuscript.
   single-user documents stored on your computer, never on the server — same
   editor, formats, outline, find, word count, version history, book
   preview and exports. Their revisions are kept on this device too, beside
-  the document, so history works with no server and no connection. **Share
-  to server** publishes a copy (optionally shared with a friend or group in
-  one step); the local original stays yours and does not live-sync to the
-  published copy. While offline, **Import** creates documents here too. The
-  reverse works as well: any server document's menu → **Save a copy to this
-  device**. Images aren't supported in local documents yet.
+  the document, so history works with no server and no connection.
+  **Publish to a server…** (a document's ⋯ menu, or the share button in its
+  header) publishes a copy, optionally shared with a friend or group in
+  one step; the local original stays yours and does not live-sync to the
+  published copy. If you aren't connected it opens the connect sheet first
+  and carries on once you are. Without a server, **Import** creates
+  documents here too.
+  The reverse works as well: any server document's menu → **Save a copy to
+  this device**. Pictures work here as they do on a server: they're kept
+  beside the document on this device, travel with it to Recently Deleted
+  and back, are embedded in its PDF and Word exports, and are uploaded with
+  it when you publish.
 
 ## Chat
 
@@ -316,8 +531,8 @@ other change.
 **Export & import boards**: the download button in a board's header saves it
 as a `.wfboard` file — the board's pages, elements, connectors and pictures,
 self-contained. Import one from the board list into a group or onto this
-device; the round trip is lossless, which also makes it the way to publish a
-board from this device to a group, or move boards between servers. The board
+device; the round trip is lossless, which also makes it the way to move
+boards between servers. The board
 list also imports **FigJam and Freeform PDF exports** (desktop app only):
 since a PDF stores drawings rather than board structure, the import
 reconstructs it — pictures become image elements, small text cards become
@@ -333,7 +548,12 @@ group and no connection, so they work in offline mode — pictures included:
 paste one and it's stored beside the board on your computer, background
 images too. The trade is that nobody else can see the board, there are no
 live cursors, and document cards (which point at server documents) stay on
-group boards.
+group boards. **Publish to a server…** (the share button in the board's
+header, or the board's ⋯ menu in the list) puts a copy — pictures included —
+in a group you choose; the board on this device stays, and later changes to
+it don't follow. Not connected, it opens the connect sheet first. The
+search field above the list finds boards by name and, for boards on this
+device, by the words on their notes, text, shapes and frames.
 
 ## Notes
 
@@ -370,6 +590,9 @@ when you're not already looking at the relevant conversation.
   are otherwise per-server. It's offered once when you register on a new
   server and available any time from Settings → Profile; it is never
   applied without asking. Usernames are per-server and aren't included.
+  It is also who you are when no server is connected: Settings → Profile
+  then edits it directly — name, accent, about, and a picture and banner
+  chosen from this device (a large photo is scaled down first).
 - **Groups**: admins set a group icon and accent color (gear next to the
   group name). The active group's accent shows as a stripe on the app rail,
   and Canvas and Sessions show a chip naming the group you're working in —
@@ -406,17 +629,50 @@ native app adds what a browser can't:
 Building it needs a Mac with Xcode: `npm run tauri ios dev` from
 `apps/desktop` (the repo README's iOS section covers signing).
 
-## Working offline
+## Working on this device
 
-You don't need a server to write. **Work offline** on the connect screen
-opens the app with Notes, your on-device documents (version history and
-all), on-device canvas boards, the documentation viewer, and your portable
-profile — no account, no connection. Everything
-you write is on your computer; when you later join a server, local
-documents can be shared to it and your portable profile applied. While
-offline, the portable profile's text fields are editable (its images update
-from a connected server), and server features — chat, shared documents,
-canvas, sessions — appear once you connect.
+You don't need a server to write, and there is no "offline mode" to enter:
+the app opens straight into **Home**, with everything that lives on your
+device —
+
+- **Start something**: a document (any format), a board, a note, or import
+  a Word, PDF, Pages, RTF, Markdown or text file.
+- **Jump back in**: the documents, boards and notes you last changed,
+  newest first — from this device and, while connected, from the server.
+- **Write with others**: the servers you know, each a click away, and the
+  two ways to add one — join, or host on this computer.
+
+Documents (with their history, pictures, exports and book publishing),
+boards and notes all work with no account and no connection. The first time
+you open the app it asks what to call you; that name goes on what you
+export — and on the boards you make here — and stays on this device unless
+you copy your profile to a server. Settings → Profile adds a picture (shown
+at the foot of the rail), an accent colour and a few words about you.
+
+**Servers are accounts you add.** Chat, Sessions and Friends stay in the
+rail and say what they need when there's no server. The button at the foot
+of the rail is you: the servers you've joined (the one you're on, and the
+ones a click away), **Join a server…**, **Host on this computer…**,
+**Disconnect** (leave, but stay signed in — coming back needs no password)
+and **Sign out** (forget this device's session). Joining or hosting opens
+in a sheet over whatever you have open: your document, board or note stays
+exactly where it is, whether you connect or change your mind.
+
+If a server you were signed in to doesn't answer at launch, the app is
+already open; the status bar says *Can't reach …* with **Try again**. If
+your session there has ended, it says so and offers **Sign in**. Nothing on
+this device is affected either way.
+
+**Kept safe.** Documents, boards and notes on this device are saved
+atomically (a crash or a full disk mid-save can't leave half a file).
+Deleting a document, a board or a note moves it to Recently Deleted for 30
+days, with **Undo** on the spot. **Export everything on this device** (at
+the foot of Home) writes one zip: every document as Word and as lossless
+JSON (in its folder, if it's in one), every board with its pictures, your
+notes as the Markdown files they are, and your profile.
+
+In the browser client there is no device storage, so there the server
+comes first: it opens on the sign-in page.
 
 ## Staying signed in
 
@@ -431,5 +687,5 @@ session for that run only. Logging out always forgets the stored session.
 
 Locked out? A server admin can issue a one-time reset code for your account
 (Settings → Admin) — hand it to you out of band and you set a new password
-from the connect screen. Using a code revokes every existing session for
+from the sign-in form. Using a code revokes every existing session for
 that account.

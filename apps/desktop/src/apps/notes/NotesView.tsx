@@ -21,7 +21,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { Friend } from "../../bindings/proto/Friend";
 import { backend, isCmdError } from "../../lib/backend";
-import { confirmDialog, Modal } from "../../platform";
+import { Modal } from "../../platform";
+import { toast, toastError } from "../../platform/toast";
 import { useSession } from "../../stores/session";
 import { friendsApi } from "../friends/FriendsView";
 import { renderMarkdown } from "./markdown";
@@ -396,17 +397,32 @@ function NoteEditor({
         <button
           className="wf-danger"
           onClick={() =>
-            void confirmDialog(`Delete "${name}"? This removes the file from your vault.`, {
-              title: "Delete note",
-              confirmLabel: "Delete",
-              danger: true,
-            }).then((ok) => {
-              if (ok) {
-                if (saveTimer.current) clearTimeout(saveTimer.current);
-                saveTimer.current = null;
-                void backend.vaultDelete(name).then(() => onRenamedOrDeleted(null));
-              }
-            })
+            {
+              // No "are you sure": the note goes to the vault's trash, and
+              // the toast puts it back.
+              if (saveTimer.current) clearTimeout(saveTimer.current);
+              saveTimer.current = null;
+              const deleted = name;
+              void backend
+                .vaultWrite(deleted, latest.current)
+                .catch(() => {})
+                .then(() => backend.vaultDelete(deleted))
+                .then(() => {
+                  onRenamedOrDeleted(null);
+                  toast(`Deleted “${deleted}”.`, "info", {
+                    durationMs: 10000,
+                    action: {
+                      label: "Undo",
+                      run: () =>
+                        void backend
+                          .vaultRestore(deleted)
+                          .then((restored) => onRenamedOrDeleted(restored))
+                          .catch(() => toastError("That note couldn't be restored.")),
+                    },
+                  });
+                })
+                .catch(() => toastError("That note couldn't be deleted."));
+            }
           }
         >
           Delete

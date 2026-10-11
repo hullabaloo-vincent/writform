@@ -8,8 +8,8 @@ use futures_util::{SinkExt, StreamExt};
 use serde_json::json;
 use writform_proto::api::AuthResponse;
 use writform_proto::documents::{
-    Document, DocumentActivity, DocumentDetail, DocumentListItem, DocumentThread,
-    DocumentUpdateBatch, DocumentVersion, DocumentVersionMeta,
+    AppendUpdateResponse, Document, DocumentActivity, DocumentCapabilities, DocumentDetail,
+    DocumentListItem, DocumentThread, DocumentUpdateBatch, DocumentVersion, DocumentVersionMeta,
 };
 use writform_proto::ws::{ClientFrame, ServerFrame};
 use writform_server::routes;
@@ -25,11 +25,17 @@ struct TestServer {
 }
 
 async fn boot() -> TestServer {
+    boot_at(writform_proto::documents::MAX_DOC_SCHEMA_LEVEL).await
+}
+
+/// A server that stores documents up to `max_doc_schema` (a future build).
+async fn boot_at(max_doc_schema: u32) -> TestServer {
     let dir = tempfile::tempdir().unwrap();
     let pool = sqlx::SqlitePool::connect("sqlite::memory:").await.unwrap();
     sqlx::migrate!("./migrations").run(&pool).await.unwrap();
-    let state =
+    let mut state =
         routes::AppState::with_data_dir("D".into(), pool.clone(), b"pk", b"sig", dir.keep());
+    state.max_doc_schema = max_doc_schema;
     let app = routes::router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -1504,4 +1510,334 @@ async fn recently_deleted_lifecycle() {
     assert!(list(&server, &alice.token, "/document-trash")
         .await
         .is_empty());
+}
+
+/// The error `code` of a refused request.
+async fn error_code(res: reqwest::Response) -> (u16, String) {
+    let status = res.status().as_u16();
+    let body: serde_json::Value = res.json().await.unwrap();
+    (
+        status,
+        body["code"].as_str().unwrap_or_default().to_string(),
+    )
+}
+
+#[tokio::test]
+async fn schema_levels_gate_older_clients() {
+    // A server one level ahead of today's clients. "Old" requests carry no
+    // `sl`, exactly like every client released before levels existed.
+    let server = boot_at(2).await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    server.befriend(&alice, &bob).await;
+    let doc = create_doc(&server, &alice.token, "Novel").await;
+    assert_eq!(doc.schema_level, 1);
+    server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/shares", doc.id),
+            Some(json!({"subject_kind": "user", "subject_id": bob.user.id.0, "access": "write"})),
+        )
+        .await;
+    let updates = format!("/documents/{}/updates", doc.id);
+
+    let caps: DocumentCapabilities = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/document-capabilities",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(caps.max_schema_level, 2);
+
+    // Bob is on an old client (the plain room only); Alice's second device
+    // is current (it also asks for the level-2 room).
+    let room = format!("document:{}", doc.id);
+    let v2 = format!("docv2:{}", doc.id);
+    let mut old_ws = ws_connect(&server, &bob.token, std::slice::from_ref(&room)).await;
+    sync_subs(&mut old_ws).await;
+    let mut new_ws = ws_connect(&server, &alice.token, &[room.clone(), v2.clone()]).await;
+    sync_subs(&mut new_ws).await;
+
+    // Level-1 edits are untouched: no `sl`, the shared room, everyone hears.
+    let local = yrs::Doc::new();
+    let res: AppendUpdateResponse = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &updates,
+            Some(json!({"update_b64": B64.encode(text_update(&local, "one "))})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!((res.seq, res.schema_level), (1, 1));
+    assert_eq!(
+        wait_for_event(&mut old_ws, "document.update").await["seq"],
+        1
+    );
+    assert_eq!(
+        wait_for_event(&mut new_ws, "document.update").await["seq"],
+        1
+    );
+
+    // An update that needs level 2 raises the document as it's accepted.
+    let res: AppendUpdateResponse = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("{updates}?sl=2"),
+            Some(json!({"update_b64": B64.encode(text_update(&local, "two ")), "schema_level": 2})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!((res.seq, res.schema_level), (2, 2));
+    // The current client gets it, on the level-2 room.
+    assert_eq!(
+        wait_for_event(&mut new_ws, "document.update").await["seq"],
+        2
+    );
+    // The old client never does: it is told the document is gone instead
+    // (every release closes the editor on that), tagged with the reason.
+    loop {
+        if let ServerFrame::Event { kind, data, .. } = next_frame(&mut old_ws).await {
+            assert_ne!(
+                kind, "document.update",
+                "an old client received newer content"
+            );
+            if kind == "document.deleted" {
+                assert_eq!(data["doc_id"], doc.id);
+                assert_eq!(data["outdated"], 2);
+                break;
+            }
+        }
+    }
+
+    // From here the old client is refused wherever content flows…
+    let detail = format!("/documents/{}", doc.id);
+    for (method, path, body) in [
+        (reqwest::Method::GET, detail.clone(), None),
+        (reqwest::Method::GET, format!("{updates}?since=0"), None),
+        (
+            reqwest::Method::POST,
+            updates.clone(),
+            Some(json!({"update_b64": B64.encode(text_update(&local, "mangled "))})),
+        ),
+        (
+            reqwest::Method::POST,
+            format!("/documents/{}/snapshot", doc.id),
+            Some(json!({"doc_json": "{\"type\":\"doc\"}"})),
+        ),
+    ] {
+        let res = server.req(method, &bob.token, &path, body).await;
+        assert_eq!(
+            error_code(res).await,
+            (403, "client_too_old".to_string()),
+            "{path}"
+        );
+    }
+    // …and nothing it sent landed.
+    let current: DocumentDetail = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            &format!("{detail}?sl=2"),
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(current.seq, 2);
+    assert_eq!(current.document.schema_level, 2);
+    assert_eq!(state_text(&current.state_b64), "one two ");
+    // It still sees the document in its list, and can read its comments.
+    let listed = list(&server, &bob.token, "/documents").await;
+    assert_eq!(listed[0].document.schema_level, 2);
+    let res = server
+        .req(
+            reqwest::Method::GET,
+            &bob.token,
+            &format!("/documents/{}/threads", doc.id),
+            None,
+        )
+        .await;
+    assert!(res.status().is_success());
+
+    // The same person on an updated client is fine, and later updates stay
+    // on the level-2 room.
+    let res: AppendUpdateResponse = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &format!("{updates}?sl=2"),
+            Some(json!({"update_b64": B64.encode(text_update(&local, "three"))})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!((res.seq, res.schema_level), (3, 2));
+    assert_eq!(
+        wait_for_event(&mut new_ws, "document.update").await["seq"],
+        3
+    );
+
+    // An update can't need more than its sender understands, or more than
+    // this server stores.
+    let other = create_doc(&server, &alice.token, "Other").await;
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates", other.id),
+            Some(json!({"update_b64": B64.encode(text_update(&yrs::Doc::new(), "x")), "schema_level": 2})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("{updates}?sl=3"),
+            Some(json!({"update_b64": B64.encode(text_update(&local, "x")), "schema_level": 3})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+
+    // Documents can be created at a level (imports, copies), within the cap.
+    let seeded: Document = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/documents",
+            Some(json!({"title": "Imported", "schema_level": 2})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(seeded.schema_level, 2);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/documents",
+            Some(json!({"title": "Too new", "schema_level": 3})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+
+    // No room above the cap.
+    let mut ws = ws_connect(&server, &alice.token, &[format!("docv3:{}", doc.id)]).await;
+    match next_frame(&mut ws).await {
+        ServerFrame::Error { code, .. } => assert_eq!(code, "bad_room"),
+        other => panic!("expected bad_room, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_level_one_server_refuses_newer_content() {
+    // A server that stores level 1 only (one that hasn't been updated):
+    // nothing changes for anyone, and a newer client is told plainly that
+    // the server can't take newer content.
+    let server = boot_at(1).await;
+    let alice = server.register("alice").await;
+    let caps: DocumentCapabilities = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/document-capabilities",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(caps.max_schema_level, 1);
+
+    let doc = create_doc(&server, &alice.token, "Plain old").await;
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates?sl=2", doc.id),
+            Some(json!({"update_b64": B64.encode(text_update(&yrs::Doc::new(), "x")), "schema_level": 2})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/documents",
+            Some(json!({"title": "Too new", "schema_level": 2})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+
+    // A newer client still works at level 1 (sl above the document is fine).
+    let res: AppendUpdateResponse = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates?sl=2", doc.id),
+            Some(json!({"update_b64": B64.encode(text_update(&yrs::Doc::new(), "fine"))})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!((res.seq, res.schema_level), (1, 1));
+
+    let mut ws = ws_connect(&server, &alice.token, &[format!("docv2:{}", doc.id)]).await;
+    match next_frame(&mut ws).await {
+        ServerFrame::Error { code, .. } => assert_eq!(code, "bad_room"),
+        other => panic!("expected bad_room, got {other:?}"),
+    }
+}
+
+#[tokio::test]
+async fn a_stock_server_reports_this_builds_level() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let caps: DocumentCapabilities = server
+        .req(
+            reqwest::Method::GET,
+            &alice.token,
+            "/document-capabilities",
+            None,
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(
+        caps.max_schema_level,
+        writform_proto::documents::MAX_DOC_SCHEMA_LEVEL
+    );
+    assert!(caps.max_schema_level >= 2);
 }

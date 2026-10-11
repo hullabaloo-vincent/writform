@@ -23,7 +23,8 @@ export interface OrgItem {
   excerpt: string;
   /** The text around a search match. */
   snippet: string | null;
-  folderId: number | null;
+  /** A server folder's number, or the id of a folder on this device. */
+  folderId: number | string | null;
   access: "owner" | "write" | "read";
   /** Shared documents show whose they are. */
   owner: UserRef | null;
@@ -47,7 +48,7 @@ export function serverItem(i: DocumentListItem): OrgItem {
   };
 }
 
-export function localItem(d: LocalDocMeta): OrgItem {
+export function localItem(d: LocalDocMeta, folderId: string | null = null, snippet: string | null = null): OrgItem {
   return {
     key: `l:${d.id}`,
     kind: "local",
@@ -58,11 +59,20 @@ export function localItem(d: LocalDocMeta): OrgItem {
     created: d.updated_at,
     words: d.words ?? 0,
     excerpt: d.excerpt ?? "",
-    snippet: null,
-    folderId: null,
+    snippet,
+    folderId,
     access: "owner",
     owner: null,
   };
+}
+
+/** A folder in the organizer, wherever it lives. */
+export interface OrgFolder {
+  key: string;
+  kind: "server" | "local";
+  id: number | string;
+  name: string;
+  count: number;
 }
 
 const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -123,7 +133,8 @@ export function daysLeft(deletedAt: number, now = Date.now()): number {
   return Math.max(0, Math.ceil((deletedAt + TRASH_DAYS * day - now) / day));
 }
 
-/** A search over documents on this device: titles and opening words. */
+/** A search over documents on this device, as far as the list alone can
+ *  answer it: titles and opening words. (Their text is searched on disk.) */
 export function matchesLocal(item: OrgItem, query: string): boolean {
   const q = query.trim().toLowerCase();
   return !!q && (item.title.toLowerCase().includes(q) || item.excerpt.toLowerCase().includes(q));

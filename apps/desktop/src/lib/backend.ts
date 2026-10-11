@@ -15,6 +15,24 @@ export interface SavedServer {
   spki_hash: string;
   fingerprint: string;
   last_username: string | null;
+  /** A session is remembered here: coming back needs no password. */
+  signed_in?: boolean;
+  /** Left on purpose (Disconnect): launch doesn't reconnect by itself. */
+  paused?: boolean;
+}
+
+export interface SystemFontFamily {
+  family: string;
+  /** Which of `regular`, `italic`, `bold`, `boldItalic` it has. */
+  styles: string[];
+  monospace: boolean;
+}
+
+/** The server a launch is about to resume (known before any network). */
+export interface ResumeTarget {
+  addr: string;
+  server_name: string;
+  last_username: string | null;
 }
 
 export type TrustStatus =
@@ -113,6 +131,11 @@ export interface LocalDocListing {
 }
 
 /** An on-device document in Recently Deleted. */
+export interface LocalDocSearch {
+  hits: { id: string; snippet: string }[];
+  stale: string[];
+}
+
 export interface LocalTrashListing {
   id: string;
   title: string;
@@ -182,8 +205,15 @@ export interface Backend {
   ): Promise<SessionInfo>;
   /** Redeem an admin-issued reset code for a new password (pre-auth). */
   resetPassword(addr: string, username: string, code: string, newPassword: string): Promise<void>;
+  /** Sign out: the server forgets this device's session, and so do we. */
   logout(): Promise<void>;
+  /** Leave the server but stay signed in: coming back is `resumeServer`. */
+  disconnect(): Promise<void>;
   currentSession(): Promise<ResumeResult>;
+  /** Which server launch will resume — no network, answers at once. */
+  resumeTarget(): Promise<ResumeTarget | null>;
+  /** Come back to a saved server with its remembered session. */
+  resumeServer(addr: string): Promise<ResumeResult>;
 
   hostStatus(): Promise<HostStatus>;
   hostStart(port: number, serverName: string): Promise<HostStatus>;
@@ -207,14 +237,28 @@ export interface Backend {
     bio: string | null;
   }): Promise<PortableProfile>;
   profileDelete(): Promise<void>;
+  /** Set your picture ("avatar") or the banner behind it from a file chosen
+   *  on this device. */
+  profileSetImage(kind: "avatar" | "banner", bytes: ArrayBuffer | Uint8Array): Promise<PortableProfile>;
+  profileClearImage(kind: "avatar" | "banner"): Promise<PortableProfile>;
 
   /** Documents stored on this device (meta only; state stays on disk). */
   localdocList(): Promise<LocalDocListing[]>;
   /** Raw JSON payload of one local document (schema owned by the client). */
   localdocRead(id: string): Promise<string>;
   /** Save a document; `meta` (JSON: title, format, words, excerpt) is kept
-   *  beside it so the list never reads whole manuscripts. */
-  localdocWrite(id: string, content: string, meta?: string): Promise<void>;
+   *  beside it so the list never reads whole manuscripts, and `text` (its
+   *  plain text, when it has just been worked out) for searching. */
+  localdocWrite(id: string, content: string, meta?: string, text?: string): Promise<void>;
+  /** Documents whose text holds the query, with the words around the first
+   *  match; `stale` are the ones whose text needs writing first. */
+  localdocSearch(query: string): Promise<LocalDocSearch>;
+  /** A document's plain text on its own (see `localdocSearch`). */
+  localdocTextWrite(id: string, text: string): Promise<void>;
+  /** The folders and which document is in which (JSON the client owns);
+   *  empty when there are none. */
+  localdocFoldersRead(): Promise<string>;
+  localdocFoldersWrite(content: string): Promise<void>;
   /** Delete for good (Recently Deleted's purge goes through `localdocPurge`). */
   localdocDelete(id: string): Promise<void>;
   /** Move to Recently Deleted (with its history and notes) for 30 days. */
@@ -235,6 +279,10 @@ export interface Backend {
   localdocHistBlobRead(id: string, version: string): Promise<Uint8Array>;
   localdocHistBlobDelete(id: string, version: string): Promise<void>;
   /** Feedback threads (notes-to-self) for a local document. */
+  /** Store a picture for an on-device document (raw bytes). */
+  localdocMediaWrite(docId: string, mediaId: string, bytes: ArrayBuffer | Uint8Array): Promise<void>;
+  /** Give a copy of a document its own copies of the original's pictures. */
+  localdocMediaCopy(from: string, to: string): Promise<void>;
   localdocFeedbackRead(id: string): Promise<string>;
   localdocFeedbackWrite(id: string, content: string): Promise<void>;
 
@@ -243,7 +291,14 @@ export interface Backend {
   /** Raw JSON payload of one local board (schema owned by the client). */
   localboardRead(id: string): Promise<string>;
   localboardWrite(id: string, content: string): Promise<void>;
+  /** Moves the board to Recently Deleted (30 days). */
   localboardDelete(id: string): Promise<void>;
+  localboardTrashList(): Promise<{ id: string; name: string; updated_at: number }[]>;
+  localboardTrashRead(id: string): Promise<string>;
+  localboardRestore(id: string): Promise<void>;
+  localboardPurge(id: string): Promise<void>;
+  /** Boards with the query in their name or in the words on them. */
+  localboardSearch(query: string): Promise<{ id: string; snippet: string }[]>;
   /** Store a pasted picture for a local board. The bytes travel as a raw IPC
    *  body and are written to disk verbatim — base64 would inflate a photo by
    *  a third for no gain, and the render path reads the file directly. */
@@ -259,6 +314,22 @@ export interface Backend {
   /** Save an export the user asked for: the native Save panel on desktop,
    *  the Files-visible Documents folder on iOS, a download on the web. */
   saveFile(fileName: string, kind: SaveKind, bytes: Uint8Array): Promise<SaveResult>;
+  /** A catalog font file's bytes (`{subset}-{weight}-{style}.ttf` of family
+   *  `id`): from this device's cache, the connected server, or — when
+   *  `online` — the catalog's public CDN. Rejects with `font_unavailable`. */
+  fontFetch(id: string, file: string, online: boolean): Promise<Uint8Array>;
+  fontCacheInfo(): Promise<{ bytes: number; files: number; limit: number }>;
+  fontCacheClear(): Promise<void>;
+  /** Fonts installed on this computer (empty where they can't be listed). */
+  sysfontList(): Promise<SystemFontFamily[]>;
+  /** One installed face's file, for embedding. Rejects with `not_found`,
+   *  `not_embeddable` (its licence says no) or `too_large`. */
+  sysfontBytes(family: string, bold: boolean, italic: boolean): Promise<{ index: number; bytes: Uint8Array }>;
+  /** Hand a PDF to the system to print. Resolves to what happened:
+   *  `printed` / `cancelled` (a native panel ran), `presented` (a system
+   *  sheet is up), `opened` (in the system's viewer), or `frame` (print it
+   *  in this webview — see lib/printFile.ts). */
+  printPdf(title: string, bytes: Uint8Array): Promise<string>;
   /** Read a natively drag-dropped file so the importer can parse its bytes. */
   readDroppedFile(path: string): Promise<{ name: string; data_base64: string }>;
   /** Microphone authorization: not_determined | restricted | denied | authorized. */
@@ -281,7 +352,12 @@ export interface Backend {
   vaultList(): Promise<{ name: string; modified_at: number }[]>;
   vaultRead(name: string): Promise<string>;
   vaultWrite(name: string, content: string): Promise<void>;
+  /** Moves the note to the vault's trash (30 days). */
   vaultDelete(name: string): Promise<void>;
+  /** Undo a delete; resolves to the note's name (changed if taken since). */
+  vaultRestore(name: string): Promise<string>;
+  /** Save as a new note, never over one that's there; resolves to its name. */
+  vaultWriteNew(name: string, content: string): Promise<string>;
   /** Renames a note and repoints `[[old]]` links vault-wide; returns the name used. */
   vaultRename(name: string, newName: string): Promise<string>;
   vaultBacklinks(name: string): Promise<string[]>;
@@ -315,7 +391,10 @@ function tauriBackend(): Backend {
     resetPassword: (addr, username, code, newPassword) =>
       invoke("reset_password", { addr, username, code, newPassword }),
     logout: () => invoke("logout"),
+    disconnect: () => invoke("disconnect"),
     currentSession: () => invoke("current_session"),
+    resumeTarget: () => invoke("resume_target"),
+    resumeServer: (addr) => invoke("resume_server", { addr }),
     hostStatus: () => invoke("host_status"),
     hostStart: (port, serverName) => invoke("host_start", { port, serverName }),
     hostStop: () => invoke("host_stop"),
@@ -336,9 +415,19 @@ function tauriBackend(): Backend {
         bio: f.bio,
       }),
     profileDelete: () => invoke("profile_delete"),
+    profileSetImage: async (kind, bytes) => {
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      return raw<PortableProfile>("profile_set_image", bytes, { headers: { "x-kind": kind } });
+    },
+    profileClearImage: (kind) => invoke("profile_clear_image", { kind }),
     localdocList: () => invoke("localdoc_list"),
     localdocRead: (id) => invoke("localdoc_read", { id }),
-    localdocWrite: (id, content, meta) => invoke("localdoc_write", { id, content, meta: meta ?? null }),
+    localdocWrite: (id, content, meta, text) =>
+      invoke("localdoc_write", { id, content, meta: meta ?? null, text: text ?? null }),
+    localdocSearch: (query) => invoke("localdoc_search", { query }),
+    localdocTextWrite: (id, text) => invoke("localdoc_text_write", { id, text }),
+    localdocFoldersRead: () => invoke("localdoc_folders_read"),
+    localdocFoldersWrite: (content) => invoke("localdoc_folders_write", { content }),
     localdocDelete: (id) => invoke("localdoc_delete", { id }),
     localdocTrash: (id) => invoke("localdoc_trash", { id }),
     localdocTrashList: () => invoke("localdoc_trash_list"),
@@ -356,12 +445,23 @@ function tauriBackend(): Backend {
     localdocHistBlobRead: async (id, version) =>
       new Uint8Array(await invoke<ArrayBuffer>("localdoc_hist_blob_read", { id, version })),
     localdocHistBlobDelete: (id, version) => invoke("localdoc_hist_blob_delete", { id, version }),
+    localdocMediaWrite: async (docId, mediaId, bytes) => {
+      // Raw body, not a JSON argument: the bytes go across untouched.
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      await raw("localdoc_media_write", bytes, { headers: { "x-doc": docId, "x-media": mediaId } });
+    },
+    localdocMediaCopy: (from, to) => invoke("localdoc_media_copy", { from, to }),
     localdocFeedbackRead: (id) => invoke("localdoc_feedback_read", { id }),
     localdocFeedbackWrite: (id, content) => invoke("localdoc_feedback_write", { id, content }),
     localboardList: () => invoke("localboard_list"),
     localboardRead: (id) => invoke("localboard_read", { id }),
     localboardWrite: (id, content) => invoke("localboard_write", { id, content }),
     localboardDelete: (id) => invoke("localboard_delete", { id }),
+    localboardTrashList: () => invoke("localboard_trash_list"),
+    localboardTrashRead: (id) => invoke("localboard_trash_read", { id }),
+    localboardRestore: (id) => invoke("localboard_restore", { id }),
+    localboardPurge: (id) => invoke("localboard_purge", { id }),
+    localboardSearch: (query) => invoke("localboard_search", { query }),
     localmediaWrite: async (mediaId, bytes) => {
       // Raw body, not a JSON argument: the bytes go across untouched.
       const { invoke: raw } = await import("@tauri-apps/api/core");
@@ -389,6 +489,22 @@ function tauriBackend(): Backend {
         { headers: { "x-file-name": encodeURIComponent(fileName), "x-file-kind": kind } },
       );
       return saved ? { status: "saved", ...saved } : { status: "cancelled" };
+    },
+    fontFetch: async (id, file, online) => new Uint8Array(await invoke<ArrayBuffer>("font_fetch", { id, file, online })),
+    fontCacheInfo: () => invoke("font_cache_info"),
+    fontCacheClear: () => invoke("font_cache_clear"),
+    // Mobile builds have no way to read the system's fonts.
+    sysfontList: () => (isMobileApp ? Promise.resolve([]) : invoke<SystemFontFamily[]>("sysfont_list")),
+    sysfontBytes: async (family, bold, italic) => {
+      if (isMobileApp) throw { code: "not_found", message: "no such font on this device" } satisfies CmdError;
+      const raw = new Uint8Array(await invoke<ArrayBuffer>("sysfont_bytes", { family, bold, italic }));
+      // Four bytes of face index (a collection holds several), then the file.
+      const index = new DataView(raw.buffer, raw.byteOffset, 4).getUint32(0, true);
+      return { index, bytes: raw.slice(4) };
+    },
+    printPdf: async (title, bytes) => {
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      return raw<string>("print_pdf", bytes, { headers: { "x-file-name": encodeURIComponent(title) } });
     },
     readDroppedFile: (path) => invoke("read_dropped_file", { path }),
     microphoneStatus: () => invoke("microphone_status"),
@@ -432,6 +548,8 @@ function tauriBackend(): Backend {
     vaultRead: (name) => invoke("vault_read", { name }),
     vaultWrite: (name, content) => invoke("vault_write", { name, content }),
     vaultDelete: (name) => invoke("vault_delete", { name }),
+    vaultRestore: (name) => invoke("vault_restore", { name }),
+    vaultWriteNew: (name, content) => invoke("vault_write_new", { name, content }),
     vaultRename: (name, newName) => invoke("vault_rename", { name, newName }),
     vaultSearch: (query) => invoke("vault_search", { query }),
     vaultPath: () => invoke("vault_path"),
@@ -486,14 +604,58 @@ export function attProtocolUrl(path: string): string {
  *  pinned `writform-att` protocol; the web client fetches same-origin
  *  (authenticated by the path-scoped cookie for <img>-style loads). */
 export function attachmentUrl(id: number): string {
+  return `${attachmentRef(id)}${attachmentTag ? `?s=${attachmentTag}` : ""}`;
+}
+
+/** The address a document STORES for an attachment: the same on every
+ *  server, with nothing about which one it came from. */
+export function attachmentRef(id: number): string {
   return inTauri ? attProtocolUrl(`attachment/${id}`) : `/api/v1/attachments/${id}`;
+}
+
+/**
+ * Attachment ids are only unique per server, and the webview caches what it
+ * loads by address: after switching servers, attachment 7 of the new one
+ * would show the old one's picture. Rendered addresses therefore carry a
+ * tag for the server they're from (the handler ignores it).
+ */
+let attachmentTag = "";
+export function setAttachmentScope(scope: string | null): void {
+  if (!scope) {
+    attachmentTag = "";
+    return;
+  }
+  // A short, stable, opaque tag: nothing about the server leaks into markup.
+  let h = 2166136261;
+  for (let i = 0; i < scope.length; i += 1) {
+    h ^= scope.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  attachmentTag = (h >>> 0).toString(36);
+}
+
+/** Your own picture or banner as saved on this device. `stamp` changes when
+ *  the picture does, so a new one isn't hidden by the old one's cache. */
+export function localProfileImageUrl(kind: "avatar" | "banner", stamp: number): string {
+  return `${attProtocolUrl(`profile/${kind}`)}?v=${stamp}`;
+}
+
+/** The address of a picture in a document on this device. */
+export function localDocMediaUrl(docId: string, mediaId: string): string {
+  return attProtocolUrl(`localdoc/${docId}/${mediaId}`);
+}
+
+/** The picture id in such an address, or null for any other. */
+export function localDocMediaId(src: string): string | null {
+  const m = /^(?:writform-att:\/\/localdoc|https?:\/\/writform-att\.localhost\/localdoc)\/[0-9a-fA-F-]{1,64}\/([0-9a-fA-F-]{1,64})$/.exec(src);
+  return m ? m[1] : null;
 }
 
 /** Documents store attachment image URLs written by whichever platform made
  *  them; re-point any known shape at the current platform's at render time. */
 export function normalizeAttachmentSrc(src: string): string {
   const m =
-    /^(?:writform-att:\/\/attachment|https?:\/\/writform-att\.localhost\/attachment|\/api\/v1\/attachments)\/(\d+)$/.exec(
+    /^(?:writform-att:\/\/attachment|https?:\/\/writform-att\.localhost\/attachment|\/api\/v1\/attachments)\/(\d+)(?:\?s=[a-z0-9]*)?$/.exec(
       src,
     );
   return m ? attachmentUrl(Number(m[1])) : src;

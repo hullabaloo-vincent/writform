@@ -4,6 +4,7 @@ import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
 import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { UserRef } from "../../bindings/proto/UserRef";
 import { backend } from "../../lib/backend";
+import { freshState, onServerScope } from "../../platform/serverScope";
 import { useSession } from "../../stores/session";
 import { canvasApi } from "./api";
 import { closeLocalBoard, isLocalBoard } from "./local";
@@ -188,3 +189,15 @@ export function installCanvasWsHandler(): () => void {
     }
   });
 }
+
+// Group boards belong to a server. A board on this device does not: it stays
+// open, exactly as it is, whatever happens to the connection.
+onServerScope(() => {
+  const s = useCanvas.getState();
+  const local = s.activeBoardId !== null && isLocalBoard(s.activeBoardId);
+  const fresh = freshState(useCanvas.getInitialState());
+  useCanvas.setState(
+    local ? { ...fresh, activeBoardId: s.activeBoardId, board: s.board, elements: s.elements, localHold: s.localHold } : fresh,
+    true,
+  );
+});

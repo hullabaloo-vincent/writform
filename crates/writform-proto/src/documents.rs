@@ -9,6 +9,25 @@ use ts_rs::TS;
 use crate::chat::UserRef;
 use crate::UnixMillis;
 
+/// The newest document schema level this build understands.
+///
+/// A document's level names the vocabulary (node types, marks, attributes)
+/// its content uses; level 1 is everything shipped through 1.0.6. An editor
+/// bound to content newer than its own schema deletes what it doesn't know —
+/// for every collaborator — so clients below a document's level are refused
+/// (`client_too_old`), and a server never stores a document above the level
+/// its own web client understands.
+///
+/// Level 2 (the release after 1.0.6): formatting on a run of text (font,
+/// size, colour, highlight, sub/superscript), paragraph indents, borders and
+/// shading, checklists. The tables are `editor/schema/levels.ts` in the
+/// client; this constant moves with them.
+pub const MAX_DOC_SCHEMA_LEVEL: u32 = 2;
+
+fn level_one() -> u32 {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 #[ts(export)]
 pub struct Document {
@@ -26,6 +45,17 @@ pub struct Document {
     pub created_at: UnixMillis,
     #[ts(type = "number")]
     pub updated_at: UnixMillis,
+    /// See [`MAX_DOC_SCHEMA_LEVEL`]. Absent from older servers (level 1).
+    #[serde(default = "level_one")]
+    pub schema_level: u32,
+}
+
+/// What this server's documents support (`GET /document-capabilities`;
+/// servers without the route are level 1).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DocumentCapabilities {
+    pub max_schema_level: u32,
 }
 
 /// A personal folder for organizing one's own documents (flat, per-user).
@@ -99,6 +129,9 @@ pub struct CreateDocumentRequest {
     pub title: String,
     #[serde(default)]
     pub format: Option<String>,
+    /// The level of the content about to be seeded (imports, copies).
+    #[serde(default)]
+    pub schema_level: Option<u32>,
 }
 
 /// Partial update of document metadata (write access required).
@@ -115,6 +148,10 @@ pub struct UpdateDocumentRequest {
 #[ts(export)]
 pub struct AppendUpdateRequest {
     pub update_b64: String,
+    /// The level this update's content needs, when above the document's:
+    /// accepting the update raises the document in the same step.
+    #[serde(default)]
+    pub schema_level: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -122,6 +159,9 @@ pub struct AppendUpdateRequest {
 pub struct AppendUpdateResponse {
     #[ts(type = "number")]
     pub seq: i64,
+    /// The document's level after this update.
+    #[serde(default = "level_one")]
+    pub schema_level: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

@@ -18,8 +18,11 @@ export interface EpubOptions {
   cover?: { bytes: Uint8Array; type: "image/jpeg" | "image/png" } | null;
   /** Image bytes for the manuscript's images, by source URL. */
   images?: Map<string, { bytes: Uint8Array; type: string }>;
-  /** Embedded font files (only when the book asks for them). */
-  fonts?: { family: string; style: "normal" | "italic"; weight: 400 | 700; file: string; bytes: Uint8Array; type: string }[];
+  /** Embedded font files (only when the book asks for them): the body
+   *  font's first, then the heading font's when it is another. A file that
+   *  holds one script of a family says which (`range`, a CSS
+   *  `unicode-range`). */
+  fonts?: { family: string; style: "normal" | "italic"; weight: 400 | 700; file: string; bytes: Uint8Array; type: string; range?: string }[];
   now?: Date;
 }
 
@@ -106,10 +109,13 @@ function css(book: Book, embedded: EpubOptions["fonts"]): string {
   const fontFaces = (embedded ?? [])
     .map(
       (f) =>
-        `@font-face { font-family: "${f.family}"; font-style: ${f.style}; font-weight: ${f.weight}; src: url("../fonts/${f.file}"); }`,
+        `@font-face { font-family: "${f.family}"; font-style: ${f.style}; font-weight: ${f.weight}; src: url("../fonts/${f.file}");${f.range ? ` unicode-range: ${f.range};` : ""} }`,
     )
     .join("\n");
   const bodyFamily = embedded?.length ? `font-family: "${embedded[0].family}", serif;` : "";
+  // A heading font of its own, when the design has one.
+  const other = embedded?.find((f) => f.family !== embedded[0].family)?.family;
+  const headingFamily = other ? `\nh1, h2, .titlepage .book-title { font-family: "${other}", "${embedded![0].family}", serif; }` : "";
   const labelStyle =
     d.labelCase === "upper"
       ? "text-transform: uppercase; letter-spacing: 0.15em; font-size: 0.75em;"
@@ -122,7 +128,7 @@ function css(book: Book, embedded: EpubOptions["fonts"]): string {
     d.titleCase === "smallcaps" ? "font-variant: small-caps;" : "",
   ].join(" ");
   return `${fontFaces}
-body { margin: 0; ${bodyFamily} widows: 2; orphans: 2; -webkit-hyphens: auto; -epub-hyphens: auto; hyphens: auto; }
+body { margin: 0; ${bodyFamily} widows: 2; orphans: 2; -webkit-hyphens: auto; -epub-hyphens: auto; hyphens: auto; }${headingFamily}
 p { margin: 0; text-indent: ${d.indent}em; text-align: ${d.justify ? "justify" : "left"}; }
 p.first, p.center, p.right, .scene-break, .verse p, blockquote p, .epigraph p, .front p, li p { text-indent: 0; }
 p.center { text-align: center; }

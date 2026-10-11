@@ -4,4 +4,9 @@
  * One merged batch of local Yjs edits (update v1, base64). Clients batch to
  * ≤ 192 KiB; the server accepts up to 4 MiB (413 `update_too_large` above).
  */
-export type AppendUpdateRequest = { update_b64: string, };
+export type AppendUpdateRequest = { update_b64: string, 
+/**
+ * The level this update's content needs, when above the document's:
+ * accepting the update raises the document in the same step.
+ */
+schema_level: number | null, };

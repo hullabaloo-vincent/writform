@@ -1,7 +1,5 @@
-import Image from "@tiptap/extension-image";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import {
   AlignCenter,
   AlignJustify,
@@ -25,7 +23,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
-import { attachmentUrl, normalizeAttachmentSrc } from "../lib/backend";
+import { attachmentRef } from "../lib/backend";
 import { uploadBlob } from "../lib/upload";
 import {
   curTypography,
@@ -34,22 +32,10 @@ import {
   setDocAlign,
   setDocFont,
   setDocFontSize,
-  TextFormat,
   togglePageBreakBefore,
 } from "./TextFormat";
-import { DocElement, opensSection } from "./DocElement";
-
-/** Attachment images with the stored URL re-pointed at whichever platform
- *  is rendering (desktop protocol vs same-origin web path). */
-export const WfImage = Image.extend({
-  renderHTML({ HTMLAttributes }) {
-    const src = HTMLAttributes.src as string | undefined;
-    return [
-      "img",
-      { ...HTMLAttributes, src: src ? normalizeAttachmentSrc(src) : src },
-    ];
-  },
-}).configure({ allowBase64: false });
+import { opensSection } from "./DocElement";
+import { LEVEL1_EXTENSIONS } from "./schema/level1";
 
 /**
  * Shared TipTap editor — used for prompts and submissions (and later by the
@@ -75,16 +61,9 @@ export function RichEditor({
   format?: string;
 }) {
   const editor = useEditor({
-    // TextFormat keeps this preview/prompt schema in step with the document
-    // editors — without it, RichDoc would silently drop typography attrs.
-    extensions: [
-      StarterKit,
-      WfImage,
-      Placeholder.configure({ placeholder: placeholder ?? "Write…" }),
-      TextFormat,
-      // Element types (chapter heading, scene heading…) survive previews.
-      DocElement,
-    ],
+    // Prompts and submissions aren't documents: they stay on the vocabulary
+    // every released client knows.
+    extensions: [...LEVEL1_EXTENSIONS, Placeholder.configure({ placeholder: placeholder ?? "Write…" })],
     content: value ?? undefined,
     editable,
     autofocus: autoFocus ? "end" : false,
@@ -129,7 +108,7 @@ export function Toolbar({
   /** Off for local documents — image refs are server attachments. */
   allowImages?: boolean;
   /** Paragraph typography controls (align/font/size/page break) — document
-   *  editors only, and only for the Plain format. */
+   *  editors only, and only for the Document format. */
   typography?: boolean;
   /** The book manuscript's few direct controls: left/center/right (meaning,
    *  not styling), block quote, scene break, and page break. */
@@ -152,7 +131,7 @@ export function Toolbar({
     setUploading(true);
     try {
       const meta = await uploadBlob(file, file.name);
-      chain().setImage({ src: attachmentUrl(meta.id) }).run();
+      chain().setImage({ src: attachmentRef(meta.id) }).run();
     } catch {
       // upload failed — nothing inserted
     } finally {

@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { yDocToProsemirrorJSON } from "@tiptap/y-tiptap";
 import * as Y from "yjs";
 
-import { RichDoc } from "../../editor/RichEditor";
+import { DocPreview } from "../../editor/DocPreview";
 import { acquireReplica, b64decode, releaseReplica } from "./collab";
 import { openDocumentById } from "./store";
 
@@ -122,7 +122,7 @@ export function CanvasDocCard({ payload }: { payload: string }) {
       </button>
       {state.stale && <span className="wf-doc-ref-stale">referenced text changed</span>}
       <div className="wf-doc-ref-body">
-        {state.doc ? <RichDoc doc={state.doc} /> : <span className="wf-friend-dim">Loading…</span>}
+        {state.doc ? <DocPreview doc={state.doc} /> : <span className="wf-friend-dim">Loading…</span>}
       </div>
     </div>
   );

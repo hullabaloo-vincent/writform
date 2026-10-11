@@ -128,8 +128,9 @@ const strings =
           .slice(0, maxItems)
           .map((s) => s.slice(0, maxLen))
       : undefined;
+/** One of the app's book faces, or a family of the online catalog. */
 const fontId: Validator = (v) =>
-  typeof v === "string" && /^[a-z0-9-]{1,40}$/.test(v) ? v : undefined;
+  typeof v === "string" && /^(?:gf:[a-z0-9][a-z0-9-]{0,63}|[a-z0-9-]{1,40})$/.test(v) ? v : undefined;
 
 const NUMBER_STYLES: NumberStyle[] = ["word", "numeral", "roman", "none", "as-written"];
 

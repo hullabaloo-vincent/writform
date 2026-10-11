@@ -7,6 +7,8 @@
 
 import * as fontkit from "fontkit";
 
+import { fontCssFamily } from "../../fonts/css";
+import { knownFont } from "../../fonts/registry";
 import { bookFont } from "../fonts/registry";
 import type { FaceRef, StyleKey } from "./types";
 
@@ -14,6 +16,8 @@ export interface FaceBytes {
   family: string;
   style: StyleKey;
   bytes: Uint8Array;
+  /** Which face of a collection file (.ttc) this is. */
+  index?: number;
 }
 
 const FALLBACK: Record<StyleKey, StyleKey[]> = {
@@ -81,9 +85,16 @@ export class FaceSet {
   private readonly shaped = new Map<string, Shaped>();
   readonly missing = new Map<string, Set<string>>();
 
-  constructor(files: FaceBytes[]) {
+  constructor(
+    files: FaceBytes[],
+    /** Draw a slanted roman where a family has no italic (documents). */
+    private readonly syntheticItalic = false,
+  ) {
     for (const f of files) {
-      const font = fontkit.create(f.bytes as never) as unknown as fontkit.Font;
+      const opened = fontkit.create(f.bytes as never) as unknown as fontkit.Font & { fonts?: fontkit.Font[] };
+      // A collection holds several faces; an installed font may be one of them.
+      const font = opened.fonts ? (opened.fonts[f.index ?? 0] ?? opened.fonts[0]) : opened;
+      if (!font) continue;
       // The first layout builds the engine; then its script choice sticks.
       font.layout("a");
       rememberScript(font);
@@ -115,14 +126,21 @@ export class FaceSet {
     const wantsBold = style === "bold" || style === "boldItalic";
     const isBold = used === "bold" || used === "boldItalic";
     const italic = style === "italic" || style === "boldItalic";
+    // (A book's own faces all have their italics; a catalog family chosen
+    // for one may not, and emphasis has to show.)
+    const slanted = (this.syntheticItalic || family.startsWith("gf:")) && italic && used !== "italic" && used !== "boldItalic";
     const ref: FaceRef = {
       family,
       style,
       fakeBold: wantsBold && !isBold,
-      cssFamily: bookFont(family).css,
-      cssStyle: italic ? "italic" : "normal",
+      // A catalog or installed family draws under its own name (a script
+      // subset of a family, "gf:inter~cyrillic", under the family's).
+      cssFamily: knownFont(family)?.css ?? fontCssFamily(family.split("~")[0]) ?? bookFont(family).css,
+      // A slanted roman is sheared by the renderer, not by the browser.
+      cssStyle: italic && !slanted ? "italic" : "normal",
       cssWeight: wantsBold ? 700 : 400,
     };
+    if (slanted) ref.fakeItalic = true;
     const i = this.faces.length;
     this.faces.push(ref);
     this.fonts.push(info);
@@ -242,6 +260,12 @@ export class FaceSet {
   ascent(face: number): number {
     const { font, upm } = this.fonts[face];
     return font.ascent / upm;
+  }
+
+  /** Depth below the baseline as a (positive) fraction of the em. */
+  descent(face: number): number {
+    const { font, upm } = this.fonts[face];
+    return Math.abs(font.descent) / upm;
   }
 
   /** Size factor for small capitals drawn as reduced capitals (faces without

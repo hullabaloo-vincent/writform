@@ -1,6 +1,7 @@
 import type { AppendUpdateResponse } from "../../bindings/proto/AppendUpdateResponse";
 import type { CreateThreadRequest } from "../../bindings/proto/CreateThreadRequest";
 import type { Document } from "../../bindings/proto/Document";
+import type { DocumentCapabilities } from "../../bindings/proto/DocumentCapabilities";
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
@@ -13,7 +14,14 @@ import type { DocumentVersion } from "../../bindings/proto/DocumentVersion";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
 import type { SetShareRequest } from "../../bindings/proto/SetShareRequest";
 import type { UpdateDocumentRequest } from "../../bindings/proto/UpdateDocumentRequest";
+import { DOC_SCHEMA_LEVEL } from "../../editor/schema/levels";
 import { backend, type CmdError } from "../../lib/backend";
+
+/** The newest document schema level this app understands, sent on every
+ *  route that carries content: a server refuses a client below a document's
+ *  level (its editor would delete what it doesn't know). Servers from before
+ *  levels ignore it. */
+const SL = `sl=${DOC_SCHEMA_LEVEL}`;
 
 /** A failed API call. `status` is the HTTP status — the sync engine needs it
  *  to tell a passing hiccup from a refusal. Transport failures (no answer at
@@ -50,12 +58,19 @@ export const documentsApi = {
     api<DocumentShare[]>("POST", `/api/v1/document-folders/${id}/share`, req),
   moveDocument: (id: number, folderId: number | null) =>
     api<Document>("POST", `/api/v1/documents/${id}/move`, { folder_id: folderId }),
-  create: (title: string, format: string) =>
-    api<Document>("POST", "/api/v1/documents", { title, format }),
-  detail: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}`),
+  /** `level`: the schema level of the content about to be seeded. */
+  create: (title: string, format: string, level = 1) =>
+    api<Document>("POST", "/api/v1/documents", {
+      title,
+      format,
+      schema_level: level > 1 ? level : null,
+    }),
+  /** The newest schema level this server stores; 404 before levels (1). */
+  capabilities: () => api<DocumentCapabilities>("GET", "/api/v1/document-capabilities"),
+  detail: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}?${SL}`),
   /** Read without logging an "opened" activity entry (bulk reads: export,
    *  copy to device, duplicate, combine). */
-  detailQuiet: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}?quiet=1`),
+  detailQuiet: (id: number) => api<DocumentDetail>("GET", `/api/v1/documents/${id}?quiet=1&${SL}`),
   update: (id: number, req: UpdateDocumentRequest) =>
     api<Document>("PATCH", `/api/v1/documents/${id}`, req),
   /** Moves the document to Recently Deleted (servers before 1.1 delete it
@@ -67,15 +82,20 @@ export const documentsApi = {
   purge: (id: number) => api<null>("DELETE", `/api/v1/document-trash/${id}`),
   emptyTrash: () => api<null>("POST", "/api/v1/document-trash/empty"),
 
-  appendUpdate: (id: number, update_b64: string) =>
-    api<AppendUpdateResponse>("POST", `/api/v1/documents/${id}/updates`, { update_b64 }),
+  /** `raiseTo`: the level this update's content needs when that's above the
+   *  document's — the server raises the document as it accepts the update. */
+  appendUpdate: (id: number, update_b64: string, raiseTo?: number) =>
+    api<AppendUpdateResponse>("POST", `/api/v1/documents/${id}/updates?${SL}`, {
+      update_b64,
+      schema_level: raiseTo ?? null,
+    }),
   updatesSince: (id: number, since: number) =>
-    api<DocumentUpdateBatch>("GET", `/api/v1/documents/${id}/updates?since=${since}`),
+    api<DocumentUpdateBatch>("GET", `/api/v1/documents/${id}/updates?since=${since}&${SL}`),
   awareness: (id: number, data_b64: string) =>
     api<null>("POST", `/api/v1/documents/${id}/awareness`, { data_b64 }),
 
   snapshot: (id: number, doc_json: string, name?: string, kind?: "auto" | "named" | "draft") =>
-    api<DocumentVersionMeta | null>("POST", `/api/v1/documents/${id}/snapshot`, {
+    api<DocumentVersionMeta | null>("POST", `/api/v1/documents/${id}/snapshot?${SL}`, {
       doc_json,
       name: name ?? null,
       kind: kind ?? null,

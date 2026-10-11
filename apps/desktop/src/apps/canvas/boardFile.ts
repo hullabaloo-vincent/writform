@@ -4,8 +4,8 @@
  * (pages, backgrounds) and elements with ids rewritten to ordinals; `media/n`
  * holds the raw bytes of every referenced picture. The format is
  * self-contained, so a board round-trips between servers, between accounts,
- * and between a group and "on this device" — which also makes it the way to
- * publish a local board to a group.
+ * and between a group and "on this device" — which also makes it the way a
+ * board on this device is published to a group (`publishLocalBoard`).
  */
 
 import type { CanvasBoard } from "../../bindings/proto/CanvasBoard";
@@ -14,14 +14,7 @@ import { isWeb } from "../../lib/backend";
 import { saveExport } from "../../lib/saveFile";
 import { uploadBlob } from "../../lib/upload";
 import { canvasApi } from "./api";
-import {
-  activeLocalBoard,
-  closeLocalBoard,
-  imageSrc,
-  openLocalBoard,
-  saveLocalImage,
-  useLocalBoards,
-} from "./local";
+import { activeLocalBoard, closeLocalBoard, imageSrc, openLocalBoard, readLocalBoard, saveLocalImage, useLocalBoards, deleteLocalBoard, isLocalBoard } from "./local";
 
 /* ------------------------------------------------- shared import plumbing */
 
@@ -82,7 +75,8 @@ export async function finishDest(dest: ImportDest): Promise<void> {
 
 /** Best-effort removal of a partially imported board (routes local/server). */
 export async function abandonBoard(boardId: number): Promise<void> {
-  await canvasApi.deleteBoard(boardId).catch(() => {});
+  if (isLocalBoard(boardId)) await deleteLocalBoard(boardId, { forGood: true }).catch(() => {});
+  else await canvasApi.deleteBoard(boardId).catch(() => {});
 }
 
 /** Bounded-concurrency map that keeps result order. */
@@ -202,14 +196,13 @@ const sanitizeFileName = (name: string): string =>
   name.replace(/[\\/:*?"<>|]/g, "-").trim().slice(0, 80) || "board";
 
 /**
- * Export a board the caller already has in memory (BoardRoom's store state —
- * fetching detail for a local board would reopen its session under the live
- * view). Media are fetched through the same URLs the <img> tags use.
+ * A board the caller already has in memory, as the bytes of a board file.
+ * Media are fetched through the same URLs the <img> tags use.
  */
-export async function exportBoard(
-  board: CanvasBoard,
+export async function packBoard(
+  board: Pick<CanvasBoard, "name" | "style">,
   elements: CanvasElement[],
-): Promise<BoardExportResult> {
+): Promise<{ bytes: Uint8Array; skippedMedia: number }> {
   const { default: JSZip } = await import("jszip");
 
   // Every picture the board references, deduped: element images + backgrounds.
@@ -297,7 +290,19 @@ export async function exportBoard(
     if (blob) zip.file(`media/${ordinal}`, blob);
   }
 
-  const bytes = await zip.generateAsync({ type: "uint8array" });
+  return { bytes: await zip.generateAsync({ type: "uint8array" }), skippedMedia };
+}
+
+/**
+ * Export a board the caller already has in memory (BoardRoom's store state —
+ * fetching detail for a local board would reopen its session under the live
+ * view).
+ */
+export async function exportBoard(
+  board: CanvasBoard,
+  elements: CanvasElement[],
+): Promise<BoardExportResult> {
+  const { bytes, skippedMedia } = await packBoard(board, elements);
   const fileName = `${sanitizeFileName(board.name)}.wfboard`;
   // The save path shows the "Saved …" toast; skipped pictures ride along.
   const result = await saveExport(fileName, "wfboard", bytes, {
@@ -452,6 +457,31 @@ export async function importBoardFile(
     await abandonBoard(boardId);
     throw e;
   }
+}
+
+/* -------------------------------------------------------------- publish */
+
+/**
+ * Publish a copy of a board on this device to a group on the connected
+ * server: the board is packed as a board file and imported there, so its
+ * pictures are uploaded and everything a file carries arrives. The board on
+ * this device stays as it is.
+ */
+export async function publishLocalBoard(
+  boardId: number,
+  groupId: number,
+  onProgress: (p: ImportProgress) => void,
+  signal: AbortSignal,
+): Promise<ImportResult> {
+  onProgress({ label: "Reading the board", done: 0, total: 1 });
+  const { board, elements } = await readLocalBoard(boardId);
+  throwIfAborted(signal);
+  const { bytes, skippedMedia } = await packBoard(board, elements);
+  throwIfAborted(signal);
+  const file = new File([bytes as BlobPart], `${sanitizeFileName(board.name)}.wfboard`);
+  const result = await importBoardFile(file, { kind: "group", groupId }, onProgress, signal);
+  const missing = skippedMedia ? `${skippedMedia} picture${skippedMedia === 1 ? "" : "s"} couldn't be read` : null;
+  return { boardId: result.boardId, notice: [result.notice, missing].filter(Boolean).join("; ") || null };
 }
 
 /** Web clients import .wfboard only; PDFs need the desktop app. */

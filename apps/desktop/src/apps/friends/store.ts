@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import { freshState, onServerScope } from "../../platform/serverScope";
+
 /**
  * Cross-cutting friends/DM state. The chat WS handler feeds DM unread counts
  * here (DM messages arrive in the always-subscribed `user:{id}` room), and
@@ -44,3 +46,7 @@ export const useFriends = create<FriendsState>((set, get) => ({
   requestDm: (peerId) => set({ pendingDmPeer: peerId }),
   clearPendingDm: () => set({ pendingDmPeer: null }),
 }));
+
+// Unread counts and the open conversation are keyed by user ids, which mean
+// someone else on another server.
+onServerScope(() => useFriends.setState(freshState(useFriends.getInitialState()), true));

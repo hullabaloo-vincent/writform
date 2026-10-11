@@ -61,6 +61,7 @@ happen over REST; a WebSocket at `/api/v1/ws` fans out change events —
 | GET/POST | `/document-folders` | list/create folders |
 | PATCH/DELETE | `/document-folders/{id}` | rename/delete (documents keep, unfoldered) |
 | POST | `/document-folders/{id}/share` | share every document in a folder at once |
+| GET | `/document-capabilities` | `max_schema_level`: the newest document schema level this server stores (404 on servers before levels = 1) |
 
 Deleted documents read as missing everywhere (404 to owner and
 collaborators alike, no room, no images) until restored; after 30 days the
@@ -69,6 +70,23 @@ server deletes them for good. Lists change live: the owner's devices get
 `document.folders` (folder changes) on their user room; an open document's
 room gets `document.deleted`.
 
+**Schema levels.** Every document has a `schema_level`: the newest
+vocabulary (node types, marks, attributes) its content uses; level 1 is
+everything through 1.0.6. An editor bound to content newer than its schema
+deletes what it doesn't know, for everyone, so the content routes — detail,
+`updates` (both ways) and `snapshot` — take the client's level as `?sl=N`
+(absent = 1) and answer 403 `client_too_old` below the document's. An update
+that needs a newer level says so (`schema_level` in the body, at most the
+sender's `sl` and the server's `max_schema_level`, else 400
+`schema_unsupported`), and accepting it raises the document in the same
+step. From level 2 up, `document.update` is sent to `docv{level}:{id}`
+instead of `document:{id}`; clients left in the plain room get
+`document.deleted` with `outdated: <level>` when a document is raised, and
+never the newer content. Level 2 is text colour, highlight, a font or size
+on part of a paragraph, sub/superscript, paragraph indents, borders and
+shading, checklists, tables, footnotes and endnotes, a table of contents,
+picture placement and captions, sections, and tracked changes.
+
 ## Voice, canvas, friends, misc
 
 | Method | Path |
@@ -76,6 +94,7 @@ room gets `document.deleted`.
 | GET/POST | `/groups/{id}/voice` · POST `/voice/{id}/join` · `/voice/leave` · `/voice/{id}/signal` |
 | GET/POST | `/groups/{id}/boards` · `/boards/{id}/elements` · PATCH/DELETE `/elements/{id}` |
 | GET | `/link-preview?url=` (server-fetched page metadata) |
+| GET | `/fonts/{family}/{subset}-{weight}-{style}.ttf` — a font of the online library, fetched once by the server and kept (so browsers never ask a third party) |
 | GET/POST/DELETE | `/friends`, `/friends/requests`, `/dms` |
 | POST | `/notes/share` |
 | GET/PUT | `/plugins/{id}/data/{scope}/{scope_id}/{key}` |

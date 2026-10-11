@@ -8,7 +8,9 @@ import type { DocumentShare } from "../../bindings/proto/DocumentShare";
 import type { DocumentThread } from "../../bindings/proto/DocumentThread";
 import type { DocumentThreadMessage } from "../../bindings/proto/DocumentThreadMessage";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
+import { DOC_SCHEMA_LEVEL } from "../../editor/schema/levels";
 import { backend, isCmdError } from "../../lib/backend";
+import { toast } from "../../platform/toast";
 import { onFlush } from "../../platform/lifecycle";
 import { onBeforeLogout, useSession } from "../../stores/session";
 import { documentsApi } from "./api";
@@ -208,7 +210,26 @@ export function installDocumentsWsHandler(): () => void {
         items: s.items.map((i) => (i.document.id === doc.id ? { ...i, document: doc } : i)),
       }));
     } else if (kind === "document.deleted") {
-      const { doc_id } = data as { doc_id: number };
+      const { doc_id, outdated } = data as { doc_id: number; outdated?: number };
+      if (outdated !== undefined) {
+        // Not deleted: the document moved to a newer schema level, and this
+        // is what clients that can't follow it are sent instead of the
+        // update. An app that does understand the level only hears it in
+        // the instant before it joins that level's updates — nothing to do
+        // but make sure none were missed.
+        if (outdated <= DOC_SCHEMA_LEVEL) {
+          if (state.activeDocId === doc_id) void provider?.catchUp();
+          return;
+        }
+        if (state.activeDocId === doc_id) {
+          state.closeDocument();
+          toast(
+            "This document now uses formatting from a newer version of subScribe. Update the app to keep editing it — your unsent changes are kept on this device.",
+            "error",
+          );
+        }
+        return;
+      }
       if (state.activeDocId === doc_id) state.closeDocument();
       useDocuments.setState((s) => ({
         items: s.items.filter((i) => i.document.id !== doc_id),

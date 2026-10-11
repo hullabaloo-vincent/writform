@@ -6,14 +6,16 @@
  * start, the same session runs on the main thread.
  */
 
+import { modelImages, type DocModel } from "../../doclayout/model";
 import { bookFileName, collectImages } from "../exportBook";
-import { loadFontFiles } from "../fonts/files";
-import type { BookModel } from "../model/types";
+import { loadFaces, resolveFont, scriptFamilies } from "../../fonts/store";
+import { isCatalogBookFont } from "../fonts/registry";
+import type { BookModel, Warning } from "../model/types";
 import { smfNames } from "../smf/names";
 import type { BuiltFile } from "../ui/ExportBookDialog";
 import type { FaceBytes } from "./faces";
 import { designFor, ornamentFor, smfFamily } from "./layout";
-import type { JobImage, LayoutRequest, PrintKind, PrintResult, TypesetSession } from "./run";
+import type { AnyRequest, DocRequest, JobImage, LayoutRequest, PageMap, PrintKind, PrintResult, TypesetSession } from "./run";
 import type { DisplayList } from "./types";
 
 /** The families a job draws with: body, headings, and whichever family
@@ -26,15 +28,79 @@ export function familiesFor(kind: PrintKind, model: BookModel): string[] {
   return [...new Set(families)];
 }
 
+/** A book's characters beyond plain ASCII (which scripts its fonts need). */
+export function bookExotic(model: BookModel): string {
+  const seen = new Set<string>();
+  const walk = (value: unknown) => {
+    if (typeof value === "string") {
+      for (const ch of value) if (ch.charCodeAt(0) > 0x7f && seen.size < 4000) seen.add(ch);
+    } else if (Array.isArray(value)) value.forEach(walk);
+    else if (value && typeof value === "object") Object.values(value).forEach(walk);
+  };
+  walk(model.sections);
+  walk(model.book.meta);
+  return [...seen].join("");
+}
+
+export interface BookFonts {
+  /** The model, with any font that couldn't be had replaced by a stand-in. */
+  model: BookModel;
+  families: string[];
+  chains: Record<string, string[]>;
+  warnings: Warning[];
+}
+
+/**
+ * A book designed in fonts from the online catalog: fetch them (the layout
+ * can't wait), work out which of their scripts the text needs, and where
+ * one can't be had set the book in the nearest of the app's own for now —
+ * and say so.
+ */
+export async function bookFonts(kind: PrintKind, model: BookModel): Promise<BookFonts> {
+  const design = { ...model.book.design };
+  const chains: Record<string, string[]> = {};
+  const warnings: Warning[] = [];
+  if (kind !== "submission-pdf") {
+    let exotic: string | null = null;
+    for (const key of ["bodyFont", "headingFont"] as const) {
+      const id = design[key];
+      if (!isCatalogBookFont(id)) continue;
+      const face = await resolveFont(id);
+      design[key] = face.family;
+      if (face.substituted) {
+        if (!warnings.some((w) => w.message.includes(face.asked))) {
+          warnings.push({ kind: "font", message: `${face.asked} couldn’t be fetched (no connection, or the online library is switched off), so the book is set in ${face.drawn} for now.` });
+        }
+        continue;
+      }
+      exotic ??= bookExotic(model);
+      const more = await scriptFamilies(face.family, exotic);
+      if (more.length) chains[face.family] = more;
+    }
+  }
+  // What the heading face lacks (a display face often has one script only)
+  // the body face may have: a title in another alphabet is set in that
+  // rather than left blank.
+  if (Object.keys(chains).length && design.headingFont !== design.bodyFont) {
+    chains[design.headingFont] = [...new Set([...(chains[design.headingFont] ?? []), design.bodyFont, ...(chains[design.bodyFont] ?? [])])];
+  }
+  const same = design.bodyFont === model.book.design.bodyFont && design.headingFont === model.book.design.headingFont;
+  const next = same ? model : { ...model, book: { ...model.book, design } };
+  return { model: next, families: [...new Set([...familiesFor(kind, next), ...Object.values(chains).flat()])], chains, warnings };
+}
+
 // ---------------------------------------------------------------- images
 
 const prepared = new Map<string, JobImage | null>();
 
-/** The manuscript's images, scaled to at most ~300 pixels per inch of the
- *  widest they can print and flattened onto white (print PDFs shouldn't
- *  carry transparency). Cached by URL for the session. */
-async function prepareImages(model: BookModel): Promise<{ images: JobImage[]; failed: number }> {
-  const urls = [...new Set(model.sections.flatMap((s) => s.blocks.flatMap((b) => (b.kind === "image" ? [b.url] : []))))];
+const bookImages = (model: BookModel) => [
+  ...new Set(model.sections.flatMap((s) => s.blocks.flatMap((b) => (b.kind === "image" ? [b.url] : [])))),
+];
+
+/** Images for print, scaled to at most ~300 pixels per inch of the widest
+ *  they can print and flattened onto white (print PDFs shouldn't carry
+ *  transparency). Cached by URL for the session. */
+async function prepareImages(urls: string[]): Promise<{ images: JobImage[]; failed: number }> {
   const fresh = urls.filter((u) => !prepared.has(u));
   if (fresh.length) {
     const { images: fetched } = await collectImages(fresh);
@@ -83,6 +149,7 @@ type Reply =
   | { id: number; type: "progress"; message: string }
   | { id: number; type: "laidout"; dl: DisplayList }
   | { id: number; type: "done"; result: PrintResult }
+  | { id: number; type: "pages"; map: PageMap }
   | { id: number; type: "cancelled" }
   | { id: number; type: "error"; message: string }
   | { id: number; type: "fonts"; families: string[] };
@@ -92,8 +159,8 @@ interface Pending {
   reject: (err: unknown) => void;
   progress: (message: string) => void;
   /** The request, to send again with fonts the worker turns out to lack. */
-  type: "layout" | "pdf";
-  req: LayoutRequest;
+  type: "layout" | "pdf" | "pages";
+  req: AnyRequest;
   channel?: string;
 }
 
@@ -147,6 +214,7 @@ class Typesetter {
       this.pending.delete(msg.id);
       if (msg.type === "laidout") p.resolve(msg.dl);
       else if (msg.type === "done") p.resolve(msg.result);
+      else if (msg.type === "pages") p.resolve(msg.map);
       else if (msg.type === "cancelled") p.resolve(null);
       else p.reject(new Error(msg.message));
     };
@@ -198,7 +266,7 @@ class Typesetter {
   private async refill(worker: Worker, id: number, families: string[]) {
     for (const f of families) this.sent.delete(f);
     try {
-      const fonts = await loadFontFiles(families);
+      const fonts = await loadFaces(families);
       const p = this.pending.get(id);
       // Let go meanwhile, which settled the request.
       if (!p || worker !== this.worker) return;
@@ -212,8 +280,8 @@ class Typesetter {
   }
 
   private async send(
-    type: "layout" | "pdf",
-    req: LayoutRequest,
+    type: "layout" | "pdf" | "pages",
+    req: AnyRequest,
     onProgress: (message: string) => void,
     channel?: string,
   ): Promise<unknown> {
@@ -223,7 +291,7 @@ class Typesetter {
     try {
       for (let worker = this.spawn(); worker; worker = this.spawn()) {
         const missing = req.families.filter((f) => !this.sent.has(f));
-        const fonts = missing.length ? await loadFontFiles(missing) : [];
+        const fonts = missing.length ? await loadFaces(missing) : [];
         // It stopped while the files loaded: start over with a new one.
         if (worker !== this.worker) continue;
         try {
@@ -245,7 +313,8 @@ class Typesetter {
       // Main-thread fallback.
       const session = await this.localSession();
       const missing = session.missingFamilies(req.families);
-      if (missing.length) session.addFonts(await loadFontFiles(missing));
+      if (missing.length) session.addFonts(await loadFaces(missing));
+      if (type === "pages") return await session.pageMap(req);
       return type === "layout" ? (await session.layout(req, onProgress)).dl : await session.pdf(req, onProgress);
     } finally {
       this.active -= 1;
@@ -255,22 +324,69 @@ class Typesetter {
 
   /** Lay the book out (the preview). Null when a newer layout on the same
    *  channel overtook this one. */
-  async layout(kind: PrintKind, model: BookModel, onProgress: (message: string) => void = () => {}, channel = "preview") {
-    const { images } = await prepareImages(model);
+  async layout(kind: PrintKind, source: BookModel, onProgress: (message: string) => void = () => {}, channel = "preview") {
+    const fonts = await bookFonts(kind, source);
+    const { images } = await prepareImages(bookImages(fonts.model));
     const req: LayoutRequest = {
       kind,
-      model,
-      families: familiesFor(kind, model),
+      model: fonts.model,
+      families: fonts.families,
       images: images.map(({ url, w, h }) => ({ url, w, h })),
       now: Date.now(),
+      ...(Object.keys(fonts.chains).length ? { chains: fonts.chains } : {}),
     };
-    return (await this.send("layout", req, onProgress, channel)) as DisplayList | null;
+    const dl = (await this.send("layout", req, onProgress, channel)) as DisplayList | null;
+    if (dl && fonts.warnings.length) dl.warnings.push(...fonts.warnings);
+    return dl;
   }
 
-  async pdf(kind: PrintKind, model: BookModel, onProgress: (message: string) => void) {
+  async pdf(kind: PrintKind, source: BookModel, onProgress: (message: string) => void) {
     onProgress("Loading fonts and images…");
-    const { images, failed } = await prepareImages(model);
-    const req: LayoutRequest = { kind, model, families: familiesFor(kind, model), images, now: Date.now() };
+    const fonts = await bookFonts(kind, source);
+    const { images, failed } = await prepareImages(bookImages(fonts.model));
+    const req: LayoutRequest = {
+      kind,
+      model: fonts.model,
+      families: fonts.families,
+      images,
+      now: Date.now(),
+      ...(Object.keys(fonts.chains).length ? { chains: fonts.chains } : {}),
+    };
+    const result = (await this.send("pdf", req, onProgress)) as PrintResult;
+    if (fonts.warnings.length) result.warnings.push(...fonts.warnings);
+    return { result, failed };
+  }
+
+  /** Lay a document out (its preview). Null when a newer layout on the
+   *  same channel overtook this one. */
+  async docLayout(doc: DocModel, channel = "doc-preview") {
+    const { images } = await prepareImages(modelImages(doc));
+    const req: DocRequest = {
+      kind: "document",
+      doc,
+      families: doc.families,
+      images: images.map(({ url, w, h }) => ({ url, w, h })),
+    };
+    return (await this.send("layout", req, () => {}, channel)) as DisplayList | null;
+  }
+
+  /** Where a document's pages fall (the editor's page view). Null when a
+   *  newer request on the same channel overtook this one. */
+  async docPages(doc: DocModel, channel = "doc-pages") {
+    const { images } = await prepareImages(modelImages(doc));
+    const req: DocRequest = {
+      kind: "document",
+      doc,
+      families: doc.families,
+      images: images.map(({ url, w, h }) => ({ url, w, h })),
+    };
+    return (await this.send("pages", req, () => {}, channel)) as PageMap | null;
+  }
+
+  /** A document as a PDF: straight, or imposed as a booklet. */
+  async docPdf(doc: DocModel, booklet: boolean, onProgress: (message: string) => void = () => {}) {
+    const { images, failed } = await prepareImages(modelImages(doc));
+    const req: DocRequest = { kind: booklet ? "document-booklet" : "document", doc, families: doc.families, images };
     const result = (await this.send("pdf", req, onProgress)) as PrintResult;
     return { result, failed };
   }

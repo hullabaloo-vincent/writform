@@ -15,6 +15,9 @@ export interface FaceRef {
   style: StyleKey;
   /** Drawn bold by stroking (the family has no bold face). */
   fakeBold: boolean;
+  /** Drawn slanted (the family has no italic face). Documents only: a book
+   *  design never asks a face for an italic it doesn't have. */
+  fakeItalic?: boolean;
   /** The CSS font-family / style the preview uses for this face. */
   cssFamily: string;
   cssStyle: "normal" | "italic";
@@ -41,6 +44,8 @@ export interface DLText {
   cs?: number;
   /** Manuscript block this line came from (click-to-source). */
   src?: number;
+  /** Text colour, `#rrggbb` (absent: black). */
+  color?: string;
 }
 
 export interface DLRule {
@@ -50,6 +55,39 @@ export interface DLRule {
   x2: number;
   y2: number;
   w: number;
+  /** `#rrggbb` (absent: black). */
+  color?: string;
+}
+
+/** A filled rectangle: a highlight, paragraph shading, a table cell. */
+export interface DLRect {
+  t: "rect";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** `#rrggbb`. */
+  color: string;
+}
+
+/** A clickable area: a web address, or a place in this document (the name
+ *  of a `DLAnchor`). Drawn by nothing; a PDF annotation where links are
+ *  allowed. */
+export interface DLLink {
+  t: "link";
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  url?: string;
+  to?: string;
+}
+
+/** A named place on a page that links and the outline can point at. */
+export interface DLAnchor {
+  t: "anchor";
+  name: string;
+  y: number;
 }
 
 export interface DLImage {
@@ -61,7 +99,7 @@ export interface DLImage {
   ref: string;
 }
 
-export type DLItem = DLText | DLRule | DLImage;
+export type DLItem = DLText | DLRule | DLImage | DLRect | DLLink | DLAnchor;
 
 export type PageRole =
   | "half-title"
@@ -87,6 +125,9 @@ export interface DLPage {
   /** Index into DisplayList.sections, or -1 for generated pages. */
   section: number;
   items: DLItem[];
+  /** This page's size in points, when it isn't the document's `trim` (a
+   *  landscape section). */
+  size?: { w: number; h: number };
 }
 
 export interface DLSection {
@@ -98,6 +139,13 @@ export interface DLSection {
   level: number;
 }
 
+/** Where a page begins in the editor's document: before a block (`pos` is
+ *  the block's position), or inside a paragraph's text. */
+export interface PageStart {
+  pos: number;
+  inline: boolean;
+}
+
 export interface DisplayList {
   trim: { w: number; h: number };
   faces: FaceRef[];
@@ -107,4 +155,9 @@ export interface DisplayList {
   warnings: Warning[];
   /** Inside margin used (inches), for the inspector. */
   insideMargin: number;
+  /** Documents: for each page, where its text begins in the editor's
+   *  document (null where that can't be said — a page of footnotes run
+   *  over, a table row cut in two), and how tall its text area is, pt. */
+  starts?: (PageStart | null)[];
+  bodyH?: number[];
 }

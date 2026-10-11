@@ -19,19 +19,24 @@ import type { CanvasElement } from "../../bindings/proto/CanvasElement";
 import type { CreateElementRequest } from "../../bindings/proto/CreateElementRequest";
 import type { UpdateElementRequest } from "../../bindings/proto/UpdateElementRequest";
 import type { UserRef } from "../../bindings/proto/UserRef";
-import { attachmentUrl, attProtocolUrl, backend } from "../../lib/backend";
-import { useSession } from "../../stores/session";
+import { attachmentUrl, attProtocolUrl, backend, isCmdError } from "../../lib/backend";
+import { toast, toastError } from "../../platform/toast";
+import { useLocalProfile } from "../../stores/localProfile";
 
 const SAVE_MS = 600;
 
-/** Stand-in author for boards that never leave this device. */
-const LOCAL_USER: UserRef = {
-  id: 0,
-  username: "you",
-  display_name: "You",
-  avatar_attachment_id: null,
-  accent_color: null,
-};
+/** The author of boards that never leave this device: you, by the name and
+ *  colour this device knows you by. */
+function localUser(): UserRef {
+  const { name, accent } = useLocalProfile.getState();
+  return {
+    id: 0,
+    username: "you",
+    display_name: name || "You",
+    avatar_attachment_id: null,
+    accent_color: accent,
+  };
+}
 
 interface LocalBoardFile {
   id: number;
@@ -85,9 +90,17 @@ async function pruneMedia(): Promise<void> {
   await session?.flush();
   const boards = await backend.localboardList();
   const keep = new Set<string>();
-  for (const meta of boards) {
-    const raw = await backend.localboardRead(meta.id).catch(() => "");
+  const note = (raw: string) => {
     for (const match of raw.matchAll(/local:([0-9a-fA-F-]{6,64})/g)) keep.add(match[1]);
+  };
+  for (const meta of boards) note(await backend.localboardRead(meta.id).catch(() => ""));
+  // A board in Recently Deleted can come back: its pictures wait with it.
+  const trashed = await backend.localboardTrashList();
+  for (const meta of trashed) {
+    const raw = await backend.localboardTrashRead(meta.id).catch(() => null);
+    // Unreadable: don't guess — keep everything this time.
+    if (raw === null) return;
+    note(raw);
   }
   await backend.localmediaPrune([...keep]);
 }
@@ -99,6 +112,8 @@ class LocalBoardSession {
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private dirty = false;
   private closed = false;
+  /** The last save failed (said once, until one succeeds). */
+  private failed = false;
   private onUnload = () => void this.flush();
 
   constructor(private file: LocalBoardFile) {
@@ -113,7 +128,7 @@ class LocalBoardSession {
     return {
       id: this.file.id,
       group_id: 0,
-      creator: LOCAL_USER,
+      creator: localUser(),
       name: this.file.name,
       style: this.file.style,
       created_at: this.file.created_at,
@@ -147,7 +162,7 @@ class LocalBoardSession {
       style: req.style,
       from_id: req.from_id,
       to_id: req.to_id,
-      updated_by: LOCAL_USER.id,
+      updated_by: 0,
       updated_at: Date.now(),
     };
     this.file.next_element_id += 1;
@@ -187,10 +202,27 @@ class LocalBoardSession {
   async flush(): Promise<void> {
     if (!this.dirty) return;
     this.dirty = false;
-    await backend.localboardWrite(fileId(this.file.id), JSON.stringify(this.file)).catch(() => {
-      // Retry on the next edit rather than dropping the dirty flag silently.
+    try {
+      await backend.localboardWrite(fileId(this.file.id), JSON.stringify(this.file));
+      if (this.failed) {
+        this.failed = false;
+        toast("The board is saved again.", "success");
+      }
+    } catch (e) {
+      // Keep it dirty and keep trying — and say so, once: a board that
+      // quietly isn't saving is the worst kind of failure.
       this.dirty = true;
-    });
+      if (!this.failed) {
+        this.failed = true;
+        toastError(
+          `This board couldn't be saved to this device${isCmdError(e) ? ` (${e.message})` : ""}. It's still open — keep it open, and it will save as soon as it can.`,
+        );
+      }
+      if (!this.closed) {
+        if (this.saveTimer) clearTimeout(this.saveTimer);
+        this.saveTimer = setTimeout(() => void this.flush(), 5000);
+      }
+    }
   }
 
   async destroy(): Promise<void> {
@@ -222,17 +254,64 @@ export async function openLocalBoard(boardId: number): Promise<BoardDetail> {
   return session.detail();
 }
 
+/**
+ * A board on this device as it stands, without opening it: the open one is
+ * saved and read from memory (opening a second session would pull the board
+ * out from under the room showing it); any other is read from its file.
+ */
+export async function readLocalBoard(boardId: number): Promise<BoardDetail> {
+  if (session?.id === boardId) {
+    await session.flush();
+    return session.detail();
+  }
+  const parsed = JSON.parse(await backend.localboardRead(fileId(boardId))) as Partial<LocalBoardFile>;
+  return {
+    board: {
+      id: boardId,
+      group_id: 0,
+      creator: localUser(),
+      name: parsed.name ?? "Untitled",
+      style: parsed.style ?? "",
+      created_at: parsed.created_at ?? 0,
+    },
+    elements: parsed.elements ?? [],
+  };
+}
+
+/** Boards on this device with the query in their name or in the words on
+ *  them: board id → the words around the match ("" when it's the name). */
+export async function searchLocalBoards(query: string): Promise<Map<number, string>> {
+  const hits = await backend.localboardSearch(query);
+  return new Map(hits.map((hit) => [-Number(hit.id), hit.snippet]));
+}
+
 export async function closeLocalBoard(): Promise<void> {
   const old = session;
   session = null;
   if (old) await old.destroy();
 }
 
-export async function deleteLocalBoard(boardId: number): Promise<null> {
+export async function deleteLocalBoard(boardId: number, opts: { forGood?: boolean } = {}): Promise<null> {
   if (session?.id === boardId) await closeLocalBoard();
+  const name = useLocalBoards.getState().items.find((b) => b.id === boardId)?.name ?? "Board";
+  // To Recently Deleted (30 days): the toast puts it straight back.
   await backend.localboardDelete(fileId(boardId));
+  // A board that never really existed (a failed import) isn't kept.
+  if (opts.forGood) await backend.localboardPurge(fileId(boardId)).catch(() => {});
   await useLocalBoards.getState().load();
   await pruneMedia().catch(() => {}); // tidying disk must never fail a delete
+  if (opts.forGood) return null;
+  toast(`Deleted “${name}”.`, "info", {
+    durationMs: 10000,
+    action: {
+      label: "Undo",
+      run: () =>
+        void backend
+          .localboardRestore(fileId(boardId))
+          .then(() => useLocalBoards.getState().load())
+          .catch(() => toastError("That board couldn't be restored.")),
+    },
+  });
   return null;
 }
 
@@ -277,9 +356,3 @@ export const useLocalBoards = create<LocalBoardsState>((set, get) => ({
     await deleteLocalBoard(boardId);
   },
 }));
-
-// Leaving offline mode (or logging out) drops to the connect screen: flush
-// whatever is open so nothing is lost on the way out.
-useSession.subscribe((s) => {
-  if (s.phase === "disconnected" && session) void closeLocalBoard();
-});

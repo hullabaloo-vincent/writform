@@ -8,114 +8,54 @@
  * read from the font files themselves; the engine harness re-checks them.
  */
 
-export type FontStyle = "regular" | "italic" | "bold" | "boldItalic";
+import { catalogNow } from "../../fonts/catalog";
+import { fontCssFamily } from "../../fonts/css";
+import { FONTS, type BookFace, type FontStyle } from "../../fonts/registry";
 
-export interface BookFont {
+export type { FontStyle };
+
+export interface BookFont extends BookFace {
   id: string;
   label: string;
   /** CSS font-family stack (the bundled face first). */
   css: string;
-  role: "body" | "display" | "mono";
-  /** Bundled styles. Variable families ship their default instance only, so
-   *  their bold is drawn by stroking. */
-  styles: FontStyle[];
-  /** Real small capitals (OpenType smcp + c2sc). */
-  smallCaps: boolean;
-  /** The lowercase letters ARE small capitals (Cinzel). */
-  caseless?: boolean;
-  /** Old-style figures (onum). */
-  oldstyle: boolean;
-  /** Ornament glyphs the face has. */
-  ornaments: string;
-  /** Average advance per character of English prose, em (page estimates). */
-  avgChar: number;
 }
 
-const ALL: FontStyle[] = ["regular", "italic", "bold", "boldItalic"];
+/** The bundled faces of the app's font table (fonts/registry.ts). */
+export const BOOK_FONTS: BookFont[] = FONTS.flatMap((f) =>
+  f.book ? [{ id: f.id, label: f.name, css: f.css, ...f.book }] : [],
+);
 
-export const BOOK_FONTS: BookFont[] = [
-  {
-    id: "garamond",
-    label: "EB Garamond",
-    css: '"EB Garamond", Garamond, "Adobe Garamond Pro", Georgia, serif',
-    role: "body",
-    styles: ALL,
-    smallCaps: true,
-    oldstyle: true,
-    ornaments: "❦❧☙◆◇•·†‡◊§~#*¶",
-    avgChar: 0.375,
-  },
-  {
-    id: "libertinus",
-    label: "Libertinus Serif",
-    css: '"Libertinus Serif", "Linux Libertine", Georgia, serif',
-    role: "body",
-    styles: ALL,
-    smallCaps: true,
-    oldstyle: true,
-    ornaments: "⁂❧☙◆◇•·†‡◊※§~#*♦¶",
-    avgChar: 0.407,
-  },
-  {
-    id: "baskerville",
-    label: "Libre Baskerville",
-    css: '"Libre Baskerville", Baskerville, Georgia, serif',
-    role: "body",
-    styles: ["regular", "italic"],
-    smallCaps: false,
-    oldstyle: false,
-    ornaments: "•·†‡§~#*¶",
-    avgChar: 0.507,
-  },
-  {
-    id: "literata",
-    label: "Literata",
-    css: "Literata, Georgia, serif",
-    role: "body",
-    styles: ["regular", "italic"],
-    smallCaps: true,
-    oldstyle: true,
-    ornaments: "⁂◆◇•·†‡◊§~#*¶",
-    avgChar: 0.468,
-  },
-  {
-    id: "playfair",
-    label: "Playfair Display",
-    css: '"Playfair Display", Didot, Georgia, serif',
-    role: "display",
-    styles: ["regular", "italic"],
-    smallCaps: true,
-    oldstyle: true,
-    ornaments: "•·†‡◊§~#*¶",
-    avgChar: 0.444,
-  },
-  {
-    id: "cinzel",
-    label: "Cinzel",
-    css: 'Cinzel, "Trajan Pro", Georgia, serif',
-    role: "display",
-    styles: ["regular"],
-    smallCaps: false,
-    caseless: true,
-    oldstyle: true,
-    ornaments: "•·†‡◊§~#*¶",
-    avgChar: 0.541,
-  },
-  {
-    id: "courier-prime",
-    label: "Courier Prime",
-    css: '"Courier Prime", "Courier New", Courier, monospace',
-    role: "mono",
-    styles: ALL,
-    smallCaps: false,
-    oldstyle: false,
-    ornaments: "•·†‡◊§~#*¶",
-    avgChar: 0.6,
-  },
-];
+/** Whether a book font is one from the online catalog (`gf:<id>`), as
+ *  opposed to one of the app's own. */
+export const isCatalogBookFont = (id: string): boolean => /^gf:[a-z0-9]/.test(id);
 
+/**
+ * What the engine knows about a book font. A catalog family is taken as a
+ * plain text face: no small capitals or old-style figures of its own (the
+ * engine reduces capitals instead), no ornaments (a bundled face draws
+ * those), and an average character for the page estimate.
+ */
 export function bookFont(id: string): BookFont {
-  return BOOK_FONTS.find((f) => f.id === id) ?? BOOK_FONTS[0];
+  const own = BOOK_FONTS.find((f) => f.id === id);
+  if (own) return own;
+  if (isCatalogBookFont(id)) {
+    // (As the layout names it, it may carry a script: "gf:lora~cyrillic".)
+    const font = id.split("~")[0];
+    const key = font.slice(3).split("@")[0];
+    return {
+      id: font,
+      label: catalogNow()?.byId.get(key)?.family ?? key,
+      css: fontCssFamily(font) ?? "serif",
+      role: "body",
+      styles: ["regular", "italic", "bold", "boldItalic"],
+      smallCaps: false,
+      oldstyle: false,
+      ornaments: "",
+      avgChar: 0.47,
+    };
+  }
+  return BOOK_FONTS[0];
 }
 
 /** Ornaments offered in the book design (each is in at least one family). */

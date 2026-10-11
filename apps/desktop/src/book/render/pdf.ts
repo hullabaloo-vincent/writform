@@ -8,6 +8,11 @@
  *   page), document metadata, and an outline of the chapters.
  * - No annotations, links or form fields (KDP and IngramSpark reject them).
  *
+ * Documents (as opposed to books) ask for `color: "rgb"` and `links`: text
+ * and rules in their own colours, highlights and shading, clickable links,
+ * pages of differing sizes. A book's display list uses none of that, and its
+ * PDF comes out byte for byte as before.
+ *
  * As a booklet, pages are imposed two to a sheet for saddle stitching: the
  * count padded to a multiple of four, sides in the classic order [N,1],
  * [2,N−1], [N−2,3]… Print two-sided, flipping on the short edge, then fold.
@@ -27,8 +32,14 @@ interface Doc {
   font(name: string): Doc;
   fontSize(size: number): Doc;
   text(text: string, x: number, y: number, options: Record<string, unknown>): Doc;
-  fillColor(color: number[]): Doc;
-  strokeColor(color: number[]): Doc;
+  fillColor(color: number[] | string): Doc;
+  strokeColor(color: number[] | string): Doc;
+  rect(x: number, y: number, w: number, h: number): Doc;
+  fill(color: string): Doc;
+  transform(a: number, b: number, c: number, d: number, e: number, f: number): Doc;
+  link(x: number, y: number, w: number, h: number, url: string): Doc;
+  goTo(x: number, y: number, w: number, h: number, name: string): Doc;
+  addNamedDestination(name: string, fit: "XYZ", left: number | null, top: number | null, zoom: number | null): Doc;
   lineWidth(w: number): Doc;
   moveTo(x: number, y: number): Doc;
   lineTo(x: number, y: number): Doc;
@@ -50,14 +61,27 @@ interface Outline {
 
 const tick = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
 
+/** The slant of a synthetic italic (about 12°), as a shear. */
+const OBLIQUE = 0.21;
+
+export interface RenderOptions {
+  booklet?: boolean;
+  /** "k": pure black ink, CMYK (books — the default). "rgb": screen
+   *  colours, and the items' own colours (documents). */
+  color?: "k" | "rgb";
+  /** Write links as annotations (never for print-on-demand books). */
+  links?: boolean;
+}
+
 export async function renderPdf(
   dl: DisplayList,
   /** fontkit font for each DisplayList face. */
   fonts: fontkit.Font[],
   images: Map<string, Uint8Array>,
   onProgress?: (done: number, total: number) => void,
-  opts: { booklet?: boolean } = {},
+  opts: RenderOptions = {},
 ): Promise<Uint8Array> {
+  const ink: number[] | string = opts.color === "rgb" ? "#000000" : BLACK;
   const { w, h } = dl.trim;
   const sheetW = opts.booklet ? w * 2 : w;
   const doc = new PDFDocument({
@@ -100,9 +124,16 @@ export async function renderPdf(
 
   const draw = (page: DisplayList["pages"][number], dx: number) => {
     if (dx) doc.save().translate(dx, 0);
+    // The fill colour in force; only changed when a run asks for another.
+    let fill: string | null = null;
     for (const it of page.items) {
       if (it.t === "text") {
         const face = dl.faces[it.face];
+        const color = it.color ?? null;
+        if (color !== fill) {
+          doc.fillColor(color ?? ink).strokeColor(color ?? ink);
+          fill = color;
+        }
         const textOpts: Record<string, unknown> = {
           lineBreak: false,
           baseline: "alphabetic",
@@ -120,23 +151,42 @@ export async function renderPdf(
           textOpts.stroke = true;
           doc.lineWidth(it.size * 0.035);
         }
+        if (face?.fakeItalic) {
+          // Shear about the baseline, so the run keeps its place.
+          doc.save().transform(1, 0, -OBLIQUE, 1, OBLIQUE * it.y, 0);
+        }
         doc.font(faceName[it.face]).fontSize(it.size).text(it.text, it.x, it.y, textOpts);
+        if (face?.fakeItalic) doc.restore();
       } else if (it.t === "rule") {
-        doc.save().lineWidth(it.w).moveTo(it.x1, it.y1).lineTo(it.x2, it.y2).stroke().restore();
+        doc.save().lineWidth(it.w);
+        if (it.color) doc.strokeColor(it.color);
+        doc.moveTo(it.x1, it.y1).lineTo(it.x2, it.y2).stroke().restore();
+      } else if (it.t === "rect") {
+        doc.save().rect(it.x, it.y, it.w, it.h).fill(it.color).restore();
+      } else if (it.t === "link") {
+        if (!opts.links) continue;
+        if (it.url) doc.link(it.x, it.y, it.w, it.h, it.url);
+        else if (it.to) doc.goTo(it.x, it.y, it.w, it.h, it.to);
+      } else if (it.t === "anchor") {
+        if (opts.links) doc.addNamedDestination(it.name, "XYZ", null, it.y, null);
       } else {
         const bytes = images.get(it.ref);
         if (bytes) doc.image(bytes, it.x, it.y, { width: it.w, height: it.h });
       }
     }
+    if (fill !== null) doc.fillColor(ink).strokeColor(ink);
     if (dx) doc.restore();
   };
 
-  const newSheet = () => {
-    doc.addPage({ size: [sheetW, h], margin: 0 });
-    const box = [0, 0, sheetW, h];
+  /** A new sheet: the document's size, or a page's own. */
+  const newSheet = (size?: { w: number; h: number }) => {
+    const sw = size?.w ?? sheetW;
+    const sh = size?.h ?? h;
+    doc.addPage({ size: [sw, sh], margin: 0 });
+    const box = [0, 0, sw, sh];
     doc.page.dictionary.data.TrimBox = box;
     doc.page.dictionary.data.BleedBox = box;
-    doc.fillColor(BLACK).strokeColor(BLACK);
+    doc.fillColor(ink).strokeColor(ink);
   };
 
   if (opts.booklet) {
@@ -159,17 +209,17 @@ export async function renderPdf(
       list.push(s);
       sectionsAt.set(s.firstPage, list);
     }
-    let parent: Outline | null = null;
+    // The outline nests by level: each entry goes under the nearest earlier
+    // entry of a lower level (a chapter under its part, a subsection under
+    // its section).
+    const open: { level: number; item: Outline }[] = [];
     for (let pi = 0; pi < dl.pages.length; pi += 1) {
-      newSheet();
+      newSheet(dl.pages[pi].size);
       draw(dl.pages[pi], 0);
       for (const s of sectionsAt.get(pi) ?? []) {
-        if (s.level === 0 || !parent) {
-          const item = doc.outline.addItem(s.title);
-          parent = s.level === 0 ? item : parent;
-        } else {
-          parent.addItem(s.title);
-        }
+        while (open.length && open[open.length - 1].level >= s.level) open.pop();
+        const parent = open.length ? open[open.length - 1].item : doc.outline;
+        open.push({ level: s.level, item: parent.addItem(s.title) });
       }
       if (pi % 16 === 15) {
         onProgress?.(pi + 1, dl.pages.length);
