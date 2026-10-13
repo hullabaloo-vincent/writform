@@ -36,6 +36,11 @@ export async function uploadPath(filePath: string): Promise<UploadedAttachment> 
  *  the image node stores. */
 export type ImageUploader = (file: File) => Promise<string>;
 
+/** The most a picture may weigh where each kind of document keeps its
+ *  pictures (the server's attachments, the device's own store). */
+export const SERVER_PICTURE_BYTES = 10 * 1024 * 1024;
+export const DEVICE_PICTURE_BYTES = 24 * 1024 * 1024;
+
 /** A server document's pictures are attachments on its server. */
 export const uploadToServer: ImageUploader = async (file) => attachmentRef((await uploadBlob(file, file.name)).id);
 

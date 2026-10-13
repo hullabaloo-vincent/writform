@@ -41,7 +41,10 @@ import {
 } from "@tiptap/pm/tables";
 
 import { showRev } from "../review/TrackMarks";
-import { COL_MAX, COL_MIN, colorAttr, encodeCols, linesAttr, parseCols, roundPt, TABLE_LINES, toHexColor, type TableLines } from "../schema/sanitize";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Decoration, DecorationSet } from "@tiptap/pm/view";
+
+import { CELL_SIDES, cellEdges, COL_MAX, COL_MIN, colorAttr, encodeCellEdges, encodeCols, linesAttr, parseCols, roundPt, TABLE_LINES, toHexColor, type CellEdges, type TableLines } from "../schema/sanitize";
 
 declare module "@tiptap/core" {
   interface NodeConfig<Options, Storage> {
@@ -110,6 +113,16 @@ export const TableCell = Node.create({
           return c ? { "data-bg": c, style: `background-color: ${c}` } : {};
         },
       },
+      // Lines of the cell's own (schema level 3): what Word draws with cell
+      // borders, as a rule down the side of a column.
+      bdr: {
+        default: null,
+        parseHTML: (el: HTMLElement) => encodeCellEdges(cellEdges(el.getAttribute("data-bdr"))),
+        renderHTML: (attrs: { bdr?: unknown }) => {
+          const edges = cellEdges(attrs.bdr);
+          return edges ? { "data-bdr": encodeCellEdges(edges) as string, style: edgesCss(edges) } : {};
+        },
+      },
     };
   },
 
@@ -122,16 +135,37 @@ export const TableCell = Node.create({
   },
 });
 
+/** A cell's own lines as CSS (each side it says something of). */
+function edgesCss(edges: CellEdges): string {
+  const names = { t: "top", r: "right", b: "bottom", l: "left" } as const;
+  return CELL_SIDES.filter((side) => edges[side])
+    .map((side) => (edges[side]!.w > 0 ? `border-${names[side]}: ${edges[side]!.w}pt solid ${edges[side]!.color}` : `border-${names[side]}: 0`))
+    .join("; ");
+}
+
+/**
+ * A table's columns as shares of its width. Its width is its columns' own,
+ * but never more than there is room for: on a sheet narrower than the paper
+ * (a small window, a phone) the columns keep their proportions and the
+ * table fits, where widths in points would run it off the side.
+ */
+const shares = (widths: number[]): string[] => {
+  const total = widths.reduce((a, b) => a + b, 0) || 1;
+  return widths.map((w) => `${Math.round((w / total) * 100000) / 1000}%`);
+};
+const widthCss = (widths: number[]): string => `min(100%, ${roundPt(widths.reduce((a, b) => a + b, 0))}pt)`;
+
 const colElements = (table: PmNode): [string, Record<string, string>][] => {
   const count = columnCount(table);
   const widths = parseCols(table.attrs.cols, count);
-  return Array.from({ length: count }, (_, i): [string, Record<string, string>] => ["col", widths ? { style: `width: ${widths[i]}pt` } : {}]);
+  const parts = widths ? shares(widths) : null;
+  return Array.from({ length: count }, (_, i): [string, Record<string, string>] => ["col", parts ? { style: `width: ${parts[i]}` } : {}]);
 };
 
 const tableStyle = (table: PmNode): string | null => {
   const widths = parseCols(table.attrs.cols, columnCount(table));
   // Its own widths, or the width of the text shared out.
-  return widths ? `width: ${roundPt(widths.reduce((a, b) => a + b, 0))}pt` : null;
+  return widths ? `width: ${widthCss(widths)}` : null;
 };
 
 export const Table = Node.create({
@@ -217,11 +251,12 @@ export const Table = Node.create({
         if (linesAttr(n.attrs.lines) !== "all") table.setAttribute("data-lines", linesAttr(n.attrs.lines));
         const count = columnCount(n);
         const widths = parseCols(n.attrs.cols, count);
-        table.style.width = widths ? `${roundPt(widths.reduce((a, b) => a + b, 0))}pt` : "";
+        const parts = widths ? shares(widths) : null;
+        table.style.width = widths ? widthCss(widths) : "";
         while (colgroup.children.length > count) colgroup.lastChild!.remove();
         while (colgroup.children.length < count) colgroup.append(document.createElement("col"));
         [...colgroup.children].forEach((col, i) => {
-          (col as HTMLElement).style.width = widths ? `${widths[i]}pt` : "";
+          (col as HTMLElement).style.width = parts ? parts[i] : "";
         });
       };
       show(node);
@@ -230,7 +265,12 @@ export const Table = Node.create({
       let hover = -1;
       let drag: { col: number; startX: number; widths: number[] } | null = null;
       const PX = 0.75;
-      const measured = (): number[] => [...colgroup.children].map((col) => (col as HTMLElement).getBoundingClientRect().width * PX);
+      /** The columns' widths in points: the table's own, or as they are
+       *  drawn when it has none (the text's width shared out). */
+      const measured = (): number[] => {
+        const own = parseCols(current.attrs.cols, colgroup.children.length);
+        return own ?? [...colgroup.children].map((col) => (col as HTMLElement).getBoundingClientRect().width * PX);
+      };
       const columnAt = (e: PointerEvent): number => {
         const cell = (e.target as Element | null)?.closest?.("td");
         if (!cell || !body.contains(cell)) return -1;
@@ -350,7 +390,25 @@ export const Table = Node.create({
   },
 
   addProseMirrorPlugins() {
-    return [tableEditing({ allowTableNodeSelection: false })];
+    return [
+      tableEditing({ allowTableNodeSelection: false }),
+      // The table the caret is in shows where its cells are (faint lines
+      // where it draws none); the others look as they print.
+      new Plugin({
+        key: new PluginKey("wf-table-on"),
+        props: {
+          decorations(state) {
+            const { $from } = state.selection;
+            for (let d = $from.depth; d > 0; d -= 1) {
+              if ($from.node(d).type.name === "table") {
+                return DecorationSet.create(state.doc, [Decoration.node($from.before(d), $from.after(d), { class: "wf-table-on" })]);
+              }
+            }
+            return null;
+          },
+        },
+      }),
+    ];
   },
 });
 

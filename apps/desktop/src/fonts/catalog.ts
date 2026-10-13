@@ -41,22 +41,29 @@ const CATEGORY: Record<string, FontCategory> = {
   h: "handwriting",
 };
 const LICENSE: Record<string, string> = { O: "OFL-1.1", A: "Apache-2.0", U: "UFL-1.0" };
+/** The licences a listed family may be under (fonts/licence.ts says what
+ *  each allows). */
+const OPEN = new Set(Object.values(LICENSE));
 
 let loading: Promise<Catalog> | null = null;
 let ready: Catalog | null = null;
 
 export function decodeCatalog(raw: { source: string; fetched: string; fonts: Row[] }): Catalog {
-  const fonts = raw.fonts.map(
-    ([id, family, cat, weights, italic, subsets, license]): CatalogFont => ({
-      id,
-      family,
-      category: CATEGORY[cat] ?? "display",
-      weights: [...weights].map((d) => Number(d) * 100),
-      italic: italic === 1,
-      subsets: subsets.split(" "),
-      license: LICENSE[license] ?? license,
-    }),
-  );
+  const fonts = raw.fonts
+    .map(
+      ([id, family, cat, weights, italic, subsets, license]): CatalogFont => ({
+        id,
+        family,
+        category: CATEGORY[cat] ?? "display",
+        weights: [...weights].map((d) => Number(d) * 100),
+        italic: italic === 1,
+        subsets: subsets.split(" "),
+        license: LICENSE[license] ?? license,
+      }),
+    )
+    // Only families under an open licence that allows commercial use are
+    // ever listed (they all are today: this keeps a later index to it).
+    .filter((f) => OPEN.has(f.license));
   return {
     fonts,
     byId: new Map(fonts.map((f) => [f.id, f])),

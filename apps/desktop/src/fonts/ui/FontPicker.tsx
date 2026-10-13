@@ -78,6 +78,10 @@ const BOOK_APP_FONTS = FONTS.filter((f) => f.book);
  *  embedded in what is printed and sold). */
 export type FontScope = "document" | "book";
 
+/** What is said over the fonts installed on the device: the app can't
+ *  vouch for what they may be used for. */
+const DEVICE_HINT = "Each has its maker’s own licence. Check it before you publish with one.";
+
 function appRow(id: string, scope: FontScope = "document"): Row | null {
   const f = knownFont(id);
   if (!f || (scope === "book" && !f.book)) return null;
@@ -159,7 +163,7 @@ function FontList({
     return here ? systemRow(here) : { id, name, note: "Not on this computer", css: fontCssFamily(id, docTable[id]) ?? undefined, info: docTable[id] ?? { name } };
   };
 
-  const sections = useMemo((): { title: string; rows: Row[]; more?: () => void }[] => {
+  const sections = useMemo((): { title: string; rows: Row[]; more?: () => void; hint?: string }[] => {
     const q = query.trim().toLowerCase();
     const real = <T,>(list: (T | null)[]) => list.filter((r): r is T => r !== null);
     if (q || kind) {
@@ -169,7 +173,7 @@ function FontList({
       const found = catalog ? searchCatalog(catalog, q, kind, 80) : [];
       return [
         { title: "With the app", rows: real(app.map((f) => appRow(f.id, scope))) },
-        { title: "On this computer", rows: sys.slice(0, 40).map(systemRow) },
+        { title: "On this computer", rows: sys.slice(0, 40).map(systemRow), hint: DEVICE_HINT },
         { title: "Online library", rows: real(found.map((f) => catalogRow(f.id))) },
       ].filter((s) => s.rows.length > 0);
     }
@@ -181,6 +185,7 @@ function FontList({
       { title: "With the app", rows: real(appFonts.map((f) => appRow(f.id, scope))) },
       {
         title: "On this computer",
+        hint: DEVICE_HINT,
         rows: (allSystem ? system : system.slice(0, 12)).map(systemRow),
         ...(system.length > 12 && !allSystem ? { more: () => setAllSystem(true) } : {}),
       },
@@ -230,6 +235,7 @@ function FontList({
         {sections.map((section) => (
           <div key={section.title} className="wf-fontlist-section">
             <span className="wf-fontlist-title">{section.title}</span>
+            {section.hint && <span className="wf-fontlist-hint">{section.hint}</span>}
             {section.rows.map((row) => (
               <button
                 key={`${section.title}:${row.id}`}
@@ -254,6 +260,11 @@ function FontList({
           </div>
         ))}
         {sections.length === 0 && <p className="wf-fontlist-empty">No font by that name.</p>}
+        <p className="wf-fontlist-empty">
+          {book
+            ? "Every font here is open-licensed and free for commercial use."
+            : "Fonts that come with the app or from the online library are open-licensed and free for commercial use."}
+        </p>
         {!online && <p className="wf-fontlist-empty">The online library is switched off in Settings, so only fonts already downloaded will load.</p>}
       </div>
     </div>

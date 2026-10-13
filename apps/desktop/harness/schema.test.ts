@@ -61,10 +61,19 @@ check("the build's level is the newest table", DOC_SCHEMA_LEVEL === Math.max(...
   check("the tables cover everything the document editors can write", missing.length === 0, missing.join(", "));
 }
 
-// ---------------------------------------------------------------- level 2, and a synthetic level 3
+// ---------------------------------------------------------------- levels 2 and 3, and a synthetic level after them
+
+/** Two levels' tables as one. */
+const merged = (a: Vocab, b: Vocab): Vocab => {
+  const out: Vocab = { nodes: {}, marks: {} };
+  for (const kind of ["nodes", "marks"] as const) {
+    for (const src of [a, b]) for (const [name, attrs] of Object.entries(src[kind])) out[kind][name] = [...new Set([...(out[kind][name] ?? []), ...attrs])];
+  }
+  return out;
+};
 
 {
-  // Level 2 is exactly what the document schema has beyond level 1.
+  // Levels 2 and 3 together are exactly what the document schema has beyond level 1.
   const all = vocabOf(docContentExtensions());
   const old = vocabOf(LEVEL1_EXTENSIONS);
   const beyond: Vocab = { nodes: {}, marks: {} };
@@ -75,10 +84,15 @@ check("the build's level is the newest table", DOC_SCHEMA_LEVEL === Math.max(...
     }
   }
   check(
-    "level 2 is exactly what the document schema adds to level 1",
-    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(VOCAB[2])),
+    "levels 2 and 3 together are exactly what the document schema adds to level 1",
+    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(merged(VOCAB[2], VOCAB[3]))),
     JSON.stringify(sorted(beyond)),
   );
+  // Level 2 shipped in 1.1.0: it is what it was then, for good.
+  const SHIPPED_2 =
+    '{"nodes":{"bulletList":["marker"],"codeBlock":["tc"],"footnote":["kind","tc"],"hardBreak":["tc"],"heading":["bdr","colBreak","indF","indL","indR","keepLines","keepNext","lineAt","lineRule","sect","shade","tc"],"horizontalRule":["tc"],"image":["align","caption","tc"],"paragraph":["bdr","colBreak","indF","indL","indR","keepLines","keepNext","lineAt","lineRule","sect","shade","tc"],"table":["cols","head","lines","tc"],"tableCell":["bg","colspan","rowspan"],"tableRow":[],"taskItem":["checked"],"taskList":[],"toc":["depth","tc"]},"marks":{"deletion":["a","t"],"fontFamily":["f"],"fontSize":["pt"],"highlight":["c"],"insertion":["a","t"],"textColor":["c"],"vscript":["v"]}}';
+  check("level 2 is frozen as it shipped", JSON.stringify(sorted(VOCAB[2])) === SHIPPED_2, JSON.stringify(sorted(VOCAB[2])));
+  check("level 3 is a cell's own lines and a picture's outline and corners", JSON.stringify(sorted(VOCAB[3])) === '{"nodes":{"image":["bdr","round"],"tableCell":["bdr"]},"marks":{}}', JSON.stringify(sorted(VOCAB[3])));
 }
 
 const Sparkle = Mark.create({
@@ -110,8 +124,12 @@ const Glow = Extension.create({
 const LEVEL3_EXTRA = [Sparkle, Callout, Aside, Glow];
 const level2 = (history = true): Extensions => docContentExtensions({ history });
 const level3 = (history = true): Extensions => [...docContentExtensions({ history }), ...LEVEL3_EXTRA];
+// (For the checks of how a level is told and gated, everything this build
+// knows beyond level 1 is "2" and what is made up here is "3": three
+// levels, the last of them unknown to the build.)
 const VOCAB3: Record<number, Vocab> = {
-  ...VOCAB,
+  1: VOCAB[1],
+  2: merged(VOCAB[2], VOCAB[3]),
   3: { nodes: { xCallout: [], xAside: ["kind"], paragraph: ["xGlow"] }, marks: { xSparkle: ["c"] } },
 };
 const lv = levelsFor(VOCAB3);
@@ -160,20 +178,23 @@ check("an unknown mark is unknown", lv.ofJson(doc(p([text("x", [{ type: "sparkle
   const full = vocabOf(level2());
   const lv = levels;
   const missed: string[] = [];
+  // (Each at the level its table says: 2, or 3 for what came after 1.1.0.)
+  const nodeAt = (name: string, a?: string) => ((a ? levels.knowsNodeAttr(name, a, 2) : levels.knowsNode(name, 2)) ? 2 : 3);
+  const markAt = (name: string, a?: string) => ((a ? levels.knowsMarkAttr(name, a, 2) : levels.knowsMark(name, 2)) ? 2 : 3);
   for (const [name, attrs] of Object.entries(full.nodes)) {
     const isNew = !levels.knowsNode(name, 1);
-    if (isNew && lv.ofJson({ type: name }) !== 2) missed.push(name);
+    if (isNew && lv.ofJson({ type: name }) !== nodeAt(name)) missed.push(name);
     for (const a of attrs) {
       if (!isNew && levels.knowsNodeAttr(name, a, 1)) continue;
-      if (lv.ofJson({ type: name, attrs: { [a]: 1 } }) !== 2) missed.push(`${name}.${a}`);
+      if (lv.ofJson({ type: name, attrs: { [a]: 1 } }) !== Math.max(nodeAt(name), nodeAt(name, a))) missed.push(`${name}.${a}`);
     }
   }
   for (const [name, attrs] of Object.entries(full.marks)) {
     const isNew = !levels.knowsMark(name, 1);
-    if (isNew && lv.ofJson(text("x", [{ type: name }])) !== 2) missed.push(name);
+    if (isNew && lv.ofJson(text("x", [{ type: name }])) !== markAt(name)) missed.push(name);
     for (const a of attrs) {
       if (!isNew && levels.knowsMarkAttr(name, a, 1)) continue;
-      if (lv.ofJson(text("x", [{ type: name, attrs: { [a]: 1 } }])) !== 2) missed.push(`${name}.${a}`);
+      if (lv.ofJson(text("x", [{ type: name, attrs: { [a]: 1 } }])) !== Math.max(markAt(name), markAt(name, a))) missed.push(`${name}.${a}`);
     }
   }
   check("every node, mark and attribute beyond level 1 is detected", missed.length === 0, missed.join(", "));

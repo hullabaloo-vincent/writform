@@ -25,7 +25,9 @@ import { docContentExtensions } from "../../../editor/schema/content";
 import { downlevelJson } from "../../../editor/schema/downlevel";
 import { levelOfJson } from "../../../editor/schema/levels";
 import { attachmentRef, backend, localDocMediaId, localDocMediaUrl, type CmdError } from "../../../lib/backend";
-import { uploadBlob } from "../../../lib/upload";
+import { SERVER_PICTURE_BYTES, uploadBlob } from "../../../lib/upload";
+import { COVER_SLOTS, encodeArt, parseArt } from "../../../book/cover/art";
+import { fitUnder } from "../../../book/cover/files";
 import { featureLevel } from "../sync/caps";
 
 const EXTENSIONS = docContentExtensions();
@@ -257,6 +259,7 @@ export async function createServerDocument(
   // A document from this device brings its pictures: they become
   // attachments on the server, and the content points at those.
   content = await uploadDevicePictures(content);
+  maps = await uploadDeviceCover(maps);
   // Build before creating the server row so an unexpectedly huge individual
   // block cannot leave an empty document behind.
   const updates = buildImportSeedUpdates(content);
@@ -313,6 +316,32 @@ export async function uploadDevicePictures(content: JSONContent): Promise<JSONCo
     return { ...node, content: kids.length || node.type !== "doc" ? kids : [{ type: "paragraph" }] };
   };
   return walk(content) ?? content;
+}
+
+/**
+ * The same for a book's cover artwork, which its settings name (not its
+ * text). Artwork heavier than a server keeps is saved again as a JPEG.
+ */
+export async function uploadDeviceCover(maps: DocMapsSnapshot): Promise<DocMapsSnapshot> {
+  const book = maps.book;
+  if (!book) return maps;
+  let next: Record<string, unknown> | null = null;
+  for (const slot of COVER_SLOTS) {
+    const key = `cover.${slot}`;
+    const art = parseArt(book[key]);
+    if (!art || !localDocMediaId(art.src)) continue;
+    next ??= { ...book };
+    try {
+      const res = await fetch(art.src);
+      if (!res.ok) throw new Error(String(res.status));
+      const { blob } = await fitUnder(await res.blob(), SERVER_PICTURE_BYTES);
+      const ext = blob.type === "image/png" ? "png" : "jpg";
+      next[key] = encodeArt({ ...art, src: attachmentRef((await uploadBlob(blob, `cover.${ext}`)).id) });
+    } catch {
+      delete next[key];
+    }
+  }
+  return next ? { ...maps, book: next } : maps;
 }
 
 /** Remove a document that never really existed (a failed import or copy):

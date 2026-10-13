@@ -97,6 +97,11 @@ export interface DLImage {
   w: number;
   h: number;
   ref: string;
+  /** Documents: how round its corners are, a percentage of its shorter
+   *  side (50: a circle, or an oval for a picture that isn't square). */
+  round?: number;
+  /** Documents: a line round it, inside its own size (`#rrggbb`, points). */
+  border?: { w: number; color: string };
 }
 
 export type DLItem = DLText | DLRule | DLImage | DLRect | DLLink | DLAnchor;
@@ -144,6 +149,9 @@ export interface DLSection {
 export interface PageStart {
   pos: number;
   inline: boolean;
+  /** A page that begins inside a table's row, cut across pages: the other
+   *  cells of the row go on at these places too. */
+  also?: { pos: number; inline: boolean }[];
 }
 
 export interface DisplayList {

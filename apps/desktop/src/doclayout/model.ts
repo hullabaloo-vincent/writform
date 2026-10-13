@@ -16,33 +16,7 @@ import { bodyLook, pageDims, type DocSettings } from "../apps/documents/docSetti
 // node modules don't, so what the layout needs of them — how their
 // attributes are read — comes from schema/sanitize (harness/worker.test.ts
 // runs the worker where there is no window, and fails if that changes).
-import {
-  colorAttr,
-  firstIndentAttr,
-  imageAlign,
-  imageCaption,
-  indentAttr,
-  lineAtAttr,
-  lineRuleAttr,
-  linesAttr,
-  MARKER_GLYPH,
-  markerAttr,
-  noteKind,
-  noteNumber,
-  parseBorder,
-  parseCols,
-  parseSection,
-  sizeAttr,
-  tocDepth,
-  vscriptAttr,
-  type Border,
-  type ImageAlign,
-  type LineRule,
-  type NoteKind,
-  type SectionProps,
-  type TableLines,
-  type VScript,
-} from "../editor/schema/sanitize";
+import { colorAttr, firstIndentAttr, imageAlign, imageCaption, indentAttr, lineAtAttr, lineRuleAttr, linesAttr, MARKER_GLYPH, markerAttr, noteKind, noteNumber, parseBorder, parseCols, parseSection, sizeAttr, tocDepth, vscriptAttr, type Border, type ImageAlign, type LineRule, type NoteKind, type SectionProps, type TableLines, type VScript, cellEdges, imageBorder, imageRound, type CellEdges, type Edge } from "../editor/schema/sanitize";
 import {
   BLOCK_GAP,
   BULLETS,
@@ -166,6 +140,9 @@ export interface DocImage extends BlockBase {
   align?: ImageAlign;
   /** The line under it, kept with it. */
   caption?: DocPara;
+  /** A line round it, and how round its corners are (see sanitize.ts). */
+  border?: Edge;
+  round?: number;
 }
 
 export interface DocRule extends BlockBase {
@@ -180,6 +157,8 @@ export interface DocCell {
   rowspan: number;
   /** Background, `#rrggbb`. */
   bg?: string;
+  /** Lines of its own, by side (a side with no thickness has none). */
+  edges?: CellEdges;
 }
 
 export interface DocTable extends BlockBase {
@@ -606,6 +585,8 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             ...(h && h > 0 ? { h } : {}),
             ...(align ? { align } : {}),
             ...(caption ? { caption } : {}),
+            ...(imageBorder(node.attrs?.bdr) ? { border: imageBorder(node.attrs?.bdr)! } : {}),
+            ...(imageRound(node.attrs?.round) ? { round: imageRound(node.attrs?.round)! } : {}),
             ...(pos !== undefined ? { pos } : {}),
             before: 0,
             after: caption ? caption.after : bodyAfter,
@@ -615,19 +596,24 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         ];
       }
       case "table": {
-        const rows: DocCell[][] = (node.content ?? []).map((row) =>
-          (row.content ?? []).map((cell): DocCell => {
+        const rows: DocCell[][] = within(node, pos, (row, rowAt) => [
+          within(row, rowAt, (cell, cellAt): DocCell[] => {
             const bg = colorAttr(cell.attrs?.bg);
+            const edges = cellEdges(cell.attrs?.bdr);
             const whole = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 1 ? Math.min(v, 1000) : 1);
-            return {
-              // A cell is a little page of its own: its blocks start at its edge.
-              blocks: (cell.content ?? []).flatMap((n) => block(n, { src: ctx.src, left: 0, right: 0, listed: false })),
-              colspan: whole(cell.attrs?.colspan),
-              rowspan: whole(cell.attrs?.rowspan),
-              ...(bg ? { bg } : {}),
-            };
+            return [
+              {
+                // A cell is a little page of its own: its blocks start at its
+                // edge (and know where they are, for a row cut across pages).
+                blocks: within(cell, cellAt, (n, at) => block(n, { src: ctx.src, left: 0, right: 0, listed: false }, at)),
+                colspan: whole(cell.attrs?.colspan),
+                rowspan: whole(cell.attrs?.rowspan),
+                ...(bg ? { bg } : {}),
+                ...(edges ? { edges } : {}),
+              },
+            ];
           }),
-        );
+        ]);
         if (!rows.length) return [];
         const count = Math.max(1, ...rows.map((r) => r.reduce((n, c) => n + c.colspan, 0)));
         return [

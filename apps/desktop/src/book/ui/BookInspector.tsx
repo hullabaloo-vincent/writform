@@ -10,8 +10,16 @@ import { numberLabel, type NumberStyle } from "../model/chapters";
 import { PRESETS, type BookDesign } from "../model/presets";
 import { autoMargins, estimatePages, kdpMinInside, spineWidth } from "../model/trims";
 import { trimSize } from "../model/bookMap";
+import { CoverTab, type CoverPictures } from "./Cover";
 
-type Tab = "book" | "design" | "print" | "ebook";
+type Tab = "book" | "design" | "print" | "ebook" | "cover";
+const TABS: [Tab, string][] = [
+  ["book", "Book"],
+  ["design", "Design"],
+  ["print", "Print"],
+  ["ebook", "Ebook"],
+  ["cover", "Cover"],
+];
 
 const LANGUAGES = [
   ["en-US", "English (US)"],
@@ -26,8 +34,9 @@ const LANGUAGES = [
 
 /**
  * The book inspector (Manuscript format): the book's details, its design,
- * print settings and ebook settings — everything that decides how the book
- * LOOKS, kept apart from the manuscript's text. Saved with the document.
+ * print settings, ebook settings and cover — everything that decides how
+ * the book LOOKS, kept apart from the manuscript's text. Saved with the
+ * document.
  */
 export function BookInspector({
   ydoc,
@@ -35,16 +44,26 @@ export function BookInspector({
   readonly,
   words,
   chapters,
+  pictures,
+  countPages,
+  onOpenCover,
 }: {
   ydoc: Y.Doc;
   book: Book;
   readonly: boolean;
   words: number;
   chapters: number;
+  /** Where this manuscript keeps pictures (its cover artwork goes there). */
+  pictures?: CoverPictures;
+  /** The paperback's real page count, from the layout engine. */
+  countPages?: () => Promise<number | null>;
+  /** Open the cover's large preview. */
+  onOpenCover?: () => void;
 }) {
   const [tab, setTab] = useState<Tab>(() => {
     try {
-      return (localStorage.getItem("wf-book-tab") as Tab | null) ?? "book";
+      const saved = localStorage.getItem("wf-book-tab");
+      return TABS.find(([id]) => id === saved)?.[0] ?? "book";
     } catch {
       return "book";
     }
@@ -64,9 +83,9 @@ export function BookInspector({
   return (
     <aside className="wf-doc-panel wf-inspector wf-book-inspector">
       <header className="wf-doc-panel-header wf-inspector-tabs">
-        {(["book", "design", "print", "ebook"] as Tab[]).map((t) => (
+        {TABS.map(([t, label]) => (
           <button key={t} className={tab === t ? "active" : ""} onClick={() => pick(t)}>
-            {t === "book" ? "Book" : t === "design" ? "Design" : t === "print" ? "Print" : "Ebook"}
+            {label}
           </button>
         ))}
       </header>
@@ -78,6 +97,9 @@ export function BookInspector({
         <PrintTab book={book} disabled={readonly} patch={patch} words={words} chapters={chapters} />
       )}
       {tab === "ebook" && <EbookTab book={book} disabled={readonly} patch={patch} />}
+      {tab === "cover" && (
+        <CoverTab book={book} disabled={readonly} patch={patch} words={words} chapters={chapters} pictures={pictures} countPages={countPages} onOpen={onOpenCover} />
+      )}
     </aside>
   );
 }

@@ -19,7 +19,7 @@ import { encodeStyleEntry } from "../../editor/styles/docStyles";
 import { CUSTOM_STYLE_MAX, LEGAL, resolveStyles, type StyleAlign, type StyleProps } from "../../editor/styles/sheet";
 import { fontIdForWordName, type FontLookup } from "../../fonts/docx";
 import { isFontId } from "../../fonts/ids";
-import type { Block, FileRevs, Inline, Para, TableBlock } from "./body";
+import type { Block, CellBorders, FileRevs, Inline, Para, TableBlock } from "./body";
 import { sectionDiff, sectionProps } from "./section";
 import type { Numbering, NumLevel, PProps, ResolvedStyle, RProps, Styles } from "./styles";
 
@@ -178,6 +178,42 @@ export interface ContentOptions {
   tree?: Block[];
   /** The document's own page setup, which sections are measured against. */
   base?: SectionProps;
+  /** How wide the text is on the page, points (a table wider than that is
+   *  made to fit). */
+  textWidth?: number;
+}
+
+/** A cell's own lines, as the cell keeps them (see sanitize.ts). */
+const bdrOf = (borders: CellBorders): string =>
+  (["t", "r", "b", "l"] as const)
+    .filter((side) => borders[side])
+    .map((side) => {
+      const edge = borders[side]!;
+      return edge === "none" ? `${side}:0:#000000` : `${side}:${Math.round(edge.w * 100) / 100}:#${edge.color}`;
+    })
+    .join(" ");
+
+/** Whether a cell (or anything) has something in it to be seen. */
+const inked = (blocks: Block[]): boolean =>
+  blocks.some((b) => b.t !== undefined || b.inlines.some((n) => n.t === "image" || n.t === "field" || n.t === "note" || (n.t === "text" && n.text.trim() !== "")));
+
+/** A table's rows without its column `k`, when nothing is lost by that:
+ *  every cell there is empty and no wider than the column. Null otherwise. */
+function withoutColumn(rows: TableBlock["rows"], k: number): TableBlock["rows"] | null {
+  const out: TableBlock["rows"] = [];
+  for (const row of rows) {
+    const cells: TableBlock["rows"][number]["cells"] = [];
+    let col = 0;
+    for (const cell of row.cells) {
+      if (col + cell.span - 1 >= k) {
+        if (cell.span > 1 || inked(cell.blocks)) return null;
+      } else cells.push(cell);
+      col += cell.span;
+    }
+    if (cells.length === 0) return null;
+    out.push({ cells });
+  }
+  return out;
 }
 
 export function toContent(paras: Para[], styles: Styles, numbering: Numbering, lookup: FontLookup = {}, opts: ContentOptions = {}): Converted {
@@ -368,11 +404,31 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
 
   /** A table: each cell's blocks converted in their turn, cells that run
    *  down rows joined into one. */
-  const tableNode = (block: TableBlock): JSONContent => {
-    const count = Math.max(block.grid.length, ...block.rows.map((r) => r.cells.reduce((n, c) => n + c.span, 0)));
+  const tableNode = (block: TableBlock, avail: number | undefined): JSONContent => {
+    let fileRows = block.rows;
+    let grid = block.grid.slice();
+    const sum = (list: number[]) => list.reduce((a, b) => a + b, 0);
+    let count = Math.max(grid.length, ...fileRows.map((r) => r.cells.reduce((n, c) => n + c.span, 0)));
+    if (grid.length === count && avail) {
+      // A layout table's leftovers: columns at its far side with nothing in
+      // them, hanging off the page in Word (which shows a table only as far
+      // as the paper goes). Taken off, while the table is wider than the text.
+      while (grid.length > 1 && sum(grid) > avail + 1) {
+        const trimmed = withoutColumn(fileRows, grid.length - 1);
+        if (!trimmed) break;
+        fileRows = trimmed;
+        grid.pop();
+      }
+      count = grid.length;
+      // Still wider than the text: it is made to fit, its columns in the
+      // proportions they had (here a table can't run off the page).
+      const total = sum(grid);
+      if (total > avail + 0.5) grid = grid.map((w) => (w * avail) / total);
+    }
+    const sized = grid.length === count;
     const open: (JSONContent | null)[] = Array.from({ length: count }, () => null);
     const rows: JSONContent[] = [];
-    for (const row of block.rows) {
+    for (const row of fileRows) {
       const cells: JSONContent[] = [];
       let col = 0;
       for (const cell of row.cells) {
@@ -382,10 +438,12 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
           col += cell.span;
           continue;
         }
-        const content = convert(cell.blocks);
+        // (What is inside a cell has the cell's width to fit in, less its padding.)
+        const inside = sized ? Math.max(20, sum(grid.slice(col, col + cell.span)) - 10) : undefined;
+        const content = convert(cell.blocks, inside);
         const node: JSONContent = {
           type: "tableCell",
-          attrs: { colspan: cell.span, rowspan: 1, ...(cell.bg ? { bg: hex(cell.bg) } : {}) },
+          attrs: { colspan: cell.span, rowspan: 1, ...(cell.bg ? { bg: hex(cell.bg) } : {}), ...(cell.borders ? { bdr: bdrOf(cell.borders) } : {}) },
           content: content.length ? content : [{ type: "paragraph" }],
         };
         for (let i = 0; i < cell.span && col + i < count; i += 1) open[col + i] = cell.merge === "start" ? node : null;
@@ -396,8 +454,8 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
     }
     // Widths of its own — unless it is simply as wide as the text, shared
     // out equally (which is what a table without widths is here).
-    const even = block.grid.length > 0 && block.grid.every((w) => Math.abs(w - block.grid[0]) < 0.2);
-    const cols = block.grid.length === count && !(block.full && even) ? encodeCols(block.grid) : null;
+    const even = grid.length > 0 && grid.every((w) => Math.abs(w - grid[0]) < 0.2);
+    const cols = sized && !(block.full && even) ? encodeCols(grid) : null;
     return {
       type: "table",
       attrs: { cols, head: block.head ? true : null, lines: block.lines === "all" ? null : block.lines, ...(block.rev ? { tc: tcOf(block.rev) } : {}) },
@@ -405,7 +463,7 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
     };
   };
 
-  function convert(list: Block[]): JSONContent[] {
+  function convert(list: Block[], avail: number | undefined = opts.textWidth): JSONContent[] {
   const items: Item[] = [];
   /** A drop-cap frame's letter, waiting for the paragraph it belongs to. */
   let cap: { text: string; breakBefore: boolean } | null = null;
@@ -417,7 +475,7 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
   for (const para of list) {
     if (para.t === "table") {
       carried = undefined;
-      items.push({ kind: "raw", node: tableNode(para), extra: [] });
+      items.push({ kind: "raw", node: tableNode(para, avail), extra: [] });
       continue;
     }
     if (para.t === "toc") {
@@ -486,6 +544,8 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
             src: `${MEDIA_PREFIX}${n.media}`,
             ...(n.alt ? { alt: n.alt.slice(0, 500) } : {}),
             ...(n.w > 0 && n.h > 0 ? { width: n.w, height: n.h } : {}),
+            ...(n.round ? { round: n.round } : {}),
+            ...(n.border ? { bdr: `${n.border.w} ${hex(n.border.color)}` } : {}),
           },
         });
       } else if (n.t === "note") {

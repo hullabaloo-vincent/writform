@@ -8986,8 +8986,13 @@ body {
 
 /* --- Book inspector (Manuscript) --- */
 
+/* (Five tabs across a panel 300 px wide: no room for a button's usual
+   padding.) */
 .wf-book-inspector .wf-inspector-tabs button {
   flex: 1;
+  min-width: 0;
+  padding: 0 2px;
+  font-size: 12px;
 }
 
 .wf-inspector-field {
@@ -9240,6 +9245,453 @@ body {
 .wf-export-actions {
   justify-content: flex-end;
   margin-top: 12px;
+}
+
+/* ---- Book cover (Book ▸ Cover, and its large preview) ---- */
+
+/* One piece of artwork: its picture, what it is, the buttons. */
+.wf-cover-slot {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 4px 10px;
+  align-items: start;
+  padding: 8px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+}
+
+.wf-cover-thumb {
+  width: 52px;
+  height: 78px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--wf-text-dim);
+  overflow: hidden;
+}
+
+.wf-cover-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.wf-cover-slot-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  font-size: 12.5px;
+}
+
+.wf-cover-slot-text > span {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wf-text-dim);
+}
+
+.wf-cover-slot-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 3px;
+}
+
+.wf-cover-slot-actions > button:not(.wf-icon) {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.wf-cover-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 2px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--wf-warn);
+}
+
+.wf-cover-note svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.wf-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+/* The cover, drawn (book/ui/CoverView.tsx): the sheet as SVG, in points. */
+.wf-cover-svg {
+  display: block;
+  width: 100%;
+  height: auto;
+  color: #111111;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.wf-cover-svg.small {
+  border-radius: 2px;
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.4);
+}
+
+.wf-cover-paper {
+  fill: #ffffff;
+}
+
+.wf-cover-guides .trimmed {
+  fill: rgba(226, 60, 60, 0.4);
+}
+
+.wf-cover-guides .safe,
+.wf-cover-guides .fold,
+.wf-cover-guides .barcode,
+.wf-cover-pick {
+  vector-effect: non-scaling-stroke;
+}
+
+.wf-cover-guides .safe {
+  fill: none;
+  stroke: rgba(226, 60, 60, 0.9);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.wf-cover-guides .fold {
+  stroke: #3d8bff;
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+}
+
+.wf-cover-guides .barcode {
+  fill: rgba(255, 236, 130, 0.85);
+  stroke: rgba(0, 0, 0, 0.55);
+  stroke-width: 1;
+}
+
+.wf-cover-guides .barcode-word {
+  font: 9px system-ui, sans-serif;
+  fill: rgba(0, 0, 0, 0.7);
+}
+
+/* ---- The cover editor (book/ui/CoverEditor.tsx) ---- */
+
+.wf-modal.wf-cover-editor {
+  display: flex;
+  width: min(1240px, 97vw);
+  height: min(900px, 94vh);
+  padding: 16px;
+}
+
+.wf-cover-ed {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wf-cover-ed-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+}
+
+.wf-cover-ed-bar h3 {
+  margin: 0;
+}
+
+.wf-cover-ed-views {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--wf-radius-md);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.wf-cover-ed-views button {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--wf-text-dim);
+}
+
+.wf-cover-ed-views button.active {
+  background: rgba(124, 108, 240, 0.2);
+  color: var(--wf-text);
+}
+
+.wf-cover-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12.5px;
+}
+
+.wf-cover-ed-steps {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: auto;
+}
+
+.wf-cover-ed-body {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 12px;
+}
+
+/* The desk the cover lies on. The drawing fills it and keeps its shape. */
+.wf-cover-ed-stage {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border-radius: var(--wf-radius-sm);
+  background: #101014;
+}
+
+.wf-cover-svg.editing {
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  outline: none;
+  /* (A finger on the cover moves what is on it, not the page.) */
+  touch-action: none;
+}
+
+.wf-cover-svg.editing [data-text] {
+  cursor: move;
+}
+
+.wf-cover-pick {
+  fill: none;
+  stroke: var(--wf-accent);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+}
+
+.wf-cover-pick.panel {
+  stroke-width: 2;
+  stroke-dasharray: none;
+  opacity: 0.85;
+}
+
+.wf-cover-handle {
+  fill: #ffffff;
+  stroke: var(--wf-accent);
+  stroke-width: 2;
+  vector-effect: non-scaling-stroke;
+  cursor: ew-resize;
+}
+
+.wf-cover-ed-size {
+  margin: 0;
+  font-size: 11.5px;
+  text-align: center;
+  color: var(--wf-text-dim);
+}
+
+.wf-cover-ed-side {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-right: 2px;
+  overflow-y: auto;
+}
+
+.wf-cover-ed-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-cover-ed-group h4 {
+  margin: 0;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--wf-text-dim);
+}
+
+.wf-cover-ed-words {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 56px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.wf-cover-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+
+.wf-cover-field.row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.wf-cover-field input[type="range"] {
+  flex: none;
+  width: 100%;
+}
+
+.wf-cover-field input[type="color"] {
+  flex: none;
+  width: 44px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 6px;
+  background: none;
+}
+
+.wf-cover-ed-size-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+
+.wf-cover-ed-size-field input {
+  flex: none;
+  width: 72px;
+}
+
+.wf-cover-ed-seg {
+  display: flex;
+  gap: 4px;
+}
+
+.wf-cover-ed-seg button {
+  width: 32px;
+  height: 30px;
+  min-height: 30px;
+  padding: 0;
+}
+
+.wf-cover-ed-seg button.active {
+  border-color: var(--wf-accent);
+  background: rgba(124, 108, 240, 0.22);
+}
+
+.wf-cover-ed-seg .gap {
+  flex: 1;
+}
+
+.wf-cover-ed-aa {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.wf-cover-ed-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.wf-cover-ed-row > button:first-child {
+  margin-right: auto;
+}
+
+.wf-cover-ed-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.wf-cover-ed-add button {
+  height: 28px;
+  min-height: 28px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.wf-cover-ed-picture {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.wf-cover-dialog-actions {
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+
+/* A phone: the whole screen, the cover above and what to change below. */
+@media (max-width: 860px) {
+  .wf-modal.wf-cover-editor {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    padding: 12px;
+    border: 0;
+    border-radius: 0;
+  }
+  .wf-cover-ed-body {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(170px, 40%) minmax(0, 1fr);
+  }
+  .wf-cover-ed-stage {
+    padding: 8px;
+  }
+  .wf-cover-ed-steps {
+    margin-left: 0;
+  }
+  .wf-cover-ed-views button,
+  .wf-cover-ed-add button {
+    height: 34px;
+    min-height: 34px;
+  }
+  .wf-cover-ed-seg button {
+    width: 38px;
+    height: 36px;
+    min-height: 36px;
+  }
+  .wf-cover-dialog-actions > button {
+    flex: 1 1 auto;
+  }
+  .wf-cover-slot-actions > button:not(.wf-icon) {
+    height: 34px;
+    min-height: 34px;
+  }
+}
+
+/* (Where there is such a unit: the part of the screen the browser's own
+   bars leave free.) */
+@supports (height: 100dvh) {
+  @media (max-width: 860px) {
+    .wf-modal.wf-cover-editor {
+      height: 100dvh;
+    }
+  }
 }
 
 /* ---------------------------------------------------------------- book preview
@@ -10058,6 +10510,9 @@ body {
   padding: 0 22px 0 8px;
   font-size: 12.5px;
   max-width: 150px;
+}
+.wf-ribbon-select.narrow {
+  width: 84px;
 }
 .wf-ribbon-select.wf-ribbon-size {
   width: 62px;
@@ -11085,6 +11540,13 @@ body {
   text-transform: uppercase;
   color: var(--wf-text-dim);
 }
+.wf-fontlist-hint {
+  display: block;
+  padding: 0 8px 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--wf-text-dim);
+}
 .wf-fontlist-row {
   display: flex;
   align-items: baseline;
@@ -11685,6 +12147,55 @@ body {
   content: "column break";
 }
 
+/* ==== Document: a picture's move handle ====
+   On the corner of the selected picture (editor/format/movePicture.ts):
+   press it and drag the picture to where it should go. */
+.ProseMirror .wf-img-move {
+  position: absolute;
+  top: -11px;
+  left: -11px;
+  z-index: 2;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  border-radius: 6px;
+  background: #ffffff;
+  color: #1d1d22;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+  cursor: grab;
+  /* (A finger on it drags the picture, not the page.) */
+  touch-action: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+.wf-rich.editable .ProseMirror .ProseMirror-selectednode .wf-img-move,
+.wf-rich.editable .ProseMirror .wf-img-move.dragging {
+  display: flex;
+}
+.ProseMirror .wf-img-move.dragging {
+  cursor: grabbing;
+}
+@media (pointer: coarse) {
+  .ProseMirror .wf-img-move {
+    top: -16px;
+    left: -16px;
+    width: 34px;
+    height: 34px;
+  }
+}
+/* Where a picture being dragged would land: a line between two blocks. */
+.wf-drop-line {
+  position: fixed;
+  z-index: 60;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--wf-accent);
+  pointer-events: none;
+}
+
 /* ==== Document: tables ====
    Cell padding and line weight are the page layout's (doclayout/layout.ts:
    CELL_PAD_X, CELL_PAD_Y, CELL_LINE). A table wider than the sheet scrolls
@@ -11705,11 +12216,20 @@ body {
   position: relative;
   padding: 3pt 5pt;
   vertical-align: top;
-  /* Where a table draws no line, a faint one shows where its cells are
-     (while editing; not where the document is only shown). */
-  border: 0.5pt dashed var(--wf-cell-guide, rgba(128, 128, 128, 0.45));
-  min-width: 18pt;
+  /* Where a table draws no line, a faint one shows where its cells are:
+     in the table being worked on (the caret is in it, or the pointer over
+     it), not in the others, which look as they print. */
+  border: 0.5pt dashed var(--wf-cell-guide, transparent);
+  min-width: 4pt;
   overflow-wrap: anywhere;
+}
+.wf-rich.editable .ProseMirror .wf-table-wrap.wf-table-on {
+  --wf-cell-guide: rgba(128, 128, 128, 0.45);
+}
+@media (hover: hover) {
+  .wf-rich.editable .ProseMirror .wf-table-wrap:hover {
+    --wf-cell-guide: rgba(128, 128, 128, 0.45);
+  }
 }
 .ProseMirror .wf-table-wrap table:not([data-lines]) td {
   border: 0.5pt solid #000;
@@ -11729,9 +12249,6 @@ body {
 }
 .ProseMirror .wf-table-wrap table[data-lines="box"] td:last-child {
   border-right: 0.5pt solid #000;
-}
-.wf-rich:not(.editable) .ProseMirror .wf-table-wrap {
-  --wf-cell-guide: transparent;
 }
 .ProseMirror .wf-table-wrap td > :last-child {
   margin-bottom: 0;

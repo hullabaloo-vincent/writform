@@ -31,12 +31,12 @@ export const PageSvg = memo(function PageSvg({
       aria-label={page.folio ? `Page ${page.folio}` : `Page ${page.n}`}
     >
       <rect className="wf-bp-sheet" width={w} height={h} />
-      {page.items.map((it, i) => item(it, i, dl.faces))}
+      {page.items.map((it, i) => item(it, i, dl.faces, page.n))}
     </svg>
   );
 });
 
-function item(it: DLItem, key: number, faces: FaceRef[]) {
+function item(it: DLItem, key: number, faces: FaceRef[], page: number) {
   if (it.t === "text") return <TextRun key={key} it={it} face={faces[it.face]} />;
   if (it.t === "rule") {
     return <line key={key} x1={it.x1} y1={it.y1} x2={it.x2} y2={it.y2} stroke={it.color ?? "currentColor"} strokeWidth={it.w} />;
@@ -44,7 +44,7 @@ function item(it: DLItem, key: number, faces: FaceRef[]) {
   if (it.t === "rect") return <rect key={key} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.color} />;
   // Links and anchors are for the PDF; the preview only shows the page.
   if (it.t === "link" || it.t === "anchor") return null;
-  return (
+  const picture = (clip?: string) => (
     <image
       key={key}
       href={normalizeAttachmentSrc(it.ref)}
@@ -53,11 +53,32 @@ function item(it: DLItem, key: number, faces: FaceRef[]) {
       width={it.w}
       height={it.h}
       preserveAspectRatio="xMidYMid meet"
+      {...(clip ? { clipPath: `url(#${clip})` } : {})}
     />
+  );
+  if (!it.round && !it.border) return picture();
+  // A picture with rounded corners or a line round it (documents): cut to
+  // its shape, the line drawn inside its edge, as the PDF has it.
+  const round = it.round ?? 0;
+  const shape = (by: number, props: React.SVGProps<SVGRectElement & SVGEllipseElement>) =>
+    round >= 50 ? (
+      <ellipse cx={it.x + it.w / 2} cy={it.y + it.h / 2} rx={Math.max(0, it.w / 2 - by)} ry={Math.max(0, it.h / 2 - by)} {...props} />
+    ) : (
+      <rect x={it.x + by} y={it.y + by} width={Math.max(0, it.w - by * 2)} height={Math.max(0, it.h - by * 2)} rx={Math.max(0, (Math.min(it.w, it.h) * round) / 100 - by)} {...props} />
+    );
+  const id = `wf-pic-${page}-${key}`;
+  return (
+    <g key={key}>
+      {round > 0 && <clipPath id={id}>{shape(0, {})}</clipPath>}
+      {picture(round > 0 ? id : undefined)}
+      {it.border && shape(it.border.w / 2, { fill: "none", stroke: it.border.color, strokeWidth: it.border.w })}
+    </g>
   );
 }
 
-function TextRun({ it, face }: { it: DLText; face: FaceRef | undefined }) {
+/** One run of set text, each word where the typesetter put it. (A book's
+ *  cover draws its words with this too.) */
+export function TextRun({ it, face }: { it: DLText; face: FaceRef | undefined }) {
   const words = it.text.split(" ");
   // Faces without a bold are drawn bold by stroking — exactly as in the PDF.
   const fakeBold = !!face?.fakeBold;

@@ -242,6 +242,74 @@ export function encodeSection(p: SectionProps | null): string | null {
 
 export type ImageAlign = "left" | "center" | "right";
 export const imageAlign = (v: unknown): ImageAlign | null => (v === "left" || v === "center" || v === "right" ? v : null);
+
+/** A line round a picture, or one side of a cell: how thick (points) and
+ *  what colour (`#rrggbb`). */
+export interface Edge {
+  w: number;
+  color: string;
+}
+export const EDGE_MAX = 12;
+const edgeWidth = (v: unknown): number | null => {
+  const w = typeof v === "number" ? v : typeof v === "string" && v.trim() !== "" ? Number(v) : NaN;
+  return Number.isFinite(w) && w >= 0 ? Math.min(EDGE_MAX, Math.round(w * 100) / 100) : null;
+};
+
+/** A picture's outline, kept as ONE string, `"<points> <#rrggbb>"` (schema
+ *  level 3). Null: none. */
+export function imageBorder(v: unknown): Edge | null {
+  if (typeof v !== "string") return null;
+  const [width, color] = v.trim().split(/\s+/);
+  const w = edgeWidth(width);
+  const c = colorAttr(color);
+  return w && c ? { w, color: c } : null;
+}
+export const encodeImageBorder = (edge: Edge | null): string | null => {
+  const w = edge ? edgeWidth(edge.w) : null;
+  const c = edge ? colorAttr(edge.color) : null;
+  return w && c ? `${w} ${c}` : null;
+};
+
+/** How round a picture's corners are: a percentage of its shorter side,
+ *  up to 50 (a circle, or an oval for a picture that isn't square). Schema
+ *  level 3. Null: square. */
+export function imageRound(v: unknown): number | null {
+  const n = typeof v === "number" ? v : NaN;
+  return Number.isFinite(n) && n > 0 ? Math.min(50, Math.round(n * 10) / 10) : null;
+}
+
+export type CellSide = "t" | "r" | "b" | "l";
+export const CELL_SIDES: readonly CellSide[] = ["t", "r", "b", "l"];
+/** A cell's own lines, by side. A side with no thickness has no line there,
+ *  whatever the table draws. */
+export type CellEdges = Partial<Record<CellSide, Edge>>;
+
+/**
+ * A table cell's own lines, kept as ONE string of `<side>:<points>:<#rrggbb>`
+ * parts, as `"r:2.25:#f38d88 t:0:#000000"` (schema level 3). Null: the
+ * table's lines, as they are.
+ */
+export function cellEdges(v: unknown): CellEdges | null {
+  if (typeof v !== "string" || v.length > 200) return null;
+  const out: CellEdges = {};
+  for (const part of v.trim().split(/\s+/)) {
+    const [side, width, color] = part.split(":");
+    const w = edgeWidth(width);
+    const c = colorAttr(color);
+    if ((side === "t" || side === "r" || side === "b" || side === "l") && w !== null && c) out[side] = { w, color: c };
+  }
+  return Object.keys(out).length ? out : null;
+}
+export function encodeCellEdges(edges: CellEdges | null): string | null {
+  const parts: string[] = [];
+  for (const side of CELL_SIDES) {
+    const edge = edges?.[side];
+    const w = edge ? edgeWidth(edge.w) : null;
+    const c = edge ? colorAttr(edge.color) : null;
+    if (w !== null && c) parts.push(`${side}:${w}:${c}`);
+  }
+  return parts.length ? parts.join(" ") : null;
+}
 export const CAPTION_MAX = 500;
 export const imageCaption = (v: unknown): string | null => {
   const text = typeof v === "string" ? v.replace(/\s+/g, " ").trim().slice(0, CAPTION_MAX) : "";
@@ -279,7 +347,11 @@ export type TableLines = (typeof TABLE_LINES)[number];
 export const linesAttr = (v: unknown): TableLines =>
   typeof v === "string" && (TABLE_LINES as readonly string[]).includes(v) ? (v as TableLines) : "all";
 
+/** The narrowest a column is made by hand (dragging its edge, the buttons). */
 export const COL_MIN = 18;
+/** The narrowest a column may be at all: a table brought in from Word may
+ *  have slivers of columns that are only there to space the others. */
+export const COL_FLOOR = 4;
 export const COL_MAX = 1440;
 
 /** A table's column widths in points — or null when it has none of its
@@ -289,8 +361,8 @@ export function parseCols(v: unknown, count: number): number[] | null {
   if (typeof v !== "string" || !v.trim()) return null;
   const widths = v.trim().split(/\s+/).map(Number);
   if (widths.length !== count || !widths.every((w) => Number.isFinite(w) && w > 0)) return null;
-  return widths.map((w) => Math.min(COL_MAX, Math.max(COL_MIN, w)));
+  return widths.map((w) => Math.min(COL_MAX, Math.max(COL_FLOOR, w)));
 }
 
 export const encodeCols = (widths: number[] | null): string | null =>
-  widths && widths.length ? widths.map((w) => roundPt(Math.min(COL_MAX, Math.max(COL_MIN, w)))).join(" ") : null;
+  widths && widths.length ? widths.map((w) => roundPt(Math.min(COL_MAX, Math.max(COL_FLOOR, w)))).join(" ") : null;

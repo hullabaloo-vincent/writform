@@ -43,7 +43,7 @@ export interface FontLookup {
   /** Families installed on this computer, by lower-case name. */
   installed?: { get(name: string): { family: string } | undefined };
   /** The online catalog, by lower-case family name. */
-  catalog?: { get(name: string): { id: string } | undefined };
+  catalog?: { get(name: string): { id: string; weights?: number[] } | undefined };
 }
 
 /**
@@ -65,8 +65,40 @@ export function fontIdForWordName(name: string | null | undefined, lookup: FontL
   const here = lookup.installed?.get(lower);
   if (here) return isFontId(`sys:${here.family}`) ? `sys:${here.family}` : byName;
   const listed = lookup.catalog?.get(lower);
-  return listed ? `gf:${listed.id}` : byName;
+  if (listed) return `gf:${listed.id}`;
+  // A weight of a family, named as Word names it ("Open Sans Light"): the
+  // family from the catalog, at that weight.
+  const weighted = WEIGHT_WORD.exec(clean);
+  const family = weighted ? lookup.catalog?.get(weighted[1].trim().toLowerCase()) : undefined;
+  if (weighted && family) {
+    const asked = WEIGHTS[weighted[2].toLowerCase().replace(/[\s-]/g, "")] ?? 400;
+    // (The nearest it comes in. Regular and bold are the family itself.)
+    const had = family.weights ?? [];
+    const weight = had.length ? had.reduce((best, w) => (Math.abs(w - asked) < Math.abs(best - asked) ? w : best)) : 400;
+    const id = weight === 400 || weight === 700 ? `gf:${family.id}` : `gf:${family.id}@${weight}`;
+    if (isFontId(id)) return id;
+  }
+  return byName;
 }
+
+const WEIGHTS: Record<string, number> = {
+  thin: 100,
+  hairline: 100,
+  extralight: 200,
+  ultralight: 200,
+  light: 300,
+  regular: 400,
+  book: 400,
+  medium: 500,
+  semibold: 600,
+  demibold: 600,
+  bold: 700,
+  extrabold: 800,
+  ultrabold: 800,
+  black: 900,
+  heavy: 900,
+};
+const WEIGHT_WORD = /^(.+?)\s+(thin|hairline|extra[\s-]?light|ultra[\s-]?light|light|regular|book|medium|semi[\s-]?bold|demi[\s-]?bold|bold|extra[\s-]?bold|ultra[\s-]?bold|black|heavy)$/i;
 
 /** Word's `w:family` for a kind of font, and back. */
 const WORD_FAMILY: Record<FontCategory, string> = {

@@ -16,13 +16,18 @@ import type { SaveIndicator } from "./SyncStatus";
  * submission manuscript as PDF or Word. All but the Word file open the
  * export dialog (preflight, then build).
  */
-export function bookExportItems(open: (kind: BookExportKind) => void, word: () => Promise<unknown>): ExportItem[] {
+export function bookExportItems(open: (kind: BookExportKind) => void, word: () => Promise<unknown>, cover: () => void): ExportItem[] {
   return [
     {
       label: "Paperback PDF (print-ready)…",
       title: "The book's interior typeset in the book design for KDP or IngramSpark",
       separatorBefore: true,
       run: async () => open("paperback"),
+    },
+    {
+      label: "Paperback cover (PDF)…",
+      title: "The cover sheet for the printer (back, spine and front) from the book's artwork, and a template to make it over",
+      run: async () => cover(),
     },
     {
       label: "Booklet PDF (print at home)…",

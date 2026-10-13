@@ -49,13 +49,15 @@ import type { FontInfo } from "../../fonts/css";
 import { fontKey, noteDocFont, readDocFontTable, replaceDocFont } from "../../fonts/docFonts";
 import { MissingFonts } from "../../fonts/ui/MissingFonts";
 import { useDocFonts } from "../../fonts/ui/useDocFonts";
-import { uploadToServer } from "../../lib/upload";
+import { SERVER_PICTURE_BYTES, uploadToServer } from "../../lib/upload";
 import { docContentExtensions } from "../../editor/schema/content";
 import { SchemaGuard } from "../../editor/schema/guard";
 import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
 import { ManuscriptLabels, refreshManuscriptLabels } from "../../book/editor/manuscriptLabels";
 import { ManuscriptPaste } from "../../book/editor/manuscriptPaste";
 import { BookInspector } from "../../book/ui/BookInspector";
+import type { CoverPictures } from "../../book/ui/Cover";
+import { CoverEditor } from "../../book/ui/CoverEditor";
 import { ConvertDialog } from "../../book/ui/ConvertDialog";
 import { ExportBookDialog, type BookExportKind } from "../../book/ui/ExportBookDialog";
 import { BookPreview } from "../../book/preview/BookPreview";
@@ -215,6 +217,7 @@ function EditorInner({
   );
   const [converting, setConverting] = useState<null | "convert" | "tidy">(null);
   const [bookExport, setBookExport] = useState<BookExportKind | null>(null);
+  const [coverOpen, setCoverOpen] = useState(false);
   const switchFormat = (next: string) =>
     documentsApi
       .update(meta.id, { title: null, format: next })
@@ -426,6 +429,14 @@ function EditorInner({
     pageMapRef,
   );
 
+  // A book's cover artwork is kept where its pictures are, and its cover
+  // sheet is sized for the pages the layout engine counts.
+  const coverPictures = useMemo<CoverPictures>(() => ({ upload: uploadToServer, limit: SERVER_PICTURE_BYTES }), []);
+  const countBookPages = useCallback(async () => {
+    if (!editor) return null;
+    const { countBookPages: count } = await import("../../book/cover/files");
+    return count(editor.getJSON(), "manuscript", bookRef.current);
+  }, [editor, bookRef]);
   // ⌘P: a manuscript prints through its book exports; everything else here.
   const missingFonts = useDocFonts(editor, docSettings.bodyFont, format === "none", styleFonts(docStyles.styles));
   const replaceFont = (from: string, to: string | null, info?: FontInfo) => {
@@ -481,7 +492,7 @@ function EditorInner({
         ? bookExportItems(setBookExport, async () => {
             const { exportSubmissionDocx } = await import("../../book/exportBook");
             await exportSubmissionDocx(editor.getJSON(), "manuscript", bookRef.current);
-          })
+          }, () => setCoverOpen(true))
         : []),
       ...(format === "none" && !readonly
         ? [
@@ -902,6 +913,9 @@ function EditorInner({
                 (e) => e.kind === "chapter",
               ).length
             }
+            pictures={coverPictures}
+            countPages={countBookPages}
+            onOpenCover={() => setCoverOpen(true)}
           />
         )}
         {panel === "history" && <VersionHistoryPanel editor={editor} onCompare={compareWith} />}
@@ -946,6 +960,18 @@ function EditorInner({
           mode={converting}
           onSwitchFormat={() => switchFormat("manuscript")}
           onClose={() => setConverting(null)}
+        />
+      )}
+      {coverOpen && editor && (
+        <CoverEditor
+          ydoc={provider.doc}
+          book={book}
+          readonly={readonly}
+          pictures={coverPictures}
+          words={countDocWords(editor.state.doc)}
+          chapters={scanStructure(editor.state.doc, "manuscript", book.design).entries.filter((e) => e.kind === "chapter").length}
+          countPages={countBookPages}
+          onClose={() => setCoverOpen(false)}
         />
       )}
       {bookExport && editor && (

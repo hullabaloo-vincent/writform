@@ -801,6 +801,83 @@ PICTURES.push({ url: "pic:one", w: 200, h: 100, bytes: PNG_1x1, type: "image/png
   check("its page number is centred at the foot", foot.length === 1 && foot[0].text === "1" && Math.abs(foot[0].x - 306) < 6, JSON.stringify(foot.map((f) => [f.x, f.text])));
 }
 
+// -------------------------------------- a table's row, cut where the page ends
+
+{
+  const schema = contentSchema();
+  const cellOf = (doc: JSONContent, pos: number) => {
+    const $pos = schema.nodeFromJSON(doc).resolve(pos);
+    for (let d = $pos.depth; d > 0; d -= 1) if ($pos.node(d).type.name === "tableCell") return $pos.before(d);
+    return -1;
+  };
+  const rand = prng(31);
+  const long = (n: number) => Array.from({ length: n }, () => p(null, t(prose(rand, 60))));
+  // Half a page of text, then a row far too tall for what is left of it.
+  const doc: JSONContent = { type: "doc", content: [...long(5), table({ cols: "90 378" }, tr(cell("2024"), cell(long(10)))), p(null, t("After the table."))] };
+  const { dl } = await layout(doc);
+  const area = body(dl);
+  const first = lines(dl.pages[0], dl, area);
+  const second = lines(dl.pages[1], dl, area);
+  check("a row that won't fit what is left of a page begins on it all the same", first.some((l) => l.text.startsWith("2024")) && first[first.length - 1].y > area.bottom - 40, `${first[first.length - 1].y} of ${area.bottom}`);
+  check("…and goes on at the top of the next page", dl.pages.length >= 2 && second[0].y < area.top + 30 && !second[0].text.startsWith("2024"), `${second[0]?.y}`);
+  /** Whether everything on every page is above its foot (its number aside). */
+  const allOnPage = (list: DisplayList, foot: number) =>
+    list.pages.every((pg) => pg.items.every((it) => (it.t === "rule" ? it.y2 <= foot + 0.6 : it.t !== "text" || it.y <= foot + 0.6 || it.text === pg.folio)));
+  check("…with nothing set past the foot of a page", allOnPage(dl, area.bottom) && dl.pages.every((pg) => lines(pg, dl, area).length > 0));
+  const start = dl.starts?.[1];
+  check("the page that takes the rest begins inside the row's cell", !!start && cellOf(doc, start.pos) > 0 && !start.also, JSON.stringify(start));
+  check("what follows the table still follows it", lines(dl.pages[dl.pages.length - 1], dl, area).some((l) => l.text.startsWith("After the table.")));
+
+  // Two long cells side by side: each goes on where it was cut.
+  const two: JSONContent = { type: "doc", content: [...long(5), table(null, tr(cell(long(8)), cell(long(9))))] };
+  const both = await layout(two);
+  const at = both.dl.starts?.[1];
+  const cellsHit = at ? [at.pos, ...(at.also ?? []).map((a) => a.pos)].map((pos) => cellOf(two, pos)) : [];
+  check("two cells cut by the same page: the next page begins in each of them", cellsHit.length === 2 && cellsHit.every((c) => c > 0) && cellsHit[0] !== cellsHit[1], JSON.stringify(at));
+
+  // Rows tied by a cell that runs down them (a date beside two rows of text).
+  const tied: JSONContent = {
+    type: "doc",
+    content: [...long(5), table({ cols: "90 378", lines: "none" }, tr(cell("2023", { rowspan: 2 }), cell(long(6))), tr(cell(long(6)))), p(null, t("After the tied rows."))],
+  };
+  const band = await layout(tied);
+  const bandArea = body(band.dl);
+  check("rows a cell runs down are cut across the page too (they once went over whole, off its foot)", band.dl.pages.length >= 2 && lines(band.dl.pages[0], band.dl, bandArea).some((l) => l.text.startsWith("2023")) && allOnPage(band.dl, bandArea.bottom), String(band.dl.pages.length));
+
+  // A row that fits is left alone.
+  const short = await layout({ type: "doc", content: [p(null, t("Before.")), table(null, tr(cell("a"), cell("b"))), p(null, t("After."))] });
+  check("a row that fits is set whole, as before", short.dl.pages.length === 1);
+}
+
+// ---------------------------------------- a cell's own lines, a picture's frame
+
+{
+  const { dl } = await layout({
+    type: "doc",
+    content: [
+      table({ cols: "100 100 100", lines: "none" }, tr(cell("a", { bdr: "r:2.25:#f38d88" }), cell("b", { bdr: "l:2.25:#f38d88" }), cell("c"))),
+      table({ cols: "100 100" }, tr(cell("x", { bdr: "t:0:#000000 b:3:#0000ff" }), cell("y"))),
+    ],
+  });
+  const rules = dl.pages[0].items.filter((it): it is Extract<DLItem, { t: "rule" }> => it.t === "rule");
+  const pink = rules.filter((r) => r.color === "#f38d88");
+  check("a cell's own border is drawn in its colour and weight, down the side it names", pink.length === 2 && pink.every((r) => r.w === 2.25 && r.x1 === r.x2) && Math.abs(pink[0].x1 - pink[1].x1) < 0.01, JSON.stringify(pink));
+  check("…and a table that draws no lines draws none but that", rules.filter((r) => r.color !== "#f38d88" && r.y1 < pink[0].y2 + 1).length === 0);
+  const blue = rules.filter((r) => r.color === "#0000ff");
+  check("in a table with lines, a cell's own line replaces the table's on that side", blue.length === 1 && blue[0].w === 3 && blue[0].y1 === blue[0].y2);
+  // (Its top says "none": the cell beside it still draws its own top.)
+  const tops = rules.filter((r) => r.y1 === r.y2 && Math.abs(r.y1 - Math.min(...rules.filter((q) => q.color !== "#f38d88" && q.y1 > pink[0].y2).map((q) => q.y1))) < 0.01);
+  check("…and a side it says has no line has none", tops.length === 1, String(tops.length));
+
+  PICTURES.push({ url: "pic:framed", w: 120, h: 120, bytes: PNG_1x1, type: "image/png" } as DocRequest["images"][number]);
+  const framed = await layout({ type: "doc", content: [{ type: "image", attrs: { src: "pic:framed", width: 120, height: 120, bdr: "2.25 #c10813", round: 16.7 } }, { type: "image", attrs: { src: "pic:framed", width: 96, height: 96, round: 50 } }] });
+  const pics = framed.dl.pages[0].items.filter((it): it is Extract<DLItem, { t: "image" }> => it.t === "image");
+  check("a picture's outline and rounded corners go to the page with it", pics.length === 2 && pics[0].round === 16.7 && pics[0].border?.w === 2.25 && pics[0].border.color === "#c10813" && pics[1].round === 50 && !pics[1].border);
+  const pdf = await session.pdf(framed.req);
+  check("…and the PDF draws them (cut to shape, the line inside)", pdf.bytes.length > 800 && pdf.pages === 1);
+  if (process.env.WF_DUMP) (await import("node:fs")).writeFileSync(`${process.env.WF_DUMP}/pictures.pdf`, pdf.bytes);
+}
+
 // A look at the result: WF_DUMP=/some/dir writes sample PDFs there.
 if (process.env.WF_DUMP) {
   const { writeFileSync } = await import("node:fs");

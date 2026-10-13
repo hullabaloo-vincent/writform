@@ -85,7 +85,8 @@ instead of `document:{id}`. Clients left in the plain room get
 never the newer content. Level 2 is text colour, highlight, a font or size
 on part of a paragraph, sub/superscript, paragraph indents, borders and
 shading, checklists, tables, footnotes and endnotes, a table of contents,
-picture placement and captions, sections, and tracked changes.
+picture placement and captions, sections, and tracked changes. Level 3 is
+a table cell's own borders, and a picture's outline and rounded corners.
 
 ## Voice, canvas, friends, misc
 

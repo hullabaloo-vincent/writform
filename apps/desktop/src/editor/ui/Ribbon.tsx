@@ -2,6 +2,8 @@ import type { Editor } from "@tiptap/react";
 import {
   AArrowDown,
   AArrowUp,
+  ArrowDown,
+  ArrowUp,
   AlignCenter,
   AlignJustify,
   AlignLeft,
@@ -84,6 +86,7 @@ import { curParaFormat, setBorder, setLineHeight, setSection, setShade, stepInde
 import { setHighlight, setRunColor, setRunFont, setRunSize, stepRunSize, toggleScript } from "../format/run";
 import { insertNote } from "../nodes/Footnote";
 import { imageAlign, selectedImage, setImageAttrs, type ImageAlign } from "../nodes/Image";
+import { canMovePicture, movePicture } from "../format/movePicture";
 import { setBulletMarker, toggleChecklist } from "../nodes/TaskList";
 import { insertToc } from "../nodes/Toc";
 import { resolveAll, resolveInEditor, selectedChanges, stepChange, type ReviewMode } from "../review/Suggesting";
@@ -93,6 +96,7 @@ import { BULLET_MARKERS, MARKER_GLYPH, parseBorder, type BulletMarker } from "..
 import { LEGAL, resolveStyles, styleFonts, type StyleEntry } from "../styles/sheet";
 import { curTypography, insertPageBreak, setDocAlign, setTypography, SIZE_LADDER } from "../TextFormat";
 import { CaptionFlyout } from "./CaptionFlyout";
+import { PictureAlt, PictureBorder, PictureCorners, PictureSize } from "./PictureFlyouts";
 import { ColorFlyout, HIGHLIGHT_COLORS, SHADE_COLORS, TEXT_COLORS } from "./ColorFlyout";
 import { Flyout, FlyoutItem, useIsPhone } from "./Flyout";
 import { LinkFlyout } from "./LinkFlyout";
@@ -1276,9 +1280,45 @@ export function Ribbon({
       ),
     },
     {
+      id: "move",
+      label: "Move",
+      content: (
+        <>
+          {btn("Move the picture up, over the block above (⌥↑)", <ArrowUp size={15} />, () => movePicture(editor, -1), false, !canMovePicture(editor, -1), "Up")}
+          {btn("Move the picture down, under the block below (⌥↓)", <ArrowDown size={15} />, () => movePicture(editor, 1), false, !canMovePicture(editor, 1), "Down")}
+        </>
+      ),
+    },
+    // (An outline and rounded corners are schema level 3: not on a server
+    // that hasn't been updated.)
+    ...(format && format.level >= 3
+      ? [
+          {
+            id: "frame",
+            label: "Border and corners",
+            content: (
+              <>
+                <PictureBorder editor={editor} />
+                <PictureCorners editor={editor} />
+              </>
+            ),
+          },
+        ]
+      : []),
+    {
+      id: "size",
+      label: "Size",
+      content: <PictureSize editor={editor} />,
+    },
+    {
       id: "caption",
-      label: "Caption",
-      content: <CaptionFlyout editor={editor} />,
+      label: "Caption and description",
+      content: (
+        <>
+          <CaptionFlyout editor={editor} />
+          <PictureAlt editor={editor} />
+        </>
+      ),
     },
   ];
 

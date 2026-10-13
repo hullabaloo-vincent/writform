@@ -13,6 +13,8 @@
 
 import * as Y from "yjs";
 
+import { COVER_SLOTS, noCover, parseArt, type BookCover } from "../cover/art";
+import { parseLook, parseText, TEXT_MAX, type CoverText } from "../cover/design";
 import type { NumberStyle } from "./chapters";
 import { presetDesign, PRESETS, type BookDesign } from "./presets";
 
@@ -98,6 +100,8 @@ export interface Book {
   print: BookPrint;
   ebook: BookEbook;
   smf: BookSmf;
+  /** Its cover artwork (see cover/art.ts). */
+  cover: BookCover;
 }
 
 type Validator = (v: unknown) => unknown;
@@ -289,7 +293,27 @@ export function readBook(doc: Y.Doc, fallbacks: { title?: string; author?: strin
     print: readGroup<BookPrint>(m, "print", PRINT),
     ebook: readGroup<BookEbook>(m, "ebook", EBOOK),
     smf: readGroup<BookSmf>(m, "smf", SMF),
+    cover: readCover(m),
   };
+}
+
+function readCover(m: Y.Map<unknown>): BookCover {
+  const cover = noCover();
+  for (const slot of COVER_SLOTS) {
+    cover[slot] = parseArt(m.get(`cover.${slot}`));
+    cover.looks[slot] = parseLook(m.get(`cover.look.${slot}`));
+  }
+  const pages = m.get("cover.pages");
+  if (typeof pages === "number" && Number.isFinite(pages) && pages > 0 && pages <= 5000) cover.pages = Math.round(pages);
+  const texts: CoverText[] = [];
+  for (const key of m.keys()) {
+    if (!key.startsWith("cover.text.")) continue;
+    const text = parseText(key.slice("cover.text.".length), m.get(key));
+    if (text) texts.push(text);
+  }
+  // (The lowest first; two at one height in a settled order.)
+  cover.texts = texts.sort((a, b) => a.z - b.z || (a.id < b.id ? -1 : 1)).slice(0, TEXT_MAX);
+  return cover;
 }
 
 /** Write dotted keys in one transaction; `null` removes a key (back to the

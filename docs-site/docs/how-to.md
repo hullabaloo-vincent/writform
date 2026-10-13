@@ -54,7 +54,8 @@
 
 1. **A table**: Insert ▸ Table and pick a size. Tab moves from cell to cell.
    With the caret in the table, the **Table** tab has rows, columns, merge,
-   header row, lines and shading.
+   header row, lines and shading. A long row is cut across pages where the
+   page ends.
 2. **A footnote**: put the caret where the reference goes and choose
    Insert ▸ Footnote (or Endnote). Write the note in the box that opens,
    then press Enter to go back to the text. Click a note's number to read
@@ -132,6 +133,55 @@ as printed, line for line, open **Preview** (the eye). If page view
 misbehaves on your device, Settings ▸ Writing ▸ *Page view shows the pages
 as they print* switches to the simpler view.
 
+## Give a book its cover
+
+Open a manuscript, press the book button and choose **Cover**.
+
+1. **Pictures.** Choose a JPEG or a PNG for the front cover. It is the
+   ebook's cover and the front of the paperback. A tall picture of
+   1,600 × 2,560 pixels suits the ebook stores. For the paperback, add a
+   back and a spine too, or one picture of the whole cover. A printed
+   cover is one sheet with the back, the spine and the front side by
+   side, and the tab says what that sheet measures for your trim size,
+   paper and page count.
+2. **Open the cover editor.** The sheet is drawn as it prints. Use the
+   tabs at the top to look at the whole cover, the back, the spine or the
+   front. *Guides* shows what the printer trims off, the margin to keep
+   words out of, where the spine folds and where the barcode goes.
+3. **Add words.** *Start with the book's title and author* puts the
+   title, the author, a spine line and the blurb in their usual places.
+   Click any of them to change what it says, its font, size and colour.
+   Drag it where it belongs and pull its side handles to set its width.
+4. **Place a picture.** Click a part of the cover that has no words on
+   it. You can choose its picture or its paper colour there, make the
+   picture larger, and drag it to choose which part shows.
+5. **Save.** *Make the cover* builds the PDF to upload to the printer.
+   *Make a template* builds a PDF at the exact size with the guides on
+   it, for artwork you make in a drawing program.
+
+Finish the text before the cover. The spine's width depends on the page
+count, and the editor warns you when it has changed since the artwork
+went in. Books under 80 pages have a spine too narrow for words. The
+sizes are Amazon KDP's. Another printer may ask for different ones, so
+check their template.
+
+Every font the editor offers is open-licensed and free to use on a book
+you sell.
+
+## Place and frame a picture
+
+Click a picture to select it. The **Picture** tab opens.
+
+- **Move it.** Drag the handle on its top left corner to where it should
+  go. A line shows the place between two blocks. *Up* and *Down* on the
+  tab, or ⌥↑ and ⌥↓, move it one block at a time.
+- **Set it left, centre or right** with the Position buttons.
+- **Frame it.** *Border* picks a colour, and the box beside it the
+  thickness. *Corners* rounds them, all the way to a circle.
+- **Size it** by dragging a corner, or type inches under *Size*.
+- **Caption** puts a line of text under it. **Description** says what it
+  shows for someone who can't see it.
+
 ## Bring in a Word document
 
 Documents → **Import**, pick the `.docx`. Headings and styles, lists and
@@ -139,7 +189,9 @@ checklists, tables, footnotes, a table of contents, links, pictures, fonts,
 colours, spacing, indents, sections and the page setup come across, and
 Word's tracked changes arrive as suggested changes you can accept or reject
 (see above). A note after the import says what couldn't be kept (text
-boxes, equations). A file that looks like a book comes in as a Manuscript
+boxes, equations, drawn shapes). A table laid out wider than its page is
+made to fit, and a cell's own borders and a picture's outline and rounded
+corners are kept. A file that looks like a book comes in as a Manuscript
 with its chapters found.
 
 ## Keep what's on this device in order

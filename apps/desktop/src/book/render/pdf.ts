@@ -48,6 +48,9 @@ interface Doc {
   restore(): Doc;
   translate(x: number, y: number): Doc;
   image(src: Uint8Array, x: number, y: number, options: { width: number; height: number }): Doc;
+  roundedRect(x: number, y: number, w: number, h: number, r: number): Doc;
+  ellipse(x: number, y: number, rx: number, ry: number): Doc;
+  clip(): Doc;
   on(event: "data", cb: (chunk: Uint8Array) => void): Doc;
   on(event: "end" | "error", cb: (err?: unknown) => void): Doc;
   end(): void;
@@ -171,7 +174,26 @@ export async function renderPdf(
         if (opts.links) doc.addNamedDestination(it.name, "XYZ", null, it.y, null);
       } else {
         const bytes = images.get(it.ref);
-        if (bytes) doc.image(bytes, it.x, it.y, { width: it.w, height: it.h });
+        // A picture's shape: its rectangle, or with corners rounded (all
+        // the way: an oval), `by` inside its edge.
+        const shape = (by: number) => {
+          const w = Math.max(0, it.w - by * 2);
+          const h = Math.max(0, it.h - by * 2);
+          const round = it.round ?? 0;
+          if (round >= 50) return doc.ellipse(it.x + it.w / 2, it.y + it.h / 2, w / 2, h / 2);
+          return round > 0 ? doc.roundedRect(it.x + by, it.y + by, w, h, Math.max(0, (Math.min(it.w, it.h) * round) / 100 - by)) : doc.rect(it.x + by, it.y + by, w, h);
+        };
+        if (bytes && it.round) {
+          doc.save();
+          shape(0).clip();
+          doc.image(bytes, it.x, it.y, { width: it.w, height: it.h });
+          doc.restore();
+        } else if (bytes) doc.image(bytes, it.x, it.y, { width: it.w, height: it.h });
+        if (it.border) {
+          doc.save().lineWidth(it.border.w).strokeColor(it.border.color);
+          shape(it.border.w / 2).stroke();
+          doc.restore();
+        }
       }
     }
     if (fill !== null) doc.fillColor(ink).strokeColor(ink);

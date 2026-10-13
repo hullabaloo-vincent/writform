@@ -70,9 +70,8 @@ const PARA_2 = ["bdr", "colBreak", "indF", "indL", "indR", "keepLines", "keepNex
  *  `deletion` marks on text, `tc` on everything else that can be added or
  *  removed).
  *
- *  Not released yet: until a version ships with it, later vocabulary may
- *  still join this table. From the release on it is frozen and what comes
- *  after takes level 3.
+ *  Shipped in 1.1.0, so FROZEN: nothing is added to it, taken from it or
+ *  renamed in it. What comes after is level 3.
  *
  *  (A cell's `colspan` and `rowspan` default to 1, not null: the table
  *  library does arithmetic on them.) */
@@ -104,10 +103,25 @@ const LEVEL_2: Vocab = {
   },
 };
 
-export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2 };
+/** Level 3: a table cell's own lines (`bdr`: a side, a thickness and a
+ *  colour each, for what Word draws with cell borders), and a picture's
+ *  outline (`bdr`) and rounded corners (`round`).
+ *
+ *  Not released yet: until a version ships with it, later vocabulary may
+ *  still join this table. From that release on it is frozen and what comes
+ *  after takes level 4. */
+const LEVEL_3: Vocab = {
+  nodes: {
+    tableCell: ["bdr"],
+    image: ["bdr", "round"],
+  },
+  marks: {},
+};
+
+export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2, 3: LEVEL_3 };
 
 /** The newest level this build's editor understands. */
-export const DOC_SCHEMA_LEVEL = 2;
+export const DOC_SCHEMA_LEVEL = 3;
 
 /** The level of content this build doesn't know at all. */
 export const UNKNOWN_LEVEL = Infinity;

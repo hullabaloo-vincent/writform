@@ -99,8 +99,10 @@ export interface PageMapFor {
   doc: PmNode;
   pages: number;
   /** Where each page's text begins (the first page's too); null where
-   *  that can't be pointed at. */
-  starts: ({ pos: number; inline: boolean } | null)[];
+   *  that can't be pointed at. A page that begins inside a table's row
+   *  (cut across pages) begins in each of the row's cells: `also` are the
+   *  others. */
+  starts: ({ pos: number; inline: boolean; also?: { pos: number; inline: boolean }[] } | null)[];
   /** How tall each page's text area is, pt. */
   bodyH: number[];
 }
@@ -270,7 +272,13 @@ export function resolvePageStart(doc: PmNode, start: { pos: number; inline: bool
   }
   let $pos = doc.resolve(pos);
   if (!$pos.nodeAfter || $pos.nodeAfter.isInline) return null;
-  while ($pos.depth > 0 && $pos.index() === 0) {
+  // (Not out of a table's cell: a page that begins with a cell's first
+  // block begins inside that cell, where its row was cut.)
+  const inCell = () => {
+    const role = $pos.parent.type.spec.tableRole as string | undefined;
+    return role === "cell" || role === "header_cell";
+  };
+  while ($pos.depth > 0 && $pos.index() === 0 && !inCell()) {
     pos = $pos.before();
     $pos = doc.resolve(pos);
   }
@@ -480,19 +488,22 @@ class PaginateView {
     let moved = false;
     map.starts.forEach((start, page) => {
       if (page === 0 || !start) return;
-      const at = resolvePageStart(doc, start);
-      if (!at) return;
-      // (By page and kind: the element stays the same as its place moves.)
-      const key = `${at.kind}:${page}`;
-      const was = have.get(key);
-      const el = was?.el ?? makeSpacer(at.kind);
-      if (at.kind === "row") {
-        const span = tableColumns(doc.resolve(at.pos).parent);
-        const cell = sized(el) as HTMLTableCellElement;
-        if (cell.colSpan !== span) cell.colSpan = span;
-      }
-      if (was?.at !== at.pos) moved = true;
-      decos.push(spaceDeco(at.pos, { side: -1, key, page, ignoreSelection: true, el }));
+      // (One place, but for a table's row cut across pages: one in each cell.)
+      [start, ...(start.also ?? [])].forEach((place, part) => {
+        const at = resolvePageStart(doc, place);
+        if (!at) return;
+        // (By page and kind: the element stays the same as its place moves.)
+        const key = part ? `${at.kind}:${page}:${part}` : `${at.kind}:${page}`;
+        const was = have.get(key);
+        const el = was?.el ?? makeSpacer(at.kind);
+        if (at.kind === "row") {
+          const span = tableColumns(doc.resolve(at.pos).parent);
+          const cell = sized(el) as HTMLTableCellElement;
+          if (cell.colSpan !== span) cell.colSpan = span;
+        }
+        if (was?.at !== at.pos) moved = true;
+        decos.push(spaceDeco(at.pos, { side: -1, key, page, ignoreSelection: true, el }));
+      });
     });
     this.applied = map;
     this.exact = { pages: map.pages, bodyH: map.bodyH };
@@ -543,40 +554,70 @@ class PaginateView {
     const settled = this.applied?.doc === view.state.doc;
     const give = marginGive(marginBottom);
 
-    const pmRect = dom.getBoundingClientRect();
     const sheetTop = sheet.getBoundingClientRect().top;
-    // Read everything, then write: a spacer's size doesn't change how much
-    // text lies between it and the one before.
-    const marks = cur
+    const placed = cur
       .find()
       .map((d) => ({ at: d.from, page: (d.spec as Partial<SpaceSpec>).page, el: (d.spec as Partial<SpaceSpec>).el }))
       .filter((m): m is { at: number; page: number; el: HTMLElement } => m.page !== undefined && !!m.el && m.el.isConnected)
-      .sort((a, b) => a.at - b.at || a.page - b.page)
-      .map((m) => {
-        const rect = m.el.getBoundingClientRect();
-        return { ...m, top: rect.top, height: rect.height };
-      });
+      .sort((a, b) => a.page - b.page || a.at - b.at);
+    // The spacers of each page together: one, but where a table's row is cut
+    // across pages (then one in each of its cells, side by side).
+    const pagesMarked: (typeof placed)[] = [];
+    for (const m of placed) {
+      const last = pagesMarked[pagesMarked.length - 1];
+      if (last && last[0].page === m.page) last.push(m);
+      else pagesMarked.push([m]);
+    }
+    const beside = pagesMarked.some((group) => group.length > 1);
 
-    const bands: PageBand[] = [];
-    const rooms = new Map<number, { from: number; h: number }>();
+    let pmRect = dom.getBoundingClientRect();
+    let bands: PageBand[] = [];
+    let rooms = new Map<number, { from: number; h: number }>();
     let contentStart = pmRect.top + padT;
     let firstPage = 0;
-    let shift = 0;
-    for (const mark of marks) {
-      const used = mark.top - contentStart;
-      const was = this.rooms.get(mark.page);
-      const room = pageRoom(least(firstPage, mark.page), used, !settled && was && was.from === firstPage ? was.h : null, give);
-      rooms.set(mark.page, { from: firstPage, h: room });
-      const space = breakSpace(room - used, marginBottom, marginTop);
-      const height = Math.round(space.height * 100) / 100;
-      if (this.given.get(mark.el) !== height) {
-        sized(mark.el).style.height = `${height}px`;
-        this.given.set(mark.el, height);
+    // Read everything, then write: a spacer's size doesn't change how much
+    // text lies between it and the one before. (Spacers side by side in one
+    // row do lean on each other while they are being sized: then it is done
+    // again, a few times at most, until they agree.)
+    for (let round = 0; round < (beside ? 4 : 1); round += 1) {
+      pmRect = dom.getBoundingClientRect();
+      const read = pagesMarked.map((group) =>
+        group.map((m) => {
+          const rect = m.el.getBoundingClientRect();
+          return { ...m, top: rect.top, height: rect.height };
+        }),
+      );
+      bands = [];
+      rooms = new Map();
+      contentStart = pmRect.top + padT;
+      firstPage = 0;
+      let shift = 0;
+      let wrote = false;
+      for (const group of read) {
+        // The page ends where the lowest of its cut cells does.
+        const lead = group.reduce((a, b) => (b.top > a.top ? b : a));
+        const used = lead.top - contentStart;
+        const was = this.rooms.get(lead.page);
+        const room = pageRoom(least(firstPage, lead.page), used, !settled && was && was.from === firstPage ? was.h : null, give);
+        rooms.set(lead.page, { from: firstPage, h: room });
+        const space = breakSpace(room - used, marginBottom, marginTop);
+        for (const mark of group) {
+          // (A cell that ended higher up makes up the difference: all of
+          // them go on at the same height on the next page.)
+          const height = Math.round((space.height + (lead.top - mark.top)) * 100) / 100;
+          if (this.given.get(mark.el) !== height) {
+            sized(mark.el).style.height = `${height}px`;
+            this.given.set(mark.el, height);
+            wrote = true;
+          }
+        }
+        const height = Math.round(space.height * 100) / 100;
+        bands.push({ y: Math.round(lead.top + shift + space.bar - sheetTop), page: lead.page + 1, clean: true });
+        shift += height - lead.height;
+        contentStart = lead.top + lead.height;
+        firstPage = lead.page;
       }
-      bands.push({ y: Math.round(mark.top + shift + space.bar - sheetTop), page: mark.page + 1, clean: true });
-      shift += height - mark.height;
-      contentStart = mark.top + mark.height;
-      firstPage = mark.page;
+      if (!wrote) break;
     }
     // The last page, the same way: what fills it out to a whole sheet gives
     // up what is typed, and a line that runs over is in its bottom margin

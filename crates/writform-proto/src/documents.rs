@@ -18,11 +18,17 @@ use crate::UnixMillis;
 /// (`client_too_old`), and a server never stores a document above the level
 /// its own web client understands.
 ///
-/// Level 2 (the release after 1.0.6): formatting on a run of text (font,
-/// size, colour, highlight, sub/superscript), paragraph indents, borders and
-/// shading, checklists. The tables are `editor/schema/levels.ts` in the
-/// client; this constant moves with them.
-pub const MAX_DOC_SCHEMA_LEVEL: u32 = 2;
+/// Level 2 (shipped in 1.1.0): formatting on a run of text (font, size,
+/// colour, highlight, sub/superscript), paragraph indents, borders and
+/// shading, checklists, tables, footnotes, contents, sections, tracked
+/// changes.
+///
+/// Level 3: a table cell's own borders, a picture's outline and rounded
+/// corners.
+///
+/// The tables are `editor/schema/levels.ts` in the client; this constant
+/// moves with them.
+pub const MAX_DOC_SCHEMA_LEVEL: u32 = 3;
 
 fn level_one() -> u32 {
     1

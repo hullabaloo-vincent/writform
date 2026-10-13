@@ -30,7 +30,7 @@ import type { Warning } from "../book/model/types";
 import { BORDER_PAD_X, BORDER_PAD_Y, type SectionProps } from "../editor/schema/sanitize";
 import { CODE_FONT, CODE_SIZE, LIST_HANG, SINGLE } from "../editor/styles/sheet";
 import { lineOffsets } from "./lineStarts";
-import { LINK_COLOR, type DocBlock, type DocImage, type DocModel, type DocPara, type DocRun, type DocTable, type DocToc } from "./model";
+import { type DocCell, LINK_COLOR, type DocBlock, type DocImage, type DocModel, type DocPara, type DocRun, type DocTable, type DocToc } from "./model";
 
 /** Sub- and superscript: the type's size, and how far it moves, as shares
  *  of the size around it (styles.css draws the same). */
@@ -73,6 +73,22 @@ interface Row {
   at?: number;
   /** A table's row (or rows held together): which one it starts with. */
   tr?: number;
+  /** Where it begins in the editor's document (rows set inside a table's
+   *  cell know this, to say where a page begins when one is cut). */
+  start?: PageStart | null;
+  /** Only the space between two blocks. */
+  gap?: boolean;
+  /** What is left of a table's row after a page took its beginning: where
+   *  each of its cells goes on, in the editor's document. */
+  starts?: PageStart[];
+  /**
+   * A table's row can be cut: as much of each of its cells as fits in `h`,
+   * and the rest. Null when nothing of it fits there (it goes to the next
+   * column whole). With `force`, at least a line is taken whatever the room.
+   */
+  cut?: (h: number, force: boolean) => [Row, Row] | null;
+  /** The least of it that may stand at the foot of a column. */
+  min?: number;
 }
 
 interface Unit {
@@ -405,7 +421,10 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     const gap = caption.length ? Math.min(6, (b.caption?.size ?? 10) * 0.4) : 0;
     return {
       block: b,
-      rows: [{ h: h + gap, items: [{ t: "image", x, y: 0, w, h, ref: b.url }] }, ...caption.map((r) => ({ h: r.h, items: r.items, ...(r.notes ? { notes: r.notes } : {}) }))],
+      rows: [
+        { h: h + gap, items: [{ t: "image", x, y: 0, w, h, ref: b.url, ...(b.round ? { round: b.round } : {}), ...(b.border ? { border: b.border } : {}) }] },
+        ...caption.map((r) => ({ h: r.h, items: r.items, ...(r.notes ? { notes: r.notes } : {}) })),
+      ],
       before: b.before,
       after: b.after,
       splittable: false,
@@ -421,8 +440,11 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     for (const u of units) {
       if (!u.rows.length) continue;
       const gap = rows.length ? Math.max(prevAfter, u.before) : 0;
-      if (gap) rows.push({ h: gap, items: [] });
-      for (const row of u.rows) rows.push({ h: row.h, items: row.items, ...(row.notes ? { notes: row.notes } : {}) });
+      if (gap) rows.push({ h: gap, items: [], gap: true });
+      u.rows.forEach((row, i) => {
+        const start = u.block.pos === undefined ? undefined : startOf(u, i);
+        rows.push({ h: row.h, items: row.items, ...(row.notes ? { notes: row.notes } : {}), ...(start ? { start } : {}) });
+      });
       prevAfter = u.after;
     }
     return rows;
@@ -449,6 +471,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       cs: number;
       rs: number;
       bg?: string;
+      edges?: DocCell["edges"];
       rows: Row[];
       h: number;
     }
@@ -464,7 +487,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         for (let i = r; i < r + rs; i += 1) for (let j = c; j < c + cs; j += 1) taken[i][j] = true;
         const inner = Math.max(12, xs[c + cs] - xs[c] - 2 * CELL_PAD_X);
         const rows = stack(unitsOf(cell.blocks, inner, colH));
-        cells.push({ row: r, col: c, cs, rs, ...(cell.bg ? { bg: cell.bg } : {}), rows, h: rows.reduce((n, x) => n + x.h, 0) });
+        cells.push({ row: r, col: c, cs, rs, ...(cell.bg ? { bg: cell.bg } : {}), ...(cell.edges ? { edges: cell.edges } : {}), rows, h: rows.reduce((n, x) => n + x.h, 0) });
         c += cs;
       }
     });
@@ -492,90 +515,219 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
 
     const x0 = b.left;
     const lines = b.lines;
-    /** One band (or a slice of a single row too tall for a page) as a row. */
-    const draw = (parts: { cell: Placed; rows: Row[]; top: number; h: number }[], h: number, firstBand: boolean, lastBand: boolean): Row => {
+    const rule = (ax: number, ay: number, bx: number, by: number): DLItem => ({ t: "rule", x1: ax, y1: ay, x2: bx, y2: by, w: CELL_LINE, color: TABLE_INK });
+    const tall = (rows: Row[]) => rows.reduce((n, r) => n + r.h, 0);
+
+    /**
+     * A stretch of the table that is set as one: the rows a spanning cell
+     * ties together (most often a single row), or what is left of them once
+     * a page has taken their beginning. A band can be CUT where a column
+     * ends: each cell gives the lines that fit, and goes on in the next
+     * column with the rest, as a word processor breaks a row across pages.
+     */
+    interface BandCell {
+      cell: Placed;
+      /** The band's row it starts in, and how many it runs down. */
+      row: number;
+      rs: number;
+      /** Its lines still to be set. */
+      lines: Row[];
+    }
+    interface Band {
+      /** The least each row is tall. */
+      base: number[];
+      cells: BandCell[];
+      /** The table's top edge is this band's, its bottom edge this band's. */
+      first: boolean;
+      last: boolean;
+      /** Which of the table's rows its first row is, and whether it starts
+       *  where that row does (not partway down it). */
+      at: number;
+      whole: boolean;
+      /** Where its cells go on, when it is the rest of a row that was cut. */
+      starts?: PageStart[];
+    }
+
+    /** Each row as tall as its tallest cell (a spanning cell's last row
+     *  makes up what the cell still needs). */
+    const heightsOf = (band: Band): number[] => {
+      const hs = [...band.base];
+      for (const c of band.cells) if (c.rs === 1) hs[c.row] = Math.max(hs[c.row], tall(c.lines) + 2 * CELL_PAD_Y);
+      for (const c of band.cells) {
+        if (c.rs === 1) continue;
+        let have = 0;
+        for (let i = c.row; i < c.row + c.rs; i += 1) have += hs[i];
+        const need = tall(c.lines) + 2 * CELL_PAD_Y;
+        if (need > have) hs[c.row + c.rs - 1] += need - have;
+      }
+      return hs;
+    };
+
+    const draw = (band: Band): Row => {
+      const hs = heightsOf(band);
+      const tops: number[] = [];
+      let h = 0;
+      for (const rowH of hs) {
+        tops.push(h);
+        h += rowH;
+      }
       const under: DLItem[] = [];
       const text: DLItem[] = [];
       const over: DLItem[] = [];
       const cited: number[] = [];
-      const rule = (ax: number, ay: number, bx: number, by: number): DLItem => ({ t: "rule", x1: ax, y1: ay, x2: bx, y2: by, w: CELL_LINE, color: TABLE_INK });
-      for (const { cell, rows, top, h: ch } of parts) {
+      for (const { cell, row, rs, lines: set } of band.cells) {
         const left = x0 + xs[cell.col];
         const right = x0 + xs[cell.col + cell.cs];
+        const top = tops[row];
+        let ch = 0;
+        for (let i = row; i < row + rs; i += 1) ch += hs[i];
         if (cell.bg) under.push({ t: "rect", x: left, y: top, w: right - left, h: ch, color: cell.bg });
         let y = top + CELL_PAD_Y;
-        for (const row of rows) {
-          text.push(...place(row.items, left + CELL_PAD_X, y));
-          if (row.notes) cited.push(...row.notes);
-          y += row.h;
+        for (const line of set) {
+          text.push(...place(line.items, left + CELL_PAD_X, y));
+          if (line.notes) cited.push(...line.notes);
+          y += line.h;
         }
-        if (lines === "all") over.push(rule(left, top, right, top), rule(left, top + ch, right, top + ch), rule(left, top, left, top + ch), rule(right, top, right, top + ch));
-        else if (lines === "rows") over.push(rule(left, top, right, top), rule(left, top + ch, right, top + ch));
-        else if (lines === "box") {
-          if (cell.col === 0) over.push(rule(left, top, left, top + ch));
-          if (cell.col + cell.cs === count) over.push(rule(right, top, right, top + ch));
-          if (firstBand && top === 0) over.push(rule(left, 0, right, 0));
-          if (lastBand && Math.abs(top + ch - h) < EPS) over.push(rule(left, h, right, h));
+        // The table's lines on each side of the cell, unless the cell has a
+        // line of its own there (or says there is none).
+        const sides = {
+          t: lines === "all" || lines === "rows" || (lines === "box" && band.first && top === 0),
+          b: lines === "all" || lines === "rows" || (lines === "box" && band.last && Math.abs(top + ch - h) < EPS),
+          l: lines === "all" || (lines === "box" && cell.col === 0),
+          r: lines === "all" || (lines === "box" && cell.col + cell.cs === count),
+        };
+        const ends = { t: [left, top, right, top], b: [left, top + ch, right, top + ch], l: [left, top, left, top + ch], r: [right, top, right, top + ch] } as const;
+        for (const side of ["t", "b", "l", "r"] as const) {
+          const own = cell.edges?.[side];
+          const [ax, ay, bx, by] = ends[side];
+          if (own) {
+            if (own.w > 0) over.push({ t: "rule", x1: ax, y1: ay, x2: bx, y2: by, w: own.w, color: own.color });
+          } else if (sides[side]) over.push(rule(ax, ay, bx, by));
         }
       }
       return { h, items: [...under, ...text, ...over], ...(cited.length ? { notes: cited } : {}) };
     };
 
-    const out: Row[] = [];
-    bands.forEach((band, bi) => {
-      let h = 0;
+    /** The band up to `h`, and the rest of it. */
+    const cutBand = (band: Band, h: number, force: boolean): [Band, Band] | null => {
+      const hs = heightsOf(band);
       const tops: number[] = [];
-      for (let r = band.from; r <= band.to; r += 1) {
-        tops[r] = h;
-        h += heights[r];
+      let total = 0;
+      for (const rowH of hs) {
+        tops.push(total);
+        total += rowH;
       }
-      const inBand = cells.filter((c) => c.row >= band.from && c.row <= band.to);
-      const firstBand = bi === 0;
-      const lastBand = bi === bands.length - 1;
-      if (h <= colH || band.to > band.from) {
-        out.push({
-          ...draw(
-            inBand.map((cell) => {
-              let ch = 0;
-              for (let r = cell.row; r < cell.row + cell.rs; r += 1) ch += heights[r];
-              return { cell, rows: cell.rows, top: tops[cell.row], h: ch };
-            }),
-            h,
-            firstBand,
-            lastBand,
-          ),
-          tr: band.from,
-        });
-        return;
+      if (h >= total - EPS) return null;
+      // The row the column's end falls in.
+      let rc = 0;
+      while (rc + 1 < hs.length && tops[rc + 1] <= h + EPS) rc += 1;
+      /** How many of a cell's lines fit above a line drawn at `y`. */
+      const fits = (c: BandCell, y: number, atLeast: number): number => {
+        const room = y - tops[c.row] - 2 * CELL_PAD_Y;
+        let n = 0;
+        let used = 0;
+        while (n < c.lines.length && (n < atLeast || used + c.lines[n].h <= room + EPS)) {
+          used += c.lines[n].h;
+          n += 1;
+        }
+        // (Never the space after a block alone, with the next one over the page.)
+        while (n > atLeast && n < c.lines.length && c.lines[n - 1].gap) n -= 1;
+        return n;
+      };
+      const covers = (c: BandCell) => c.row <= rc && c.row + c.rs - 1 >= rc;
+      let take = band.cells.map((c) => (c.row + c.rs - 1 < rc ? c.lines.length : covers(c) ? fits(c, h, 0) : 0));
+      // Every cell that starts in the row and has something in it must begin
+      // on this side, or the row doesn't begin here at all: it is cut where
+      // it starts (the rows above stay) or, the band's first, not cut.
+      let whole = false;
+      const begun = (c: BandCell) => c.lines.length === 0 || take[band.cells.indexOf(c)] > 0;
+      if (!band.cells.filter((c) => c.row === rc).every(begun)) {
+        if (rc === 0) {
+          if (!force) return null;
+          take = band.cells.map((c) => (covers(c) ? fits(c, h, c.lines.length ? 1 : 0) : 0));
+        } else {
+          whole = true;
+          take = band.cells.map((c) => (c.row + c.rs - 1 < rc ? c.lines.length : c.row < rc ? fits(c, tops[rc], 0) : 0));
+        }
       }
-      // One row taller than a page: cut between the lines of its cells.
-      const at = inBand.map(() => 0);
-      const limit = Math.max(least, colH - 2 * CELL_PAD_Y);
-      for (let guard = 0; guard < 1000 && inBand.some((cell, i) => at[i] < cell.rows.length); guard += 1) {
-        const slices = inBand.map((cell, i) => {
-          const rows: Row[] = [];
-          let used = 0;
-          while (at[i] < cell.rows.length && (rows.length === 0 || used + cell.rows[at[i]].h <= limit)) {
-            used += cell.rows[at[i]].h;
-            rows.push(cell.rows[at[i]]);
-            at[i] += 1;
-          }
-          return { rows, used };
-        });
-        const sliceH = Math.max(least, ...slices.map((t) => t.used + 2 * CELL_PAD_Y));
-        const done = inBand.every((cell, i) => at[i] >= cell.rows.length);
-        out.push({
-          ...draw(
-            inBand.map((cell, i) => ({ cell, rows: slices[i].rows, top: 0, h: sliceH })),
-            sliceH,
-            firstBand && guard === 0,
-            lastBand && done,
-          ),
-          // (Only its first slice starts where the row does.)
-          ...(guard === 0 ? { tr: band.from } : {}),
-        });
+      // (A cut that leaves nothing on this side is no cut.)
+      if (take.every((n) => n === 0)) return null;
+      const left = band.cells.map((c, i) => {
+        let rest = c.lines.slice(take[i]);
+        // (The space between two blocks isn't carried to the top of a page.)
+        while (rest.length && rest[0].gap) rest = rest.slice(1);
+        return rest;
+      });
+      if (left.every((rest) => rest.length === 0) && rc === hs.length - 1) return null;
+
+      // This side: the rows above, and the row's beginning.
+      const keep = whole ? rc : rc + 1;
+      const head: Band = {
+        base: band.base.slice(0, keep).map((v, i) => (!whole && i === rc ? 0 : v)),
+        cells: band.cells
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.row < keep)
+          .map(({ c, i }) => ({ cell: c.cell, row: c.row, rs: Math.min(c.rs, keep - c.row), lines: c.lines.slice(0, take[i]) })),
+        first: band.first,
+        last: false,
+        at: band.at,
+        whole: band.whole,
+        ...(band.starts ? { starts: band.starts } : {}),
+      };
+      // The other side: the rest of the row (or the row whole), and the rows below.
+      const from = rc;
+      const rest: Band = {
+        base: band.base.slice(from).map((v, i) => (!whole && i === 0 ? 0 : v)),
+        cells: band.cells
+          .map((c, i) => ({ c, i }))
+          .filter(({ c }) => c.row + c.rs - 1 >= from)
+          .map(({ c, i }) => ({ cell: c.cell, row: Math.max(0, c.row - from), rs: c.row + c.rs - Math.max(c.row, from), lines: left[i] })),
+        first: false,
+        last: band.last,
+        at: band.at + from,
+        whole: false,
+      };
+      // Where the page that takes the rest begins: at a row of the table,
+      // when the cut is where that row starts and no cell runs down across
+      // it. Otherwise wherever each cell of the row goes on.
+      const crossing = band.cells.some((c) => c.row < from && c.row + c.rs - 1 >= from);
+      if (whole && !crossing) rest.whole = true;
+      else {
+        const starts = rest.cells
+          .filter((c) => c.row === 0)
+          .map((c) => c.lines.find((line) => !line.gap)?.start)
+          .filter((v): v is PageStart => !!v);
+        if (starts.length) rest.starts = starts;
       }
-    });
+      return [head, rest];
+    };
+
+    const rowOf = (band: Band): Row => {
+      // The least of it that may end a column: a first line of each cell
+      // that starts it.
+      const firstLines = band.cells.filter((c) => c.row === 0 && c.lines.length).map((c) => c.lines[0].h);
+      return {
+        ...draw(band),
+        ...(band.whole ? { tr: band.at } : {}),
+        ...(band.starts ? { starts: band.starts } : {}),
+        min: (firstLines.length ? Math.max(...firstLines) : 0) + 2 * CELL_PAD_Y,
+        cut: (h, force) => {
+          const parts = cutBand(band, h, force);
+          return parts && [rowOf(parts[0]), rowOf(parts[1])];
+        },
+      };
+    };
+
+    const out: Row[] = bands.map((band, bi) =>
+      rowOf({
+        base: heights.slice(band.from, band.to + 1).map(() => least),
+        cells: cells.filter((c) => c.row >= band.from && c.row <= band.to).map((cell) => ({ cell, row: cell.row - band.from, rs: cell.rs, lines: cell.rows })),
+        first: bi === 0,
+        last: bi === bands.length - 1,
+        at: band.from,
+        whole: true,
+      }),
+    );
 
     const header = b.head && out.length > 1 && bands[0].to < b.rows.length - 1 ? out[0] : undefined;
     return { block: b, rows: out, before: b.before, after: b.after, splittable: out.length > 1, keepFirst: header ? 2 : 0, loose: true, ...(header ? { header } : {}) };
@@ -705,7 +857,10 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     if (b.kind === "table") {
       const tr = u.rows[row].tr;
       const pos = tr === undefined ? undefined : b.rowPos?.[tr];
-      return pos === undefined ? null : { pos, inline: false };
+      if (pos !== undefined) return { pos, inline: false };
+      // The rest of a row that was cut: where its cells go on.
+      const [first, ...more] = u.rows[row].starts ?? [];
+      return first ? { pos: first.pos, inline: first.inline, ...(more.length ? { also: more.map((m) => ({ pos: m.pos, inline: m.inline })) } : {}) } : null;
     }
     return null;
   };
@@ -798,7 +953,12 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       return h;
     };
     /** The least of a unit that may start a column: its first lines. */
-    const headOf = (u: Unit) => heightOf(u.rows, 0, u.splittable ? Math.max(u.loose ? 1 : ORPHANS, u.keepFirst) : u.rows.length);
+    const headOf = (u: Unit) => {
+      // (A table's row can be cut: its first lines are enough to begin with.)
+      const first = u.rows[0];
+      if (first?.cut && first.min !== undefined && !u.header) return Math.min(first.h, first.min);
+      return heightOf(u.rows, 0, u.splittable ? Math.max(u.loose ? 1 : ORPHANS, u.keepFirst) : u.rows.length);
+    };
     /** What a row's notes ask of the column: all of them, and the least
      *  (the rule, and the first line of the first). */
     const notesCost = (row: Row, seen: Set<number>, have: number): { ids: number[]; full: number; least: number } => {
@@ -819,7 +979,12 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       const units = unitsOf(run.blocks, geo.colW, geo.colH);
 
       for (let ui = 0; ui < units.length; ui += 1) {
-        const u = units[ui];
+        let u = units[ui];
+        // (A table's rows may be cut as they are placed: on a copy, the
+        // unit itself is set once and may be flowed again.)
+        if (u.rows.some((row) => row.cut)) u = { ...u, rows: [...u.rows] };
+        /** Pieces a cut has made here: not cut again in the same place. */
+        const pieces = new Set<Row>();
         const b = u.block;
         const pageEmpty = atTop && col === 0;
         if (b.breakBefore && !pageEmpty) newPage();
@@ -899,6 +1064,21 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
             break;
           }
           if (fit < left) {
+            // A table's row that won't fit goes as far as the column does,
+            // and its cells go on in the next: as much of each as there is
+            // room for here.
+            const over = u.rows[start + fit];
+            if (over.cut && !pieces.has(over)) {
+              const space = remaining - used - extra;
+              const parts = over.cut(space, false) ?? (atTop && fit === 0 ? over.cut(space, true) : null);
+              if (parts) {
+                pieces.add(parts[0]);
+                u.rows.splice(start + fit, 1, parts[0], parts[1]);
+                // (Two pieces now, whatever it was: one may end this column.)
+                u.splittable = true;
+                continue;
+              }
+            }
             const byHeight = fit;
             if (!u.splittable) fit = 0;
             else {

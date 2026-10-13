@@ -25,10 +25,12 @@ Rules:
   goes in the table of the *next* level. If the last release already
   shipped level N, add `LEVEL_{N+1}`, put it in `VOCAB`, and raise **both**
   constants to N+1 in the same commit.
-- While a level is unreleased, later work may keep adding to it. Level 2
-  is in that state now: it holds rich formatting, tables, footnotes,
-  contents, sections and tracked changes. **The release that first ships
-  level 2 freezes it** — after it, anything new takes level 3.
+- While a level is unreleased, later work may keep adding to it. **Level 2
+  shipped in 1.1.0 and is frozen** (a harness check holds it to what it
+  was). Level 3 is open now: it holds a table cell's own borders and a
+  picture's outline and rounded corners. **The release that first ships
+  level 3 freezes it** — after it, anything new takes level 4. That
+  release raises the level, so it is a "server first" release (see 2).
 - New attributes default to `null`; values are primitives; lengths are
   points; colours `#rrggbb`. Read them through `editor/schema/sanitize.ts`.
 

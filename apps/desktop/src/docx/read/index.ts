@@ -150,7 +150,26 @@ export async function readDocx(buffer: ArrayBuffer | Uint8Array, opts: DocxReadO
   if (!sect) {
     for (const p of children(body, "w:p")) sect = child(child(p, "w:pPr"), "w:sectPr") ?? sect;
   }
-  const converted = toContent(reader.paras, styles, numbering, { installed, catalog: catalog?.byName }, { tree: reader.tree, base: sectionProps(sect) });
+  // How wide the text is on its page: tables are held to that. (The widest
+  // of the document's sections: a table is only made narrower when it would
+  // run off any page of it.)
+  const twips = (v: string | undefined) => Math.abs(Number(v) || 0);
+  const sections = [sect, ...children(body, "w:p").map((p) => child(child(p, "w:pPr"), "w:sectPr"))].filter((x): x is NonNullable<typeof x> => !!x);
+  const across = Math.max(
+    0,
+    ...sections.map((one) => {
+      const sheet = child(one, "w:pgSz");
+      const edges = child(one, "w:pgMar");
+      return sheet ? (twips(sheet.attrs["w:w"]) - twips(edges?.attrs["w:left"]) - twips(edges?.attrs["w:right"])) / 20 : 0;
+    }),
+  );
+  const converted = toContent(
+    reader.paras,
+    styles,
+    numbering,
+    { installed, catalog: catalog?.byName },
+    { tree: reader.tree, base: sectionProps(sect), ...(across > 72 ? { textWidth: across } : {}) },
+  );
 
   // What the document should remember about fonts the app doesn't own:
   // the name, and (from Word's own font table) what kind of face it is.
@@ -293,6 +312,7 @@ export async function readDocx(buffer: ArrayBuffer | Uint8Array, opts: DocxReadO
   if (c.notes) warnings.push(`${plural(c.notes, "footnote")} skipped`);
   if (c.textBoxes) warnings.push(`${plural(c.textBoxes, "text box", "text boxes")} flattened`);
   if (c.equations) warnings.push(`${plural(c.equations, "equation")} skipped`);
+  if (c.shapes) warnings.push(`${plural(c.shapes, "drawn shape")} left out`);
   if (c.tracked) warnings.push(reader.track ? "tracked changes kept as suggestions (see Changes)" : "tracked changes accepted");
   if (reader.continuous) warnings.push(`${plural(reader.continuous, "section break")} within a page left out`);
 

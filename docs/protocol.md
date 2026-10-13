@@ -144,7 +144,13 @@ after it updates. A server never stores a level above its own web client's
 (`GET /document-capabilities`), and a newer app on an older server holds its
 documents to the server's level.
 
-Level 2 (the release after 1.0.6) adds formatting on a run of text — marks
+Level 3 (after 1.1.0) adds `bdr` on `tableCell` (the cell's own lines, one
+string of `<side>:<points>:<#rrggbb>` parts, a side of no thickness meaning
+"no line here") and, on images, `bdr` (an outline, `"<points> <#rrggbb>"`)
+and `round` (how round the corners are, a percentage of the shorter side up
+to 50). A document is only raised to it when it uses one of them.
+
+Level 2 (1.1.0) adds formatting on a run of text — marks
 `fontFamily {f}`, `fontSize {pt}`, `textColor {c}`, `highlight {c}`,
 `vscript {v}`, one property each so concurrent changes merge — paragraph
 attributes `indL`, `indR`, `indF` (negative = hanging), `lineRule`/`lineAt`,

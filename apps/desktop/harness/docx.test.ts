@@ -930,4 +930,67 @@ try {
   console.log(`SKIP  macOS's writer (${(e as Error).message.split("\n")[0]})`);
 }
 
+// ------------------------------------------- a layout table, as a Word résumé has it
+
+{
+  // Twips: a sliver, a date column, two slivers either side of a rule, the
+  // text, and a leftover column hanging off the page (the grid is far wider
+  // than the page: Word only shows it as far as the paper goes).
+  const grid = [270, 1260, 270, 270, 8120, 8100];
+  const tc = (w: number, inner: string, pr = "") => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${pr}</w:tcPr>${inner || "<w:p/>"}</w:tc>`;
+  const para = (text: string) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`;
+  const rule = (side: string) => `<w:tcBorders><w:${side} w:val="single" w:sz="18" w:space="0" w:color="F38D88"/></w:tcBorders>`;
+  const shapeRun = `<w:p><w:r><mc:AlternateContent><mc:Choice Requires="wps"><w:drawing><wp:inline><wp:extent cx="90000" cy="90000"/><a:graphic><a:graphicData uri="x"><wps:wsp><wps:spPr><a:prstGeom prst="ellipse"/></wps:spPr></wps:wsp></a:graphicData></a:graphic></wp:inline></w:drawing></mc:Choice></mc:AlternateContent></w:r></w:p>`;
+  const body =
+    `<w:tbl><w:tblPr><w:tblW w:w="18290" w:type="dxa"/><w:tblLayout w:type="fixed"/></w:tblPr><w:tblGrid>${grid.map((w) => `<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>` +
+    `<w:tr>${tc(270, "")}${tc(1260, para("2024"), '<w:vMerge w:val="restart"/>')}${tc(270, shapeRun)}${tc(270, "")}${tc(8120, para("What was done that year."), '<w:vMerge w:val="restart"/>')}</w:tr>` +
+    `<w:tr>${tc(270, "")}${tc(1260, "", "<w:vMerge/>")}${tc(270, "", rule("right"))}${tc(270, "", rule("left"))}${tc(8120, "", "<w:vMerge/>")}${tc(8100, "")}</w:tr>` +
+    `</w:tbl>` +
+    `<w:p><w:r><w:rPr><w:rFonts w:ascii="Open Sans Light" w:hAnsi="Open Sans Light"/></w:rPr><w:t>Set light.</w:t></w:r></w:p>` +
+    `<w:p><w:r><w:rPr><w:rFonts w:ascii="Rajdhani SemiBold" w:hAnsi="Rajdhani SemiBold"/></w:rPr><w:t>Set semibold.</w:t></w:r></w:p>`;
+  resetFontStore();
+  Object.assign(backend, { sysfontList: async () => [] });
+  const read = await readDocx(await pack(body, {}, { sect: '<w:sectPr><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="900" w:right="1080" w:bottom="900" w:left="1080"/></w:sectPr>' }));
+  const table = read.content.content!.find((n) => n.type === "table")!;
+  const widths = String(table.attrs?.cols).split(" ").map(Number);
+  check("a column hanging off the page with nothing in it is left out", widths.length === 5 && table.content!.every((row) => row.content!.reduce((n, c) => n + Number(c.attrs?.colspan ?? 1), 0) <= 5), String(table.attrs?.cols));
+  const total = widths.reduce((a, b) => a + b, 0);
+  check("…and what is left is made to fit the text's width, its columns in proportion", Math.abs(total - 504) < 1 && Math.abs(widths[4] / widths[1] - 8120 / 1260) < 0.02, `${total}`);
+  check("a sliver of a column stays a sliver (it is there to space the others)", widths[0] < 14 && widths[0] > 12, String(widths[0]));
+  const cells = table.content!.flatMap((row) => row.content!);
+  const lined = cells.filter((c) => c.attrs?.bdr).map((c) => c.attrs!.bdr);
+  check("a cell's own borders come in: the side, the weight and the colour", lined.join(" | ") === "r:2.25:#f38d88 | l:2.25:#f38d88", lined.join(" | "));
+  check("cells merged down the rows are one cell", cells.filter((c) => c.attrs?.rowspan === 2).length === 2);
+  check("something drawn in Word that isn't a picture is said to be left out", read.warnings.some((w) => w === "1 drawn shape left out"), JSON.stringify(read.warnings));
+  check("a document with a cell's own borders is level 3", levelOfJson(read.content) === 3);
+  // (One of them is most of the text here, so it is the document's own font.)
+  const fonts = JSON.stringify([read.content, read.settings]);
+  check("a weight of a family, named as Word names it, is the library's family at that weight", fonts.includes('"gf:open-sans@300"') && fonts.includes('"gf:rajdhani@600"'), fonts.match(/"(gf|sys):[^"]+"/g)?.join(" ") ?? "");
+
+  // And out again: Word gets the borders back.
+  const written = await writeDocx(read.content, { title: "Layout", format: "none", settings: settingsFrom((k) => read.settings[k]) });
+  const xml = (await parts(written.bytes))["word/document.xml"];
+  check("a cell's borders are written as Word's cell borders", xml.includes('<w:tcBorders><w:right w:val="single" w:sz="18" w:space="0" w:color="F38D88"/></w:tcBorders>') && xml.includes('<w:tcBorders><w:left w:val="single" w:sz="18" w:space="0" w:color="F38D88"/></w:tcBorders>'));
+  check("…in the order Word's schema wants", orderFaults(parseXml(xml), "document").length === 0, orderFaults(parseXml(xml), "document").slice(0, 3).join("; "));
+  const again = await readDocx(written.bytes);
+  const cellsAgain = again.content.content!.find((n) => n.type === "table")!.content!.flatMap((row) => row.content!);
+  check("…and read back the same", cellsAgain.filter((c) => c.attrs?.bdr).map((c) => c.attrs!.bdr).join(" | ") === lined.join(" | "));
+}
+
+// ------------------------------------------------- a picture's outline and corners
+
+{
+  const picture = (attrs: Record<string, unknown>): JSONContent => ({ type: "image", attrs: { src: IMG, width: 120, height: 120, ...attrs } });
+  const doc: JSONContent = { type: "doc", content: [picture({ bdr: "2.25 #c10813", round: 16.7 }), picture({ round: 50 }), picture({ bdr: "0.75 #000000" }), { type: "paragraph", content: [{ type: "text", text: "After." }] }] };
+  const images = new Map([[IMG, { bytes: PNG, type: "image/png", ...imageSize(PNG)! }]]);
+  const written = await writeDocx(doc, { title: "Pictures", format: "none", images });
+  const xml = (await parts(written.bytes))["word/document.xml"];
+  check("a picture with rounded corners is a rounded rectangle in Word, an oval an ellipse", xml.includes('<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 16700"/></a:avLst></a:prstGeom>') && xml.includes('<a:prstGeom prst="ellipse">'));
+  check("its outline is a line of its colour and weight", xml.includes('<a:ln w="28575"><a:solidFill><a:srgbClr val="C10813"/></a:solidFill></a:ln>') && xml.includes('<a:ln w="9525">'));
+  const read = await readDocx(written.bytes);
+  const got = (read.content.content ?? []).filter((n) => n.type === "image").map((n) => `${n.attrs?.bdr ?? "-"} / ${n.attrs?.round ?? "-"}`);
+  check("…and both come back from Word", got.join(" | ") === "2.25 #c10813 / 16.7 | - / 50 | 0.75 #000000 / -", got.join(" | "));
+  check("a document with an outlined picture is level 3", levelOfJson(doc) === 3 && levelOfJson({ type: "doc", content: [picture({})] }) < 3);
+}
+
 finish();

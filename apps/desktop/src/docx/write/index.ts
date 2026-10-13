@@ -22,24 +22,7 @@ import { tocDepth } from "../../editor/nodes/Toc";
 import { parseRevs, revOf, type NodeRevs, type Rev } from "../../editor/review/TrackMarks";
 import { linesAttr, parseCols } from "../../editor/tables/Table";
 import { XML_HEAD, xmlEscape } from "../../apps/documents/ooxml";
-import {
-  BORDER_PAD_X,
-  BORDER_PAD_Y,
-  colorAttr,
-  firstIndentAttr,
-  indentAttr,
-  lineAtAttr,
-  lineRuleAttr,
-  MARKER_GLYPH,
-  markerAttr,
-  parseBorder,
-  parseSection,
-  sizeAttr,
-  vscriptAttr,
-  type BulletMarker,
-  type SectionProps,
-  type VScript,
-} from "../../editor/schema/sanitize";
+import { BORDER_PAD_X, BORDER_PAD_Y, colorAttr, firstIndentAttr, indentAttr, lineAtAttr, lineRuleAttr, MARKER_GLYPH, markerAttr, parseBorder, parseSection, sizeAttr, vscriptAttr, type BulletMarker, type SectionProps, type VScript, cellEdges, imageBorder, imageRound } from "../../editor/schema/sanitize";
 import {
   BODY_AFTER,
   BODY_LINE,
@@ -538,6 +521,15 @@ class Writer {
     this.drawingId += 1;
     const id = this.drawingId;
     const alt = xmlEscape(String(node.attrs?.alt ?? node.attrs?.title ?? ""));
+    // Its shape (corners rounded, or an oval) and the line round it.
+    const round = imageRound(node.attrs?.round);
+    const geom = !round
+      ? '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>'
+      : round >= 50
+        ? '<a:prstGeom prst="ellipse"><a:avLst/></a:prstGeom>'
+        : `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${Math.round(round * 1000)}"/></a:avLst></a:prstGeom>`;
+    const edge = imageBorder(node.attrs?.bdr);
+    const outline = edge ? `<a:ln w="${Math.round(edge.w * 12700)}"><a:solidFill><a:srgbClr val="${hexVal(edge.color)}"/></a:solidFill></a:ln>` : "";
     const drawing =
       `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
       `<wp:docPr id="${id}" name="Picture ${id}"${alt ? ` descr="${alt}"` : ""}/>` +
@@ -545,7 +537,7 @@ class Writer {
       `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>` +
       `<pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr>` +
       `<pic:blipFill><a:blip r:embed="${entry.id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>${geom}${outline}</pic:spPr>` +
       `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
     const align = imageAlign(node.attrs?.align);
     const jc = align ? `<w:jc w:val="${align}"/>` : null;
@@ -618,6 +610,17 @@ class Writer {
         const span = Math.min(whole(cell.attrs?.colspan), count - c);
         const down = Math.min(whole(cell.attrs?.rowspan), rows.length - r);
         const bg = colorAttr(cell.attrs?.bg);
+        const edges = cellEdges(cell.attrs?.bdr);
+        const names = { t: "top", l: "left", b: "bottom", r: "right" } as const;
+        const tcBorders = edges
+          ? `<w:tcBorders>${(["t", "l", "b", "r"] as const)
+              .filter((side) => edges[side])
+              .map((side) => {
+                const e = edges[side]!;
+                return e.w > 0 ? `<w:${names[side]} w:val="single" w:sz="${Math.max(2, Math.round(e.w * 8))}" w:space="0" w:color="${hexVal(e.color)}"/>` : `<w:${names[side]} w:val="nil"/>`;
+              })
+              .join("")}</w:tcBorders>`
+          : null;
         const blocks = cell.content ?? [];
         let inner = this.blocksXml(blocks, depth, quoted);
         // A cell holds at least a paragraph, and ends with one.
@@ -626,6 +629,7 @@ class Writer {
           tcW: `<w:tcW w:w="${widthOf(span)}" w:type="dxa"/>`,
           gridSpan: span > 1 ? `<w:gridSpan w:val="${span}"/>` : null,
           vMerge: down > 1 ? '<w:vMerge w:val="restart"/>' : null,
+          tcBorders,
           shd: bg ? `<w:shd w:val="clear" w:color="auto" w:fill="${hexVal(bg)}"/>` : null,
         })}${inner}</w:tc>`;
         if (down > 1) {

@@ -346,6 +346,46 @@ check("the next answer moves the breaks to where they now fall", spacers().lengt
   check("closing the editor takes its gaps off the sheet", !host.querySelector(".wf-page-guides") && host.style.getPropertyValue("--wfd-fill") === "");
 }
 
+// A page that begins inside a table's row (the row is cut across pages): a
+// spacer in each of its cells, the one that ended higher making up the
+// difference so that both go on at the same height.
+{
+  const host = mountPoint();
+  host.className = "wf-page";
+  let held: PageMapFor | "pending" | null = "pending";
+  const three = (name: string): JSONContent => ({ type: "tableCell", content: [1, 2, 3].map((n) => p(null, t(`${name} ${n}. ${prose(8)}`))) });
+  const cut = new Editor({
+    element: host,
+    extensions: [...docContentExtensions(), Paginate.configure({ getSpec: () => pageSpecFor("none", DEFAULT_SETTINGS), getMap: () => held, onLayout: () => {} })],
+    content: { type: "doc", content: [p(null, t("Before.")), { type: "table", content: [{ type: "tableRow", content: [three("Left"), three("Right")] }] }] },
+  });
+  const firsts: number[] = [];
+  const seconds: number[] = [];
+  cut.state.doc.descendants((node, pos, parent, index) => {
+    if (node.type.name !== "paragraph" || parent?.type.name !== "tableCell") return;
+    if (index === 0) firsts.push(pos);
+    if (index === 1) seconds.push(pos);
+  });
+  const inCell = resolvePageStart(cut.state.doc, { pos: firsts[1], inline: false });
+  check("a page that begins with a cell's first block begins inside that cell", inCell?.kind === "block" && inCell.pos === firsts[1], JSON.stringify(inCell));
+  held = { doc: cut.state.doc, pages: 2, starts: [{ pos: 0, inline: false }, { pos: seconds[0], inline: false, also: [{ pos: seconds[1], inline: false }] }], bodyH: [648, 648] };
+  reflowPagination(cut);
+  await wait(60);
+  const made = [...cut.view.dom.querySelectorAll<HTMLElement>(".wf-pg-space")];
+  check("a row cut across pages has a spacer in each of its cells", made.length === 2 && made.every((el) => !!el.closest("td")) && made[0].closest("td") !== made[1].closest("td"), String(made.length));
+  // (A stand-in for the layout: the left cell's text ends 60 px above the right one's.)
+  const rect = (top: number, height: number) => ({ top, bottom: top + height, height, left: 0, right: 0, width: 0, x: 0, y: top, toJSON: () => ({}) }) as DOMRect;
+  made[0].getBoundingClientRect = () => rect(500, parseFloat(made[0].style.height) || 40);
+  made[1].getBoundingClientRect = () => rect(560, parseFloat(made[1].style.height) || 40);
+  (cut.view.dom as HTMLElement).getBoundingClientRect = () => rect(0, 5000);
+  reflowPagination(cut);
+  await wait(60);
+  const tall = made.map((el) => parseFloat(el.style.height));
+  check("…the one that ended higher makes up the difference: both go on at the same height", Math.abs(tall[0] - tall[1] - 60) < 0.02 && Math.abs(500 + tall[0] - (560 + tall[1])) < 0.02, tall.join(" "));
+  check("…and one gap is drawn for the page, not one for each cell", host.querySelectorAll(".wf-page-gap").length === 1);
+  cut.destroy();
+}
+
 // How soon the engine is asked again, by what asking costs.
 {
   const quick = pace(6);

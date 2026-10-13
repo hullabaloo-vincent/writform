@@ -91,7 +91,7 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   tableTab(e, -1);
   tableCommands.deleteColumn(e);
   check("deleting columns takes their widths with them", tableOf(e).attrs?.cols === "100 120 140" && columnCount(e.state.doc.child(1)) === 3, String(tableOf(e).attrs?.cols));
-  check("widths that don't match the columns are no widths (a concurrent edit)", parseCols("100 120", 3) === null && parseCols("100 x 140", 3) === null && JSON.stringify(parseCols("100 5 9000", 3)) === "[100,18,1440]" && encodeCols([10.04, 20.26]) === "18 20.3");
+  check("widths that don't match the columns are no widths (a concurrent edit)", parseCols("100 120", 3) === null && parseCols("100 x 140", 3) === null && JSON.stringify(parseCols("100 2 9000", 3)) === "[100,4,1440]" && encodeCols([2.04, 20.26]) === "4 20.3");
   stepColumn(e, 1, 468);
   check("a column steps wider without a mouse", tableOf(e).attrs?.cols === "100 138 140" || tableOf(e).attrs?.cols === "118 120 140", String(tableOf(e).attrs?.cols));
   setTableAttrs(e, { cols: null });
@@ -310,6 +310,107 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   check("a section break is taken away", (e.getJSON().content ?? []).every((n) => !n.attrs?.sect));
 
   check("a section's setup is one string, read strictly", encodeSection(parseSection("sect cols:9 land:1 size:A4! pn:-3 mt:2 ml:99 junk")) === "sect land:1 mt:2" && parseSection("land:1") === null && parseSection(7) === null && encodeSection({}) === "sect", String(encodeSection(parseSection("sect cols:9 land:1 size:A4! pn:-3 mt:2 ml:99 junk"))));
+  e.destroy();
+}
+
+// ---------------------------------- a cell's own lines, a picture's frame, moving a picture
+
+{
+  const { canMovePicture, dropBlock, moveBlock, movePicture, stepTarget } = await import("../src/editor/format/movePicture");
+  const { cellEdges, encodeCellEdges, imageBorder, imageRound } = await import("../src/editor/schema/sanitize");
+  const picture: JSONContent = { type: "image", attrs: { src: "writform-att://attachment/3", width: 100, height: 80 } };
+  const tableJson: JSONContent = {
+    type: "table",
+    attrs: { cols: "100 300", lines: "none" },
+    content: [{ type: "tableRow", content: [{ type: "tableCell", attrs: { bdr: "r:2.25:#f38d88 t:0:#000000" }, content: [p(null, t("a"))] }, { type: "tableCell", content: [p(null, t("b"))] }] }],
+  };
+  const e = new Editor({
+    element: mountPoint(),
+    extensions: docContentExtensions({ resizeImages: true }),
+    content: { type: "doc", content: [p(null, t("One.")), picture, p(null, t("Two.")), { type: "blockquote", content: [p(null, t("Quoted."))] }, tableJson] },
+  });
+  const order = () => {
+    const out: string[] = [];
+    // (The empty paragraph the editor keeps at the end isn't part of it.)
+    e.state.doc.forEach((node) => {
+      if (node.type.name !== "paragraph" || node.textContent) out.push(node.type.name === "paragraph" ? node.textContent : node.type.name);
+    });
+    return out.join(" | ");
+  };
+  const at = (name: string) => {
+    let found = -1;
+    e.state.doc.descendants((node, pos) => {
+      if (found < 0 && node.type.name === name) found = pos;
+    });
+    return found;
+  };
+
+  // The table: its columns, its cell's lines, its guides.
+  const wrap = e.view.dom.querySelector<HTMLElement>(".wf-table-wrap")!;
+  const tableEl = wrap.querySelector("table")!;
+  // (Its own width is the smaller of its columns' and the room there is: nothing here lays a page out to see it.)
+  void tableEl;
+  check("a table's columns are shares of its width, which is never more than there is room for", [...wrap.querySelectorAll("col")].map((c) => (c as HTMLElement).style.width).join(" ") === "25% 75%" , [...wrap.querySelectorAll("col")].map((c) => (c as HTMLElement).style.width).join(" "));
+  const td = wrap.querySelector("td")!;
+  check("a cell's own lines are drawn on the cell: a line where it has one, none where it says none", td.style.borderRight.includes("2.25pt") && td.style.borderRight.includes("solid") && /^0(px)?/.test(td.style.borderTop) && td.getAttribute("data-bdr") === "t:0:#000000 r:2.25:#f38d88", `${td.style.borderRight} / ${td.style.borderTop} / ${td.getAttribute("data-bdr")}`);
+  check("a cell's lines are one string, read strictly", encodeCellEdges(cellEdges("r:2.25:#F38D88 x:1:#000000 l:99:#00ff00 b:1:red")) === "r:2.25:#F38D88 l:12:#00ff00" || encodeCellEdges(cellEdges("r:2.25:#f38d88 x:1:#000000 l:99:#00ff00 b:1:red")) === "r:2.25:#f38d88 l:12:#00ff00", String(encodeCellEdges(cellEdges("r:2.25:#f38d88 x:1:#000000 l:99:#00ff00 b:1:red"))));
+  check("…and nothing that isn't one", cellEdges("") === null && cellEdges(7) === null && cellEdges("nonsense") === null);
+  e.commands.setTextSelection(at("tableCell") + 2);
+  check("the table the caret is in shows where its cells are", e.view.dom.querySelector(".wf-table-wrap")!.classList.contains("wf-table-on"));
+  e.commands.setTextSelection(2);
+  check("…and the others look as they print", !e.view.dom.querySelector(".wf-table-wrap")!.classList.contains("wf-table-on"));
+
+  // The picture: its outline and corners.
+  e.commands.setNodeSelection(at("image"));
+  setImageAttrs(e, { border: { w: 2.25, color: "#c10813" }, round: 16.7, alt: "  A portrait.  " });
+  const img = () => e.view.dom.querySelector<HTMLImageElement>("img")!;
+  const attrs = () => selectedImage(e)!.node.attrs;
+  check("a picture takes an outline, rounded corners and a description", attrs().bdr === "2.25 #c10813" && attrs().round === 16.7 && attrs().alt === "A portrait.", JSON.stringify(attrs()));
+  check("…drawn on the picture itself, inside its own size", img().style.border.includes("2.25pt") && img().style.boxSizing === "border-box" && img().style.borderRadius === "13.4px", `${img().style.border} / ${img().style.borderRadius}`);
+  check("an outlined picture makes the document level 3", levelOfJson(e.getJSON()) === 3);
+  setImageAttrs(e, { round: 50 });
+  check("corners rounded all the way make a circle (an oval, for a picture that isn't square)", img().style.borderRadius === "50%");
+  setImageAttrs(e, { border: null, round: null, width: 192, height: 96 });
+  check("taking them off takes them off, and a size can be given in figures", attrs().bdr === null && attrs().round === null && img().style.border === "" && attrs().width === 192 && attrs().height === 96);
+  check("an outline and corners are read strictly", imageBorder("2 #ff0000")?.w === 2 && imageBorder("0 #ff0000") === null && imageBorder("2 red") === null && imageRound(80) === 50 && imageRound(0) === null && imageRound("7") === null);
+  check("an older level's copy has neither", !JSON.stringify(downlevelJson({ type: "doc", content: [{ type: "image", attrs: { src: "writform-att://attachment/3", bdr: "2 #ff0000", round: 20 } }, tableJson] }, 2, getSchema(docContentExtensions()))).includes("bdr"));
+
+  // Moving it.
+  check("a selected picture has a handle to move it by", !!e.view.dom.querySelector(".wf-img-move"));
+  check("(as it starts)", order() === "One. | image | Two. | blockquote | table", order());
+  check("a picture can go down a block", canMovePicture(e, 1) && movePicture(e, 1) && order() === "One. | Two. | image | blockquote | table", order());
+  check("…and stays selected where it lands", selectedImage(e)?.pos === at("image"));
+  movePicture(e, 1);
+  check("…over a quote, not into it", order() === "One. | Two. | blockquote | image | table", order());
+  movePicture(e, 1);
+  check("…and past a table", order() === "One. | Two. | blockquote | table | image", order());
+  for (let i = 0; i < 4; i += 1) movePicture(e, -1);
+  check("…and all the way back up", order() === "image | One. | Two. | blockquote | table" && !canMovePicture(e, -1), order());
+
+  // Dropped somewhere by its handle: into a cell, say.
+  const cellPara = at("tableCell") + 1;
+  const into = moveBlock(e.state, at("image"), cellPara);
+  if (into) e.view.dispatch(into);
+  const cellNow = e.state.doc.nodeAt(at("tableCell"))!;
+  check("a picture can be dropped into a table's cell", !!into && cellNow.firstChild?.type.name === "image" && order() === "One. | Two. | blockquote | table", order());
+  check("…where a step can't take it out again (a cell keeps what is in it)", stepTarget(e.state.doc, at("image"), -1) === null);
+  // Out again by dragging; a cell is never left with nothing in it.
+  const out = moveBlock(e.state, at("image"), 0);
+  if (out) e.view.dispatch(out);
+  check("dragged out again, the cell keeps its text", order() === "image | One. | Two. | blockquote | table" && e.state.doc.nodeAt(at("tableCell"))!.textContent === "a");
+  const lone = new Editor({ element: mountPoint(), extensions: docContentExtensions({ resizeImages: true }), content: { type: "doc", content: [{ type: "blockquote", content: [picture] }, p(null, t("After."))] } });
+  let pic = -1;
+  lone.state.doc.descendants((node, pos) => {
+    if (node.type.name === "image") pic = pos;
+  });
+  const left = moveBlock(lone.state, pic, lone.state.doc.content.size);
+  check("a picture that was all a quote held leaves an empty paragraph behind", !!left && left.doc.firstChild?.type.name === "blockquote" && left.doc.firstChild.firstChild?.type.name === "paragraph" && left.doc.lastChild?.type.name === "image");
+  check("a picture can't be dropped on itself", moveBlock(e.state, at("image"), at("image")) === null && moveBlock(e.state, at("image"), at("image") + 1) === null);
+  // Where a pointer over some text would drop it: beside the block around it.
+  const $in = e.state.doc.resolve(at("blockquote") + 3);
+  const hit = dropBlock($in, e.schema.nodes.image);
+  check("a pointer over a quote's text drops beside that paragraph, inside the quote", !!hit && hit.node.type.name === "paragraph" && hit.pos === at("blockquote") + 1);
+  lone.destroy();
   e.destroy();
 }
 

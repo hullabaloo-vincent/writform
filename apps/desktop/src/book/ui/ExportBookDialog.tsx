@@ -57,6 +57,10 @@ export function ExportBookDialog({
 }) {
   const model = useMemo<BookModel>(() => buildModel(editor.getJSON(), format, book), [editor, format, book]);
   const [cover, setCover] = useState<{ bytes: Uint8Array; type: "image/jpeg" | "image/png"; name: string } | null>(null);
+  // The cover kept with the book (Book ▸ Cover) goes in unless asked not to.
+  // (A front cover: its picture, or one made in the cover editor.)
+  const savedCover = !!book.cover.front || !!book.cover.wrap || book.cover.texts.some((t) => t.panel === "front" && t.text.trim() !== "");
+  const [useSaved, setUseSaved] = useState(true);
   const [phase, setPhase] = useState<"preflight" | "building" | "ready" | "error">("preflight");
   const [progress, setProgress] = useState("");
   const [built, setBuilt] = useState<BuiltFile | null>(null);
@@ -89,12 +93,20 @@ export function ExportBookDialog({
           const { epubFonts } = await import("../fonts/embed");
           fonts = await epubFonts(model);
         }
-        setProgress("Writing the ebook…");
-        const { buildEpub } = await import("../epub/epub");
-        const bytes = await buildEpub(model, { uuid, cover, images, ...(fonts?.fonts.length ? { fonts: fonts.fonts } : {}) });
         const extra: Warning[] = failed
           ? [{ kind: "image", message: `${failed} image${failed === 1 ? "" : "s"} couldn’t be loaded and ${failed === 1 ? "was" : "were"} left out.` }]
           : [];
+        let inside: { bytes: Uint8Array; type: "image/jpeg" | "image/png" } | null = cover;
+        if (savedCover && useSaved) {
+          setProgress("Fetching the cover…");
+          const [{ ebookCover }, { coverGeometry }] = await Promise.all([import("../cover/files"), import("../cover/geometry")]);
+          // (The front is the same whatever the spine's width: any count will do.)
+          inside = await ebookCover(book, coverGeometry(book.print, 100));
+          if (!inside) extra.push({ kind: "image", message: "The book’s cover couldn’t be read and was left out." });
+        }
+        setProgress("Writing the ebook…");
+        const { buildEpub } = await import("../epub/epub");
+        const bytes = await buildEpub(model, { uuid, cover: inside, images, ...(fonts?.fonts.length ? { fonts: fonts.fonts } : {}) });
         if (fonts?.missing.length) {
           extra.push({ kind: "font", message: `${fonts.missing.join(" and ")} couldn’t be fetched and ${fonts.missing.length === 1 ? "isn’t" : "aren’t"} in the file, so readers will see their device’s own type there.` });
         }
@@ -103,7 +115,7 @@ export function ExportBookDialog({
           fileName: `${bookFileName(book)}.epub`,
           saveKind: "epub",
           warnings: extra,
-          summary: `${model.sections.length} sections · ${model.words.toLocaleString()} words${cover ? " · with cover" : ""}${fonts?.fonts.length ? " · fonts embedded" : ""}`,
+          summary: `${model.sections.length} sections · ${model.words.toLocaleString()} words${inside ? " · with cover" : ""}${fonts?.fonts.length ? " · fonts embedded" : ""}`,
         };
       } else {
         const { buildPrintFile } = await import("../exportBook");
@@ -152,7 +164,18 @@ export function ExportBookDialog({
         <p className="wf-preflight-ok">Everything looks ready.</p>
       )}
 
-      {kind === "epub" && phase !== "ready" && (
+      {kind === "epub" && phase !== "ready" && savedCover && (
+        <div className="wf-export-cover">
+          <label className="wf-export-cover-chosen">
+            <input type="checkbox" checked={useSaved} onChange={(e) => setUseSaved(e.target.checked)} /> Put the book’s cover inside the file
+          </label>
+          <small>
+            This is the front cover from Book ▸ Cover, with the words put on it there. For Kindle (KDP) you can leave it out, because
+            the cover you upload on KDP is used. Apple Books and Kobo use the one inside the file.
+          </small>
+        </div>
+      )}
+      {kind === "epub" && phase !== "ready" && !savedCover && (
         <div className="wf-export-cover">
           <input
             ref={coverRef}
@@ -181,7 +204,7 @@ export function ExportBookDialog({
           )}
           <small>
             Optional. For Kindle (KDP), leave it out because the cover you upload on KDP is used. Apple
-            Books and Kobo use the one inside the file.
+            Books and Kobo use the one inside the file. To keep a cover with the book, add it under Book ▸ Cover.
           </small>
         </div>
       )}

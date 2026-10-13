@@ -25,7 +25,7 @@ export interface FileRevs {
 export type Inline =
   | { t: "text"; text: string; props: RProps; href?: string; rev?: FileRevs }
   | { t: "break" }
-  | { t: "image"; media: number; w: number; h: number; alt: string }
+  | { t: "image"; media: number; w: number; h: number; alt: string; round?: number; border?: { w: number; color: string } }
   /** A field the reader keeps as a field (headers and footers). */
   | { t: "field"; name: string }
   /** A footnote or endnote, with what it says. */
@@ -50,8 +50,39 @@ export interface TableBlock {
       merge: "start" | "continue" | null;
       /** Background, `rrggbb`. */
       bg?: string;
+      /** Lines of the cell's own, by side: a width in points and a colour
+       *  (`rrggbb`), or none there whatever the table draws. */
+      borders?: CellBorders;
     }[];
   }[];
+}
+
+export type CellSide = "t" | "r" | "b" | "l";
+export type CellBorders = Partial<Record<CellSide, { w: number; color: string } | "none">>;
+
+/** A cell's own lines (`w:tcBorders`): only the sides it says something of. */
+function cellBorders(node: XNode | undefined): CellBorders | null {
+  if (!node) return null;
+  const out: CellBorders = {};
+  for (const [side, names] of [
+    ["t", ["w:top"]],
+    ["r", ["w:right", "w:end"]],
+    ["b", ["w:bottom"]],
+    ["l", ["w:left", "w:start"]],
+  ] as const) {
+    const b = names.map((n) => child(node, n)).find((x) => x);
+    if (!b) continue;
+    const kind = b.attrs["w:val"];
+    if (kind === "nil" || kind === "none") {
+      out[side] = "none";
+      continue;
+    }
+    // (Eighths of a point. Whatever the line's pattern, it is a line here.)
+    const w = Math.min(6, Math.max(0.25, (int(b.attrs["w:sz"]) ?? 4) / 8));
+    const color = b.attrs["w:color"];
+    out[side] = { w, color: color && /^[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : "000000" };
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /** A table of contents field: where it stood, and how deep it goes. */
@@ -88,6 +119,8 @@ export interface BodyCounts {
   contents: number;
   equations: number;
   linkedImages: number;
+  /** Things drawn in Word that aren't pictures (shapes, lines, charts). */
+  shapes: number;
 }
 
 interface Field {
@@ -149,7 +182,7 @@ export class BodyReader {
   notes: { foot: Map<string, XNode>; end: Map<string, XNode> } | null = null;
   /** Zip paths of the pictures used, by the index `image` inlines carry. */
   media: string[] = [];
-  counts: BodyCounts = { notes: 0, tables: 0, textBoxes: 0, tracked: 0, contents: 0, equations: 0, linkedImages: 0 };
+  counts: BodyCounts = { notes: 0, tables: 0, textBoxes: 0, tracked: 0, contents: 0, equations: 0, linkedImages: 0, shapes: 0 };
   /** Keep tracked changes as changes (else they are read as accepted:
    *  insertions as plain text, deletions not at all). */
   track = false;
@@ -234,11 +267,13 @@ export class BodyReader {
         const tcPr = child(tc, "w:tcPr");
         const merge = child(tcPr, "w:vMerge");
         const fill = child(tcPr, "w:shd")?.attrs["w:fill"];
+        const borders = cellBorders(child(tcPr, "w:tcBorders"));
         const cell: TableBlock["rows"][number]["cells"][number] = {
           blocks: [],
           span: Math.max(1, int(val(tcPr, "w:gridSpan")) ?? 1),
           merge: merge ? (merge.attrs["w:val"] === "restart" ? "start" : "continue") : null,
           ...(fill && /^[0-9a-fA-F]{6}$/.test(fill) && fill.toLowerCase() !== "ffffff" ? { bg: fill.toLowerCase() } : {}),
+          ...(borders ? { borders } : {}),
         };
         this.target = cell.blocks;
         this.blocks(tc);
@@ -371,6 +406,11 @@ export class BodyReader {
         if (blip?.attrs["r:link"]) {
           this.counts.linkedImages += 1;
           hidSomething = true;
+        } else {
+          // Not a picture at all: something drawn in Word (a shape, a line,
+          // a chart). There is nothing here to draw it with.
+          this.counts.shapes += 1;
+          hidSomething = true;
         }
         return;
       }
@@ -405,12 +445,24 @@ export class BodyReader {
         this.mediaIndex.set(rel.target, index);
       }
       const docPr = find(node, "wp:docPr");
+      // Its shape and its outline, as far as a picture has them here: a
+      // rounded rectangle or an oval, a line of one colour.
+      const frame = find(node, "pic:spPr");
+      const shape = find(frame ?? undefined, "a:prstGeom");
+      const kind = shape?.attrs.prst ?? "";
+      const adjust = Number(/val\s+(-?\d+)/.exec(find(shape ?? undefined, "a:gd")?.attrs.fmla ?? "")?.[1]);
+      const round = kind === "ellipse" ? 50 : /round/i.test(kind) ? Math.min(50, Math.max(1, Number.isFinite(adjust) ? adjust / 1000 : 16.7)) : 0;
+      const line = find(frame ?? undefined, "a:ln");
+      const ink = line && !child(line, "a:noFill") ? find(line, "a:srgbClr")?.attrs.val : undefined;
+      const border = line && ink && /^[0-9a-fA-F]{6}$/.test(ink) ? { w: Math.min(12, Math.max(0.25, (int(line.attrs.w) ?? 9525) / 12700)), color: ink.toLowerCase() } : null;
       cur().inlines.push({
         t: "image",
         media: index,
         w: Math.round(w),
         h: Math.round(h),
         alt: docPr?.attrs.descr || docPr?.attrs.title || "",
+        ...(round ? { round: Math.round(round * 10) / 10 } : {}),
+        ...(border ? { border: { w: Math.round(border.w * 100) / 100, color: border.color } } : {}),
       });
     };
 

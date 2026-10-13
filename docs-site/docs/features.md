@@ -94,6 +94,35 @@ submission manuscript.
   **Submission manuscript** (Standard Manuscript Format) exports as PDF or
   Word. Each shows a preflight list first (missing ISBN digits, glyphs a
   font lacks, a too-short book), each item with a "Show" button.
+- **Book cover** (Book inspector ▸ Cover, Manuscript): the cover is kept
+  with the manuscript. The **front cover** is the ebook's cover and goes
+  into every EPUB export. For the paperback, add a **back** and a **spine**
+  to go with it, or the **whole cover** in one picture as a designer sends
+  it. The cover sheet is sized from the trim, the paper and the page count
+  the layout engine counts, and each picture is checked for sharpness and
+  shape. If the page count changes after the artwork went in, it says by
+  how much the spine has moved. The sizes follow Amazon KDP's rules.
+- **Cover editor** (Cover tab ▸ Open the cover editor, or Export ▸
+  Paperback cover): the sheet is drawn as it prints, whole or one part at a
+  time (the spine lies on its side so it can be read). Click a part to give
+  it a picture or a paper colour, enlarge the picture and drag it to choose
+  what shows. Add a title, a subtitle, an author, a spine line and the
+  back's blurb, starting from the book's own details, and set each one's
+  font, size, colour, alignment, letter and line spacing, with an optional
+  band of colour behind it. Drag words into place, pull their sides to set
+  the width, nudge with the arrow keys, undo and redo. The words are real
+  text set by the book's own typesetting engine, so the screen, the
+  **paperback cover PDF** and the ebook's cover agree. The editor also
+  saves a **template** at the exact size with the printer's guides (what is
+  trimmed off, the margin to keep clear, the spine, the barcode) for
+  artwork made elsewhere.
+- **Fonts and commercial use**: every font that comes with the app and
+  every family in the online library is under the SIL Open Font License,
+  Apache 2.0 or the Ubuntu Font Licence. Each allows commercial use, so a
+  book set in them can be sold and the fonts embedded in its PDF or ebook.
+  A book's design and its cover offer only these. Documents can also use
+  the fonts installed on your device. Those carry their makers' own
+  licences, which the app can't read, and the font list says so.
 - **Version history**: revisions are recorded at the seams of the work. A
   pause of half a minute closes one off, and a long unbroken stretch is cut
   on its own after five minutes. There are also named drafts you save
@@ -203,9 +232,16 @@ submission manuscript.
   are drawn (all, between rows, a box, none) and shades cells. Drag a
   column's right edge to resize it, or use *Narrower*/*Wider* (on a touch
   screen). *Even widths* shares the page out equally. A table from Word, a
-  spreadsheet or a web page pastes as a table. On a phone a wide table
-  scrolls sideways in its own strip. On paper a table breaks between rows,
-  and a row taller than a page between its lines.
+  spreadsheet or a web page pastes as a table. A table is never wider
+  than the sheet: where the window is narrower than the paper, its columns
+  keep their proportions. A cell can have **borders of its own** (a
+  coloured rule down the side of a column, say). They come in from Word and
+  go back out, though there is no control for drawing them here yet. In a
+  table with no lines, faint guides show where the cells are while the
+  caret is in it or the pointer over it, and nowhere else. On paper a table
+  breaks between rows. A row that won't fit what is left of a page is
+  **cut across the pages**, each cell going on at the top of the next, and
+  page view shows the same break.
 - **Footnotes and endnotes** (Document format): Insert ▸ Footnote puts a
   numbered reference where the caret is and opens the note under it to
   write in (bold, italic and underline work, and Enter or Esc goes back to
@@ -232,8 +268,14 @@ submission manuscript.
   next column.
 - **Pictures** (Document format): drag a corner handle to resize and the
   proportions are kept. The Picture tab sets one at the left, in the middle
-  or at the right, and gives it a **caption**, which stays under it on the
-  page.
+  or at the right, gives it a **border** (a colour and a thickness) and
+  **rounded corners** (up to a circle), an exact **size** in inches, a
+  **caption** that stays under it on the page, and a **description** for
+  someone who can't see it. A picture is a block of its own between the
+  other blocks, with no anchors or wrapping to go wrong. To **move** it,
+  drag the handle on its corner to where it should go (a line shows the
+  place), or use *Up* and *Down* on the Picture tab or ⌥↑ and ⌥↓. Borders
+  and corners come in from Word and go back out.
 - **Document inspector** (the sliders button, Document format): settings
   saved *in* the document, so collaborators see the same layout. Text tab:
   the selection's font and size (any size), alignment, line spacing (a
