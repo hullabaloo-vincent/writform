@@ -5,6 +5,7 @@ import type * as Y from "yjs";
 import { onBookChange, readBook, type Book } from "../../../book/model/bookMap";
 import { bookFont, isCatalogBookFont } from "../../../book/fonts/registry";
 import { blockOffsets } from "../../../book/model/structure";
+import { showRange } from "../../../editor/ui/reveal";
 import type { BookExportKind } from "../../../book/ui/ExportBookDialog";
 import type { DocProvider, SyncState } from "../collab";
 import type { ExportItem } from "./ExportMenu";
@@ -61,7 +62,7 @@ export function showBlock(editor: Editor, index: number) {
   const offsets = blockOffsets(editor.state.doc);
   const pos = offsets[Math.max(0, Math.min(index, offsets.length - 2))];
   if (pos === undefined) return;
-  editor.chain().focus().setTextSelection(Math.min(pos + 1, editor.state.doc.content.size)).scrollIntoView().run();
+  showRange(editor.view, pos + 1, pos + 1, true);
 }
 
 /**
@@ -153,6 +154,24 @@ export function useFindShortcut(editor: Editor | null, open: (replace: boolean, 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [editor, open]);
+}
+
+/** F7 opens the Check panel and closes it again (the key Word gives its
+ *  own proofing pane). */
+export function useCheckShortcut(toggle: () => void) {
+  const latest = useRef(toggle);
+  useEffect(() => {
+    latest.current = toggle;
+  });
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "F7" || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+      latest.current();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 }
 
 /** ⌘P / Ctrl+P prints the document instead of the app's window. */

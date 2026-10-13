@@ -102,6 +102,100 @@ being read is highlighted. The bar that opens has pause, back and on a
 sentence, stop, speed and (where your system has more than one) a voice.
 It uses the voices installed on your device.
 
+## Check a document before you send it
+
+Choose **Check** on the Review tab, the check button in the header, or
+press **F7**. The panel reads the whole text and lists what it found
+under headings such as Punctuation, Left in the text and Tidy up, with a
+count beside each.
+
+Open a finding to see every place it occurs. Click a place to select it in
+the text. **Fix** changes that place. **Fix all** changes every place at
+once and one undo brings them all back. **Skip** sets a place aside. It
+stays aside for you and your co-writers until the words there change.
+**Set aside** does the same for a whole finding: just for now, in this
+document, or in all your documents.
+
+Some findings are a thing done two ways, such as straight and curly quote
+marks. The panel shows how often each is used and takes the commoner one
+to be meant. Choose the other if that is the one you want. The places
+written the other way are then the ones listed.
+
+If you are in **Suggesting** mode, each fix is made as a suggestion that
+you or your co-writer can accept or reject. In **Viewing** mode and in a
+document you can only read, the findings are listed without Fix.
+
+## See how a draft reads
+
+Open **Check** and choose the **Reports** tab. It is there in a
+manuscript and in a Document.
+
+Start with **Chapter by chapter** in a book. Each row is a chapter. A
+number is underlined where that chapter stands well apart from the rest:
+far longer, almost no speech, sentences much longer than usual. Choose a
+row and you are taken to that chapter, and every other report is now
+about it. **Whole book** at the top takes you back.
+
+**Sentences** draws every sentence as a bar. A flat stretch is a run of
+sentences of one length. Click a bar to go to its sentence. Below the
+chart are the patterns it found, such as four sentences in a row that
+begin with "She". Choose one and step through its places with the arrows
+at the foot of the panel.
+
+**Repeats** lists words that come again within a few lines, and phrases
+you lean on. If a word is meant, open the menu beside it and choose
+**This is fine**. **Watch this word** does the opposite: the word is
+pointed out every time, in the Checks tab.
+
+**Word choice** and **Dialogue** read English. Each lists what it found
+by kind and then by word. Where a row has **Fix**, the change is plain
+enough to make for you: "nodded his head" becomes "nodded", and "Go."
+she said becomes "Go," she said. In a novel the Word choice report leaves
+speech alone. Tick **Look inside quote marks too** to include it.
+
+**Pace** draws the book as a band. Tall blue bars are stretches with
+almost no speech and long sentences or paragraphs. A long run of them is
+listed below with what was measured, such as "looks back 14 times". Click
+the band to go to that stretch. A quiet stretch can be exactly right:
+this only shows you where they are.
+
+To look at one passage only, select it in the text and choose
+**Selection**.
+
+To send what you found to an author, choose **Copy the reports as text**
+under the list of reports and paste it into a message.
+
+## Keep a house style
+
+Open **Check** and choose the **Rules** tab. The switch at the top picks
+whose rules you are looking at.
+
+- **This document**: rules kept with the document. Everyone who writes it
+  sees the same ones, and a copy of the document keeps them.
+- **All my documents**: your own rules, kept on this device and used in
+  every document you open. You can also reach them from Settings ▸
+  Writing ▸ Your rules for Check.
+
+**Spell in** chooses the English the text is held to: American, British,
+British with -ize, Canadian or Australian. With none chosen the text is
+only held to whichever it mostly uses, and the panel asks you which you
+meant when it finds both.
+
+In either place you can untick a check you do not want, and add words:
+
+- **Write one for another**: type what to find and what to write. Each
+  place it is found gets a Fix.
+- **Words to look at**: a word you want pointed out, with a note to
+  yourself if you like. Nothing is changed for you.
+- **Never flag**: a word or phrase no check should raise.
+
+In a shared document, tick **Use only this document's rules** when the
+whole team should see one list. **Copy my rules into this document** puts
+your own words into the document's rules for everyone.
+
+**Save to a file** writes the rules you are looking at to a file. **Add
+from a file** on another device, or in another document, brings them in.
+
 ## Compare two versions
 
 - **With an earlier version:** History, open a version, **Compare with
@@ -214,12 +308,17 @@ with its chapters found.
 ## Run a writing session
 
 1. Open **Sessions**, pick the channel, **+ New session**, name it.
-2. **+ Add a prompt**: write it with the formatting toolbar, optionally set
-   a timer in minutes, **Add prompt**.
-3. Press **Start** when everyone's ready. Members write in their own private
-   editor, and the side chat stays open the whole time.
-4. **Stop** early if you like, or let the timer end the prompt. Everyone's
-   writing is then revealed. Add more prompts or **End session**.
+2. **+ Add a prompt**: write it with the formatting toolbar, choose a
+   **Timer** (or **Another length** for your own number of minutes),
+   **Add prompt**.
+3. Press **Start** when everyone's ready. Members write on their own private
+   page, and the side chat stays open the whole time.
+4. To write with nothing else on screen, press the arrows button at the end
+   of the bar above your page. Escape brings the session back.
+5. **Stop** early if you like, or let the timer end the prompt. Everyone's
+   writing is then shown. Add more prompts or **End session**.
+6. To keep what you wrote, press **Save as a document** on your piece. It
+   becomes a Document of your own. **Copy** takes any piece as plain text.
 
 ## Invite people to a group
 

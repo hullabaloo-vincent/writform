@@ -46,6 +46,7 @@ import {
   RemoveFormatting,
   Rows3,
   Search,
+  SpellCheck,
   SeparatorHorizontal,
   Square,
   SquareCode,
@@ -129,6 +130,8 @@ export interface RibbonActions {
   comments?: () => void;
   /** Open the list of suggested changes. */
   changes?: () => void;
+  /** Open the Check panel. */
+  check?: () => void;
   history?: () => void;
   /** Open the inspector at a part of it (see DocSettingsPanel). */
   pageSetup?: (section?: SetupSection) => void;
@@ -1104,6 +1107,11 @@ export function Ribbon({
       id: "feedback",
       label: "Comments",
       content: actions.comments ? btn("Comments", <MessageSquare size={15} />, actions.comments, false, false, "Comments") : null,
+    },
+    {
+      id: "check",
+      label: "Check",
+      content: actions.check ? btn("Check the text for slips and for things written two ways (F7)", <SpellCheck size={15} />, actions.check, false, false, "Check") : null,
     },
     {
       id: "find",

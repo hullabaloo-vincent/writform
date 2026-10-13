@@ -1,11 +1,12 @@
-import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Editor } from "@tiptap/react";
-import { CaseSensitive, ChevronDown, ChevronRight, ChevronUp, Quote, WholeWord, X } from "lucide-react";
+import { CaseSensitive, ChevronDown, ChevronRight, ChevronUp, Quote, Regex, WholeWord, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { showRange } from "../../editor/ui/reveal";
 import { toast } from "../../platform/toast";
-import { findInDoc, replaceAll, replaceOne, type FindOptions, type Match } from "./find/findInDoc";
+import { findInDoc, replaceOne, replacementFor, type FindOptions, type Match } from "./find/findInDoc";
 import type { FindRequest } from "./shell/hooks";
 
 /**
@@ -23,7 +24,7 @@ const OPTS_KEY = "wf-find-opts";
 function loadOpts(): FindOptions {
   try {
     const raw = JSON.parse(localStorage.getItem(OPTS_KEY) ?? "{}") as FindOptions;
-    return { caseSensitive: !!raw.caseSensitive, wholeWord: !!raw.wholeWord, exact: !!raw.exact };
+    return { caseSensitive: !!raw.caseSensitive, wholeWord: !!raw.wholeWord, exact: !!raw.exact, pattern: !!raw.pattern };
   } catch {
     return {};
   }
@@ -56,6 +57,8 @@ export function FindBar({
   const [opts, setOptsState] = useState<FindOptions>(loadOpts);
   const [matches, setMatches] = useState<Match[]>([]);
   const [capped, setCapped] = useState(false);
+  /** The query is a pattern this browser cannot read. */
+  const [bad, setBad] = useState(false);
   const [current, setCurrent] = useState(0);
   const findRef = useRef<HTMLInputElement>(null);
   const replaceRef = useRef<HTMLInputElement>(null);
@@ -110,11 +113,13 @@ export function FindBar({
     });
   }, [request.n, request.prefill, request.replace, readonly]);
 
-  /** Select a match and scroll to it — only ever on the writer's say-so. */
+  /** Select a match and scroll to it — only ever on the writer's say-so.
+   *  (The focus stays in the field being typed in, where the editor's own
+   *  scrolling does nothing: see editor/ui/reveal.ts.) */
   const goTo = useCallback(
     (m: Match | undefined) => {
       if (!m || m.to > editor.state.doc.content.size) return;
-      editor.view.dispatch(editor.state.tr.setSelection(TextSelection.create(editor.state.doc, m.from, m.to)).scrollIntoView());
+      showRange(editor.view, m.from, m.to);
     },
     [editor],
   );
@@ -124,6 +129,7 @@ export function FindBar({
     const r = findInDoc(editor.state.doc, query, opts);
     setMatches(r.matches);
     setCapped(r.capped);
+    setBad(r.bad === true);
     const from = editor.state.selection.from;
     const at = Math.max(0, r.matches.findIndex((m) => m.from >= from));
     setCurrent(at);
@@ -191,11 +197,12 @@ export function FindBar({
     if (readonly) return;
     const m = live.current.matches[live.current.current];
     const fresh = findInDoc(editor.state.doc, query, opts).matches.find((f) => m && f.from === m.from && f.to === m.to);
-    if (fresh) editor.view.dispatch(replaceOne(editor.state.tr, fresh, replacement));
+    const written = fresh ? replacementFor(fresh, replacement, query, opts) : "";
+    if (fresh) editor.view.dispatch(replaceOne(editor.state.tr, fresh, written));
     const after = findInDoc(editor.state.doc, query, opts);
     setMatches(after.matches);
     setCapped(after.capped);
-    const pos = fresh ? fresh.from + replacement.length : (m?.from ?? 0);
+    const pos = fresh ? fresh.from + written.length : (m?.from ?? 0);
     const next = Math.max(0, after.matches.findIndex((f) => f.from >= pos));
     setCurrent(next);
     goTo(after.matches[next]);
@@ -205,14 +212,19 @@ export function FindBar({
     if (readonly) return;
     const all = findInDoc(editor.state.doc, query, opts, Infinity).matches;
     if (!all.length) return;
-    editor.view.dispatch(replaceAll(editor.state.tr, all, replacement));
+    // (Last first, so earlier positions hold. One transaction, one undo.)
+    const tr = editor.state.tr;
+    for (let k = all.length - 1; k >= 0; k -= 1) replaceOne(tr, all[k], replacementFor(all[k], replacement, query, opts));
+    editor.view.dispatch(tr);
     toast(`Replaced ${all.length.toLocaleString()} match${all.length === 1 ? "" : "es"}.`, "success");
     setMatches([]);
     setCurrent(0);
   };
 
   const count =
-    matches.length === 0
+    bad
+      ? "Not a pattern this app can read"
+      : matches.length === 0
       ? query
         ? "No matches"
         : ""
@@ -266,6 +278,7 @@ export function FindBar({
         {toggle("caseSensitive", "Match case", <CaseSensitive size={15} />)}
         {toggle("wholeWord", "Whole words", <WholeWord size={15} />)}
         {toggle("exact", "Exact quotes and spaces (otherwise ’ matches ', “ matches \")", <Quote size={13} />)}
+        {toggle("pattern", "Pattern: the words to find are a regular expression, and $1 in the replacement is what its first brackets found", <Regex size={14} />)}
         <button className="wf-icon" title="Previous (⇧↵, ⇧⌘G)" onClick={() => step(-1)}>
           <ChevronUp size={13} />
         </button>

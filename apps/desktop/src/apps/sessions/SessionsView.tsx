@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/react";
-import { ChevronDown, ChevronRight, MessageSquare, Plus, Trash2 } from "lucide-react";
-import { Fragment, useEffect, useMemo, useRef, useState } from "react";
+import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
@@ -8,7 +8,6 @@ import { RichDoc, RichEditor } from "../../editor/RichEditor";
 import { isCmdError } from "../../lib/backend";
 import { notifyNow } from "../../lib/notifications";
 import { useSwipe } from "../../lib/useSwipe";
-import { countWordsInDocJson } from "../../lib/wordCount";
 import { confirmDialog, toast, toastError } from "../../platform";
 import { useSession } from "../../stores/session";
 import type { Message } from "../../bindings/proto/Message";
@@ -20,9 +19,13 @@ import { dayLabel, isNewDay } from "../chat/daySeparators";
 import { GroupChip } from "../chat/GroupChip";
 import { useChat } from "../chat/store";
 import { sessionApi } from "./api";
+import { WritingDesk } from "./Desk";
+import { Pieces } from "./Pieces";
 import { useSessions } from "./store";
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
+/** The lengths a sprint usually runs for. */
+const TIMER_MINUTES = [5, 10, 15, 20, 30, 45, 60];
 
 export function SessionsView() {
   const groups = useChat((s) => s.groups);
@@ -81,8 +84,8 @@ function SessionList({ channels }: { channels: number[] }) {
       {error && <p className="wf-connect-error">{error}</p>}
       {sessions.length === 0 && (
         <p className="wf-app-empty-hint">
-          Sessions are timed group writing sprints: someone posts a prompt, everyone
-          writes against the clock, and the pieces reveal together when time is up.
+          A session is a writing sprint for the group. Someone posts a prompt and
+          everyone writes against the clock. When time is up the pieces are shown together.
         </p>
       )}
       <div className="wf-sessions-grid">
@@ -112,7 +115,7 @@ function SessionList({ channels }: { channels: number[] }) {
             }}
           >
             <input
-              placeholder="session title"
+              placeholder="Session title"
               value={title}
               autoFocus
               onChange={(e) => setTitle(e.target.value)}
@@ -300,18 +303,12 @@ function PromptCard({
   sessionEnded: boolean;
 }) {
   const me = useSession((s) => s.session?.user);
-  const detail = useSessions((s) => s.detail);
+  const sessionTitle = useSessions((s) => s.detail?.session.title ?? "");
+  const written = useSessions((s) => (s.detail?.submissions ?? []).some((sub) => sub.prompt_id === prompt.id));
   const groups = useChat((s) => s.groups);
   const group = groups.find((g) => g.id === (useChat.getState().activeGroupId ?? -1));
   const canControl =
     me && (prompt.creator_id === me.id || group?.my_role === "admin");
-  const submissions = useMemo(
-    () => (detail?.submissions ?? []).filter((s) => s.prompt_id === prompt.id),
-    [detail, prompt.id],
-  );
-  // Collapsed by default: ten prompts × five writers otherwise makes the
-  // session an endless scroll.
-  const [showSubs, setShowSubs] = useState(false);
 
   return (
     <section className={`wf-prompt wf-prompt-${prompt.state}`}>
@@ -321,7 +318,7 @@ function PromptCard({
           <>
             <span className="wf-prompt-chip">not started</span>
             {prompt.timer_seconds != null && (
-              <span className="wf-prompt-chip">⏱ {Math.round(prompt.timer_seconds / 60)}m</span>
+              <span className="wf-prompt-chip">{Math.round(prompt.timer_seconds / 60)} min</span>
             )}
             {canControl && (
               <button className="wf-primary" onClick={() => void sessionApi.startPrompt(prompt.id)}>
@@ -332,16 +329,7 @@ function PromptCard({
         )}
         {prompt.state === "running" && (
           <>
-            <span className="wf-prompt-chip running">writing…</span>
-            {prompt.ends_at != null && (
-              <Countdown
-                endsAt={prompt.ends_at}
-                onEnd={() => {
-                  toast("Time's up. The prompt has ended.", "info");
-                  void notifyNow("Time's up", "The writing prompt timer just ended.");
-                }}
-              />
-            )}
+            <span className="wf-prompt-chip running">writing</span>
             {canControl && (
               <button
                 title={
@@ -367,7 +355,7 @@ function PromptCard({
               const stakes =
                 prompt.state === "running"
                   ? " Everyone's in-progress writing for it is deleted too."
-                  : prompt.state === "ended" && submissions.length > 0
+                  : prompt.state === "ended" && written
                     ? " Everyone's writing for it is deleted too."
                     : "";
               void confirmDialog(
@@ -392,97 +380,25 @@ function PromptCard({
         <RichDoc doc={prompt.prompt_doc as JSONContent} />
       </div>
 
-      {prompt.state === "running" && <WritingArea prompt={prompt} />}
-
-      {prompt.state === "ended" && (
-        <div className="wf-submissions">
-          {submissions.length === 0 ? (
-            <p className="wf-session-meta">No one submitted for this prompt.</p>
-          ) : (
-            <>
-              <button className="wf-subs-toggle" onClick={() => setShowSubs((v) => !v)}>
-                {showSubs ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                {showSubs
-                  ? "Hide submissions"
-                  : `Show ${submissions.length} ${submissions.length === 1 ? "submission" : "submissions"}`}
-              </button>
-              {showSubs &&
-                submissions.map((sub) => (
-                  <article key={sub.id} className="wf-submission">
-                    <header>{sub.author.display_name ?? sub.author.username}</header>
-                    <RichDoc doc={sub.doc as JSONContent} />
-                  </article>
-                ))}
-            </>
-          )}
-        </div>
+      {prompt.state === "running" && (
+        <WritingDesk
+          prompt={prompt}
+          clock={
+            prompt.ends_at != null ? (
+              <Countdown
+                endsAt={prompt.ends_at}
+                onEnd={() => {
+                  toast("Time is up. The prompt has ended.", "info");
+                  void notifyNow("Time is up", "The writing prompt timer just ended.");
+                }}
+              />
+            ) : undefined
+          }
+        />
       )}
+
+      {prompt.state === "ended" && <Pieces prompt={prompt} index={index} sessionTitle={sessionTitle} />}
     </section>
-  );
-}
-
-function WritingArea({ prompt }: { prompt: SessionPrompt }) {
-  const detail = useSessions((s) => s.detail);
-  const me = useSession((s) => s.session?.user);
-  const mine = detail?.submissions.find(
-    (s) => s.prompt_id === prompt.id && s.author.id === me?.id,
-  );
-  const [status, setStatus] = useState<"idle" | "saving" | "saved">("idle");
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const latest = useRef<JSONContent | null>(null);
-  const [words, setWords] = useState(() => countWordsInDocJson(mine?.doc ?? null));
-
-  const flush = async () => {
-    if (!latest.current) return;
-    setStatus("saving");
-    try {
-      await sessionApi.saveSubmission(prompt.id, latest.current);
-      setStatus("saved");
-    } catch {
-      setStatus("idle");
-    }
-  };
-
-  // Final flush when the prompt card unmounts or stops running.
-  useEffect(
-    () => () => {
-      if (timer.current) clearTimeout(timer.current);
-      void flush();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
-  return (
-    <div className="wf-writing">
-      <div className="wf-writing-bar">
-        <span>Your writing</span>
-        <span className="wf-session-meta">
-          {words.toLocaleString()} {words === 1 ? "word" : "words"}
-          {(() => {
-            // Sprint pace, once a minute has passed (earlier numbers are noise).
-            if (words === 0 || prompt.started_at == null) return "";
-            const mins = (Date.now() - prompt.started_at) / 60_000;
-            return mins >= 1 ? ` · ~${Math.round(words / mins)} wpm` : "";
-          })()}
-          {" · "}
-          {status === "saving" ? "saving…" : status === "saved" ? "saved ✓" : "autosaves"}
-        </span>
-      </div>
-      <RichEditor
-        value={(mine?.doc as JSONContent) ?? EMPTY_DOC}
-        placeholder="Start writing. It autosaves while the prompt runs."
-        autoFocus
-        toolbar
-        onChange={(doc) => {
-          latest.current = doc;
-          setWords(countWordsInDocJson(doc));
-          setStatus("idle");
-          if (timer.current) clearTimeout(timer.current);
-          timer.current = setTimeout(() => void flush(), 1500);
-        }}
-      />
-    </div>
   );
 }
 
@@ -619,7 +535,7 @@ function SessionChat({ channelId }: { channelId: number }) {
           {uploading ? "…" : <Plus size={16} />}
         </button>
         <input
-          placeholder="chat while you write…"
+          placeholder="Chat while you write…"
           value={draft}
           onChange={(e) => {
             setDraft(e.target.value);
@@ -645,6 +561,8 @@ function SessionChat({ channelId }: { channelId: number }) {
 function NewPrompt({ sessionId }: { sessionId: number }) {
   const [open, setOpen] = useState(false);
   const [doc, setDoc] = useState<JSONContent>(EMPTY_DOC);
+  /** "" for no timer, a number of minutes, or "other" with `minutes`. */
+  const [timer, setTimer] = useState<string>("");
   const [minutes, setMinutes] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
   const refreshDetail = useSessions((s) => s.refreshDetail);
@@ -667,32 +585,55 @@ function NewPrompt({ sessionId }: { sessionId: number }) {
         <RichEditor
           value={doc}
           onChange={setDoc}
-          placeholder="Write the prompt. Formatting and images are welcome."
+          placeholder="Write the prompt. Formatting and pictures are welcome."
           autoFocus
           toolbar
+          smart
         />
       </div>
       <div className="wf-prompt-actions">
         <label>
-          Timer (minutes, empty = none)
-          <input
-            type="number"
-            min={1}
-            max={1440}
-            value={minutes}
-            onChange={(e) => setMinutes(e.target.value)}
-          />
+          Timer
+          <span className="wf-prompt-timer">
+            <select value={timer} onChange={(e) => setTimer(e.target.value)}>
+              <option value="">No timer</option>
+              {TIMER_MINUTES.map((m) => (
+                <option key={m} value={m}>
+                  {m} minutes
+                </option>
+              ))}
+              <option value="other">Another length</option>
+            </select>
+            {timer === "other" && (
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={minutes}
+                placeholder="Minutes"
+                aria-label="Minutes"
+                autoFocus
+                onChange={(e) => setMinutes(e.target.value)}
+              />
+            )}
+          </span>
         </label>
         <button onClick={() => setOpen(false)}>Cancel</button>
         <button
           className="wf-primary"
           onClick={() => {
             setError(null);
-            const timerSeconds = minutes.trim() ? Number(minutes) * 60 : null;
+            const length = timer === "other" ? Number(minutes) : Number(timer);
+            if (timer === "other" && !(length >= 1 && length <= 1440)) {
+              setError("Give the timer a length between 1 and 1,440 minutes.");
+              return;
+            }
+            const timerSeconds = timer ? Math.round(length) * 60 : null;
             sessionApi
               .createPrompt(sessionId, doc, timerSeconds)
               .then(() => {
                 setDoc(EMPTY_DOC);
+                setTimer("");
                 setMinutes("");
                 setOpen(false);
                 void refreshDetail();

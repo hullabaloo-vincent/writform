@@ -6,11 +6,35 @@ A session lives in a group channel and holds **multiple prompts**. Anyone in
 the group can create a session. Each prompt can be started, timed
 (10 seconds to 24 hours), and stopped early by its creator or a group admin.
 
-- While a prompt runs, your writing **autosaves** and stays private. The
-  word count shows your sprint pace (≈ words per minute) as you go.
-- When it ends, everyone's writing is revealed side by side.
-- The prompt editor and your writing area have a full formatting toolbar
-  (headings, lists, quotes, inline code, images).
+- While a prompt runs you write on **a page of paper** in the type a
+  document is written in. Your writing stays private until the prompt ends.
+- **A bar stays in sight** above the page as you scroll. It holds the clock,
+  your word count, your pace in words a minute and whether your words are
+  saved, with the tools under it: bold, italic, underline, quote, lists,
+  divider, undo and redo. Headings, strikethrough and pictures are under
+  **More**. On a phone the tools sit on the keyboard.
+- **Only the prompt and the page**: the arrows button at the end of the bar
+  fills the window with the prompt and your page and nothing else. Escape
+  goes back. The prompt can be put away there too.
+- Quotes, apostrophes, dashes and ellipses are a typographer's as you type
+  them, as in a document. The switch for that is in Settings ▸ Writing.
+- **Your words are kept safe at the bell.** Writing is saved a moment after
+  you pause, sooner in the last twenty seconds, and once more just before
+  time is up. A save that does not get through is said in the bar and sent
+  again. A copy is also kept on this device the whole time. If the app
+  closes mid-sprint, the page comes back as you left it. If your last words
+  did not reach the server before time ran out, the session says so and
+  lets you copy them or save them as a document. The others cannot see
+  words the server never got.
+- A line under the page says **who else is writing** right now.
+- When a prompt ends everyone's writing is shown, your own piece first, each
+  on its own page with its word count. A prompt that ended a while ago stays
+  folded so a long session is not an endless page.
+- **Copy** takes any piece as plain text. **Save as a document** turns your
+  own piece into a Document of yours (on this device in the apps, on the
+  server in a browser), where everything else in the app works on it.
+- The prompt editor has the full formatting toolbar (headings, lists,
+  quotes, inline code, pictures) and a choice of timer lengths.
 - A **join card** is posted to the channel when a session is created, so
   members can jump in from chat.
 - Ended sessions stay browsable forever. The creator or an admin can also
@@ -168,7 +192,8 @@ submission manuscript.
   and footers. A **Table** tab appears while the caret is in a table, and a
   **Picture** tab while a picture is selected. **Review** has Editing,
   Suggesting or Viewing, the suggested changes (next, previous, accept,
-  reject), comments, history, compare, find, read aloud, preview and print.
+  reject), comments, **Check**, history, compare, find, read aloud, preview
+  and print.
   Each tab's row holds only what is used every day. The rest is one click
   away under a **More** (⋯) button beside it: *More text formatting*
   (strikethrough, sub- and superscript, inline code, larger/smaller, change
@@ -418,6 +443,161 @@ submission manuscript.
   with pause, back and on a sentence, speed and a choice of voice. Nothing
   is sent anywhere. Struck (suggested-deleted) words and footnotes aren't
   read.
+- **Check**: a reading of the whole text for slips and for things written
+  two ways. Open it from the Review tab, the header button or **F7**, in
+  any kind of document. Each finding lists the places it occurs with the
+  words round them. Choosing a place selects it in the text. **Fix**
+  changes one place and **Fix all** changes every one as a single step
+  you can undo. In Suggesting mode each fix is a suggestion. Where the
+  text does a thing two ways, you say which is meant and the others are
+  listed to change. It looks for:
+  - words spelled the American way in some places and the British way in
+    others (color, colour). Choose American, British, British with -ize,
+    Canadian or Australian in Rules and every spelling outside it is
+    listed. Names are left alone, and so are spellings that are also
+    another word (check, tire, story)
+  - one word spelled two ways (judgement, judgment) and -ise mixed with
+    -ize
+  - a word with its accent in some places and without in others (café,
+    cafe)
+  - slips a spelling checker passes because each word is a word (could
+    of, sneak peak, its a). How people talk is left alone inside quote
+    marks
+  - a phrase hyphenated in some places and open in others (a short-term
+    plan, a short term plan). "In the short term" is a different case and
+    is not weighed against it. Also one word hyphenated and closed
+    (co-operate, cooperate)
+  - a range of numbers with a hyphen and with an en dash, and the dash in
+    a sentence drawn more than one way
+  - numbers in a sentence as words in some places and figures in others,
+    and twenty-one with and without its hyphen. Labels, measures, times,
+    dates and money are not counted
+  - a word with a capital in some places and without in others (the
+    President, the president). The first word of a sentence, a word
+    beside another capital, and words that are also names (Will, Rose)
+    are not weighed
+  - headings of one kind capitalised in more than one way
+  - two names so alike that one may be the other misspelled (Katherine,
+    Kathryn). Two names that keep turning up together are two people and
+    are left alone
+  - the comma before "and" in a list, with it in some places and without
+    in others. Rules can ask for always or never
+  - the items of one list ending or beginning differently
+  - a title or a name in italic in some places and plain in others
+  - an abbreviation written two ways (NASA, Nasa). In a Document it also
+    looks at definitions: explained twice, given two meanings, used
+    before it is explained, never explained, explained and never used
+  - the same word twice in a row (the the)
+  - brackets and quote marks opened and not closed. A speech that runs
+    over several paragraphs and closes only the last is left alone
+  - straight quote marks mixed with curly ones, and the same for
+    apostrophes
+  - speech in double marks in some places and single in others
+  - two spaces in a row, a space before punctuation or inside brackets, no
+    space after a comma, spaces at the end of a paragraph
+  - what a draft leaves behind: highlighting, TK, TODO, XXX, notes in
+    square brackets, open comments and suggested changes
+
+  The panel's **Rules** tab holds the house style, in two places. **This
+  document** has rules of its own that travel with it and that every
+  co-writer shares. **All my documents** has your own rules for
+  everything you open on this device. The document has the last word, and
+  it can ask that only its own rules be used so that everyone sees the
+  same findings. A rule can:
+  - switch a check on or off
+  - write one word or phrase for another (per cent as percent), fixed in
+    the capitals it was written in
+  - point a word out each time it is used, with a note of your own
+  - say that a word or phrase is never to be flagged
+
+  A place you skip is remembered in the document by the words at that
+  place, so it stays skipped when the text moves and comes back if those
+  words change. A whole finding can be set aside for now, for this
+  document, or in all your documents. Rules save to a file and load from
+  one, and your own are part of "Export everything on this device".
+
+  The **Reports** tab (in a manuscript and in a Document) shows what the
+  text is like. Nothing in it is a fault to fix. Each report says what was
+  counted, and choosing a row shows it in the text.
+  - **Overview**: words, sentences, paragraphs, the average sentence, a
+    reading grade and the share of the words inside quote marks
+  - **Chapter by chapter**: one row a chapter with its length, its share
+    of speech and its average sentence. A chapter is marked where a
+    number stands well apart from the other chapters. Sort the table, or
+    choose a row to go there and make every report about that chapter
+  - **Sentences**: a chart of every sentence's length in order (click a
+    bar to go to it), how sentences begin, sentences in a row that open
+    with the same word, runs all of one length, long sentences and long
+    paragraphs. Speech is left out of the patterns
+  - **Repeats**: the same word again within about thirty words, phrases
+    said again and again, the words used most, and a word one chapter
+    leans on far more than the rest of the book. Names and small words
+    are never counted. Say **This is fine** to a word and it is left
+    alone, in this document or in all of yours
+  - **Word choice** (English): likely passive verbs, words in -ly listed
+    by word, filter words (she saw, he felt), feelings told (felt
+    angry), padding words (very, really, just), worn phrases, words that
+    say it twice (nodded his head, stood up), wordy phrases (in order
+    to), and every use of words that are easily taken for one another
+    (affect, effect). Where there is a plain fix it is offered, one place
+    or all of them, and made as a suggestion in Suggesting mode. In
+    fiction, speech is left out unless you ask for it
+  - **Dialogue** (English): how much of the text is speech, the tags
+    that carry it (said and asked, other verbs, actions such as smiled),
+    tags with a word in -ly, long exchanges where nobody is named, and
+    punctuation amiss between speech and tag, each with its fix. A
+    sentence of its own after speech is a beat and is left alone
+  - **Pace**: the text in stretches of about 300 words, each drawn as
+    quick, steady or slow-leaning, and a list of long stretches with
+    little or no speech. It is told from the shape of the text alone
+    (how much is speech, how long the sentences and paragraphs are, how
+    often it looks back or goes inside a head), so a stretch is named for
+    what was measured and never called a fault
+  - **Senses** (English): words that name sight, sound, touch, smell and
+    taste, counted outside speech. There is no right balance, so none is
+    given
+
+  **Copy the reports as text** puts all of them on the clipboard as plain
+  text, with the chapter table in columns, for an editor to send to an
+  author.
+
+  A report covers the whole text, the chapter the caret is in, or the
+  paragraphs you have selected. An outside figure is shown only where a
+  published source gives one (the Plain English Campaign's 15 to 20 words
+  for the average sentence of writing that explains). For fiction the
+  reports compare your chapters with each other.
+
+  Where the text does a thing two ways and you choose one, **Keep this
+  choice** stores it for this document or for all your documents.
+
+  Under the list of findings, **To hand over** copies four things as
+  plain text: the names and terms (the spelling chosen, your preferred
+  words, and every name with how often it is used), a table of
+  abbreviations, what was changed from the panel, and every open comment
+  in one piece.
+
+  The checks that depend on English (spelling, accents, slips, hyphens,
+  capitals, headings, numbers, the serial comma) run only for English
+  text, and the panel says how many did not run. Of the reports, Word
+  choice, Dialogue and Senses read English. Overview, Chapter by chapter,
+  Sentences, Repeats and Pace run in any language with spaces between its
+  words, and Repeats knows the small words of French, German, Spanish,
+  Italian, Dutch and Portuguese. The table of which English uses which spelling comes from VarCon,
+  part of the SCOWL project, used under its licence. Its notice is shown
+  at the foot of the Rules tab.
+
+  The arrows beside Close make the panel about twice as wide and back.
+  Wider, the charts have more room, the reports sit two abreast and the
+  chapter table shows more of each chapter. The choice is kept on this
+  device.
+
+  Nothing is sent anywhere, and nothing runs while the panel is closed. It
+  reads the text again after each pause in your writing and never moves
+  your selection. On a phone it opens as a sheet under the page and folds
+  to a bar with previous, next and Fix while you step through the places.
+- **Find by pattern**: the pattern button in Find and replace makes the
+  words to find a regular expression. In the replacement, `$1` is what
+  the first pair of brackets found. Replace all is still one undo.
 - **Compare**: any saved version beside the text as it is now, or the
   document beside a Word file. Paragraphs are aligned, and what was taken
   out is marked on one side and what was put in on the other, word by word.

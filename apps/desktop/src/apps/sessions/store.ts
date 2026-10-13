@@ -13,7 +13,8 @@ interface SessionsState {
   byChannel: Record<number, WritingSession[]>;
   activeSessionId: number | null;
   detail: SessionDetail | null;
-  /** user ids who saved recently, per prompt (live "writing" indicators). */
+  /** When each person's writing for a prompt last reached the server, by
+   *  prompt then by user id (who is writing right now). */
   writers: Record<number, Record<number, number>>;
 
   loadChannel: (channelId: number) => Promise<void>;
@@ -137,15 +138,12 @@ export function installSessionsWsHandler(): () => void {
         },
       }));
     } else if (kind === "submission.updated") {
-      const { prompt_id, user_id, updated_at } = data as {
-        prompt_id: number;
-        user_id: number;
-        updated_at: number;
-      };
+      const { prompt_id, user_id } = data as { prompt_id: number; user_id: number };
+      // (Stamped with this device's clock, which is the one it is read by.)
       useSessions.setState((s) => ({
         writers: {
           ...s.writers,
-          [prompt_id]: { ...(s.writers[prompt_id] ?? {}), [user_id]: updated_at },
+          [prompt_id]: { ...(s.writers[prompt_id] ?? {}), [user_id]: Date.now() },
         },
       }));
     }

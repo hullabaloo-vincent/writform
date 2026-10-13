@@ -2,6 +2,7 @@ import type { Editor } from "@tiptap/react";
 import { NodeSelection } from "@tiptap/pm/state";
 import { useEffect, useRef, useState, type CSSProperties } from "react";
 
+import { showInText } from "./reveal";
 import { listNotes, mountNoteEditor, openNotes, type NoteEditorHandle, type NoteEntry } from "../nodes/Footnote";
 
 /** A note being written in the list: its own small editor, bound to the
@@ -96,8 +97,7 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
     setActive(null);
     const { state, view } = editor;
     if (state.doc.nodeAt(note.pos)?.type.name !== "footnote") return;
-    view.dispatch(state.tr.setSelection(NodeSelection.create(state.doc, note.pos)).scrollIntoView());
-    view.focus();
+    showInText(view, NodeSelection.create(state.doc, note.pos), true);
   };
 
   const groups = (["foot", "end"] as const).map((kind) => ({ kind, items: notes.filter((n) => n.kind === kind) })).filter((g) => g.items.length > 0);

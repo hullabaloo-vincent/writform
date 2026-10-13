@@ -18,7 +18,7 @@ import {
 import { exactPageView, setExactPageView } from "../../doclayout/usePageMap";
 import DOMPurify from "dompurify";
 import { marked } from "marked";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AdminStats } from "../../bindings/proto/AdminStats";
 import type { AdminUser } from "../../bindings/proto/AdminUser";
@@ -852,9 +852,13 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
 }
 
 /** Per-device writing preferences. */
+// (Fetched when asked for: the checker is not part of opening Settings.)
+const MyRulesDialog = lazy(() => import("../../proof/ui/MyRulesDialog"));
+
 function WritingTab() {
   const [smart, setSmart] = useState(smartPunctuationEnabled);
   const [exact, setExact] = useState(exactPageView);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const menu = useSelectionMenu();
   return (
     <section>
@@ -913,6 +917,18 @@ function WritingTab() {
           Back to the usual set
         </button>
       </div>
+      <div className="wf-settings-field">
+        <button onClick={() => setRulesOpen(true)}>Your rules for Check…</button>
+      </div>
+      <p className="wf-session-meta">
+        The Check panel reads a document for slips and for things written two ways. Your rules say which checks run, which
+        words you write one way and not another, and which words to point out. They apply to every document on this device.
+      </p>
+      {rulesOpen && (
+        <Suspense fallback={null}>
+          <MyRulesDialog onClose={() => setRulesOpen(false)} />
+        </Suspense>
+      )}
     </section>
   );
 }

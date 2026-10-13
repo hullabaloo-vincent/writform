@@ -150,6 +150,7 @@ fn export_kind(kind: &str) -> Option<(&'static str, &'static str)> {
         "docx" => ("Word document", "docx"),
         "zip" => ("Zip archive", "zip"),
         "wfboard" => ("subScribe board", "wfboard"),
+        "wfstyle" => ("subScribe house style", "wfstyle"),
         _ => return None,
     })
 }

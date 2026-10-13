@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { blockOffsets, scanStructure, type StructureEntry } from "../../book/model/structure";
 import type { BookDesign } from "../../book/model/presets";
 import { presetDesign } from "../../book/model/presets";
+import { showInText } from "../../editor/ui/reveal";
 import { confirmDialog } from "../../platform";
 
 /**
@@ -102,11 +103,7 @@ export function OutlinePanel({
   const jump = (pos: number) => {
     if (!editor) return;
     const selectionPos = Math.min(pos + 1, editor.state.doc.content.size);
-    editor.view.dispatch(
-      editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(selectionPos))),
-    );
-    editor.commands.scrollIntoView();
-    editor.commands.focus();
+    showInText(editor.view, TextSelection.near(editor.state.doc.resolve(selectionPos)), true);
     if (isPhone()) onNavigate?.();
   };
 
@@ -136,7 +133,8 @@ export function OutlinePanel({
       tr.delete(start, end);
       tr.insert(target, content);
     }
-    editor.view.dispatch(tr.scrollIntoView());
+    // (The page stays where it is: the outline shows where the section went.)
+    editor.view.dispatch(tr);
   };
 
   const siblingIndex = (i: number, dir: -1 | 1): number | null => {

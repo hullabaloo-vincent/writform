@@ -15,6 +15,8 @@ import { saveExport } from "../../lib/saveFile";
 import { b64decode } from "../documents/collab";
 import { readDocStyles } from "../../editor/styles/docStyles";
 import { readDocSettings } from "../documents/docSettings";
+import { encodeRulesFile, RULES_FILE_EXT } from "../../proof/rules/file";
+import { globalRules } from "../../proof/rules/globalRules";
 
 export interface DeviceExportSummary {
   result: SaveResult;
@@ -140,6 +142,11 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
     }
   }
 
+  // ---- your rules for the Check panel
+  const rules = globalRules();
+  const hasRules = Object.keys(rules.words).length + Object.keys(rules.on).length + Object.keys(rules.never).length + Object.keys(rules.picks).length > 0;
+  if (hasRules) zip.file(`rules.${RULES_FILE_EXT}`, encodeRulesFile(rules, "My rules"));
+
   zip.file(
     "README.txt",
     [
@@ -153,6 +160,8 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
       "Notes/      your notes as the Markdown files they are.",
       "profile.json  your name and look on this device (with your picture and",
       "              banner beside it, if you've set them).",
+      "rules.wfstyle  your own rules for the Check panel, if you have any. Add",
+      "               them on another device from the panel's Rules tab.",
       "",
       "Documents and boards kept on a server are not in here: export those from",
       "Documents ▸ Export all, or a board's Export, while connected.",

@@ -35,6 +35,7 @@ import {
   togglePageBreakBefore,
 } from "./TextFormat";
 import { opensSection } from "./DocElement";
+import { quoteStyleFor, SmartPunctuation } from "./SmartPunctuation";
 import { LEVEL1_EXTENSIONS } from "./schema/level1";
 
 /**
@@ -49,6 +50,7 @@ export function RichEditor({
   autoFocus,
   toolbar = false,
   format,
+  smart = false,
 }: {
   value: JSONContent | null;
   onChange?: (doc: JSONContent) => void;
@@ -59,11 +61,18 @@ export function RichEditor({
   toolbar?: boolean;
   /** A document format whose styling applies (manuscript, screenplay…). */
   format?: string;
+  /** Curly quotes and dashes as they are typed (rules for typing only,
+   *  so nothing an older app would not know). */
+  smart?: boolean;
 }) {
   const editor = useEditor({
     // Prompts and submissions aren't documents: they stay on the vocabulary
     // every released client knows.
-    extensions: [...LEVEL1_EXTENSIONS, Placeholder.configure({ placeholder: placeholder ?? "Write…" })],
+    extensions: [
+      ...LEVEL1_EXTENSIONS,
+      Placeholder.configure({ placeholder: placeholder ?? "Write…" }),
+      ...(smart ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(typeof navigator !== "undefined" ? navigator.language : "en") })] : []),
+    ],
     content: value ?? undefined,
     editable,
     autofocus: autoFocus ? "end" : false,

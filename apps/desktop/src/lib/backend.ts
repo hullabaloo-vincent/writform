@@ -145,7 +145,7 @@ export interface LocalTrashListing {
   excerpt: string;
 }
 
-export type SaveKind = "pdf" | "epub" | "docx" | "zip" | "wfboard";
+export type SaveKind = "pdf" | "epub" | "docx" | "zip" | "wfboard" | "wfstyle";
 
 export type SaveResult =
   | {
@@ -165,6 +165,7 @@ export const SAVE_MIME: Record<SaveKind, string> = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   zip: "application/zip",
   wfboard: "application/zip",
+  wfstyle: "application/json",
 };
 
 /** Browser save: a download. The URL outlives the click — revoking it

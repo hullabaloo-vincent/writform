@@ -1,6 +1,7 @@
 import { PenLine } from "lucide-react";
 import { onResync } from "../../platform";
 import type { WritformApp } from "../../platform";
+import { sweepDrafts } from "./draft";
 import { SessionsView } from "./SessionsView";
 import { installSessionsWsHandler, useSessions } from "./store";
 
@@ -14,6 +15,8 @@ export const sessionsApp: WritformApp = {
   activate(ctx) {
     ctx.ui.registerMainView(() => <SessionsView />);
     installSessionsWsHandler();
+    // Writing kept on this device for prompts nobody came back to.
+    sweepDrafts();
     onResync(() => {
       const s = useSessions.getState();
       void s.refreshDetail().catch(() => {});

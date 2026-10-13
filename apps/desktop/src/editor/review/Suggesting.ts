@@ -7,9 +7,10 @@
  */
 
 import { Extension, type Editor } from "@tiptap/core";
-import { Selection, TextSelection, type Transaction } from "@tiptap/pm/state";
+import { TextSelection, type Transaction } from "@tiptap/pm/state";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
+import { showRange } from "../ui/reveal";
 import { breakAfter, breakStart, changesAt, changesOf, groupChanges, trackKind, type Change, type ChangeGroup } from "./changes";
 import { resolveChanges, type Verdict } from "./resolve";
 import { suggestTransaction, tidyTransaction } from "./suggest";
@@ -152,18 +153,7 @@ export function selectedChanges(editor: Editor): Change[] {
 
 /** Select a change (and bring it into view). */
 export function showChange(editor: Editor, range: { from: number; to: number }, focus = true): void {
-  const doc = editor.state.doc;
-  const size = doc.content.size;
-  const from = Math.max(0, Math.min(size, range.from));
-  const to = Math.max(from, Math.min(size, range.to));
-  let selection: Selection;
-  try {
-    selection = TextSelection.between(doc.resolve(from), doc.resolve(to));
-  } catch {
-    selection = Selection.near(doc.resolve(from));
-  }
-  editor.view.dispatch(editor.state.tr.setSelection(selection).scrollIntoView());
-  if (focus && editor.isEditable) editor.view.focus();
+  showRange(editor.view, range.from, range.to, focus);
 }
 
 /** Go to the next (or previous) change from the selection; round again at

@@ -1,8 +1,9 @@
 /**
  * Per-document data that lives beside the text in the document's own Y.Doc:
  * page settings (`settings`), the book's details and design (`book`), the
- * names of the fonts it uses (`fonts`) and what it has changed about its
- * paragraph styles (`styles`).
+ * names of the fonts it uses (`fonts`), what it has changed about its
+ * paragraph styles (`styles`) and its house style for the Check panel
+ * (`proof`: see proof/rules/docRules.ts).
  * Every path that rebuilds a document from its text alone — publishing an
  * on-device document, duplicating, combining — must carry these along too,
  * or the copy silently loses its layout.
@@ -13,7 +14,7 @@
 
 import * as Y from "yjs";
 
-export const DOC_MAPS = ["settings", "book", "fonts", "styles"] as const;
+export const DOC_MAPS = ["settings", "book", "fonts", "styles", "proof"] as const;
 
 export type DocMapsSnapshot = Partial<Record<(typeof DOC_MAPS)[number], Record<string, unknown>>>;
 

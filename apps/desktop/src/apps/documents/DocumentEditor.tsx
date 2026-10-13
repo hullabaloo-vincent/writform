@@ -14,11 +14,12 @@ import {
   Presentation,
   Share2,
   SlidersHorizontal,
+  SpellCheck,
   SquareSplitVertical,
   Trash2,
   Volume2,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Y from "yjs";
 
 import { isCmdError, isWeb } from "../../lib/backend";
@@ -101,7 +102,7 @@ import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
 import { countDocWords, countRangeWords } from "./stats";
 import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
-import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, useBook, selectedPhrase, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
+import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveAction } from "./shell/SyncStatus";
 import { openServerDoc } from "./navigation";
@@ -125,7 +126,10 @@ function caretColor(name: string): string {
   return CARET_COLORS[h % CARET_COLORS.length];
 }
 
-type Panel = "none" | "history" | "feedback" | "outline" | "settings" | "book" | "preview";
+// The checker and its word lists are fetched when its panel first opens.
+const ProofPanel = lazy(() => import("../../proof/ui/ProofPanel").then((m) => ({ default: m.ProofPanel })));
+
+type Panel = "none" | "history" | "feedback" | "outline" | "settings" | "book" | "preview" | "check";
 
 export function DocumentEditor() {
   const meta = useDocuments((s) => s.meta);
@@ -402,6 +406,8 @@ function EditorInner({
 
   // Cmd/Ctrl+F opens find-in-document while the editor view is up.
   useFindShortcut(editor, openFind);
+  // F7 opens the Check panel, and closes it.
+  useCheckShortcut(() => setPanel(panel === "check" ? "none" : "check"));
 
   // What the preview shows: a manuscript's book pages, a Document's own.
   const author = useSession((st) => st.session?.user.display_name || st.session?.user.username || undefined);
@@ -637,6 +643,14 @@ function EditorInner({
         >
           <ListTree size={16} />
         </button>
+        <button
+          title="Check the text for slips and for things written two ways (F7)"
+          className={panel === "check" ? "active" : ""}
+          disabled={!editor}
+          onClick={() => setPanel(panel === "check" ? "none" : "check")}
+        >
+          <SpellCheck size={16} />
+        </button>
         {/* (A Document has this on its Review tab.) */}
         {speaks && format !== "none" && (
           <button title="Read aloud from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
@@ -779,6 +793,7 @@ function EditorInner({
                   setFeedbackTab("changes");
                   setPanel("feedback");
                 },
+                check: () => setPanel("check"),
                 ...(speaks ? { readAloud: () => setReading(true) } : {}),
                 compareFile: () => compareFileRef.current?.click(),
                 history: () => setPanel("history"),
@@ -950,6 +965,30 @@ function EditorInner({
             onNavigate={() => setPanel("none")}
             onTidy={readonly ? undefined : () => setConverting("tidy")}
           />
+        )}
+        {panel === "check" && editor && (
+          <Suspense fallback={null}>
+            <ProofPanel
+              editor={editor}
+              format={format}
+              lang={lang}
+              ydoc={provider.doc}
+              canWrite={!readonly}
+              title={meta.title}
+              notes={() => state.threads.map((thread) => ({ about: thread.excerpt, resolved: thread.resolved, said: thread.messages.map((m) => ({ who: m.author.display_name ?? m.author.username, text: m.content })) }))}
+              comments={openThreads}
+              changes={review.items.length}
+              onOpenComments={() => {
+                setFeedbackTab("comments");
+                setPanel("feedback");
+              }}
+              onOpenChanges={() => {
+                setFeedbackTab("changes");
+                setPanel("feedback");
+              }}
+              onClose={() => setPanel("none")}
+            />
+          </Suspense>
         )}
       </div>
 

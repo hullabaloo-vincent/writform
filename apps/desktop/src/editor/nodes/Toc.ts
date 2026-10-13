@@ -13,6 +13,7 @@ import type { Node as PmNode } from "@tiptap/pm/model";
 import { TextSelection } from "@tiptap/pm/state";
 
 import { showRev } from "../review/TrackMarks";
+import { showInText } from "../ui/reveal";
 import { TOC_DEPTH, tocDepth } from "../schema/sanitize";
 
 export { TOC_DEPTH, tocDepth };
@@ -116,8 +117,7 @@ export const Toc = Node.create({
         const pos = Number(row.dataset.pos);
         if (!Number.isFinite(pos) || pos + 1 > editor.state.doc.content.size) return;
         e.preventDefault();
-        editor.view.dispatch(editor.state.tr.setSelection(TextSelection.near(editor.state.doc.resolve(pos + 1))).scrollIntoView());
-        editor.view.focus();
+        showInText(editor.view, TextSelection.near(editor.state.doc.resolve(pos + 1)), true);
       };
       dom.addEventListener("click", onClick);
 

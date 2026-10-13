@@ -14,6 +14,7 @@ import {
 import { ChangesList } from "../../editor/review/ChangesList";
 import { showChange } from "../../editor/review/Suggesting";
 import type { ReviewState } from "../../editor/review/useReview";
+import { showRange } from "../../editor/ui/reveal";
 import {
   anchorsFromSelection,
   FeedbackTabs,
@@ -92,7 +93,7 @@ export function LocalFeedbackPanel({
     if (!editor) return;
     const range = resolveThreadRange(editor, thread);
     if (!range) return;
-    editor.chain().focus().setTextSelection(range).scrollIntoView().run();
+    showRange(editor.view, range.from, range.to, true);
   };
 
   const showing: FeedbackTab = review && onTab ? tab : "comments";
