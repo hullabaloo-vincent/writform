@@ -37,7 +37,7 @@ export function SharePicker({
 
   return (
     <form
-      className="wf-doc-panel-row"
+      className="wf-doc-panel-row wf-share-picker"
       onSubmit={(e) => {
         e.preventDefault();
         if (!subject) return;
@@ -45,7 +45,7 @@ export function SharePicker({
         void onShare(kind, Number(id), access);
       }}
     >
-      <select value={subject} onChange={(e) => setSubject(e.target.value)}>
+      <select className="wf-share-who" aria-label="Share with" value={subject} onChange={(e) => setSubject(e.target.value)}>
         <option value="" disabled>
           Share with…
         </option>
@@ -68,7 +68,7 @@ export function SharePicker({
           </optgroup>
         )}
       </select>
-      <select value={access} onChange={(e) => setAccess(e.target.value)}>
+      <select aria-label="What they can do" value={access} onChange={(e) => setAccess(e.target.value)}>
         <option value="read">can read</option>
         <option value="write">can edit</option>
       </select>

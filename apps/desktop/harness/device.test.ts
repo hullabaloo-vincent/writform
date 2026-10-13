@@ -520,4 +520,28 @@ await useLocalBoards.getState().load();
   editor.destroy();
 }
 
+// ------------------------------------------- the row a document is shared from
+
+{
+  // "Publish + share" was pushed out of its dialog: two lists and a button
+  // in a row that could not get narrower (a list is never narrower than its
+  // longest entry unless told it may be). There is no layout here to
+  // measure, so the stylesheet and the picker's own classes are held to.
+  const { readFileSync } = await import("node:fs");
+  const { resolve, dirname } = await import("node:path");
+  const { fileURLToPath } = await import("node:url");
+  const app = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+  const css = readFileSync(resolve(app, "src/styles.css"), "utf8");
+  const picker = readFileSync(resolve(app, "src/apps/documents/SharePicker.tsx"), "utf8");
+  const rule = (selector: string): string => {
+    const at = css.indexOf(`\n${selector} {`);
+    return at < 0 ? "" : css.slice(at, css.indexOf("}", at));
+  };
+  check("a list in a row may be narrower than its longest entry", /min-width: 0/.test(rule(".wf-doc-panel-row select")));
+  check("the share row wraps, so its button goes to a new line and never out of the dialog", /flex-wrap: wrap/.test(rule(".wf-share-picker")));
+  check("the list of names is the one that gives way", /flex: 1 1 120px/.test(rule(".wf-share-picker .wf-share-who")));
+  check("…and the button and the short list keep their size", /\.wf-share-picker select:not\(\.wf-share-who\),\n\.wf-share-picker button \{\n  flex: none;/.test(css));
+  check("the picker carries those names", /className="wf-doc-panel-row wf-share-picker"/.test(picker) && /className="wf-share-who"/.test(picker));
+}
+
 finish();

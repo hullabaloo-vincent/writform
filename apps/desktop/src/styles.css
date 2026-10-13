@@ -5294,6 +5294,36 @@ textarea.wf-el-shape-text {
   min-width: 0;
 }
 
+/* A list in a row gives way before anything is pushed out of the row: a
+   long name is cut short in the closed list and shown whole when it opens.
+   (Left to itself a list is never narrower than its longest entry.) */
+.wf-doc-panel-row select {
+  min-width: 0;
+}
+
+/* Who to share with, what they can do, and the button (SharePicker). The
+   list of names takes the room that is left and is the one to give way.
+   Where even that is not enough (a phone, a long button) the button goes
+   to a line of its own, never out of the dialog. */
+.wf-share-picker {
+  flex-wrap: wrap;
+}
+
+.wf-share-picker .wf-share-who {
+  flex: 1 1 120px;
+}
+
+.wf-share-picker select:not(.wf-share-who),
+.wf-share-picker button {
+  flex: none;
+}
+
+/* In a dialog the row lines up with the words above and the button below. */
+.wf-modal .wf-share-picker {
+  padding-left: 0;
+  padding-right: 0;
+}
+
 .wf-doc-versions {
   list-style: none;
   margin: 0;
