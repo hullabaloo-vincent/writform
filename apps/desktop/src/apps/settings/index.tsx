@@ -1500,15 +1500,27 @@ const REGISTRATION_NAMES: [Registration, string][] = [
 /** Who may make an account on this server, and its invite codes. */
 function NewAccounts({ onError }: { onError: (e: string | null) => void }) {
   const [settings, setSettings] = useState<RegistrationSettings | null>(null);
+  /** The server doesn't have this yet (an older version). */
+  const [missing, setMissing] = useState(false);
   const [invites, setInvites] = useState<ServerInvite[]>([]);
   const [uses, setUses] = useState("1");
   const [days, setDays] = useState("7");
   const fail = (e: unknown) => onError(isCmdError(e) ? e.message : String(e));
   const load = () => {
-    void api<RegistrationSettings>("GET", "/api/v1/admin/registration").then(setSettings).catch(() => {});
+    void api<RegistrationSettings>("GET", "/api/v1/admin/registration")
+      .then(setSettings)
+      .catch(() => setMissing(true));
     void api<ServerInvite[]>("GET", "/api/v1/admin/invites").then(setInvites).catch(() => {});
   };
   useEffect(load, []);
+  if (missing) {
+    return (
+      <>
+        <h4>New accounts</h4>
+        <p className="wf-session-meta">This server&apos;s version can&apos;t choose who makes an account. Update the server to get this setting.</p>
+      </>
+    );
+  }
   if (!settings) return null;
   const count = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
 
