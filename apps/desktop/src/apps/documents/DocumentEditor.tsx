@@ -1121,7 +1121,6 @@ function EditorInner({
               ydoc={provider.doc}
               canWrite={!readonly}
               title={meta.title}
-              notes={() => state.threads.map((thread) => ({ about: thread.excerpt, resolved: thread.resolved, said: thread.messages.map((m) => ({ who: m.author.display_name ?? m.author.username, text: m.content })) }))}
               comments={openThreads}
               changes={review.items.length}
               onOpenComments={() => {

@@ -16,8 +16,7 @@ import { ACTION_VERBS, PLAIN_TAGS, SPEECH_VERBS } from "../src/proof/data/en/spe
 import { IRREGULAR_PARTICIPLES, STATE_WORDS } from "../src/proof/data/en/verbs";
 import { Reader } from "../src/proof/engine/run";
 import { analyse, styleOf, type StyleAnalysis } from "../src/proof/reports/analysis";
-import { buildReport, chapterRows, REPORTS } from "../src/proof/reports";
-import { reportText } from "../src/proof/reports/exportReport";
+import { buildReport, chapterRows } from "../src/proof/reports";
 import type { HitGroup, HitItem, ReportResult } from "../src/proof/reports/types";
 import { Vocab } from "../src/proof/reports/vocab";
 import { ProofSession } from "../src/proof/session";
@@ -208,23 +207,6 @@ const fixedBy = (texts: string[], r: ReportResult, id: string): string[] => {
   const close = buildReport("repeats", fr, { kind: "all" }, none, []).groups.find((g) => g.id === "close");
   check("in French the small words are not repeats, and a real one is", close?.items.map((i) => i.key).join() === "jardin", close?.items.map((i) => i.key).join());
   check("…and the reports that read English say so", buildReport("senses", fr, { kind: "all" }, none, []).headline === "This report reads English only." && !buildReport("overview", fr, { kind: "all" }, none, []).summary.some((m) => m.id === "grade"));
-}
-
-// ------------------------------------------------ the reports as plain text
-
-{
-  const blocks = storyText().map((p) => (p.heading ? block(p.text, { role: "heading", heading: p.heading }) : p.text));
-  const a = read(blocks);
-  const rows = chapterRows(a);
-  const reports = REPORTS.map((r) => buildReport(r.id, a, { kind: "all" }, none, rows));
-  const text = reportText({ title: "The Letter", scope: "The whole book", date: "13 October 2026", reports, rows });
-  const lines = text.split("\n");
-  check("the reports as text open with the title, what they cover and the day", lines[0] === "A report on “The Letter”" && lines[1] === "The whole book. 13 October 2026.");
-  check("…with a table of the chapters in straight columns", lines.some((l) => /^Chapter\s+Words\s+Speech\s+Sentence$/.test(l)) && lines.filter((l) => /^The (Letter|Garden|Answer|Road)\s+\d+\s+\d+%\s+[\d.]+$/.test(l)).length === 4, lines.filter((l) => l.startsWith("The ")).join(" / "));
-  check("…and each report under its name", ["At a glance", "Chapter by chapter", "Sentences", "Repeats", "Word choice", "Dialogue"].every((h) => lines.includes(h)));
-  check("no line is wider than a mail shows", lines.every((l) => l.length <= 78), String(Math.max(...lines.map((l) => l.length))));
-  check("it says these are counts and not rules", text.includes("These are counts and not rules."));
-  check("it holds no semicolon or long dash of its own", !/[;—]/.test(text.replace(/“[^”]*”/g, "")));
 }
 
 // -------------------------------------------------------------- the lists

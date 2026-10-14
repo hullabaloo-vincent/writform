@@ -6,7 +6,6 @@ import type * as Y from "yjs";
 import { Flyout, FlyoutItem, useIsPhone } from "../../editor/ui/Flyout";
 import { toast } from "../../platform/toast";
 import { GROUPS } from "../checks";
-import { notesText, type Note } from "../handover";
 import { reportsFor } from "../reports";
 import type { PlaceView, ProofSession, SkipWhere } from "../session";
 import type { Issue } from "../types";
@@ -32,7 +31,6 @@ export function ProofPanel({
   ydoc,
   canWrite,
   title,
-  notes,
   comments,
   changes,
   onOpenComments,
@@ -48,8 +46,6 @@ export function ProofPanel({
   canWrite: boolean;
   /** The document's title, to name a rules file by. */
   title: string;
-  /** Its comment threads, to hand over in one piece. */
-  notes?: () => Note[];
   /** Comments still open and changes still suggested: counted by the editor. */
   comments: number;
   changes: number;
@@ -167,7 +163,7 @@ export function ProofPanel({
           <RulesEditor scope={scope} ydoc={ydoc} canWrite={canWrite} env={session.env} title={title} />
         </div>
       ) : tab === "reports" && reports && session?.hasRead ? (
-        <ReportsTab session={session} book={format === "manuscript"} title={title} />
+        <ReportsTab session={session} book={format === "manuscript"} />
       ) : !session || !session.hasRead ? (
         <div className="wf-proof-reading" role="status">
           <span>Reading the text…</span>
@@ -185,20 +181,15 @@ export function ProofPanel({
           onGone={() => step(1)}
         />
       ) : (
-        <IssueList session={session} issues={issues} onOpen={setOpen} title={title} notes={notes} />
+        <IssueList session={session} issues={issues} onOpen={setOpen} />
       )}
     </aside>
   );
 }
 
-function IssueList({ session, issues, onOpen, title, notes }: { session: ProofSession; issues: Issue[]; onOpen: (id: string) => void; title: string; notes?: () => Note[] }) {
+function IssueList({ session, issues, onOpen }: { session: ProofSession; issues: Issue[]; onOpen: (id: string) => void }) {
   const total = issues.reduce((n, i) => n + session.count(i), 0);
   const { quiet, unread } = session.quiet();
-  const copy = (text: string, what: string) =>
-    void navigator.clipboard
-      .writeText(text)
-      .then(() => toast(`${what} copied. Paste into a message or a document.`, "success"))
-      .catch(() => toast("That could not be copied.", "info"));
   return (
     <div className="wf-proof-body">
       <p className="wf-proof-sum">{issues.length ? `${plural(total, "place", "places")} to look at.` : "Nothing to look at. The text is consistent in everything that was checked."}</p>
@@ -219,23 +210,6 @@ function IssueList({ session, issues, onOpen, title, notes }: { session: ProofSe
       })}
       {issues.length > 0 && quiet > 0 && <p className="wf-proof-dim">Nothing found in {plural(quiet, "other check", "other checks")}.</p>}
       {unread > 0 && <p className="wf-proof-dim">{plural(unread, "check reads", "checks read")} English only and did not run.</p>}
-      <section className="wf-proof-group wf-proof-hand">
-        <h4>To hand over</h4>
-        <button type="button" className="wf-link" onClick={() => copy(session.handover("terms", title || "Untitled"), "The names and terms are")}>
-          Copy the names and terms
-        </button>
-        <button type="button" className="wf-link" onClick={() => copy(session.handover("abbreviations", title), "The table of abbreviations is")}>
-          Copy a table of abbreviations
-        </button>
-        <button type="button" className="wf-link" onClick={() => copy(session.handover("changes", title), "The list of changes is")}>
-          Copy what was changed here
-        </button>
-        {notes && (
-          <button type="button" className="wf-link" onClick={() => copy(notesText(notes()), "The comments are")}>
-            Copy every open comment
-          </button>
-        )}
-      </section>
     </div>
   );
 }
@@ -376,19 +350,6 @@ function IssueView({
         </button>
       )}
       {issue.kind === "consistency" && target === null && <p className="wf-proof-dim">Choose which is meant and the places to change are listed.</p>}
-      {issue.kind === "consistency" && target !== null && issue.preferredFrom !== "document" && issue.preferredFrom !== "yours" && (
-        <p className="wf-proof-keep">
-          <span>Keep this choice</span>
-          {session.keepsInDocument && (
-            <button type="button" className="wf-link" onClick={() => session.remember(issue.id, target, "document")}>
-              for this document
-            </button>
-          )}
-          <button type="button" className="wf-link" onClick={() => session.remember(issue.id, target, "yours")}>
-            for all my documents
-          </button>
-        </p>
-      )}
       {issue.kind === "consistency" && (issue.preferredFrom === "document" || issue.preferredFrom === "yours") && (
         <p className="wf-proof-dim">{issue.preferredFrom === "document" ? "Chosen in this document’s rules." : "Chosen in your rules."}</p>
       )}

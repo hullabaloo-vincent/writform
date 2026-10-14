@@ -10,7 +10,6 @@ import { contentSchema } from "../src/editor/schema/content";
 import { CHECKS } from "../src/proof/checks";
 import { alike, distance } from "../src/proof/checks/names";
 import { Reader } from "../src/proof/engine/run";
-import { abbreviationsText, changesText, notesText, termsText } from "../src/proof/handover";
 import { effective } from "../src/proof/rules/layer";
 import { emptyLayer, type Layer } from "../src/proof/rules/model";
 import type { BlockInput, Env, Issue, Scan } from "../src/proof/types";
@@ -154,24 +153,6 @@ const fixed = (blocks: string[], issue: Issue | undefined, form = ""): string[] 
   check("never explained, but not the well-known ones", texts(found(found2, "abbreviations:never"), paper) === "XYZ");
   check("explained and then not used", texts(found(found2, "abbreviations:unused"), paper) === "GSL");
   check("in a novel only “written two ways” runs unless asked", !ids(read(paper, style({}, {}, { ...EN, format: "manuscript" }), { ...EN, format: "manuscript" }), "abbreviations") && ids(read(paper, style({}, { abbreviations: true }, { ...EN, format: "manuscript" }), { ...EN, format: "manuscript" }), "abbreviations") !== "");
-}
-
-// ------------------------------------------------------------ to hand over
-
-{
-  const text = ["When Katherine met Thaddeus at the harbour, Katherine spoke first.", "Light Rail Transit (LRT) ran east. The LRT was late and the XYZ was odd.", "Thaddeus wrote per cent, and so did Katherine."];
-  const scan = scanOf(text);
-  const rules = effective(EN, { ...emptyLayer(), settings: { variety: "uk", serialComma: "always" }, words: { a: { k: "prefer", find: "per cent", use: "percent", note: "House style" }, b: { k: "allow", find: "harbour" } } }, emptyLayer());
-  const made = new Reader(EN, CHECKS).readNow(scan, rules);
-  const abbr = abbreviationsText(made);
-  check("a table of abbreviations, a tab between the columns", abbr.includes("LRT\tLight Rail Transit") && abbr.includes("Used and not explained:\nXYZ"), JSON.stringify(abbr));
-  const terms = termsText(made, rules, "The Letter");
-  check("names and terms: the spelling, the choices and the names with their counts", terms.startsWith("Names and terms in “The Letter”") && terms.includes("Spelling: British") && terms.includes("percent\t(not per cent)\tHouse style") && terms.includes("Katherine\t3") && terms.includes("Thaddeus\t1"), JSON.stringify(terms));
-  check("…and the comma, when one is asked for", terms.includes("The comma before “and” in a list: always"));
-  check("what was changed, added up by finding", changesText([{ what: "“the the”", places: 2 }, { what: "Two spaces in a row", places: 1 }, { what: "“the the”", places: 3 }]).includes("“the the”\t5 places") && changesText([]).startsWith("Nothing has been changed"));
-  const notes = notesText([{ about: "the  harbour", resolved: false, said: [{ who: "Ana", text: "Which harbour?" }, { who: "", text: "The old one." }] }, { about: null, resolved: false, said: [{ who: "Bo", text: "Lovely." }] }, { about: "gone", resolved: true, said: [] }]);
-  check("every open comment in one piece", notes.startsWith("Comments (2)") && notes.includes("1. On “the harbour”\n   Ana: Which harbour?\n   The old one.") && notes.includes("2. On the whole text\n   Bo: Lovely.") && !notes.includes("gone"), JSON.stringify(notes));
-  check("none of it holds a semicolon or a long dash of its own", ![abbr, terms, notes].some((t) => /[;—]/.test(t)));
 }
 
 // ------------------------------------------------------- find by pattern

@@ -232,9 +232,6 @@ this only shows you where they are.
 To look at one passage only, select it in the text and choose
 **Selection**.
 
-To send what you found to an author, choose **Copy the reports as text**
-under the list of reports and paste it into a message.
-
 ## Keep a house style
 
 Open **Check** and choose the **Rules** tab. The switch at the top picks

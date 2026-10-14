@@ -1,8 +1,7 @@
 import { NAME_HOMOGRAPHS } from "../data/en/names";
 import { STOP_WORDS } from "../data/en/stop";
 import { F_CAP, F_START, F_UNSURE, F_UPPER, fold, tokenText, WORD } from "../engine/tokens";
-import type { BlockFacts } from "../engine/facts";
-import type { Form, Place, Scan } from "../types";
+import type { Form, Place } from "../types";
 import { issue, kept, stampOf, swap, type Check } from "./check";
 
 /** Vowels (and a y that is not first) dropped, doubles made one, ph as f. */
@@ -51,30 +50,6 @@ export function alike(a: string, b: string): boolean {
   // Jon and John, Ann and Anne: one letter put in.
   if (d === 1 && short >= 3 && a.length !== b.length) return true;
   return d <= 3 && short >= 6 && skeleton(a) === skeleton(b);
-}
-
-/** The names in a text and how often each is used (a word with a capital
- *  in mid-sentence nearly every time), the commonest first. */
-export function namesOf(scan: Scan, facts: BlockFacts[]): [string, number][] {
-  const cap = new Map<string, number>();
-  const low = new Map<string, number>();
-  scan.blocks.forEach((b, block) => {
-    if (b.role === "caps" || b.role === "heading") return;
-    const tk = facts[block].tokens;
-    for (let i = 0; i < tk.n; i += 1) {
-      if (tk.kind[i] !== WORD || tk.flag[i] & (F_START | F_UNSURE | F_UPPER)) continue;
-      let word = fold(tokenText(b.text, tk, i));
-      if (word.endsWith("'s")) word = word.slice(0, -2);
-      if (word.length < 3) continue;
-      const map = tk.flag[i] & F_CAP ? cap : low;
-      map.set(word, (map.get(word) ?? 0) + 1);
-    }
-  });
-  const out: [string, number][] = [];
-  for (const [word, n] of cap) {
-    if (n * 10 >= (n + (low.get(word) ?? 0)) * 9 && !STOP_WORDS.has(word) && /^[a-z]+$/.test(word)) out.push([word.charAt(0).toUpperCase() + word.slice(1), n]);
-  }
-  return out.sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1));
 }
 
 /**

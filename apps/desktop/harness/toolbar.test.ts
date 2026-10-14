@@ -13,6 +13,7 @@ import { createRoot } from "react-dom/client";
 import { bodyLook, DEFAULT_SETTINGS } from "../src/apps/documents/docSettings";
 import { docContentExtensions } from "../src/editor/schema/content";
 import { resolveStyles } from "../src/editor/styles/sheet";
+import { Flyout } from "../src/editor/ui/Flyout";
 import { Ribbon } from "../src/editor/ui/Ribbon";
 import { placeOver, placeUnder } from "../src/editor/ui/bubblePlace";
 import { SelectionBubble } from "../src/editor/ui/SelectionBubble";
@@ -292,6 +293,42 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
   check("the link panel sits under its line", under(400, 420)?.top === 428);
   check("…above it at the foot of the page", under(670, 690)?.top === 670 - 40 - 8);
   check("…and is gone once its link has scrolled out of view", under(100, 140) === null && under(710, 730) === null);
+}
+
+// ------------------------------------------------- a menu near the foot
+
+{
+  // A panel 200 high, in a window 700 high (jsdom lays nothing out).
+  Object.defineProperty(window, "innerHeight", { configurable: true, value: 700 });
+  Object.defineProperty(window.HTMLElement.prototype, "scrollHeight", {
+    configurable: true,
+    get(this: HTMLElement) {
+      return this.classList.contains("wf-flyout") ? 200 : 0;
+    },
+  });
+  const host = mountPoint();
+  const root = createRoot(host);
+  await act(async () => root.render(createElement(Flyout, { title: "Set aside", label: "Set aside", children: () => createElement("button", { type: "button" }, "Just for now") })));
+  const button = host.querySelector(".wf-flyout-button") as HTMLElement;
+  const at = (top: number) => {
+    button.getBoundingClientRect = () => ({ top, bottom: top + 30, left: 100, right: 220, width: 120, height: 30, x: 100, y: top, toJSON: () => ({}) }) as DOMRect;
+  };
+  const panel = () => document.body.querySelector(".wf-flyout") as HTMLElement | null;
+  const opened = async (top: number) => {
+    at(top);
+    await act(async () => press(button));
+    const el = panel();
+    const place = el ? { top: parseFloat(el.style.top), max: parseFloat(el.style.maxHeight) } : null;
+    await act(async () => press(button));
+    return place;
+  };
+  const high = await opened(100);
+  check("a menu opens below its button when there is room", high?.top === 136 && high.max === 700 - 136 - 8, JSON.stringify(high));
+  const low = await opened(620);
+  check("near the foot of the window it opens above its button instead", !!low && low.top === 620 - 6 - 200 && low.top + 200 <= 620, JSON.stringify(low));
+  const tight = await opened(150);
+  check("and below again where above has less room", tight?.top === 186, JSON.stringify(tight));
+  await act(async () => root.unmount());
 }
 
 finish();

@@ -22,7 +22,7 @@ type Where = "all" | "chapter" | "selection";
  * places. Nothing here is a fault to fix. Each report says what was
  * counted, and choosing a row shows it in the text.
  */
-export function ReportsTab({ session, book, title }: { session: ProofSession; book: boolean; title: string }) {
+export function ReportsTab({ session, book }: { session: ProofSession; book: boolean }) {
   const [where, setWhere] = useState<Where>("all");
   /** The chapter looked at (kept while the caret wanders, once chosen from the table). */
   const [chapter, setChapter] = useState<number | null>(null);
@@ -107,22 +107,6 @@ export function ReportsTab({ session, book, title }: { session: ProofSession; bo
               </li>
             );
           })}
-          <li className="wf-proof-send">
-            <button
-              type="button"
-              className="wf-link"
-              onClick={() => {
-                const text = session.reportsAsText(title || "Untitled", scope, scopeName, options);
-                void navigator.clipboard
-                  .writeText(text)
-                  .then(() => toast("The reports are copied. Paste them into a message or a document.", "success"))
-                  .catch(() => toast("The reports could not be copied.", "info"));
-              }}
-            >
-              Copy the reports as text
-            </button>
-            <span>For an editor to send to an author.</span>
-          </li>
         </ul>
       )}
     </div>

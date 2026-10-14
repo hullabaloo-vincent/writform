@@ -286,7 +286,7 @@ await (async () => {
   });
   const rows = () => [...host.querySelectorAll(".wf-proof-row")] as HTMLElement[];
   const row = (title: string) => rows().find((r) => r.textContent?.includes(title)) as HTMLElement;
-  check("…then lists what it found, under its groups", rows().length === 4 && [...host.querySelectorAll(".wf-proof-group:not(.wf-proof-hand) h4")].map((h) => h.textContent).join() === "Punctuation,Left in the text,Tidy up", rows().map((r) => r.textContent).join(" / "));
+  check("…then lists what it found, under its groups", rows().length === 4 && [...host.querySelectorAll(".wf-proof-group h4")].map((h) => h.textContent).join() === "Punctuation,Left in the text,Tidy up", rows().map((r) => r.textContent).join(" / "));
   check("with a count for each", row("the the").querySelector("b")?.textContent === "2" && host.querySelector(".wf-proof-sum")?.textContent === "9 places to look at.", host.querySelector(".wf-proof-sum")?.textContent ?? "");
   check("open comments are a finding of their own", row("Open comments").querySelector("b")?.textContent === "2");
 
@@ -324,7 +324,7 @@ await (async () => {
   await press([...document.querySelectorAll(".wf-flyout-item")].find((b) => b.textContent?.includes("Just for now")) as HTMLElement);
   check("a finding can be set aside", !row("Two spaces") && paras(e)[3] === "Two  spaces.");
   await act(async () => render(0));
-  check("what an editor hands over is offered under the list", [...host.querySelectorAll(".wf-proof-hand button")].map((b) => b.textContent).join("|") === "Copy the names and terms|Copy a table of abbreviations|Copy what was changed here");
+  check("nothing is offered to copy under the list", !host.querySelector(".wf-proof-hand") && ![...host.querySelectorAll("button")].some((b) => (b.textContent ?? "").startsWith("Copy ")));
   check("with nothing left, it says so", host.querySelector(".wf-proof-sum")?.textContent?.startsWith("Nothing to look at") === true, host.querySelector(".wf-proof-sum")?.textContent ?? "");
   await act(async () => (host.querySelector('button[aria-label="Close"]') as HTMLElement).click());
   check("Close asks to be closed", calls.join() === "comments,close");

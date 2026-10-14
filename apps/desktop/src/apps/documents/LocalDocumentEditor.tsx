@@ -1016,7 +1016,6 @@ function LocalEditorInner({
               ydoc={provider.doc}
               canWrite
               title={meta.title}
-              notes={() => threads.map((thread) => ({ about: thread.excerpt, resolved: thread.resolved, said: thread.messages.map((m) => ({ who: "", text: m.content })) }))}
               comments={openThreads}
               changes={review.items.length}
               onOpenComments={() => {

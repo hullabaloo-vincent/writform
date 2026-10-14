@@ -159,8 +159,9 @@ await (async () => {
   const tabs = () => [...host.querySelectorAll('[role="tab"]')] as HTMLElement[];
   check("a manuscript has Checks, Reports and Rules", tabs().map((t) => t.textContent).join() === "Checks,Reports,Rules");
   await press(tabs()[1]);
-  const cards = () => [...host.querySelectorAll(".wf-proof-reports li:not(.wf-proof-send) button")] as HTMLElement[];
+  const cards = () => [...host.querySelectorAll(".wf-proof-reports li button")] as HTMLElement[];
   check("the reports are listed, each with what it found in a line", cards().length === 8 && /words in \d+ sentences\./.test(cards()[0].textContent ?? "") && (cards()[2].textContent ?? "").includes("Sentences average"), cards().map((c) => c.textContent).join(" | "));
+  check("and nothing under them to copy", ![...host.querySelectorAll(".wf-proof-reports button")].some((b) => (b.textContent ?? "").startsWith("Copy ")));
   const scopes = () => [...host.querySelectorAll(".wf-proof-scope button")] as HTMLButtonElement[];
   check("the whole book is reported on to begin with", scopes()[0].classList.contains("active") && scopes()[0].textContent === "Whole book" && scopes()[2].disabled);
 

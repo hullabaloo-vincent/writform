@@ -671,24 +671,11 @@ submission manuscript.
     taste, counted outside speech. There is no right balance, so none is
     given
 
-  **Copy the reports as text** puts all of them on the clipboard as plain
-  text, with the chapter table in columns, for an editor to send to an
-  author.
-
   A report covers the whole text, the chapter the caret is in, or the
   paragraphs you have selected. An outside figure is shown only where a
   published source gives one (the Plain English Campaign's 15 to 20 words
   for the average sentence of writing that explains). For fiction the
   reports compare your chapters with each other.
-
-  Where the text does a thing two ways and you choose one, **Keep this
-  choice** stores it for this document or for all your documents.
-
-  Under the list of findings, **To hand over** copies four things as
-  plain text: the names and terms (the spelling chosen, your preferred
-  words, and every name with how often it is used), a table of
-  abbreviations, what was changed from the panel, and every open comment
-  in one piece.
 
   The checks that depend on English (spelling, accents, slips, hyphens,
   capitals, headings, numbers, the serial comma) run only for English

@@ -100,8 +100,17 @@ export function Flyout({
       const b = button.getBoundingClientRect();
       const w = panel.offsetWidth;
       const left = Math.max(8, Math.min(b.left, window.innerWidth - w - 8));
-      const top = b.bottom + 6;
-      setPlace({ left, top, maxHeight: Math.max(160, window.innerHeight - top - 12) });
+      // Below the button, or above it where there is more room there and
+      // too little below (a button near the foot of the window).
+      const want = panel.scrollHeight + (panel.offsetHeight - panel.clientHeight);
+      const below = window.innerHeight - b.bottom - 6 - 8;
+      const above = b.top - 6 - 8;
+      if (want > below && above > below) {
+        const h = Math.min(want, above);
+        setPlace({ left, top: b.top - 6 - h, maxHeight: above });
+      } else {
+        setPlace({ left, top: b.bottom + 6, maxHeight: Math.max(80, below) });
+      }
     };
     position();
     window.addEventListener("resize", position);

@@ -1,7 +1,7 @@
 import { KNOWN_ABBREVIATIONS } from "../data/en/names";
 import type { BlockFacts } from "../engine/facts";
 import { F_CAP, F_UPPER, PUNCT, SPACE, tokenText, WORD } from "../engine/tokens";
-import type { BlockInput, Form, Issue, Place, Scan } from "../types";
+import type { BlockInput, Form, Issue, Place } from "../types";
 import { issue, swap, type Check } from "./check";
 
 /** An abbreviation as it is written in one place: its letters (capitals,
@@ -84,22 +84,6 @@ function usesIn(block: BlockInput, facts: BlockFacts): Use[] {
     }
   }
   return out;
-}
-
-/** Every abbreviation in a text with the name it is given, and those
- *  given none: for a table of abbreviations. */
-export function abbreviationTable(scan: Scan, facts: BlockFacts[]): { defined: [string, string][]; bare: string[] } {
-  const long = new Map<string, string>();
-  const seen = new Set<string>();
-  scan.blocks.forEach((b, block) => {
-    if (b.role === "caps" || b.role === "extract") return;
-    for (const use of usesIn(b, facts[block])) {
-      if (use.shape !== "capitals") continue;
-      seen.add(use.key);
-      if (use.long && !long.has(use.key)) long.set(use.key, use.long);
-    }
-  });
-  return { defined: [...long].sort((a, b) => (a[0] < b[0] ? -1 : 1)), bare: [...seen].filter((key) => !long.has(key)).sort() };
 }
 
 /**

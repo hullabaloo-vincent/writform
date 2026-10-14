@@ -18,11 +18,9 @@ import { loadVariants, variantsLoaded } from "./checks/spelling";
 import { placeKey, snippet } from "./engine/place";
 import { Reader, type Job, type Read } from "./engine/run";
 import { extract, rangeOf, type Extracted } from "./extract";
-import { abbreviationsText, changesText, termsText } from "./handover";
 import { addProofPlugin, paintProof, PAINT_MAX, removeProofPlugin, type Painted } from "./ProofDecorations";
 import { analyse, styleOf, type StyleAnalysis } from "./reports/analysis";
-import { buildReport, chapterRows, REPORTS, type ReportOptions } from "./reports";
-import { reportText } from "./reports/exportReport";
+import { buildReport, chapterRows, type ReportOptions } from "./reports";
 import type { ChapterRow, Hit, ReportId, ReportResult, Scope } from "./reports/types";
 import { Vocab } from "./reports/vocab";
 import { docRules, onDocRulesChange, readDocRules } from "./rules/docRules";
@@ -107,8 +105,6 @@ export class ProofSession {
    *  after each reading while the reports are in use. */
   private styled: { read: Read; analysis: StyleAnalysis; rows: ChapterRow[]; reports: Map<string, ReportResult> } | null = null;
   private marked: { hits: Hit[]; current: number; slot: number } | null = null;
-  /** What has been changed from the panel since it opened. */
-  private log: { what: string; places: number }[] = [];
 
   /** Goes up whenever what the panel shows may have changed. */
   version = 0;
@@ -508,7 +504,7 @@ export class ProofSession {
     const pos = this.extracted.places[hit.place.block];
     if (!fix || !fixable(pos, fix)) return "locked";
     this.shown = { issue: hit.issue.id, key: null, from: 0 };
-    if (this.apply([{ place: pos, fix }])) this.log.push({ what: hit.issue.title, places: 1 });
+    this.apply([{ place: pos, fix }]);
     this.flush();
     return "done";
   }
@@ -527,17 +523,8 @@ export class ProofSession {
       targets.push({ place: this.extracted.places[place.block], fix });
     }
     const made = this.apply(targets);
-    if (made) this.log.push({ what: issue.title, places: made });
     this.flush();
     return made;
-  }
-
-  /** One of the things an editor hands over, as plain text. */
-  handover(what: "abbreviations" | "terms" | "changes", title: string): string {
-    if (what === "changes") return changesText(this.log);
-    this.flush();
-    if (!this.last) return "";
-    return what === "abbreviations" ? abbreviationsText(this.last) : termsText(this.last, this.rules, title);
   }
 
   /** How many places Fix all would change. */
@@ -621,13 +608,6 @@ export class ProofSession {
       this.styled.reports.set(key, made);
     }
     return made;
-  }
-
-  /** Every report as plain text, to send to someone. */
-  reportsAsText(title: string, scope: Scope, scopeName: string, options: ReportOptions = {}): string {
-    const reports = REPORTS.map((r) => this.report(r.id, scope, options)).filter((r): r is ReportResult => r !== null);
-    const date = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
-    return reportText({ title, scope: scopeName, date, reports, rows: scope.kind === "all" ? this.chapters() : [] });
   }
 
   chapters(): ChapterRow[] {
@@ -765,20 +745,6 @@ export class ProofSession {
   watchWord(word: string, where: "document" | "yours"): void {
     if (where === "document" && this.ydoc && this.writes) docRules.word(this.ydoc, { k: "look", find: word });
     else useGlobalRules.getState().word({ k: "look", find: word });
-  }
-
-  /** Keep a choice of form: in the document's rules, or in the writer's
-   *  own. (Choosing American or British spelling is a choice of style for
-   *  the whole text, and is kept as that.) */
-  remember(id: string, form: string, where: "document" | "yours"): void {
-    const inDoc = where === "document" && this.ydoc && this.writes;
-    if (id === "spelling:variety") {
-      if (inDoc && this.ydoc) docRules.setting(this.ydoc, "variety", form);
-      else useGlobalRules.getState().setting("variety", form);
-      return;
-    }
-    if (inDoc && this.ydoc) docRules.pick(this.ydoc, id, form);
-    else useGlobalRules.getState().pick(id, form);
   }
 
   /** Say which form is meant. */
