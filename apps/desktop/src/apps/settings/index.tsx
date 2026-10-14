@@ -25,6 +25,9 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AdminStats } from "../../bindings/proto/AdminStats";
 import type { AdminUser } from "../../bindings/proto/AdminUser";
+import type { Registration } from "../../bindings/proto/Registration";
+import type { RegistrationSettings } from "../../bindings/proto/RegistrationSettings";
+import type { ServerInvite } from "../../bindings/proto/ServerInvite";
 import type { DeviceSession } from "../../bindings/proto/DeviceSession";
 import type { User } from "../../bindings/proto/User";
 import {
@@ -1413,6 +1416,7 @@ function AdminTab({ onError }: { onError: (e: string | null) => void }) {
           <Stat label="attachments" value={fmtBytes(stats.attachments_bytes)} />
         </div>
       )}
+      <NewAccounts onError={onError} />
       <h4>Users</h4>
       <ul className="wf-device-list">
         {users.map((u) => (
@@ -1484,6 +1488,106 @@ function AdminTab({ onError }: { onError: (e: string | null) => void }) {
         </div>
       )}
     </section>
+  );
+}
+
+const REGISTRATION_NAMES: [Registration, string][] = [
+  ["open", "Anyone who can reach this server"],
+  ["invite", "Only someone with an invite code"],
+  ["closed", "No one"],
+];
+
+/** Who may make an account on this server, and its invite codes. */
+function NewAccounts({ onError }: { onError: (e: string | null) => void }) {
+  const [settings, setSettings] = useState<RegistrationSettings | null>(null);
+  const [invites, setInvites] = useState<ServerInvite[]>([]);
+  const [uses, setUses] = useState("1");
+  const [days, setDays] = useState("7");
+  const fail = (e: unknown) => onError(isCmdError(e) ? e.message : String(e));
+  const load = () => {
+    void api<RegistrationSettings>("GET", "/api/v1/admin/registration").then(setSettings).catch(() => {});
+    void api<ServerInvite[]>("GET", "/api/v1/admin/invites").then(setInvites).catch(() => {});
+  };
+  useEffect(load, []);
+  if (!settings) return null;
+  const count = (v: string) => Math.max(0, Math.floor(Number(v) || 0));
+
+  return (
+    <>
+      <h4>New accounts</h4>
+      <label className="wf-admin-row">
+        <span>Who may make an account</span>
+        <select
+          value={settings.mode}
+          disabled={settings.fixed}
+          onChange={(e) =>
+            void api<RegistrationSettings>("PUT", "/api/v1/admin/registration", { mode: e.target.value as Registration })
+              .then(setSettings)
+              .catch(fail)
+          }
+        >
+          {REGISTRATION_NAMES.map(([value, label]) => (
+            <option key={value} value={value}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {settings.fixed && <p className="wf-session-meta">Set by this server&apos;s configuration (WRITFORM_REGISTRATION).</p>}
+      {settings.mode === "invite" && (
+        <>
+          <div className="wf-admin-row">
+            <label>
+              Accounts it makes <input type="number" min={0} value={uses} onChange={(e) => setUses(e.target.value)} />
+            </label>
+            <label>
+              Days it lasts <input type="number" min={0} value={days} onChange={(e) => setDays(e.target.value)} />
+            </label>
+            <button
+              className="wf-primary"
+              onClick={() =>
+                void api<ServerInvite>("POST", "/api/v1/admin/invites", { ...(count(uses) ? { max_uses: count(uses) } : {}), ...(count(days) ? { expires_in_hours: count(days) * 24 } : {}) })
+                  .then((made) => {
+                    setInvites((list) => [made, ...list]);
+                    void navigator.clipboard?.writeText(made.code).catch(() => {});
+                  })
+                  .catch(fail)
+              }
+            >
+              Make an invite code
+            </button>
+          </div>
+          <p className="wf-session-meta">0 means no limit. A new code is copied for you to send.</p>
+          <ul className="wf-device-list">
+            {invites.map((inv) => (
+              <li key={inv.id} className={inv.spent ? "wf-admin-spent" : undefined}>
+                <div className="wf-plugin-info">
+                  <strong>
+                    <code>{inv.code}</code>
+                  </strong>
+                  <span className="wf-session-meta">
+                    {inv.use_count} used{inv.max_uses ? ` of ${inv.max_uses}` : ""} · {inv.expires_at ? `until ${new Date(inv.expires_at).toLocaleDateString()}` : "no end date"} · by @{inv.created_by}
+                    {inv.spent ? " · no longer valid" : ""}
+                  </span>
+                </div>
+                <button onClick={() => void navigator.clipboard?.writeText(inv.code).catch(() => {})}>Copy</button>
+                {!inv.spent && (
+                  <button
+                    onClick={() =>
+                      void api("DELETE", `/api/v1/admin/invites/${inv.id}`)
+                        .then(load)
+                        .catch(fail)
+                    }
+                  >
+                    Revoke
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </>
   );
 }
 

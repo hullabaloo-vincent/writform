@@ -34,6 +34,9 @@ tokio = { workspace = true }
 # verified against the bundled web PKI roots (see src/fonts.rs).
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots", "rustls-tls-webpki-roots", "json", "multipart"] }
 rustls = { workspace = true }
+# The public roots, for a server reached through a proxy (Cloudflare) whose
+# certificate is the proxy's, not one this app can pin.
+webpki-roots = "1"
 x509-parser = { workspace = true }
 sha2 = { workspace = true }
 base64 = { workspace = true }

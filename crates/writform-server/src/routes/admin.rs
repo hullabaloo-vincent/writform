@@ -11,7 +11,10 @@ use crate::auth::AuthUser;
 use crate::error::AppError;
 use crate::routes::AppState;
 
-async fn require_server_admin(state: &AppState, auth: &AuthUser) -> Result<(), AppError> {
+pub(crate) async fn require_server_admin(
+    state: &AppState,
+    auth: &AuthUser,
+) -> Result<(), AppError> {
     let is_admin: bool = sqlx::query_scalar("SELECT is_server_admin FROM users WHERE id = ?")
         .bind(auth.user_id.0)
         .fetch_one(&state.pool)

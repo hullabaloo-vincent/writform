@@ -5,7 +5,8 @@ use base64::Engine;
 use serde::Serialize;
 use tauri::State;
 use writform_proto::api::{
-    AuthResponse, Healthz, LoginRequest, RegisterRequest, ServerIdentity, User,
+    AuthResponse, Healthz, IdentityProof, IdentityProofRequest, LoginRequest, RegisterRequest,
+    Registration, ServerIdentity, User,
 };
 
 use crate::net;
@@ -49,22 +50,100 @@ pub struct ProbeResult {
     pub server_name: String,
     pub protocol_version: u32,
     pub trust: TrustStatus,
+    /// Reached through a proxy (its certificate a public one, not the
+    /// server's own): the server proved its identity over a nonce instead.
+    pub via_proxy: bool,
+    /// Who may make an account there (None: an older server, anyone).
+    pub registration: Option<Registration>,
 }
 
 fn normalize_addr(input: &str) -> CmdResult<String> {
-    let trimmed = input
-        .trim()
+    Ok(addr_candidates(input)?.remove(0))
+}
+
+/// Where to look for a server, in order. A port given is the one. Without
+/// one, `https://` means 443 (a proxy's port), and a bare name tries the
+/// server's own 7311 and then 443.
+fn addr_candidates(input: &str) -> CmdResult<Vec<String>> {
+    let raw = input.trim();
+    let https = raw.starts_with("https://");
+    let trimmed = raw
         .trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .trim_end_matches('/');
+        .trim_start_matches("http://");
+    // (Anything after the host is not part of the address.)
+    let trimmed = trimmed.split('/').next().unwrap_or("").trim();
     if trimmed.is_empty() {
         return Err(CmdError::new("invalid_addr", "enter a server address"));
     }
-    Ok(if trimmed.contains(':') {
-        trimmed.to_string()
+    // A port: the last colon outside an IPv6 address's brackets.
+    let has_port = match trimmed.rfind(':') {
+        Some(i) => {
+            !trimmed[..i].is_empty() && (!trimmed.starts_with('[') || trimmed[..i].ends_with(']'))
+        }
+        None => false,
+    };
+    Ok(if has_port {
+        vec![trimmed.to_string()]
+    } else if https {
+        vec![format!("{trimmed}:443")]
     } else {
-        format!("{trimmed}:7311") // default WritForm port
+        vec![format!("{trimmed}:7311"), format!("{trimmed}:443")]
     })
+}
+
+/// Ask a server to prove it holds the identity key whose hash is pinned,
+/// over a fresh nonce, before anything private is sent to it through a
+/// proxy. `pubkey`: the key, when the caller has it already.
+pub async fn prove_identity(
+    client: &reqwest::Client,
+    addr: &str,
+    identity_hash: &str,
+    pubkey: Option<&[u8]>,
+) -> CmdResult<()> {
+    let fetched;
+    let key = match pubkey {
+        Some(k) => k,
+        None => {
+            let identity: ServerIdentity =
+                fetch_json(client, &format!("https://{addr}/api/v1/identity")).await?;
+            fetched = B64URL
+                .decode(&identity.mldsa_pubkey)
+                .map_err(|_| CmdError::new("bad_identity", "malformed identity public key"))?;
+            &fetched
+        }
+    };
+    if hex(&sha2::Sha256::digest(key)) != identity_hash {
+        return Err(CmdError::new(
+            "identity_changed",
+            "this server's identity isn't the one you trusted, so the connection is refused",
+        ));
+    }
+    let nonce = net::random_bytes::<32>();
+    let res = client
+        .post(format!("https://{addr}/api/v1/identity/proof"))
+        .json(&IdentityProofRequest {
+            nonce: B64URL.encode(nonce),
+        })
+        .send()
+        .await
+        .map_err(|e| CmdError::new("unreachable", format!("could not reach server: {e}")))?;
+    if !res.status().is_success() {
+        return Err(CmdError::new(
+            "binding_invalid",
+            "the server couldn't prove its identity, so the connection is refused",
+        ));
+    }
+    let proof: IdentityProof = res
+        .json()
+        .await
+        .map_err(|e| CmdError::new("bad_response", format!("malformed response: {e}")))?;
+    let sig = B64URL
+        .decode(&proof.sig)
+        .map_err(|_| CmdError::new("bad_identity", "malformed identity proof"))?;
+    match writform_crypto::identity::verify_identity_proof(key, &nonce, &sig) {
+        Ok(true) => Ok(()),
+        _ => Err(CmdError::new("binding_invalid", "the server couldn't prove its identity (possible interception), so the connection is refused")),
+    }
 }
 
 async fn fetch_json<T: serde::de::DeserializeOwned>(
@@ -98,7 +177,19 @@ pub async fn probe_server(
 }
 
 pub async fn probe_impl(manager: &ConnectionManager, addr: String) -> CmdResult<ProbeResult> {
-    let addr = normalize_addr(&addr)?;
+    let candidates = addr_candidates(&addr)?;
+    let mut last = None;
+    for (i, addr) in candidates.iter().enumerate() {
+        match probe_at(manager, addr.clone()).await {
+            // Nothing there: the next place, if there is one.
+            Err(e) if e.code == "unreachable" && i + 1 < candidates.len() => last = Some(e),
+            other => return other,
+        }
+    }
+    Err(last.unwrap_or_else(|| CmdError::new("unreachable", "could not reach server")))
+}
+
+async fn probe_at(manager: &ConnectionManager, addr: String) -> CmdResult<ProbeResult> {
     let verifier = net::PinVerifier::capture();
     let client = net::client_with_verifier(verifier.clone());
 
@@ -122,16 +213,31 @@ pub async fn probe_impl(manager: &ConnectionManager, addr: String) -> CmdResult<
     // actually saw on the wire. A MITM cannot produce this signature.
     let bound = writform_crypto::identity::verify_cert_binding(&pubkey, &spki, &sig)
         .map_err(|e| CmdError::new("bad_identity", e.to_string()))?;
-    if !bound {
-        return Err(CmdError::new(
-            "binding_invalid",
-            "server identity does not vouch for the presented certificate (possible \
-             interception), so the connection is refused",
-        ));
-    }
-
     let identity_hash = hex(&sha2::Sha256::digest(&pubkey));
-    let spki_hash = hex(&sha2::Sha256::digest(&spki));
+    // Not its own certificate: a proxy's (Cloudflare, a tunnel), which the
+    // public roots must vouch for, and the server proves its identity over a
+    // nonce through it.
+    let via_proxy = !bound;
+    if via_proxy {
+        let public = net::client_with_verifier(net::PinVerifier::public());
+        if let Err(e) = prove_identity(&public, &addr, &identity_hash, Some(&pubkey)).await {
+            return Err(if e.code == "unreachable" || e.code == "binding_invalid" {
+                CmdError::new(
+                    "binding_invalid",
+                    "server identity does not vouch for the presented certificate, and the certificate isn't \
+                     a valid public one with the server's proof of identity (possible interception), so the \
+                     connection is refused",
+                )
+            } else {
+                e
+            });
+        }
+    }
+    let spki_hash = if via_proxy {
+        net::PUBLIC_PIN.to_string()
+    } else {
+        hex(&sha2::Sha256::digest(&spki))
+    };
     let fingerprint = writform_crypto::identity::fingerprint(&pubkey);
 
     let trust = match manager.find(&addr) {
@@ -170,6 +276,8 @@ pub async fn probe_impl(manager: &ConnectionManager, addr: String) -> CmdResult<
         server_name: identity.server_name,
         protocol_version: healthz.protocol_version,
         trust,
+        via_proxy,
+        registration: healthz.registration,
     })
 }
 
@@ -238,11 +346,15 @@ pub fn remove_server(manager: State<'_, ConnectionManager>, addr: String) {
     manager.remove(&addr);
 }
 
-/// Parse a stored hex SPKI pin into raw bytes.
-pub fn pin_for(manager: &ConnectionManager, addr: &str) -> CmdResult<[u8; 32]> {
+/// How a saved server's connection is trusted: its stored SPKI pin, or a
+/// public certificate (a server reached through a proxy).
+pub fn pin_for(manager: &ConnectionManager, addr: &str) -> CmdResult<net::Trust> {
     let saved = manager
         .find(addr)
         .ok_or_else(|| CmdError::new("not_trusted", "server is not in the trusted list"))?;
+    if saved.spki_hash == net::PUBLIC_PIN {
+        return Ok(net::Trust::Public);
+    }
     let mut pin = [0u8; 32];
     let bytes = (0..32)
         .map(|i| u8::from_str_radix(&saved.spki_hash[i * 2..i * 2 + 2], 16))
@@ -254,13 +366,26 @@ pub fn pin_for(manager: &ConnectionManager, addr: &str) -> CmdResult<[u8; 32]> {
             )
         })?;
     pin.copy_from_slice(&bytes);
-    Ok(pin)
+    Ok(net::Trust::Pinned(pin))
 }
 
 fn pinned_client_for(manager: &ConnectionManager, addr: &str) -> CmdResult<reqwest::Client> {
-    Ok(net::client_with_verifier(net::PinVerifier::pinned(
+    Ok(net::client_with_verifier(net::PinVerifier::for_trust(
         pin_for(manager, addr)?,
     )))
+}
+
+/// A client for a saved server, ready for something private: through a
+/// proxy, the server has just proved its identity on it.
+async fn proven_client_for(manager: &ConnectionManager, addr: &str) -> CmdResult<reqwest::Client> {
+    let client = pinned_client_for(manager, addr)?;
+    if pin_for(manager, addr)? == net::Trust::Public {
+        let saved = manager
+            .find(addr)
+            .ok_or_else(|| CmdError::new("not_trusted", "server is not in the trusted list"))?;
+        prove_identity(&client, addr, &saved.identity_hash, None).await?;
+    }
+    Ok(client)
 }
 
 async fn auth_request(
@@ -269,7 +394,8 @@ async fn auth_request(
     path: &str,
     body: serde_json::Value,
 ) -> CmdResult<AuthResponse> {
-    let client = pinned_client_for(manager, addr)?;
+    // (Through a proxy, no password goes until the server has proved itself.)
+    let client = proven_client_for(manager, addr).await?;
     let res = client
         .post(format!("https://{addr}/api/v1/auth/{path}"))
         .json(&body)
@@ -360,6 +486,7 @@ pub async fn login_impl(
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // (a command's arguments are the call's fields)
 pub async fn register(
     app: tauri::AppHandle,
     manager: State<'_, ConnectionManager>,
@@ -368,8 +495,9 @@ pub async fn register(
     username: String,
     password: String,
     remember: bool,
+    invite: Option<String>,
 ) -> CmdResult<SessionInfo> {
-    let info = register_impl(&manager, addr, username, password, remember).await?;
+    let info = register_impl(&manager, addr, username, password, remember, invite).await?;
     ws.disconnect();
     start_ws_for_active(app, &manager, &ws);
     Ok(info)
@@ -389,7 +517,7 @@ fn start_ws_for_active(
         (session.addr.clone(), session.token.clone())
     };
     match pin_for(manager, &addr) {
-        Ok(pin) => crate::wsclient::start(app, ws.clone(), addr, token, pin),
+        Ok(trust) => crate::wsclient::start(app, ws.clone(), addr, token, trust),
         Err(e) => tracing::error!("cannot start ws: {}", e.message),
     }
 }
@@ -400,6 +528,7 @@ pub async fn register_impl(
     username: String,
     password: String,
     remember: bool,
+    invite: Option<String>,
 ) -> CmdResult<SessionInfo> {
     let addr = normalize_addr(&addr)?;
     let auth = auth_request(
@@ -409,6 +538,9 @@ pub async fn register_impl(
         serde_json::to_value(RegisterRequest {
             username: username.clone(),
             password,
+            invite: invite
+                .map(|c| c.trim().to_string())
+                .filter(|c| !c.is_empty()),
         })
         .expect("serializable"),
     )
@@ -576,6 +708,13 @@ pub async fn resume_impl(
     let Ok(client) = pinned_client_for(manager, &saved.addr) else {
         return ResumeResult::none();
     };
+    // Through a proxy: the server proves itself before the token goes.
+    if pin_for(manager, &saved.addr).ok() == Some(net::Trust::Public) {
+        if let Err(e) = prove_identity(&client, &saved.addr, &saved.identity_hash, None).await {
+            tracing::warn!("resume: {}", e.message);
+            return ResumeResult::failed("unreachable", saved.addr.clone());
+        }
+    }
     let started = std::time::Instant::now();
     let res = loop {
         let attempt = client
@@ -730,7 +869,7 @@ pub async fn reset_password(
     new_password: String,
 ) -> CmdResult<()> {
     let addr = normalize_addr(&addr)?;
-    let client = pinned_client_for(&manager, &addr)?;
+    let client = proven_client_for(&manager, &addr).await?;
     let res = client
         .post(format!("https://{addr}/api/v1/auth/reset-password"))
         .json(&serde_json::json!({
@@ -752,4 +891,36 @@ pub async fn reset_password(
         return Err(CmdError::new("reset_failed", err.message).with_code(err.code));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn where_to_look_for_a_server() {
+        assert_eq!(
+            addr_candidates("example.com:8443").unwrap(),
+            vec!["example.com:8443"]
+        );
+        assert_eq!(
+            addr_candidates("https://chat.example.com").unwrap(),
+            vec!["chat.example.com:443"]
+        );
+        assert_eq!(
+            addr_candidates("https://chat.example.com/").unwrap(),
+            vec!["chat.example.com:443"]
+        );
+        assert_eq!(
+            addr_candidates(" chat.example.com ").unwrap(),
+            vec!["chat.example.com:7311", "chat.example.com:443"]
+        );
+        assert_eq!(addr_candidates("[::1]:7311").unwrap(), vec!["[::1]:7311"]);
+        assert_eq!(
+            addr_candidates("[::1]").unwrap(),
+            vec!["[::1]:7311", "[::1]:443"]
+        );
+        assert!(addr_candidates("   ").is_err());
+        assert_eq!(normalize_addr("http://10.0.0.2").unwrap(), "10.0.0.2:7311");
+    }
 }

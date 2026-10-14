@@ -34,9 +34,20 @@ established on first use and pinned:
    `/identity`, verifies the binding signature against the presented cert, and
    shows the user `server_name` + a short fingerprint of the ML-DSA pubkey.
    On accept, the client pins `(sha256(mldsa_pubkey), sha256(spki))`.
-4. **Later connects:** presented SPKI must match the pin, OR the server may
-   present a rotation statement for a new cert signed by the pinned ML-DSA key.
-   A changed ML-DSA key is a hard failure: loud warning, explicit re-trust.
+4. **Later connects:** presented SPKI must match the pin. A probe that finds
+   a new cert the pinned ML-DSA key binds adopts it quietly. A changed ML-DSA
+   key is a hard failure: loud warning, explicit re-trust.
+5. **Through a proxy** (Cloudflare, a tunnel): the client sees the proxy's
+   cert, which the identity can't bind. The client then requires that cert
+   to be valid for the host under the public roots (webpki-roots), and asks
+   `POST /api/v1/identity/proof {nonce}` with 32 random bytes. The server
+   answers `ML-DSA-Sign(identity_key, "writform-identity-proof-v1" || SHA-256(nonce))`,
+   verified against the pinned key. The pin is then `(sha256(mldsa_pubkey), "public")`,
+   and a fresh proof is asked for before every login, register, password
+   reset and resume, so no password or token goes to a server that hasn't
+   just proved itself. The proxy itself sees the traffic (it terminates TLS):
+   that is the price of hiding the server's address, and a server reached
+   directly keeps the pinned connection.
 
 All client network I/O goes through the Tauri Rust core with a custom rustls
 `ServerCertVerifier` — never webview `fetch` (which cannot pin).

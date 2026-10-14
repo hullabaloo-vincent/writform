@@ -519,6 +519,21 @@ Settings → **Devices** shows every login for your account, and you can
 revoke any of them. Server admins can force-logout any user from the
 **Admin** tab.
 
+## Choose who can make an account on your server
+
+A new server takes its first account (yours, as its admin) and then anyone
+who can reach it. To change that, open Settings → **Admin** → **New
+accounts** and choose:
+
+- **Anyone who can reach this server**, as at first.
+- **Only someone with an invite code.** Set how many accounts a code may
+  make and for how many days, then **Make an invite code**. It is copied
+  for you to send. Revoke one there at any time.
+- **No one.**
+
+People see the choice on the sign-in form: no **Create account** tab when
+the server takes no one, and a field for the code when it asks for one.
+
 ## Reset a forgotten password
 
 There's no email on a self-hosted server, so recovery goes through your

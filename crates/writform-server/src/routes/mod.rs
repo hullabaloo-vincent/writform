@@ -14,6 +14,7 @@ pub mod link_preview;
 mod messages;
 mod notes;
 mod plugin_data;
+mod registration;
 pub mod sessions;
 mod users;
 pub mod voice;
@@ -56,6 +57,13 @@ pub struct AppState {
     /// The newest document schema level this server stores (what its web
     /// client understands). A field so tests can run a newer level.
     pub max_doc_schema: u32,
+    /// Registration, TLS or a proxy in front, previews (network.rs).
+    pub network: Arc<crate::network::NetworkOptions>,
+    /// The identity key, to prove itself through a proxy. (None in tests
+    /// that only know its public half.)
+    pub identity: Option<Arc<writform_crypto::identity::ServerIdentityKey>>,
+    /// Attempts to make an account, by address.
+    pub register_limiter: Arc<LoginRateLimiter>,
 }
 
 impl AppState {
@@ -93,6 +101,9 @@ impl AppState {
             fonts: Arc::new(fonts::FontCache::new(&data_dir)),
             attachments_dir: Arc::new(data_dir.join("attachments")),
             max_doc_schema: writform_proto::documents::MAX_DOC_SCHEMA_LEVEL,
+            network: Arc::new(crate::network::NetworkOptions::default()),
+            identity: None,
+            register_limiter: Arc::new(LoginRateLimiter::default()),
         }
     }
 }
@@ -101,6 +112,7 @@ pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/api/v1/healthz", get(healthz::healthz))
         .route("/api/v1/identity", get(identity::identity))
+        .route("/api/v1/identity/proof", post(identity::proof))
         .route("/api/v1/auth/register", post(auth::register))
         .route("/api/v1/auth/login", post(auth::login))
         .route("/api/v1/auth/logout", post(auth::logout))
@@ -112,6 +124,18 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v1/admin/stats", get(admin::stats))
         .route("/api/v1/admin/users", get(admin::list_users))
         .route("/api/v1/admin/users/{id}/logout", post(admin::force_logout))
+        .route(
+            "/api/v1/admin/registration",
+            get(registration::get_registration).put(registration::set_registration),
+        )
+        .route(
+            "/api/v1/admin/invites",
+            get(registration::list_invites).post(registration::create_invite),
+        )
+        .route(
+            "/api/v1/admin/invites/{id}",
+            delete(registration::revoke_invite),
+        )
         .route("/api/v1/ws", get(crate::ws::ws_handler))
         .route(
             "/api/v1/groups",

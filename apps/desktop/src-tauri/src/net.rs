@@ -7,6 +7,11 @@
 //!   *after* verifying the ML-DSA cert binding against what was captured.
 //! - **Pinned**: reject any cert whose SPKI hash differs from the pin. Used
 //!   for everything else (auth, API, attachments).
+//! - **Public**: a server reached through a proxy (Cloudflare, a tunnel)
+//!   shows the proxy's certificate, which can't be pinned: it must be valid
+//!   for the host under the public roots, and the server proves its pinned
+//!   identity over a fresh nonce before anything private is sent
+//!   (commands/connect.rs `prove_identity`).
 
 use std::sync::{Arc, Mutex};
 
@@ -42,6 +47,29 @@ pub fn spki_sha256(cert_der: &[u8]) -> Result<[u8; 32], NetError> {
 enum Mode {
     Capture(Mutex<Option<Vec<u8>>>),
     Pinned([u8; 32]),
+    Public(Arc<rustls::client::WebPkiServerVerifier>),
+}
+
+/// How a saved server's connection is trusted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Trust {
+    /// Its own certificate, pinned by its SPKI hash.
+    Pinned([u8; 32]),
+    /// A public certificate (a proxy's), and its identity proved over a nonce.
+    Public,
+}
+
+/// What `SavedServer.spki_hash` holds for a server trusted by `Trust::Public`.
+pub const PUBLIC_PIN: &str = "public";
+
+/// Random bytes from the TLS provider's own source.
+pub fn random_bytes<const N: usize>() -> [u8; N] {
+    let mut out = [0u8; N];
+    PinVerifier::provider()
+        .secure_random
+        .fill(&mut out)
+        .expect("random bytes");
+    out
 }
 
 #[derive(Debug)]
@@ -80,11 +108,37 @@ impl PinVerifier {
         })
     }
 
+    /// A certificate the public roots vouch for, for the host connected to.
+    pub fn public() -> Arc<Self> {
+        let provider = Self::provider();
+        let mut roots = rustls::RootCertStore::empty();
+        roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+        let webpki = rustls::client::WebPkiServerVerifier::builder_with_provider(
+            Arc::new(roots),
+            provider.clone(),
+        )
+        .build()
+        .expect("the public roots make a verifier");
+        Arc::new(Self {
+            mode: Mode::Public(webpki),
+            schemes: provider
+                .signature_verification_algorithms
+                .supported_schemes(),
+        })
+    }
+
+    pub fn for_trust(trust: Trust) -> Arc<Self> {
+        match trust {
+            Trust::Pinned(pin) => Self::pinned(pin),
+            Trust::Public => Self::public(),
+        }
+    }
+
     /// The leaf cert DER captured during a probe handshake.
     pub fn captured_cert(&self) -> Option<Vec<u8>> {
         match &self.mode {
             Mode::Capture(slot) => slot.lock().expect("poisoned").clone(),
-            Mode::Pinned(_) => None,
+            Mode::Pinned(_) | Mode::Public(_) => None,
         }
     }
 }
@@ -93,12 +147,19 @@ impl ServerCertVerifier for PinVerifier {
     fn verify_server_cert(
         &self,
         end_entity: &CertificateDer<'_>,
-        _intermediates: &[CertificateDer<'_>],
-        _server_name: &ServerName<'_>,
-        _ocsp_response: &[u8],
-        _now: UnixTime,
+        intermediates: &[CertificateDer<'_>],
+        server_name: &ServerName<'_>,
+        ocsp_response: &[u8],
+        now: UnixTime,
     ) -> Result<ServerCertVerified, rustls::Error> {
         match &self.mode {
+            Mode::Public(webpki) => webpki.verify_server_cert(
+                end_entity,
+                intermediates,
+                server_name,
+                ocsp_response,
+                now,
+            ),
             Mode::Capture(slot) => {
                 *slot.lock().expect("poisoned") = Some(end_entity.as_ref().to_vec());
                 Ok(ServerCertVerified::assertion())

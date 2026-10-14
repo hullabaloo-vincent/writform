@@ -76,6 +76,7 @@ async fn tofu_trust_register_login_end_to_end() {
         "alice".into(),
         "pass-word-1".into(),
         false,
+        None,
     )
     .await
     .unwrap();
@@ -166,6 +167,7 @@ async fn remembered(
         "alice".into(),
         "pass-word-1".into(),
         true,
+        None,
     )
     .await
     .unwrap();
@@ -264,4 +266,46 @@ async fn a_rejected_token_is_forgotten_and_an_absent_server_keeps_it() {
     let result = resume_impl(&manager, gone, patience).await;
     assert_eq!(result.reason.as_deref(), Some("unreachable"));
     assert!(started.elapsed() >= patience);
+}
+
+/// A server whose certificate its identity doesn't vouch for, and which no
+/// public authority vouches for either (an interceptor's): refused, as it
+/// always was, though a server behind a proxy is now accepted.
+#[tokio::test]
+async fn a_certificate_nobody_vouches_for_is_still_refused() {
+    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    let server_dir = tempfile::tempdir().unwrap();
+    let client_dir = tempfile::tempdir().unwrap();
+    let tls_identity = tls::load_or_generate(server_dir.path()).await.unwrap();
+    let pool = db::connect(server_dir.path()).await.unwrap();
+    // The identity signs some other certificate's key, not the one served.
+    let wrong = tls_identity
+        .identity
+        .sign_cert_binding(b"another certificate's key");
+    let mut state = routes::AppState::new(
+        "Intercepted".into(),
+        pool,
+        &tls_identity.identity.public_key_bytes(),
+        &wrong,
+    );
+    state.identity = Some(std::sync::Arc::new(tls_identity.identity));
+    let app = routes::router(state);
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum_server::from_tcp_rustls(listener, tls_identity.rustls_config)
+            .unwrap()
+            .serve(app.into_make_service_with_connect_info::<SocketAddr>())
+            .await
+            .unwrap();
+    });
+    let manager = manager_in(client_dir.path());
+    let err = probe_impl(&manager, format!("127.0.0.1:{}", addr.port()))
+        .await
+        .unwrap_err();
+    assert_eq!(err.code, "binding_invalid", "{}", err.message);
+    assert!(manager
+        .find(&format!("127.0.0.1:{}", addr.port()))
+        .is_none());
 }

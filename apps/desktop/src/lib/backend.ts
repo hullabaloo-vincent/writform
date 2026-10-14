@@ -7,6 +7,7 @@
  */
 
 import type { User } from "../bindings/proto/User";
+import type { Registration } from "../bindings/proto/Registration";
 
 export interface SavedServer {
   addr: string;
@@ -45,6 +46,11 @@ export interface ProbeResult {
   server_name: string;
   protocol_version: number;
   trust: TrustStatus;
+  /** Reached through a proxy (Cloudflare, a tunnel): its certificate is a
+   *  public one, and the server proved its identity another way. */
+  via_proxy?: boolean;
+  /** Who may make an account there (absent: an older server, anyone). */
+  registration?: Registration | null;
 }
 
 export interface SessionInfo {
@@ -212,6 +218,8 @@ export interface Backend {
     username: string,
     password: string,
     remember: boolean,
+    /** A server invite code, where the server asks for one. */
+    invite?: string,
   ): Promise<SessionInfo>;
   /** Redeem an admin-issued reset code for a new password (pre-auth). */
   resetPassword(addr: string, username: string, code: string, newPassword: string): Promise<void>;
@@ -410,8 +418,8 @@ function tauriBackend(): Backend {
     removeServer: (addr) => invoke("remove_server", { addr }),
     login: (addr, username, password, remember) =>
       invoke("login", { addr, username, password, remember }),
-    register: (addr, username, password, remember) =>
-      invoke("register", { addr, username, password, remember }),
+    register: (addr, username, password, remember, invite) =>
+      invoke("register", { addr, username, password, remember, invite: invite || null }),
     resetPassword: (addr, username, code, newPassword) =>
       invoke("reset_password", { addr, username, code, newPassword }),
     logout: () => invoke("logout"),

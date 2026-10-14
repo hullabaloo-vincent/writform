@@ -7254,6 +7254,7 @@ dependencies = [
  "tokio-tungstenite 0.26.2",
  "tracing",
  "ttf-parser",
+ "webpki-roots",
  "writform-crypto",
  "writform-proto",
  "writform-server",

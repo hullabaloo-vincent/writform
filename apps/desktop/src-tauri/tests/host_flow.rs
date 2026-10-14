@@ -41,6 +41,7 @@ async fn host_start_pins_and_serves() {
         "host_admin".into(),
         "password123".into(),
         false,
+        None,
     )
     .await
     .unwrap();

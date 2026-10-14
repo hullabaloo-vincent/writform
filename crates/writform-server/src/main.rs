@@ -23,12 +23,14 @@ async fn run() -> anyhow::Result<()> {
         .init();
 
     let config = config::Config::parse();
+    let network = config.network()?;
     let started = serve::start(serve::ServeOptions {
         data_dir: config.data_dir,
         bind: config.bind,
         port: config.port,
         server_name: config.server_name,
         web_dir: config.web_dir,
+        network,
     })
     .await?;
     started.wait().await;

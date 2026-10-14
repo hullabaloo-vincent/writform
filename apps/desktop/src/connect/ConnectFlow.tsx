@@ -481,6 +481,11 @@ function TrustPrompt({
       {probe.trust.status !== "trusted" && (
         <div className="wf-fingerprint">{probe.trust.fingerprint}</div>
       )}
+      {probe.via_proxy && (
+        <p className="wf-connect-dim">
+          This server is reached through a proxy such as Cloudflare. Its connection is checked by a public certificate, and the server proves the identity above each time you sign in.
+        </p>
+      )}
       <div className="wf-connect-row">
         <button onClick={onCancel}>Cancel</button>
         <button className={changed ? "wf-danger" : "wf-primary"} onClick={onTrust}>
@@ -508,7 +513,11 @@ function AuthForm({
   onBack: () => void;
   onError: (msg: string | null) => void;
 }) {
-  const [mode, setMode] = useState<"login" | "register" | "reset">(defaultMode);
+  // Who may make an account there: anyone, with an invite, or no one.
+  const closed = probe.registration === "closed";
+  const needsInvite = probe.registration === "invite";
+  const [mode, setMode] = useState<"login" | "register" | "reset">(closed ? "login" : defaultMode);
+  const [invite, setInvite] = useState("");
   const [username, setUsername] = useState(lastUsername ?? "");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(true);
@@ -531,7 +540,7 @@ function AuthForm({
         const session =
           mode === "login"
             ? await backend.login(probe.addr, username, password, remember)
-            : await backend.register(probe.addr, username, password, remember);
+            : await backend.register(probe.addr, username, password, remember, needsInvite ? invite.trim() : undefined);
         setConnected(session);
         if (mode === "register") {
           // A brand-new account starts blank; offer the saved portable
@@ -595,14 +604,18 @@ function AuthForm({
         >
           Log in
         </button>
-        <button
-          type="button"
-          className={mode === "register" ? "active" : ""}
-          onClick={() => setMode("register")}
-        >
-          Create account
-        </button>
+        {!closed && (
+          <button
+            type="button"
+            className={mode === "register" ? "active" : ""}
+            onClick={() => setMode("register")}
+          >
+            Create account
+          </button>
+        )}
       </div>
+      {closed && mode === "login" && <p className="wf-connect-dim">This server isn&apos;t taking new accounts right now.</p>}
+      {needsInvite && mode === "register" && <p className="wf-connect-dim">This server takes new accounts with an invite code from its admin.</p>}
       {mode === "reset" && (
         <p className="wf-connect-dim">
           Ask your server admin for a one-time reset code, then set a new password here.
@@ -616,6 +629,15 @@ function AuthForm({
         autoCapitalize="off"
         autoCorrect="off"
       />
+      {mode === "register" && needsInvite && (
+        <input
+          placeholder="invite code"
+          value={invite}
+          onChange={(e) => setInvite(e.target.value)}
+          autoCapitalize="characters"
+          autoCorrect="off"
+        />
+      )}
       {mode === "reset" && (
         <input
           placeholder="reset code (e.g. ABCDE-FGHJK)"
@@ -670,7 +692,7 @@ function AuthForm({
           type="submit"
           className="wf-primary"
           disabled={
-            busy || !username.trim() || !password || (mode === "reset" && !resetCode.trim())
+            busy || !username.trim() || !password || (mode === "reset" && !resetCode.trim()) || (mode === "register" && needsInvite && !invite.trim())
           }
         >
           {busy

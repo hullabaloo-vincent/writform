@@ -1208,6 +1208,8 @@ export function devPreviewBackend(): Backend {
         server_name: "Preview Server",
         protocol_version: 1,
         trust: known ? { status: "trusted" } : { status: "new", fingerprint },
+        via_proxy: addr.includes("proxy"),
+        registration: addr.includes("closed") ? "closed" : addr.includes("invite") ? "invite" : "open",
       };
     },
     async trustServer(addr) {

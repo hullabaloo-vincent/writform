@@ -83,6 +83,35 @@ docker run -d --name writform --restart unless-stopped \
 A systemd unit ships in the repo under `deploy/`. For upgrading either
 flavor, see [Updating a server](#updating-a-server) below.
 
+Each setting is an environment variable, or a flag of the same name
+(`--port`, `--registration` and so on):
+
+| Variable | Default | What it does |
+|---|---|---|
+| `WRITFORM_DATA_DIR` | `./data` | Where the database, attachments and identity key live |
+| `WRITFORM_BIND` | `0.0.0.0` | The address to listen on |
+| `WRITFORM_PORT` | `7311` | The port to listen on |
+| `WRITFORM_SERVER_NAME` | subScribe Server | The name people see when they connect |
+| `WRITFORM_WEB_DIR` | none | Serve the browser client from this folder |
+| `WRITFORM_REGISTRATION` | none | Who may make an account: `open`, `invite` or `closed`. Unset, an admin chooses in the app |
+| `WRITFORM_TLS` | `on` | `off` serves plain HTTP for a proxy or tunnel in front that speaks TLS |
+| `WRITFORM_TRUST_PROXY` | none | Behind a proxy, read each person's address from `cloudflare` (CF-Connecting-IP) or `forwarded` (X-Forwarded-For) |
+| `WRITFORM_LINK_PREVIEWS` | `on` | `off` stops the server fetching the links members post |
+| `WRITFORM_FONT_PROXY` | `on` | `off` stops the server fetching fonts for its members |
+
+To keep the server's address private behind Cloudflare, see
+[Networking](networking.md#keep-your-servers-address-private).
+
+### Who can make an account
+
+The first account on a new server is always allowed: it becomes the server
+admin. After that, an admin chooses in Settings ▸ Admin ▸ New accounts:
+anyone who can reach the server, only someone with an invite code, or no
+one. Invite codes are made there too, each for a number of accounts and a
+number of days, and can be revoked. `WRITFORM_REGISTRATION` fixes the
+choice for the server, and the app then shows it without letting it be
+changed.
+
 ## Using subScribe in a browser (phones included)
 
 The server can serve the app itself: open `https://your-server:7311/` in

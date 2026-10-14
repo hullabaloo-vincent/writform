@@ -9,7 +9,8 @@ The rule is "REST is truth, WS is invalidation."
 
 | Method | Path | Notes |
 | --- | --- | --- |
-| POST | `/auth/register` | first account becomes server admin |
+| POST | `/auth/register` | first account becomes server admin. Later ones as the server allows: anyone, with an `invite` code, or no one |
+| POST | `/identity/proof` | the server signs a client's nonce with its identity key (how it proves itself through a proxy) |
 | POST | `/auth/login` · `/auth/logout` | rate-limited per IP+username |
 | GET/PATCH | `/auth/me` | display name, avatar, accent color, bio |
 | PUT | `/auth/status` | online / busy / hidden |
@@ -100,6 +101,7 @@ a table cell's own borders, and a picture's outline and rounded corners.
 | POST | `/notes/share` |
 | GET/PUT | `/plugins/{id}/data/{scope}/{scope_id}/{key}` |
 | GET | `/admin/stats` · `/admin/users` · POST `/admin/users/{id}/logout` · `/admin/users/{id}/reset-code` |
+| GET/PUT | `/admin/registration` (who may make an account) · GET/POST `/admin/invites` · DELETE `/admin/invites/{id}` |
 
 The full wire types live in `crates/writform-proto` and are exported to
 TypeScript for the client. They are the source of truth if you're building

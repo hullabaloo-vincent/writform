@@ -195,8 +195,9 @@ export function webBackend(): Backend {
     username: string,
     password: string,
     remember: boolean,
+    invite?: string,
   ): Promise<SessionInfo> => {
-    const res = await apiFetch("POST", path, { username, password });
+    const res = await apiFetch("POST", path, { username, password, ...(invite ? { invite } : {}) });
     if (res.status >= 400) throw errFrom(res);
     const { token: t, user } = res.body as { token: string; user: User };
     setToken(t, remember);
@@ -207,14 +208,15 @@ export function webBackend(): Backend {
   return {
     // The web client is bound to its origin — probing "connects" to it.
     probeServer: async (): Promise<ProbeResult> => {
-      const res = await apiFetch("GET", "/api/v1/identity");
+      const res = await apiFetch("GET", "/api/v1/healthz");
       if (res.status >= 400) throw errFrom(res);
-      const id = res.body as { server_name: string; protocol_version: number };
+      const health = res.body as { server_name: string; protocol_version: number; registration?: ProbeResult["registration"] };
       return {
         addr: location.host,
-        server_name: id.server_name,
-        protocol_version: id.protocol_version,
+        server_name: health.server_name,
+        protocol_version: health.protocol_version,
         trust: { status: "trusted" },
+        registration: health.registration ?? null,
       };
     },
     trustServer: async () => {},
@@ -222,8 +224,8 @@ export function webBackend(): Backend {
     removeServer: async () => {},
     login: (_addr, username, password, remember) =>
       auth("/api/v1/auth/login", username, password, remember),
-    register: (_addr, username, password, remember) =>
-      auth("/api/v1/auth/register", username, password, remember),
+    register: (_addr, username, password, remember, invite) =>
+      auth("/api/v1/auth/register", username, password, remember, invite),
     resetPassword: async (_addr, username, code, newPassword) => {
       const res = await apiFetch("POST", "/api/v1/auth/reset-password", {
         username,

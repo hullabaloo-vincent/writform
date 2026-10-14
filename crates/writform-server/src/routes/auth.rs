@@ -1,9 +1,9 @@
 use axum::extract::{ConnectInfo, State};
-use axum::http::StatusCode;
+use axum::http::{Extensions, HeaderMap, StatusCode};
 use axum::Json;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use writform_proto::api::{
-    AuthResponse, LoginRequest, RegisterRequest, ResetPasswordRequest, User,
+    AuthResponse, LoginRequest, RegisterRequest, Registration, ResetPasswordRequest, User,
 };
 use writform_proto::UserId;
 
@@ -100,47 +100,85 @@ fn user_row_to_api(row: UserRow) -> User {
     }
 }
 
+/// The address a request comes from (a proxy's header, where trusted).
+pub(crate) fn request_ip(state: &AppState, headers: &HeaderMap, extensions: &Extensions) -> IpAddr {
+    let peer = extensions
+        .get::<ConnectInfo<SocketAddr>>()
+        .map(|c| c.0)
+        .unwrap_or_else(|| SocketAddr::from(([127, 0, 0, 1], 0)));
+    crate::network::client_ip(state.network.trust_proxy, headers, peer)
+}
+
 pub async fn register(
     State(state): State<AppState>,
+    headers: HeaderMap,
+    extensions: Extensions,
     Json(req): Json<RegisterRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
     validate_username(&req.username)?;
     validate_password(&req.password)?;
+    if !state
+        .register_limiter
+        .check(request_ip(&state, &headers, &extensions), "")
+    {
+        return Err(AppError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "rate_limited",
+            "too many new accounts from here, so try again in a minute",
+        ));
+    }
+    // Asked before the slow part: a server taking no one says so at once.
+    // (It is asked again where the account is made.)
+    if super::registration::has_users(&state.pool).await
+        && super::registration::effective(&state).await == Registration::Closed
+    {
+        return Err(AppError::new(
+            StatusCode::FORBIDDEN,
+            "registration_closed",
+            "this server isn't taking new accounts",
+        ));
+    }
 
     // PBKDF2 at 210k iterations is deliberately slow — keep it off the async workers.
-    let password_hash = tokio::task::spawn_blocking(move || {
-        writform_crypto::password::hash_password(&req.password)
-    })
-    .await
-    .map_err(AppError::internal)?;
+    let password = req.password.clone();
+    let password_hash =
+        tokio::task::spawn_blocking(move || writform_crypto::password::hash_password(&password))
+            .await
+            .map_err(AppError::internal)?;
 
     let now = now_millis();
-    // The first account on a fresh server is its admin.
-    let is_first: bool = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users")
-        .fetch_one(&state.pool)
-        .await?
-        == 0;
-    let result = sqlx::query_scalar::<_, i64>(
-        "INSERT INTO users (username, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?) RETURNING id",
-    )
-    .bind(&req.username)
-    .bind(&password_hash)
-    .bind(is_first)
-    .bind(now)
-    .fetch_one(&state.pool)
-    .await;
-
-    let id = match result {
-        Ok(id) => id,
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            return Err(AppError::new(
-                StatusCode::CONFLICT,
-                "username_taken",
-                "that username is already registered",
-            ));
+    // One transaction that writes from its start: whether this is the first
+    // account (the admin), whether it may be made, and the account itself.
+    let mut conn = state.pool.acquire().await?;
+    sqlx::query("BEGIN IMMEDIATE").execute(&mut *conn).await?;
+    let made: Result<(i64, bool), AppError> = async {
+        let is_first = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users").fetch_one(&mut *conn).await? == 0;
+        super::registration::admit(&state, &mut conn, is_first, req.invite.as_deref()).await?;
+        let result = sqlx::query_scalar::<_, i64>("INSERT INTO users (username, password_hash, is_server_admin, created_at) VALUES (?, ?, ?, ?) RETURNING id")
+            .bind(&req.username)
+            .bind(&password_hash)
+            .bind(is_first)
+            .bind(now)
+            .fetch_one(&mut *conn)
+            .await;
+        match result {
+            Ok(id) => Ok((id, is_first)),
+            Err(sqlx::Error::Database(e)) if e.is_unique_violation() => Err(AppError::new(StatusCode::CONFLICT, "username_taken", "that username is already registered")),
+            Err(e) => Err(e.into()),
         }
-        Err(e) => return Err(e.into()),
+    }
+    .await;
+    let (id, is_first) = match made {
+        Ok(v) => {
+            sqlx::query("COMMIT").execute(&mut *conn).await?;
+            v
+        }
+        Err(e) => {
+            let _ = sqlx::query("ROLLBACK").execute(&mut *conn).await;
+            return Err(e);
+        }
     };
+    drop(conn);
 
     let token = create_session(&state, UserId(id), None).await?;
     Ok(Json(AuthResponse {
@@ -163,9 +201,11 @@ pub async fn register(
 pub async fn login(
     State(state): State<AppState>,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    headers: HeaderMap,
     Json(req): Json<LoginRequest>,
 ) -> Result<Json<AuthResponse>, AppError> {
-    if !state.login_limiter.check(addr.ip(), &req.username) {
+    let ip = crate::network::client_ip(state.network.trust_proxy, &headers, addr);
+    if !state.login_limiter.check(ip, &req.username) {
         return Err(AppError::new(
             StatusCode::TOO_MANY_REQUESTS,
             "rate_limited",

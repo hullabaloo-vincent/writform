@@ -16,6 +16,11 @@ use sha2::{Digest, Sha256};
 /// other use of the identity key.
 const BINDING_CTX: &[u8] = b"writform-cert-binding-v1";
 
+/// Context for a proof of identity over a client's nonce: what a server
+/// reached through a proxy (whose certificate isn't its own) shows instead
+/// of the binding.
+const PROOF_CTX: &[u8] = b"writform-identity-proof-v1";
+
 #[derive(Debug, thiserror::Error)]
 pub enum IdentityError {
     #[error("malformed identity key material")]
@@ -74,6 +79,30 @@ impl ServerIdentityKey {
             .expect("context is under 255 bytes");
         sig.encode().to_vec()
     }
+
+    /// Prove this identity to a client: a signature over its nonce.
+    pub fn sign_identity_proof(&self, nonce: &[u8]) -> Vec<u8> {
+        let sig = self
+            .signing_key
+            .expanded_key()
+            .sign_deterministic(&Sha256::digest(nonce), PROOF_CTX)
+            .expect("context is under 255 bytes");
+        sig.encode().to_vec()
+    }
+}
+
+/// Verify a proof of identity over a nonce the client chose.
+pub fn verify_identity_proof(
+    public_key: &[u8],
+    nonce: &[u8],
+    signature: &[u8],
+) -> Result<bool, IdentityError> {
+    let encoded = EncodedVerifyingKey::<MlDsa65>::try_from(public_key)
+        .map_err(|_| IdentityError::MalformedKey)?;
+    let key = VerifyingKey::<MlDsa65>::decode(&encoded);
+    let sig =
+        Signature::<MlDsa65>::try_from(signature).map_err(|_| IdentityError::MalformedSignature)?;
+    Ok(key.verify_with_context(&Sha256::digest(nonce), PROOF_CTX, &sig))
 }
 
 /// Verify a cert-binding signature. Used by clients during TOFU and on every
@@ -105,6 +134,22 @@ pub fn fingerprint(public_key: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn identity_proof_round_trip_and_separation() {
+        let key = ServerIdentityKey::generate();
+        let pk = key.public_key_bytes();
+        let nonce = [7u8; 32];
+        let sig = key.sign_identity_proof(&nonce);
+        assert!(verify_identity_proof(&pk, &nonce, &sig).unwrap());
+        // Another nonce, another key, or a binding signature is no proof.
+        assert!(!verify_identity_proof(&pk, &[8u8; 32], &sig).unwrap());
+        let other = ServerIdentityKey::generate();
+        assert!(!verify_identity_proof(&other.public_key_bytes(), &nonce, &sig).unwrap());
+        let binding = key.sign_cert_binding(&nonce);
+        assert!(!verify_identity_proof(&pk, &nonce, &binding).unwrap());
+        assert!(!verify_cert_binding(&pk, &nonce, &sig).unwrap());
+    }
 
     #[test]
     fn binding_round_trip_and_tamper_cases() {

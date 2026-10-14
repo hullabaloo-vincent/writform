@@ -191,6 +191,11 @@ Xcode build itself succeeded).
 - **In a browser:** the server serves the app itself at `https://your-server:7311/`,
   phones included. The Docker image has it on. A bare-metal server needs
   `--web-dir` pointed at a client build.
+- **Behind Cloudflare** (or any proxy or tunnel), so the server's address stays
+  private: `WRITFORM_TLS=off` for a tunnel, `WRITFORM_TRUST_PROXY=cloudflare`, and
+  the steps in [Networking](docs-site/docs/networking.md#keep-your-servers-address-private).
+- **Who can make an account:** anyone, only with an invite code, or no one, chosen
+  by a server admin in Settings → Admin (or fixed with `WRITFORM_REGISTRATION`).
 - Upgrading = pull the new image / binary and restart. SQLite migrations run at startup.
   Update the server before the apps: a document that uses newer formatting can
   only be stored by a server that knows it.
@@ -205,8 +210,11 @@ Xcode build itself succeeded).
 
 Clients pin a self-hosted server on first connect (TOFU): TLS 1.3 with hybrid
 X25519+ML-KEM-768 key exchange (FIPS 203), plus an ML-DSA-65 (FIPS 204) server
-identity key whose signature binds the TLS certificate. The signature is
-verified on every connect, so a changed identity is a loud warning. Passwords
+identity key whose signature binds the TLS certificate. The binding is
+checked whenever the app looks a server up, so a changed identity is a loud
+warning. A server behind a proxy (whose certificate is the proxy's) needs a
+valid public certificate and proves its identity with a fresh signature
+before every sign-in. Passwords
 are PBKDF2-HMAC-SHA-512. Session tokens are opaque and stored hashed. All
 client network I/O runs in the Tauri Rust core (the webview cannot pin
 certificates). Details in [docs/crypto.md](docs/crypto.md).

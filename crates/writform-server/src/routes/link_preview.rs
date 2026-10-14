@@ -82,6 +82,15 @@ pub async fn link_preview(
     _auth: AuthUser,
     Query(query): Query<PreviewQuery>,
 ) -> Result<Json<LinkPreview>, AppError> {
+    // Each fetch shows this server's address to the site: a server kept
+    // behind a proxy may say no (WRITFORM_LINK_PREVIEWS=off).
+    if state.network.link_previews_off {
+        return Err(AppError::new(
+            axum::http::StatusCode::NOT_FOUND,
+            "previews_off",
+            "this server doesn't fetch link previews",
+        ));
+    }
     let url = query.url.trim().to_string();
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(AppError::bad_request(

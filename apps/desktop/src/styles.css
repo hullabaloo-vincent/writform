@@ -3188,6 +3188,21 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
   border-radius: 10px;
 }
 
+.wf-admin-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 0;
+}
+.wf-admin-row input[type="number"] {
+  width: 70px;
+  margin-left: 6px;
+}
+.wf-device-list li.wf-admin-spent {
+  opacity: 0.55;
+}
+
 .wf-admin-stats {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));

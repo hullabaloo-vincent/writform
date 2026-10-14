@@ -10,11 +10,18 @@ pub async fn healthz(State(state): State<AppState>) -> Json<Healthz> {
         .fetch_one(&state.pool)
         .await
         .is_ok();
+    // (A server with no accounts yet takes the first, its admin, whatever it says.)
+    let registration = if super::registration::has_users(&state.pool).await {
+        super::registration::effective(&state).await
+    } else {
+        writform_proto::api::Registration::Open
+    };
     Json(Healthz {
         ok: db_ok,
         server_name: state.server_name.to_string(),
         protocol_version: writform_proto::PROTOCOL_VERSION,
         server_time: now_millis(),
+        registration: Some(registration),
     })
 }
 

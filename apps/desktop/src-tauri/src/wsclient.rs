@@ -51,7 +51,7 @@ pub fn start(
     manager: Arc<WsManager>,
     addr: String,
     token: String,
-    spki_pin: [u8; 32],
+    trust: net::Trust,
 ) {
     let my_generation = manager.generation.fetch_add(1, Ordering::SeqCst) + 1;
 
@@ -66,7 +66,7 @@ pub fn start(
                 &manager,
                 &addr,
                 &token,
-                spki_pin,
+                trust,
                 my_generation,
                 &mut backoff_secs,
             )
@@ -97,12 +97,12 @@ async fn run_socket(
     manager: &Arc<WsManager>,
     addr: &str,
     token: &str,
-    spki_pin: [u8; 32],
+    trust: net::Trust,
     my_generation: u64,
     backoff_secs: &mut u64,
 ) -> Result<(), SocketErr> {
     let retry = |e: String| SocketErr::Retry(e);
-    let verifier = net::PinVerifier::pinned(spki_pin);
+    let verifier = net::PinVerifier::for_trust(trust);
     let config = rustls::ClientConfig::builder()
         .dangerous()
         .with_custom_certificate_verifier(verifier)

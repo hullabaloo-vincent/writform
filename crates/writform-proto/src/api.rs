@@ -14,6 +14,57 @@ pub struct Healthz {
     pub protocol_version: u32,
     #[ts(type = "number")]
     pub server_time: UnixMillis,
+    /// Who may make an account here. Absent from older servers (anyone).
+    #[serde(default)]
+    pub registration: Option<Registration>,
+}
+
+/// Who may make an account on a server.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+#[serde(rename_all = "snake_case")]
+#[ts(export)]
+pub enum Registration {
+    /// Anyone who can reach it.
+    Open,
+    /// Only someone with an invite code from a server admin.
+    Invite,
+    /// No one (a server admin's own accounts only).
+    Closed,
+}
+
+impl Registration {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Registration::Open => "open",
+            Registration::Invite => "invite",
+            Registration::Closed => "closed",
+        }
+    }
+    pub fn parse(v: &str) -> Option<Self> {
+        match v.trim().to_ascii_lowercase().as_str() {
+            "open" => Some(Registration::Open),
+            "invite" | "invites" | "invite_only" => Some(Registration::Invite),
+            "closed" | "off" | "none" => Some(Registration::Closed),
+            _ => None,
+        }
+    }
+}
+
+/// `POST /api/v1/identity/proof` — prove the server holds its identity key,
+/// whatever certificate the connection was made with (a proxy's).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct IdentityProofRequest {
+    /// 32 random bytes, base64url.
+    pub nonce: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct IdentityProof {
+    /// ML-DSA signature over `SHA-256(nonce)` in the context
+    /// `"writform-identity-proof-v1"`, base64url.
+    pub sig: String,
 }
 
 /// `GET /api/v1/identity` — unauthenticated server identity for TOFU pinning.
@@ -32,6 +83,10 @@ pub struct ServerIdentity {
 pub struct RegisterRequest {
     pub username: String,
     pub password: String,
+    /// A server invite code, where the server asks for one.
+    #[serde(default)]
+    #[ts(optional)]
+    pub invite: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
@@ -191,6 +246,51 @@ pub struct AdminUser {
     #[ts(type = "number")]
     pub device_count: i64,
     pub online: bool,
+}
+
+/// `GET/PUT /api/v1/admin/registration`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct RegistrationSettings {
+    pub mode: Registration,
+    /// Set by the server's own configuration (`WRITFORM_REGISTRATION`):
+    /// not changeable from the app.
+    #[serde(default)]
+    pub fixed: bool,
+}
+
+/// `POST /api/v1/admin/invites`
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CreateServerInviteRequest {
+    /// How many accounts it may make (none: no limit).
+    #[serde(default)]
+    #[ts(optional, type = "number")]
+    pub max_uses: Option<i64>,
+    /// How long it lasts, hours (none: until revoked).
+    #[serde(default)]
+    #[ts(optional, type = "number")]
+    pub expires_in_hours: Option<i64>,
+}
+
+/// A server invite, as its admins see it.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct ServerInvite {
+    #[ts(type = "number")]
+    pub id: i64,
+    pub code: String,
+    pub created_by: String,
+    #[ts(type = "number")]
+    pub created_at: UnixMillis,
+    #[ts(type = "number | null")]
+    pub expires_at: Option<UnixMillis>,
+    #[ts(type = "number | null")]
+    pub max_uses: Option<i64>,
+    #[ts(type = "number")]
+    pub use_count: i64,
+    /// Expired, used up or revoked.
+    pub spent: bool,
 }
 
 /// Uniform error body for all non-2xx API responses.

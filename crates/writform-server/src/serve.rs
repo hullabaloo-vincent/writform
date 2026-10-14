@@ -17,6 +17,8 @@ pub struct ServeOptions {
     /// Serve the built web client from this directory at `/` (same-origin
     /// browser access). None = API only.
     pub web_dir: Option<PathBuf>,
+    /// Registration, TLS or a proxy in front, previews (network.rs).
+    pub network: crate::network::NetworkOptions,
 }
 
 /// A running server plus the identity material a local client needs to pin
@@ -56,13 +58,18 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<StartedServer> {
 
     let tls_identity = tls::load_or_generate(&opts.data_dir).await?;
     let pool = db::connect(&opts.data_dir).await?;
-    let state = routes::AppState::with_data_dir(
+    let mut state = routes::AppState::with_data_dir(
         opts.server_name.clone(),
         pool,
         &tls_identity.identity.public_key_bytes(),
         &tls_identity.cert_binding_sig,
         opts.data_dir.clone(),
     );
+    state.network = std::sync::Arc::new(opts.network.clone());
+    let identity_pubkey = tls_identity.identity.public_key_bytes().to_vec();
+    let spki_der = tls_identity.spki_der.clone();
+    let rustls_config = tls_identity.rustls_config;
+    state.identity = Some(std::sync::Arc::new(tls_identity.identity));
     routes::sessions::rehydrate_timers(&state)
         .await
         .context("rehydrating prompt timers")?;
@@ -96,20 +103,36 @@ pub async fn start(opts: ServeOptions) -> anyhow::Result<StartedServer> {
     listener.set_nonblocking(true).context("nonblocking")?;
     let local_addr = listener.local_addr().context("local addr")?;
 
-    let identity_pubkey = tls_identity.identity.public_key_bytes().to_vec();
-    let spki_der = tls_identity.spki_der.clone();
     let fingerprint = writform_crypto::identity::fingerprint(&identity_pubkey);
 
     let handle: axum_server::Handle<SocketAddr> = axum_server::Handle::new();
-    let server = axum_server::from_tcp_rustls(listener, tls_identity.rustls_config)
-        .context("tls listener")?
-        .handle(handle.clone())
-        .serve(app.into_make_service_with_connect_info::<SocketAddr>());
-    let task = tokio::spawn(server);
+    let service = app.into_make_service_with_connect_info::<SocketAddr>();
+    // Behind a proxy or tunnel that speaks TLS to clients, plain HTTP here.
+    let task = if opts.network.plain_http {
+        let server = axum_server::from_tcp(listener)
+            .context("listener")?
+            .handle(handle.clone())
+            .serve(service);
+        tokio::spawn(server)
+    } else {
+        let server = axum_server::from_tcp_rustls(listener, rustls_config)
+            .context("tls listener")?
+            .handle(handle.clone())
+            .serve(service);
+        tokio::spawn(server)
+    };
 
+    let scheme = if opts.network.plain_http {
+        "http"
+    } else {
+        "https"
+    };
     tracing::info!(
-        "WritForm server listening on https://{local_addr} (identity fingerprint {fingerprint})"
+        "WritForm server listening on {scheme}://{local_addr} (identity fingerprint {fingerprint})"
     );
+    if opts.network.plain_http {
+        tracing::info!("TLS is off: put a proxy or tunnel that speaks TLS in front of this server");
+    }
 
     Ok(StartedServer {
         local_addr,
