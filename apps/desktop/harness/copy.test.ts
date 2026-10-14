@@ -34,6 +34,7 @@ const NOT_WORDING = [
   /src\/book\/epub\/epub\.ts$/, // the ebook's own stylesheet and pages
   /src\/book\/smf\/docx\.ts$/, // the manuscript file's own text
   /src\/proof\/data\//, // the checker's word lists: words to find, not words shown
+  /src\/editor\/autocorrect\/data\//, // what is typed and what it becomes: not words shown
 ];
 /** A string that is plainly not a sentence shown to anyone. */
 const notProse = (text: string): boolean =>

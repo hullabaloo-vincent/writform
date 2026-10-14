@@ -8,8 +8,10 @@ import type { Editor } from "@tiptap/core";
 
 import type { DocSettings, SetupSection } from "../../apps/documents/docSettings";
 import { stepZoom, useDocZoom } from "../../apps/documents/shell/zoom";
-import { changeCase, clearFormatting, insertDate, setListStart, type CaseKind } from "../format/commands";
+import { editPlaces, goBackToEdit } from "../EditPlaces";
+import { changeCase, clearFormatting, insertDate, insertSpecial, setListStart, type CaseKind } from "../format/commands";
 import type { FormatContext } from "../format/effective";
+import { growSelection, shrinkSelection } from "../format/grow";
 import { canMoveBlocks, moveBlocks } from "../format/movePicture";
 import { stepIndent, toggleColumnBreak } from "../format/ParaFormat";
 import { stepRunSize, toggleScript } from "../format/run";
@@ -21,6 +23,7 @@ import { resolveInEditor, selectedChanges, stepChange, type ReviewMode } from ".
 import { applyStyle } from "../styles/apply";
 import { insertTable } from "../tables/Table";
 import { insertPageBreak, setDocAlign } from "../TextFormat";
+import { useDarkPaper } from "../ui/darkPaper";
 import { EDITOR_COMMANDS } from "./catalog";
 
 /** What the room around the text can do. Each editor gives what it has. */
@@ -38,6 +41,7 @@ export interface ShellActions {
   toggleMarks?: () => void;
   togglePageView?: () => void;
   toggleFocus?: () => void;
+  goTo?: () => void;
 }
 
 /** The document a command is run in, as it is at that moment. */
@@ -48,6 +52,8 @@ export interface CommandCtx {
   rich: FormatContext | null;
   /** The text can be changed (not a reader, not Viewing). */
   editable: boolean;
+  /** The language the text is written in (where its sentences end). */
+  lang?: string;
   settings?: DocSettings;
   patchSettings?: (patch: Partial<DocSettings>) => void;
   review?: { mode: ReviewMode; setMode: (mode: ReviewMode) => void; canSuggest: boolean; canResolve: boolean };
@@ -110,6 +116,7 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
   "doc.larger": { enabled: (_e, ctx) => ctx.editable && !!ctx.rich, run: (e, ctx) => ctx.rich && stepRunSize(e, 1, ctx.rich) },
   "doc.smaller": { enabled: (_e, ctx) => ctx.editable && !!ctx.rich, run: (e, ctx) => ctx.rich && stepRunSize(e, -1, ctx.rich) },
   "doc.clear": edit((e) => clearFormatting(e)),
+  "doc.here": shell((s) => s.pageSetup && (() => s.pageSetup?.("here"))),
   "doc.case.sentence": cased("sentence"),
   "doc.case.lower": cased("lower"),
   "doc.case.upper": cased("upper"),
@@ -159,6 +166,9 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
   "doc.divider": edit((e) => e.chain().focus().setHorizontalRule().run()),
   "doc.linebreak": edit((e) => e.chain().focus().setHardBreak().run()),
   "doc.date": edit((e) => insertDate(e)),
+  "doc.nbsp": edit((e) => insertSpecial(e, "nbsp")),
+  "doc.nbhyphen": edit((e) => insertSpecial(e, "nbhyphen")),
+  "doc.softhyphen": edit((e) => insertSpecial(e, "softhyphen")),
 
   "doc.pagesetup": shell((s) => s.pageSetup && (() => s.pageSetup?.("paper"))),
   "doc.margins": shell((s) => s.pageSetup && (() => s.pageSetup?.("margins"))),
@@ -170,6 +180,7 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
   "doc.marks": { enabled: (_e, ctx) => !!ctx.shell.toggleMarks, run: (_e, ctx) => ctx.shell.toggleMarks?.() },
   "doc.pageview": { enabled: (_e, ctx) => !!ctx.shell.togglePageView, run: (_e, ctx) => ctx.shell.togglePageView?.() },
   "doc.focus": { enabled: (_e, ctx) => !!ctx.shell.toggleFocus, run: (_e, ctx) => ctx.shell.toggleFocus?.() },
+  "doc.paper": { enabled: () => true, run: () => useDarkPaper.getState().set(!useDarkPaper.getState().dark) },
   "doc.zoom.in": zoom((now) => useDocZoom.getState().set(stepZoom(now, 1))),
   "doc.zoom.out": zoom((now) => useDocZoom.getState().set(stepZoom(now, -1))),
   "doc.zoom.100": zoom(() => useDocZoom.getState().set(1)),
@@ -192,6 +203,10 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
 
   "doc.find": shell((s) => s.find && (() => s.find?.(false))),
   "doc.replace": shell((s) => s.find && (() => s.find?.(true))),
+  "doc.goto": shell((s) => s.goTo),
+  "doc.goback": { enabled: (e) => editPlaces(e).length > 0, run: (e) => goBackToEdit(e) },
+  "doc.grow": { enabled: () => true, run: (e, ctx) => growSelection(e, ctx.lang) },
+  "doc.shrink": { enabled: () => true, run: (e) => shrinkSelection(e) },
   "doc.undo": edit((e) => e.chain().focus().undo().run()),
   "doc.redo": edit((e) => e.chain().focus().redo().run()),
 };

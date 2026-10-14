@@ -414,4 +414,4 @@ export function bodyLook(s: Pick<DocSettings, "bodyFont" | "bodySize" | "bodyLin
 
 /** The parts of the inspector (DocSettingsPanel) something else can ask for
  *  by name: "Custom margins…" in the ribbon opens it at Margins. */
-export type SetupSection = "paper" | "margins" | "header" | "body" | "indents" | "details";
+export type SetupSection = "paper" | "margins" | "header" | "body" | "indents" | "details" | "here";

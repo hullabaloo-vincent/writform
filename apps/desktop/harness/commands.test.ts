@@ -17,6 +17,7 @@ import { EDITOR_COMMANDS, keyCaps, keyLabel, keysOf, offered } from "../src/edit
 import { CommandKeys } from "../src/editor/commands/CommandKeys";
 import { canRun, runCommand, RUNNABLE, RUNNERS, type CommandCtx } from "../src/editor/commands/run";
 import { useEditorCommands } from "../src/editor/commands/useEditorCommands";
+import { EditPlaces } from "../src/editor/EditPlaces";
 import { RunShortcuts } from "../src/editor/format/run";
 import { docContentExtensions } from "../src/editor/schema/content";
 import { resolveStyles } from "../src/editor/styles/sheet";
@@ -53,6 +54,7 @@ const ctxOf = (more: Partial<CommandCtx> = {}): CommandCtx => ({
     toggleMarks: () => calls.push("marks"),
     togglePageView: () => calls.push("pageview"),
     toggleFocus: () => calls.push("focus"),
+    goTo: () => calls.push("goto"),
   },
   ...more,
 });
@@ -64,6 +66,7 @@ const editorWith = (content: JSONContent[]): Editor =>
       ...docContentExtensions({ textFormat: { shortcuts: true, alignShortcuts: false } }),
       formatKeymap("none"),
       RunShortcuts.configure({ shortcuts: true, context: () => rich }),
+      EditPlaces,
       CommandKeys.configure({ ctx: () => ctx }),
     ],
     content: { type: "doc", content },
@@ -98,7 +101,8 @@ const CODES: Record<string, number> = { "=": 187, "-": 189, ".": 190, ",": 188, 
 const SHIFTED: Record<string, string> = { "=": "+", "-": "_", ".": ">", ",": "<", "7": "&", "8": "*", "9": "(" };
 const press = (e: Editor, pmKey: string): boolean => {
   const parts = pmKey.split(/-(?!$)/);
-  const key = parts.pop() ?? "";
+  const named = parts.pop() ?? "";
+  const key = named === "Space" ? " " : named;
   const mods = new Set(parts);
   const shift = mods.has("Shift");
   const keyCode = CODES[key] ?? (key.length === 1 ? key.toUpperCase().charCodeAt(0) : 0);
@@ -133,6 +137,9 @@ const press = (e: Editor, pmKey: string): boolean => {
       e.commands.toggleHeading({ level: 2 });
     } else if (row.id === "doc.align.left") {
       setDocAlign(e, "center");
+    } else if (row.id === "doc.goback") {
+      // (There has to be somewhere that was written in.)
+      e.commands.insertContent("x");
     } else if (row.id === "doc.move.up") {
       // (From the second paragraph: the first has nowhere higher to go.)
       e.commands.setTextSelection(18);
@@ -169,6 +176,7 @@ const press = (e: Editor, pmKey: string): boolean => {
 {
   const e = editorWith([p("One two three.")]);
   e.commands.setTextSelection({ from: 5, to: 8 });
+  calls.length = 0;
   check("a command for the room around the text is handed to it", runCommand("doc.find", e, ctx) && runCommand("doc.replace", e, ctx) && runCommand("doc.margins", e, ctx) && runCommand("doc.check", e, ctx) && calls.join(" ") === "find replace setup:margins check", calls.join(" "));
   calls.length = 0;
   check("a setting is switched", runCommand("doc.hyphenate", e, ctx) && settings.hyphenate !== DEFAULT_SETTINGS.hyphenate);

@@ -1,3 +1,6 @@
+import { useDarkPaper } from "../../editor/ui/darkPaper";
+import type { Kinds } from "../../editor/autocorrect/engine";
+import { useAutoCorrect } from "../../editor/autocorrect/store";
 import {
   ArrowDownToLine,
   Bell,
@@ -854,11 +857,26 @@ function VoiceTab({ onError }: { onError: (e: string | null) => void }) {
 /** Per-device writing preferences. */
 // (Fetched when asked for: the checker is not part of opening Settings.)
 const MyRulesDialog = lazy(() => import("../../proof/ui/MyRulesDialog"));
+const AutoCorrectDialog = lazy(() => import("../../editor/autocorrect/AutoCorrectDialog"));
+
+/** What each kind of correction is called. */
+const CORRECTION_KINDS: { kind: keyof Kinds; label: string }[] = [
+  { kind: "list", label: "Set slips and missing apostrophes right (teh, dont)" },
+  { kind: "capitals", label: "Start a sentence with a capital" },
+  { kind: "twoCaps", label: "Mend two capitals at the start of a word (THe)" },
+  { kind: "capsLock", label: "Mend a word typed with the caps lock on (wORD)" },
+  { kind: "symbols", label: "Signs for (c) and (tm) and arrows typed as -> and <-" },
+  { kind: "fractions", label: "Fractions as one character (1/2)" },
+  { kind: "ordinals", label: "Raise the letters of 1st, 2nd and 3rd" },
+];
 
 function WritingTab() {
   const [smart, setSmart] = useState(smartPunctuationEnabled);
   const [exact, setExact] = useState(exactPageView);
   const [rulesOpen, setRulesOpen] = useState(false);
+  const [correctionsOpen, setCorrectionsOpen] = useState(false);
+  const correct = useAutoCorrect();
+  const paper = useDarkPaper();
   const menu = useSelectionMenu();
   return (
     <section>
@@ -880,6 +898,26 @@ function WritingTab() {
         the book’s language in a manuscript. This applies on this device only.
       </p>
       <label className="wf-settings-field wf-field-row">
+        <input type="checkbox" checked={!correct.off} onChange={(e) => correct.setOff(!e.target.checked)} />
+        Correct as I type
+      </label>
+      <p className="wf-session-meta">
+        When a word is finished, a slip is set right and a sentence gets its capital. One Undo, or Backspace straight
+        after, takes back the correction and leaves what you typed. Nothing is changed in code, and while you are
+        suggesting only your own suggested words are touched. On this device only.
+      </p>
+      <div className="wf-settings-ticks" role="group" aria-label="What is corrected">
+        {CORRECTION_KINDS.map(({ kind, label }) => (
+          <label key={kind}>
+            <input type="checkbox" disabled={correct.off} checked={correct.kinds[kind]} onChange={(e) => correct.setKind(kind, e.target.checked)} />
+            {label}
+          </label>
+        ))}
+        <button className="wf-link-button" disabled={correct.off} onClick={() => setCorrectionsOpen(true)}>
+          Your corrections…
+        </button>
+      </div>
+      <label className="wf-settings-field wf-field-row">
         <input
           type="checkbox"
           checked={exact}
@@ -896,6 +934,14 @@ function WritingTab() {
         PDF. Turn it off for the simpler view, which only moves whole paragraphs to the next page
         and is an approximation. Takes effect the next time a document is opened. On this device
         only.
+      </p>
+      <label className="wf-settings-field wf-field-row">
+        <input type="checkbox" checked={paper.dark} onChange={(e) => paper.set(e.target.checked)} />
+        Dark paper while writing
+      </label>
+      <p className="wf-session-meta">
+        Shows the page dark with light text. Coloured text is made lighter where it could not be read. This is for the
+        screen only: print, PDF and Word files are unchanged. On this device only.
       </p>
       <label className="wf-settings-field wf-field-row">
         <input type="checkbox" checked={!menu.off} onChange={(e) => menu.setOff(!e.target.checked)} />
@@ -924,6 +970,11 @@ function WritingTab() {
         The Check panel reads a document for slips and for things written two ways. Your rules say which checks run, which
         words you write one way and not another, and which words to point out. They apply to every document on this device.
       </p>
+      {correctionsOpen && (
+        <Suspense fallback={null}>
+          <AutoCorrectDialog onClose={() => setCorrectionsOpen(false)} />
+        </Suspense>
+      )}
       {rulesOpen && (
         <Suspense fallback={null}>
           <MyRulesDialog onClose={() => setRulesOpen(false)} />

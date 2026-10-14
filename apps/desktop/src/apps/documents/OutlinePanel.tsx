@@ -1,3 +1,9 @@
+import { closeHistory } from "@tiptap/pm/history";
+import { yUndoPluginKey } from "@tiptap/y-tiptap";
+import { ArrowLeft, ArrowRight } from "lucide-react";
+import { canShiftHeadings, shiftHeadings } from "../../editor/format/outline";
+import { reviewMode } from "../../editor/review/Suggesting";
+import { toast } from "../../platform/toast";
 import type { Editor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
 import { AlertTriangle, ArrowDown, ArrowUp, GripVertical } from "lucide-react";
@@ -95,8 +101,9 @@ export function OutlinePanel({
     };
   }, [editor, entries]);
 
+  // A book's chapters and a Document's headed sections can be moved.
   const movable = useMemo(
-    () => format === "manuscript" && !!editor?.isEditable,
+    () => (format === "manuscript" || format === "none") && !!editor?.isEditable,
     [format, editor],
   );
 
@@ -111,6 +118,12 @@ export function OutlinePanel({
   const moveTo = async (entry: StructureEntry, targetIndex: number) => {
     if (!editor) return;
     if (targetIndex >= entry.index && targetIndex <= entry.endIndex) return;
+    // While suggesting, a move would be a deletion here and an insertion
+    // there, pages long. It is made in Editing.
+    if (reviewMode(editor) === "suggest") {
+      toast("Switch to Editing to move a section. A move cannot be made as a suggestion.", "info");
+      return;
+    }
     const offsets = blockOffsets(editor.state.doc);
     const start = offsets[entry.index];
     const end = offsets[entry.endIndex];
@@ -134,7 +147,9 @@ export function OutlinePanel({
       tr.insert(target, content);
     }
     // (The page stays where it is: the outline shows where the section went.)
-    editor.view.dispatch(tr);
+    // One step for Undo, apart from whatever was typed just before.
+    (yUndoPluginKey.getState(editor.state) as { undoManager?: { stopCapturing(): void } } | undefined)?.undoManager?.stopCapturing();
+    editor.view.dispatch(closeHistory(tr));
   };
 
   const siblingIndex = (i: number, dir: -1 | 1): number | null => {
@@ -155,7 +170,9 @@ export function OutlinePanel({
   };
 
   const canMove = (entry: StructureEntry) =>
-    movable && (entry.kind === "chapter" || entry.kind === "part" || entry.kind === "section");
+    movable && (format === "none" ? entry.kind === "heading" : entry.kind === "chapter" || entry.kind === "part" || entry.kind === "section");
+  /** A Document's section up or down a level, with the headings under it. */
+  const canShift = (entry: StructureEntry, dir: -1 | 1) => !!editor && format === "none" && canMove(entry) && canShiftHeadings(editor, entry.index, entry.endIndex, dir);
 
   return (
     <aside className="wf-doc-panel wf-doc-outline">
@@ -263,6 +280,16 @@ export function OutlinePanel({
                     >
                       <ArrowDown size={14} />
                     </button>
+                    {format === "none" && editor && (
+                      <>
+                        <button title="Up a level (with the headings under it)" disabled={!canShift(entry, -1)} onClick={() => shiftHeadings(editor, entry.index, entry.endIndex, -1)}>
+                          <ArrowLeft size={14} />
+                        </button>
+                        <button title="Down a level (with the headings under it)" disabled={!canShift(entry, 1)} onClick={() => shiftHeadings(editor, entry.index, entry.endIndex, 1)}>
+                          <ArrowRight size={14} />
+                        </button>
+                      </>
+                    )}
                   </span>
                 )}
               </li>

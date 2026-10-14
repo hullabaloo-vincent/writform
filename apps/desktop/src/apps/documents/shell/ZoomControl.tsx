@@ -1,3 +1,4 @@
+import { useDarkPaper } from "../../../editor/ui/darkPaper";
 import { Flyout, FlyoutItem, useIsPhone } from "../../../editor/ui/Flyout";
 import { useDocZoom, ZOOM_STEPS, zoomLabel } from "./zoom";
 
@@ -11,6 +12,8 @@ export function ZoomControl() {
   const shown = useDocZoom((s) => s.shown);
   const set = useDocZoom((s) => s.set);
   const fit = useDocZoom((s) => s.fit);
+  const dark = useDarkPaper((s) => s.dark);
+  const setDark = useDarkPaper((s) => s.set);
   if (phone) return null;
   return (
     <Flyout title="Zoom" label={zoomLabel(shown)} className="wf-zoom-btn">
@@ -46,6 +49,16 @@ export function ZoomControl() {
             }}
           >
             Whole page
+          </FlyoutItem>
+          <div className="wf-flyout-heading">The paper</div>
+          <FlyoutItem
+            checked={dark}
+            onPick={() => {
+              setDark(!dark);
+              close();
+            }}
+          >
+            Dark paper
           </FlyoutItem>
         </>
       )}

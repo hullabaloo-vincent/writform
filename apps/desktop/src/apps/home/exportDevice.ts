@@ -15,6 +15,7 @@ import { saveExport } from "../../lib/saveFile";
 import { b64decode } from "../documents/collab";
 import { readDocStyles } from "../../editor/styles/docStyles";
 import { readDocSettings } from "../documents/docSettings";
+import { encodeAutoCorrect, useAutoCorrect } from "../../editor/autocorrect/store";
 import { encodeRulesFile, RULES_FILE_EXT } from "../../proof/rules/file";
 import { globalRules } from "../../proof/rules/globalRules";
 
@@ -146,6 +147,9 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
   const rules = globalRules();
   const hasRules = Object.keys(rules.words).length + Object.keys(rules.on).length + Object.keys(rules.never).length + Object.keys(rules.picks).length > 0;
   if (hasRules) zip.file(`rules.${RULES_FILE_EXT}`, encodeRulesFile(rules, "My rules"));
+  // The writer's own corrections, when they have made the list their own.
+  const corrections = useAutoCorrect.getState();
+  if (Object.keys(corrections.add).length || corrections.drop.length || corrections.noCapAfter.length || corrections.keepCaps.length) zip.file("autocorrect.json", encodeAutoCorrect());
 
   zip.file(
     "README.txt",
@@ -162,6 +166,8 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
       "              banner beside it, if you've set them).",
       "rules.wfstyle  your own rules for the Check panel, if you have any. Add",
       "               them on another device from the panel's Rules tab.",
+      "autocorrect.json  your own corrections for typing, if you have changed the",
+      "                  built-in list.",
       "",
       "Documents and boards kept on a server are not in here: export those from",
       "Documents ▸ Export all, or a board's Export, while connected.",

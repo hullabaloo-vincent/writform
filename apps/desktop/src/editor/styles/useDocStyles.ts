@@ -4,6 +4,7 @@ import type * as Y from "yjs";
 import { bodyLook, type DocSettings } from "../../apps/documents/docSettings";
 import type { FontInfo } from "../../fonts/css";
 import type { FormatContext } from "../format/effective";
+import { onDarkPaper, useDarkPaper } from "../ui/darkPaper";
 import { stylesCss } from "./css";
 import { onDocStylesChange, readDocStyles, writeDocStyle } from "./docStyles";
 import { resolveStyles, type ResolvedStyles, type StyleEntry, type StyleOverrides } from "./sheet";
@@ -47,7 +48,9 @@ export function useDocStyles(doc: Y.Doc, settings: DocSettings, level: number, f
 
   // useId's punctuation doesn't belong in an attribute selector.
   const scope = useId().replace(/[^a-zA-Z0-9]/g, "");
-  const css = useMemo(() => stylesCss(`[data-wfs="${scope}"]`, styles, fonts), [scope, styles, fonts]);
+  // (On dark paper a style's own colour is lightened where it must be.)
+  const dark = useDarkPaper((s) => s.dark);
+  const css = useMemo(() => stylesCss(`[data-wfs="${scope}"]`, styles, fonts, dark ? onDarkPaper : undefined), [scope, styles, fonts, dark]);
   const save = useCallback((id: string, entry: StyleEntry | null) => writeDocStyle(doc, id, entry), [doc]);
 
   return { overrides, styles, format, formatRef, scope, css, save };

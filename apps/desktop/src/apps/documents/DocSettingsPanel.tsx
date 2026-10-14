@@ -1,3 +1,4 @@
+import { clearParagraphOwn, clearTextOwn, describeHere } from "../../editor/format/describe";
 import type { Editor } from "@tiptap/react";
 import {
   AlignCenter,
@@ -58,7 +59,7 @@ import { HeaderFooterForm } from "./HeaderFooterForm";
  * per-document settings). Document format only; the scripted formats carry
  * their own fixed conventions.
  */
-const tabOf = (section: SetupSection): "text" | "document" => (section === "indents" ? "text" : "document");
+const tabOf = (section: SetupSection): "text" | "document" => (section === "indents" || section === "here" ? "text" : "document");
 
 export function DocSettingsPanel({
   editor,
@@ -197,8 +198,33 @@ function TextTab({
       </option>
     ));
 
+  const here = editor ? describeHere(editor, format) : null;
+
   return (
     <div className="wf-inspector-body">
+      {editor && here && (
+        <section className="wf-format-here" data-setup="here">
+          <h4>Formatting here</h4>
+          <p className="wf-format-here-line">
+            <span>Style</span>
+            <strong>{here.style}</strong>
+          </p>
+          <p className="wf-format-here-line">
+            <span>The paragraph&rsquo;s own</span>
+            <em>{here.paragraph.length ? here.paragraph.join(". ") : "Nothing but its style"}</em>
+            <button type="button" className="wf-link-button" disabled={disabled || !here.paragraph.length} onClick={() => clearParagraphOwn(editor)}>
+              Clear
+            </button>
+          </p>
+          <p className="wf-format-here-line">
+            <span>The words&rsquo; own</span>
+            <em>{here.text.length ? here.text.join(". ") : "Nothing of their own"}</em>
+            <button type="button" className="wf-link-button" disabled={disabled || !here.text.length} onClick={() => clearTextOwn(editor)}>
+              Clear
+            </button>
+          </p>
+        </section>
+      )}
       <section>
         <h4>Font</h4>
         <div className="wf-inspector-row">

@@ -66,9 +66,18 @@ const SPACES = new Set(["\u00a0", "\u2007", "\u202f", "\u2009", "\u200a", "\u200
 const STOP = "\u0000";
 const WORD = /[\p{L}\p{N}_]/u;
 
+/** A hyphen that shows only where a line breaks at it, and one the line may
+ *  not break at. */
+const SOFT_HYPHEN = String.fromCharCode(0x00ad);
+const NO_BREAK_HYPHEN = String.fromCharCode(0x2011);
+
+/** A character as it is compared. Nothing at all for one that is not
+ *  there to the eye (an optional hyphen), unless the search is exact. */
 function normalizeChar(ch: string, opts: FindOptions): string {
   let c = ch;
   if (!opts.exact) {
+    if (c === SOFT_HYPHEN) return "";
+    if (c === NO_BREAK_HYPHEN) c = "-";
     c = QUOTES[c] ?? c;
     if (SPACES.has(c)) c = " ";
   }
@@ -105,7 +114,11 @@ function runsOf(node: PmNode, pos: number, fold: (ch: string) => string): Run[] 
   const runs: Run[] = [main];
   const put = (run: Run, text: string, start: number) => {
     for (let i = 0; i < text.length; i += 1) {
-      run.text += fold(text[i]);
+      const c = fold(text[i]);
+      // (A character that folds to nothing is passed over: a match that
+      // runs across it still covers it.)
+      if (!c) continue;
+      run.text += c;
       run.at.push(start + i);
     }
   };

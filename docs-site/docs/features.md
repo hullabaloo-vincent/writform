@@ -80,6 +80,27 @@ submission manuscript.
   dash, and `...` becomes an ellipsis (…). The text's language is the
   book's for a Manuscript. For any other document it is the language set
   in its Details, and this device's language when none is set.
+- **AutoCorrect** (Settings ▸ Writing, "Correct as I type"): when a word
+  is finished with a space or Enter, a slip is set right (teh, recieve,
+  dont), a sentence gets its capital, TWo capitals and a wORD typed with
+  the caps lock on are mended, and (c), 1/2 and 1st become ©, ½ and 1st
+  with its letters raised. One Undo, or Backspace straight after, takes
+  back the correction and leaves what you typed. Each kind has its own
+  switch, and **Your corrections…** lists every entry, lets you add your
+  own and take any out, and holds your exceptions.
+    - It is careful. A word is only changed once you have left it. A slip
+      that is part of an address or a file's name is left. A capital in
+      the middle of a sentence is taken for a name and left as spelled.
+      Nothing is changed in code, and while you are suggesting only your
+      own suggested words are touched.
+    - The built-in words are English and apply to English text (with
+      "licence" and "organisation" where the document's English is
+      British). Signs and your own entries apply in every language.
+    - A script's lines of capitals, and verse, get no capital of
+      AutoCorrect's. On a phone, the list and the capitals start switched
+      off, since the phone's keyboard already does both.
+    - The English list comes from LibreOffice's (see the notices), with
+      every entry left out whose "slip" is a real word.
 - **Bold, italic and underline reach the whole word** when the caret is
   inside one and nothing is selected. At a word's edge or in a space they
   set what you type next, as before.
@@ -88,6 +109,13 @@ submission manuscript.
   numbered list of that kind, and `* ` or `- ` a bulleted one. Start at
   `c. ` or `3) ` and the list starts there. A label typed under a list
   that it continues joins that list.
+- **Spaces and hyphens that hold a line together**: a no-break space
+  (Ctrl+Shift+Space, or Option+Space on a Mac) keeps two words on one
+  line, a no-break hyphen (Ctrl or ⌘ with Shift and the hyphen key) is
+  never broken at, and an optional hyphen (Ctrl or ⌘ with the hyphen key)
+  shows only where the line breaks there. All three are also in **Insert
+  ▸ Symbol**, by name. Find sees through them, Word files keep them, and
+  print and PDF honour them.
 - **Move a paragraph by key**: Alt+Shift+Up or Down (Ctrl+Shift with the
   arrows on a Mac) moves the paragraph the caret is in, every paragraph a
   selection touches, or a list item with all that is under it. A selected
@@ -181,6 +209,32 @@ submission manuscript.
   cursor until you step to a match. Footnotes and endnotes are
   searched too. A match inside a note marks the note's number, the count
   says "in a note", and Replace changes the note's words like any others.
+- **Go to** (click the page count, or ⌥⌘G / Ctrl+Alt+G): type a page
+  number, `+2` or `-1` for pages from here, or some words of a heading.
+  The pages are the printed ones. A book's manuscript goes by headings.
+- **Back to where you last wrote** (Shift+F5): the caret returns to the
+  last place you changed the text. Press again for the place before, up
+  to four. What other people change makes no place of yours.
+- **Select more** (F8, or ⌥⌘↑ on a Mac): the word at the caret, then its
+  sentence, then its paragraph, then everything. Shift+F8 (⌥⌘↓) goes back
+  a step.
+- **Formatting marks** (Home ▸ More paragraph formatting ▸ Show ¶) now
+  show a dot for each space, an arrow for a tab, a ring for a no-break
+  space, a bent arrow where a line is broken by hand and a hook at an
+  optional hyphen, beside the mark at each paragraph's end. They are
+  drawn over the text and are never part of it.
+- **Dark paper** (the zoom menu, or Settings ▸ Writing): the page dark
+  with light text, for the screen only. Coloured text is made lighter
+  where it could not otherwise be read. Print, PDF and Word files are
+  unchanged.
+- **Formatting here** (the top of the sliders panel's Text tab, or ⌘K
+  "formatting here"): the style of the text at the caret, what its
+  paragraph was given on top of that, and what the words themselves were
+  given, each with a **Clear** of its own.
+- **Move a section from the outline**: in a Document the outline's
+  **Reorder** moves a heading with everything under it, up or down past
+  its neighbours, and takes it up or down a level with the headings
+  beneath it. Drag a heading to do the same by hand.
 - **Spellcheck** underlines as you type and uses the dictionary of the
   text's language, so a document set to German is checked as German on a
   device that speaks English.

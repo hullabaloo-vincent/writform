@@ -5470,6 +5470,289 @@ textarea.wf-el-shape-text {
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3), 0 2px 7px rgba(0, 0, 0, 0.22);
 }
 
+/* "Formatting here", at the top of the inspector's Text tab. */
+.wf-format-here-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+  margin: 0 0 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.wf-format-here-line > span {
+  flex: 0 0 100%;
+  color: var(--wf-text-dim);
+  font-size: 11px;
+}
+.wf-format-here-line > em {
+  flex: 1;
+  min-width: 0;
+  font-style: normal;
+}
+
+/* Formatting marks (editor/FormatMarks.ts): a sign drawn over each space,
+   tab and the like. The character itself is untouched and keeps its width.
+   The sign is the stylesheet's, so it is never selected, copied or found. */
+.wf-mk {
+  position: relative;
+}
+.wf-mk::before,
+.wf-mk-br::before {
+  position: absolute;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: var(--wf-accent);
+  opacity: 0.6;
+  font-weight: 400;
+  font-style: normal;
+  text-decoration: none;
+  text-indent: 0;
+  pointer-events: none;
+}
+.wf-mk-sp::before {
+  content: "·";
+}
+.wf-mk-nb::before {
+  content: "°";
+}
+.wf-mk-tab::before {
+  content: "→";
+  text-align: left;
+}
+.wf-mk-shy::before {
+  content: "¬";
+  left: -0.3em;
+  right: auto;
+}
+.wf-mk-br {
+  position: relative;
+  display: inline-block;
+  width: 0;
+}
+.wf-mk-br::before {
+  content: "↵";
+  left: 0.1em;
+  right: auto;
+}
+
+/* Dark paper (editor/ui/darkPaper.ts): the page dark with light ink, on the
+   screen only. What carries a light ground of its own (a highlight, a
+   shaded paragraph or cell) keeps dark ink on it. */
+.wf-paper-dark .wf-page,
+.wf-paper-dark .wf-docnotes {
+  color: #dcdce2;
+  color-scheme: dark;
+  background: #1d1d22;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.wf-paper-dark .wf-doc-content .ProseMirror {
+  caret-color: #f2f2f5;
+}
+.wf-paper-dark .wf-page .wf-rich .tiptap p.is-editor-empty:first-child::before {
+  color: #7d7c86;
+}
+.wf-paper-dark .wf-page [data-hl],
+.wf-paper-dark .wf-page [data-shade],
+.wf-paper-dark .wf-page td[data-bg] {
+  color: #202026;
+}
+/* (A line the writer gave a colour of its own keeps it.) */
+.wf-paper-dark .ProseMirror .wf-table-wrap td:not([style*="border"]) {
+  border-color: rgba(220, 220, 226, 0.6) !important;
+}
+.wf-paper-dark .wf-page .ProseMirror hr {
+  border-color: rgba(220, 220, 226, 0.45);
+}
+.wf-paper-dark .wf-page .ProseMirror a {
+  color: #8fb8ff;
+}
+.wf-paper-dark .wf-page-gap {
+  background: #131317;
+}
+/* What page view writes on the sheet: the first page's number and the
+   hairline where a block runs over a page. */
+.wf-paper-dark .wf-page-num-first {
+  color: rgba(255, 255, 255, 0.4);
+}
+.wf-paper-dark .wf-page-guide {
+  border-top-color: rgba(255, 255, 255, 0.26);
+}
+.wf-paper-dark .wf-page-guide span {
+  color: rgba(255, 255, 255, 0.42);
+}
+/* Greys that were chosen against white paper. */
+.wf-paper-dark .wf-page .ProseMirror [data-element="parenthetical"],
+.wf-paper-dark .wf-page .wf-img-caption {
+  color: #a4a4ad;
+}
+.wf-paper-dark .wf-page td[data-bg] .wf-img-caption {
+  color: #595959;
+}
+/* A reviewer's colour, lighter (the ones the list of changes uses). */
+.wf-paper-dark .ProseMirror [data-rev] {
+  --wf-rev: #e0705f;
+}
+.wf-paper-dark .ProseMirror [data-rev][data-c="1"] {
+  --wf-rev: #4fb783;
+}
+.wf-paper-dark .ProseMirror [data-rev][data-c="2"] {
+  --wf-rev: #5d9be0;
+}
+.wf-paper-dark .ProseMirror [data-rev][data-c="3"] {
+  --wf-rev: #b97ad8;
+}
+.wf-paper-dark .ProseMirror [data-rev][data-c="4"] {
+  --wf-rev: #d6a04a;
+}
+.wf-paper-dark .ProseMirror [data-rev][data-c="5"] {
+  --wf-rev: #45b3bd;
+}
+/* The list of notes under the last page. */
+.wf-paper-dark .wf-docnotes h4 {
+  color: #a4a4ad;
+}
+.wf-paper-dark .wf-docnotes-hint {
+  color: #96969f;
+}
+.wf-paper-dark .wf-docnotes button.wf-docnotes-num {
+  color: #a99cff;
+}
+.wf-paper-dark .wf-docnotes button.wf-docnotes-num:hover,
+.wf-paper-dark .wf-docnotes button.wf-docnotes-num:focus-visible {
+  background: rgba(255, 255, 255, 0.09);
+}
+.wf-paper-dark .wf-docnotes button.wf-docnotes-text:hover,
+.wf-paper-dark .wf-docnotes button.wf-docnotes-text:focus-visible {
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.04);
+}
+.wf-paper-dark .wf-docnotes li.removed .wf-docnotes-text {
+  color: #d49090;
+}
+.wf-paper-dark .wf-docnotes .wf-docnotes-field .ProseMirror {
+  border-color: #8f82f5;
+  background: #26262c;
+  color: #dcdce2;
+}
+
+/* The page count in the toolbar, where it opens Go to: as quiet as the
+   word count beside it. */
+.wf-editor-toolbar button.wf-doc-pages-btn,
+.wf-ribbon button.wf-doc-pages-btn,
+.wf-doc-pages-btn {
+  display: inline;
+  flex-direction: row;
+  min-width: 0;
+}
+
+/* Your corrections (Settings ▸ Writing). */
+.wf-autocorrect {
+  width: min(520px, calc(100vw - 32px));
+}
+.wf-autocorrect-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0 8px;
+}
+.wf-autocorrect-add input {
+  flex: 1;
+  min-width: 0;
+}
+.wf-autocorrect-filter {
+  width: 100%;
+}
+.wf-autocorrect-list {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  max-height: 220px;
+  overflow-y: auto;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+}
+.wf-autocorrect-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  font-size: 13px;
+}
+.wf-autocorrect-list li + li {
+  border-top: 1px solid var(--wf-border);
+}
+.wf-autocorrect-typed {
+  min-width: 110px;
+  color: var(--wf-text-dim);
+}
+.wf-autocorrect-becomes {
+  flex: 1;
+  min-width: 0;
+}
+.wf-autocorrect-own {
+  color: var(--wf-accent);
+  font-size: 11px;
+}
+.wf-autocorrect-none {
+  color: var(--wf-text-dim);
+}
+.wf-autocorrect-back {
+  margin-right: 8px;
+}
+.wf-autocorrect-field {
+  display: block;
+  margin-top: 8px;
+}
+.wf-autocorrect-field span {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+}
+.wf-autocorrect-field textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+/* Go to: one field, and the headings that match under it. */
+.wf-goto {
+  width: min(420px, calc(100vw - 32px));
+}
+.wf-goto input {
+  width: 100%;
+}
+.wf-goto-hint {
+  margin: 8px 0 0;
+  color: var(--wf-text-dim);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.wf-goto-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  max-height: 240px;
+  overflow-y: auto;
+}
+.wf-goto-list button {
+  display: block;
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  padding: 6px 8px;
+  border: 0;
+  border-radius: var(--wf-radius-sm);
+  background: transparent;
+  color: var(--wf-text);
+  text-align: left;
+  white-space: normal;
+}
+.wf-goto-list button.picked {
+  background: var(--wf-bg-hover);
+}
+
 /* The page at another size (apps/documents/shell/ZoomFrame.tsx). At 100%
    these two boxes are plain and the page is as above. Zoomed, the page
    keeps its paper's width, the inner box is drawn scaled from its corner,
@@ -11832,6 +12115,18 @@ body {
 .wf-symbol-group button:hover {
   background: var(--wf-bg-hover);
 }
+/* The spaces and hyphens that cannot be told apart by eye are listed by
+   name, as menu rows (not as the grid's squares). */
+.wf-symbol-group.wf-symbol-named button {
+  width: 100%;
+  height: auto;
+  min-height: 30px;
+  padding: 5px 10px;
+  justify-content: flex-start;
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
 .wf-flyout.sheet.wf-symbols {
   width: auto;
 }
@@ -12870,6 +13165,19 @@ body {
   /* The body's space after, which is in the body's ems. */
   margin-bottom: var(--wfd-psp, 1em);
   text-indent: 0;
+}
+/* On dark paper (editor/ui/darkPaper.ts) the two greys above are lighter.
+   These weigh what the rules above weigh and come after them, so a
+   document that changed either style still has the last word. */
+.wf-paper-dark :where(.ProseMirror) p[data-element="subtitle"],
+.wf-paper-dark :where(.ProseMirror) p[data-element="caption"] {
+  color: #a4a4ad;
+}
+.wf-paper-dark :where(.ProseMirror) p[data-element="subtitle"][data-shade],
+.wf-paper-dark :where(.ProseMirror) p[data-element="caption"][data-shade],
+.wf-paper-dark :where(.ProseMirror td[data-bg]) p[data-element="subtitle"],
+.wf-paper-dark :where(.ProseMirror td[data-bg]) p[data-element="caption"] {
+  color: #595959;
 }
 .wf-fmt-none :where(.ProseMirror) p[data-element="nospace"],
 .wf-rich-wrap :where(.ProseMirror) p[data-element="nospace"] {

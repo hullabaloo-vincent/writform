@@ -23,6 +23,7 @@ import { applyStyle, capturedProps, clearCaptured } from "../src/editor/styles/a
 import { stylesCss } from "../src/editor/styles/css";
 import { newStyleId, readDocStyles, writeDocStyle } from "../src/editor/styles/docStyles";
 import { listMarker, resolveStyles, type StyleOverrides } from "../src/editor/styles/sheet";
+import { onDarkPaper } from "../src/editor/ui/darkPaper";
 
 type Marks = (string | { type: string; attrs: Record<string, unknown> })[];
 const t = (text: string, ...marks: Marks): JSONContent => ({
@@ -280,6 +281,12 @@ const L1: FormatContext = { styles: styles(), level: 1 };
     css.replace(/\n/g, " ⏎ "),
   );
   check("a centred style has no first-line indent", /text-align: center[^}]*text-indent: 0pt/.test(css));
+
+  // On dark paper a style's own colour is lightened where it could not be read.
+  const night = stylesCss('[data-wfs="k"]', resolved, {}, onDarkPaper);
+  check("on dark paper a style's dark colour is shown lighter", !/h1 \{[^}]*color: #2f5496/.test(night) && new RegExp(`h1 \\{[^}]*color: ${onDarkPaper("#2f5496")}`).test(night), night.replace(/\n/g, " ⏎ "));
+  check("and as it was on a shaded paragraph or in a shaded cell", night.includes('[data-wfs="k"] .ProseMirror h1:is([data-shade], td[data-bg] *) { color: #2f5496 }'));
+  check("a style with no colour of its own says nothing more", night.split("\n").filter((line) => line.includes(":is([data-shade]")).length === 1, night.replace(/\n/g, " ⏎ "));
 
   writeDocStyle(ydoc, "h1", null);
   writeDocStyle(ydoc, mine, null);

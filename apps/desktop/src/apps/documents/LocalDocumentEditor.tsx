@@ -104,8 +104,15 @@ import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
 import { CommandKeys } from "../../editor/commands/CommandKeys";
 import type { CommandCtx, ShellActions } from "../../editor/commands/run";
 import { useEditorCommands } from "../../editor/commands/useEditorCommands";
+import { autoCorrect } from "../../editor/autocorrect/AutoCorrect";
+import { capitalsHere } from "../../editor/autocorrect/where";
+import { EditPlaces } from "../../editor/EditPlaces";
+import { FormatMarks, refreshFormatMarks } from "../../editor/FormatMarks";
+import { useDarkPaper, useDarkPaperCss } from "../../editor/ui/darkPaper";
 import { ListStarts } from "../../editor/format/listStarts";
 import { WordMarks } from "../../editor/format/wordMark";
+import { GoToBox } from "./GoToBox";
+import type { PageSource } from "./goTo";
 import { ZoomControl } from "./shell/ZoomControl";
 import { ZoomFrame } from "./shell/ZoomFrame";
 import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, usePrintShortcut } from "./shell/hooks";
@@ -219,6 +226,10 @@ function LocalEditorInner({
   // The document as the editor's commands find it (set further down, once
   // everything they need is known).
   const commandCtxRef = useRef<CommandCtx | null>(null);
+  const [goToOpen, setGoToOpen] = useState(false);
+  // Whether formatting marks are shown (the switch is further down).
+  const marksOnRef = useRef(localStorage.getItem("wf-doc-marks") === "on");
+  const darkPaper = useDarkPaper((st) => st.dark);
 
   const extensions = useMemo(
     () => [
@@ -235,8 +246,18 @@ function LocalEditorInner({
       ...(format === "manuscript"
         ? [ManuscriptLabels.configure({ getDesign: () => bookRef.current.design }), ManuscriptPaste]
         : []),
+      // Where the text was last changed, to go back to.
+      EditPlaces,
+      // A sign over each space, tab and line break, while marks are shown.
+      ...(format === "none" ? [FormatMarks.configure({ on: () => marksOnRef.current })] : []),
       // Bold, italic and underline act on the word the caret is in.
       WordMarks,
+      // Slips set right and sentences given their capital, as a word is finished.
+      ...autoCorrect({
+        lang: () => langRef.current,
+        capitals: (block) => capitalsHere(format, block),
+        raise: () => format === "none" && (docStyles.formatRef.current?.level ?? 1) >= 2,
+      }),
       // "1) ", "a. " and "i. " start a numbered list, as "1. " does.
       ...(format === "none" ? [ListStarts] : []),
       // The keys the command list binds itself (moving a paragraph, …).
@@ -356,6 +377,8 @@ function LocalEditorInner({
     const next = !showMarks;
     setShowMarks(next);
     localStorage.setItem("wf-doc-marks", next ? "on" : "off");
+    marksOnRef.current = next;
+    refreshFormatMarks(editor);
   };
   const canPrint = meta.format !== "manuscript";
   const openPrint = useCallback(() => setPrintOpen(true), []);
@@ -490,6 +513,7 @@ function LocalEditorInner({
     check: () => setPanel("check"),
     history: () => setPanel("history"),
     toggleFocus,
+    goTo: () => setGoToOpen(true),
     ...(speaks ? { readAloud: () => setReading(true) } : {}),
     ...(hasPreview ? { preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)) } : {}),
     ...(canPrint ? { print: openPrint } : {}),
@@ -513,10 +537,27 @@ function LocalEditorInner({
         }
       : {}),
   };
+  // Go to: a document's and a script's pages are worked out on asking when
+  // page view is not showing them. A book's are its own (see its preview).
+  const askPages: PageSource | null =
+    format === "manuscript"
+      ? null
+      : async (json) => {
+          const { docPageMap } = await import("../../doclayout/exportDoc");
+          const map = await docPageMap(
+            format === "none"
+              ? { doc: json, title: meta.title, author, settings: docSettings, styles: docStyles.overrides }
+              : { ...scriptedAsDocument(json, format, meta.title), title: meta.title, author },
+            "goto",
+          );
+          return map ? { pages: map.pages, starts: map.starts } : null;
+        };
+  const paperCss = useDarkPaperCss(editor, darkPaper);
   const commandCtx: CommandCtx = {
     format: meta.format,
     rich: meta.format === "none" ? docStyles.format : null,
     editable: !!editor && editor.isEditable,
+    lang,
     settings: docSettings,
     patchSettings: (patch) => {
       if (provider) updateDocSettings(provider.doc, patch);
@@ -800,6 +841,7 @@ function LocalEditorInner({
                   goalKey={`local:${meta.id}`}
                   pagesExact={pageGuides ? pagesExact : null}
                   pageInches={pageSpecFor(meta.format, docSettings).h}
+                  onGoTo={() => setGoToOpen(true)}
                 />
                 </>
               }
@@ -823,6 +865,7 @@ function LocalEditorInner({
                   goalKey={`local:${meta.id}`}
                   pagesExact={pageGuides ? pagesExact : null}
                   pageInches={pageSpecFor(meta.format, docSettings).h}
+                  onGoTo={() => setGoToOpen(true)}
                 />
                 </>
               }
@@ -867,8 +910,21 @@ function LocalEditorInner({
         }}
       />
 
+      {goToOpen && editor && (
+        <GoToBox
+          editor={editor}
+          format={format}
+          shown={() => {
+            const map = pageMapRef.current;
+            return map && map !== "pending" && map.doc === editor.state.doc ? map : null;
+          }}
+          ask={askPages}
+          onClose={() => setGoToOpen(false)}
+        />
+      )}
+
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className="wf-doc-scroll" ref={scrollRef} lang={lang}>
+        <div className={`wf-doc-scroll${darkPaper ? " wf-paper-dark" : ""}`} ref={scrollRef} lang={lang}>
           <ZoomFrame scroller={scrollRef} paper={pageSpecFor(meta.format, docSettings)}>
           <div
             className={`wf-page wf-fmt-${meta.format}${showMarks && meta.format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
@@ -878,6 +934,7 @@ function LocalEditorInner({
           >
             {/* The styles this document has changed (see editor/styles/css.ts). */}
             {meta.format === "none" && docStyles.css && <style>{docStyles.css}</style>}
+            {paperCss && <style>{paperCss}</style>}
             <EditorContent className="wf-rich editable wf-doc-content" editor={editor} />
           </div>
           {/* Its footnotes and endnotes, where they can be seen and changed. */}

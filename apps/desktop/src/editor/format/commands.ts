@@ -5,6 +5,7 @@
  * needs level 2 is in run.ts, ParaFormat.ts and nodes/TaskList.ts).
  */
 
+import { specialCharacter } from "../ui/symbols";
 import { getMarkRange, type Editor } from "@tiptap/core";
 import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
 import { TextSelection, type EditorState } from "@tiptap/pm/state";
@@ -205,6 +206,23 @@ export function setListStart(editor: Editor, how: "restart" | "continue"): boole
 export function insertDate(editor: Editor): boolean {
   const text = new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" });
   return editor.chain().focus().insertContent(text).run();
+}
+
+/**
+ * A no-break space, a no-break hyphen or an optional hyphen where the caret
+ * is (over what is selected). Put in as typed text, so it takes the
+ * formatting it is typed into. (Not through the editor's own "insert
+ * content": that reads its argument as a page of HTML, where a lone space
+ * is nothing at all.)
+ */
+export function insertSpecial(editor: Editor, id: string): boolean {
+  const char = specialCharacter(id);
+  if (!char || !editor.isEditable) return false;
+  const { state, view } = editor;
+  if (!state.selection.$from.parent.isTextblock) return false;
+  view.dispatch(state.tr.insertText(char).scrollIntoView());
+  view.focus();
+  return true;
 }
 
 /** A web address as typed, made into one a link can hold — or null. */

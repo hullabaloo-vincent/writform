@@ -80,7 +80,7 @@ import { FontPicker } from "../../fonts/ui/FontPicker";
 import { isCmdError } from "../../lib/backend";
 import type { ImageUploader } from "../../lib/upload";
 import { toastError } from "../../platform/toast";
-import { changeCase, clearFormatting, insertDate, setListStart, setNumbering, sortBlocks, type CaseKind } from "../format/commands";
+import { changeCase, clearFormatting, insertDate, insertSpecial, setListStart, setNumbering, sortBlocks, type CaseKind } from "../format/commands";
 import { curRun, type FormatContext } from "../format/effective";
 import { paintFormat, pickUpFormat, type Paint } from "../format/painter";
 import { curParaFormat, setBorder, setLineHeight, setSection, setShade, stepIndent, toggleColumnBreak } from "../format/ParaFormat";
@@ -105,7 +105,7 @@ import { LinkFlyout } from "./LinkFlyout";
 import { SectionFlyout } from "./SectionFlyout";
 import { StyleGallery } from "./StyleGallery";
 import { TableFlyout } from "./TableFlyout";
-import { SYMBOL_GROUPS } from "./symbols";
+import { SPECIAL_CHARACTERS, SYMBOL_GROUPS } from "./symbols";
 
 export type RibbonTab = "home" | "insert" | "layout" | "review" | "table" | "picture";
 
@@ -843,19 +843,31 @@ export function Ribbon({
       label: "Symbols",
       content: (
         <Flyout title="Symbol" icon={<Omega size={15} />} label="Symbol" panelClass="wf-symbols">
-          {() =>
-            SYMBOL_GROUPS.map((group) => (
-              <div key={group.label} className="wf-symbol-group">
-                <span>{group.label}</span>
-                <div>
-                  {group.symbols.map((s) => (
-                    <button key={s} type="button" title={s} onClick={() => chain().insertContent(s).run()}>
-                      {s}
-                    </button>
-                  ))}
+          {() => (
+            <>
+              {SYMBOL_GROUPS.map((group) => (
+                <div key={group.label} className="wf-symbol-group">
+                  <span>{group.label}</span>
+                  <div>
+                    {group.symbols.map((s) => (
+                      <button key={s} type="button" title={s} onClick={() => chain().insertContent(s).run()}>
+                        {s}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+              ))}
+              {/* The ones that cannot be told apart by eye, by name. */}
+              <div className="wf-symbol-group wf-symbol-named">
+                <span>Spaces and hyphens</span>
+                {SPECIAL_CHARACTERS.map((c) => (
+                  <FlyoutItem key={c.id} hint={c.hint} onPick={() => insertSpecial(editor, c.id)}>
+                    {c.label}
+                  </FlyoutItem>
+                ))}
               </div>
-            ))
+            </>
+          )
           }
         </Flyout>
       ),

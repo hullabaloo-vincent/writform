@@ -70,6 +70,12 @@ export interface DocxWriteOptions {
 }
 
 /** Word's highlighter pens, by colour; any other colour is run shading. */
+/** A hyphen the line may not break at, and one that shows only where it does. */
+const NO_BREAK_HYPHEN = String.fromCharCode(0x2011);
+const SOFT_HYPHEN = String.fromCharCode(0x00ad);
+/** What run text is cut at: each of these is an element of its own in Word. */
+const TEXT_PARTS = new RegExp(`(\\t|\\n|${NO_BREAK_HYPHEN}|${SOFT_HYPHEN})`);
+
 const HIGHLIGHT_NAME: Record<string, string> = {
   "#ffff00": "yellow",
   "#00ff00": "green",
@@ -279,13 +285,17 @@ class Writer {
   }
 
   /** Text as run content: tabs and line breaks are elements, not
-   *  characters. (Deleted text has an element of its own.) */
+   *  characters, and so in Word are a hyphen the line may not break at and
+   *  one that shows only where it does. (Deleted text has an element of
+   *  its own.) */
   private textXml(text: string, deleted = false): string {
     let out = "";
     const tag = deleted ? "w:delText" : "w:t";
-    for (const piece of text.split(/(\t|\n)/)) {
+    for (const piece of text.split(TEXT_PARTS)) {
       if (piece === "\t") out += "<w:tab/>";
       else if (piece === "\n") out += "<w:br/>";
+      else if (piece === NO_BREAK_HYPHEN) out += "<w:noBreakHyphen/>";
+      else if (piece === SOFT_HYPHEN) out += "<w:softHyphen/>";
       else if (piece) out += `<${tag} xml:space="preserve">${xmlEscape(piece)}</${tag}>`;
     }
     return out;

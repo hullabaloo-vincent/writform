@@ -96,6 +96,30 @@ Anything the ribbon does can also be asked for by name. Press **⌘K**
 5. ⌘⇧9 (or the checklist button) starts a **checklist**. Click a box to
    tick it.
 
+## Let the app fix slips as you type
+
+1. Open **Settings ▸ Writing** and tick **Correct as I type**. It is on
+   to begin with on a computer.
+2. Untick any kind of correction you do not want. Each has its own line.
+3. **Your corrections…** shows every word that is changed and what it
+   becomes. Add your own (a shortening you always type, say), remove any
+   you disagree with, and list words to leave exactly as typed.
+4. When it changes something you meant, press **Backspace** straight
+   away, or Undo once. The correction is taken back and your typing stays.
+
+## Find your way around a long document
+
+- **Go to a page or a heading:** click the page count beside the word
+  count. Type `12`, `+2`, or a few words of a heading, and press Enter.
+- **Go back to where you were writing:** press **Shift+F5**. Press it
+  again for the place before.
+- **Move a section:** open the outline, press **Reorder**, and use the
+  arrows beside a heading. Up and down move it past its neighbours. Left
+  and right change its level.
+- **See why text looks the way it does:** open the sliders panel. The top
+  of its Text tab names the style, then what the paragraph and the words
+  have of their own, with a Clear beside each.
+
 ## Add a table, a footnote or a table of contents
 
 1. **A table**: Insert ▸ Table and pick a size. Tab moves from cell to cell.

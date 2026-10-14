@@ -182,6 +182,7 @@ const ONLY_SPACES = /^[ \t\r\n\u1680\u2000-\u2006\u2008-\u200a\u205f\u3000]+$/;
 const INVISIBLE = /[\u200b\u2060\ufeff]/g;
 const SOFT_HYPHEN = "\u00ad";
 const LETTER = /\p{L}/u;
+const NO_BREAK_HYPHEN = String.fromCharCode(0x2011);
 
 const featKey = (f?: string[]) => (f && f.length ? f.join(",") : "");
 
@@ -276,6 +277,10 @@ export class Composer {
     const out: Glyphs[] = [];
     const add = (t: string, sz: number, feat?: string[]) => {
       if (!t) return;
+      // A hyphen the line may not break at is kept in its word (see
+      // `syllables`). Many faces have no glyph of that name: there it is
+      // drawn as the face's own hyphen, not as a box or in another font.
+      if (t.includes(NO_BREAK_HYPHEN) && !this.faces.covers(face, NO_BREAK_HYPHEN)) t = t.split(NO_BREAK_HYPHEN).join("-");
       const cs = tracking * sz;
       out.push({ text: t, face, size: sz, feat, cs, underline, ...extra, w: this.faces.measure(face, sz, t, feat, cs) });
     };

@@ -56,6 +56,7 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   { id: "doc.larger", label: "Larger text", group: "Text", keywords: "bigger size grow font", keys: "Mod-Shift-.", formats: DOC },
   { id: "doc.smaller", label: "Smaller text", group: "Text", keywords: "size shrink font", keys: "Mod-Shift-,", formats: DOC },
   { id: "doc.clear", label: "Clear formatting", group: "Text", keywords: "plain remove reset", formats: DOC },
+  { id: "doc.here", label: "Formatting here", group: "Text", keywords: "what formatting style inspector reveal why does it look", formats: DOC },
   { id: "doc.case.sentence", label: "Sentence case", group: "Text", keywords: "change case capitals" },
   { id: "doc.case.lower", label: "Lowercase", group: "Text", keywords: "change case small letters" },
   { id: "doc.case.upper", label: "Uppercase", group: "Text", keywords: "change case capitals all caps" },
@@ -102,6 +103,10 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   { id: "doc.divider", label: "Divider", group: "Insert", keywords: "horizontal rule line scene break", formats: PROSE },
   { id: "doc.linebreak", label: "Line break", group: "Insert", keywords: "new line same paragraph", keys: "Shift-Enter" },
   { id: "doc.date", label: "Today's date", group: "Insert", formats: DOC },
+  // (On a Mac, Option with the space bar types a no-break space anyway: bound here too, so it is the same everywhere.)
+  { id: "doc.nbsp", label: "No-break space", group: "Insert", keywords: "non-breaking nonbreaking hard space keep together", keys: { mac: "Alt-Space", other: "Mod-Shift-Space" }, bind: true },
+  { id: "doc.nbhyphen", label: "No-break hyphen", group: "Insert", keywords: "non-breaking nonbreaking hard hyphen keep together", keys: "Mod-Shift--", bind: true },
+  { id: "doc.softhyphen", label: "Optional hyphen", group: "Insert", keywords: "soft discretionary hyphen break here", keys: "Mod--", bind: true },
 
   // ---- Page and view
   { id: "doc.pagesetup", label: "Page setup", group: "Page and view", keywords: "paper size orientation columns", formats: DOC },
@@ -111,9 +116,10 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   { id: "doc.linenumbers", label: "Number the lines", group: "Page and view", keywords: "line numbers", formats: DOC },
   { id: "doc.preview", label: "Preview the printed pages", group: "Page and view", keywords: "print preview" },
   { id: "doc.print", label: "Print", group: "Page and view", keys: "Mod-p", on: "window" },
-  { id: "doc.marks", label: "Show formatting marks", group: "Page and view", keywords: "paragraph marks pilcrow hidden characters", formats: DOC },
+  { id: "doc.marks", label: "Show formatting marks", group: "Page and view", keywords: "paragraph marks pilcrow hidden characters spaces tabs line breaks", formats: DOC },
   { id: "doc.pageview", label: "Page view", group: "Page and view", keywords: "pages breaks sheets" },
   { id: "doc.focus", label: "Focus mode", group: "Page and view", keywords: "distraction free full screen" },
+  { id: "doc.paper", label: "Dark paper", group: "Page and view", keywords: "night mode dark page light" },
   { id: "doc.zoom.in", label: "Zoom in", group: "Page and view", keywords: "larger page magnify" },
   { id: "doc.zoom.out", label: "Zoom out", group: "Page and view", keywords: "smaller page" },
   { id: "doc.zoom.100", label: "Zoom to 100%", group: "Page and view", keywords: "actual size reset" },
@@ -138,6 +144,10 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   // ---- Find and undo
   { id: "doc.find", label: "Find", group: "Find and undo", keywords: "search", keys: "Mod-f", on: "window" },
   { id: "doc.replace", label: "Find and replace", group: "Find and undo", keywords: "search swap", keys: { mac: "Alt-Mod-f", other: "Ctrl-h" }, on: "window" },
+  { id: "doc.goto", label: "Go to a page or a heading", group: "Find and undo", keywords: "jump page number heading navigate", keys: "Alt-Mod-g", bind: true },
+  { id: "doc.goback", label: "Back to where I last wrote", group: "Find and undo", keywords: "last edit place return previous change", keys: "Shift-F5", bind: true },
+  { id: "doc.grow", label: "Select more", group: "Find and undo", keywords: "grow extend expand selection word sentence paragraph", keys: { mac: "Alt-Mod-ArrowUp", other: "F8" }, bind: true },
+  { id: "doc.shrink", label: "Select less", group: "Find and undo", keywords: "shrink selection back", keys: { mac: "Alt-Mod-ArrowDown", other: "Shift-F8" }, bind: true },
   { id: "doc.undo", label: "Undo", group: "Find and undo", keys: "Mod-z" },
   { id: "doc.redo", label: "Redo", group: "Find and undo", keys: "Shift-Mod-z" },
 

@@ -67,6 +67,31 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 ```
 
+## LibreOffice's autocorrect list (corrections as you type)
+
+`apps/desktop/src/editor/autocorrect/data/enLibreOffice.ts` is derived from
+the English autocorrect lists of LibreOffice (the LibreOffice project's
+`core` repository, `extras/source/autocorr/lang/en-US/DocumentList.xml` and
+`lang/en-GB/DocumentList.xml`, as they stood at commit `44dcf332` on
+13 October 2026), by `apps/desktop/tools/build-autocorrect.mjs`.
+
+It is a modified version, a selection of 827 of the list's 2,473 entries in
+a format of our own. Left out: the names for signs (":smile:"), the patterns
+for arrows and the like, slips that run over two words, entries that change
+only a word's capitals or accents, and nine whose "slip" is a word in its
+own right (fora, withe, directer and the like). Where the British list gives
+another answer than the American one (four entries), that answer is kept
+apart and used for English as it is spelled outside North America.
+
+LibreOffice is made available under the Mozilla Public License 2.0, and so
+is that one file, whatever the rest of this repository is under. The file
+says so at its head. The licence is at https://www.mozilla.org/MPL/2.0/ and
+the list in its original form at
+https://github.com/LibreOffice/core/tree/master/extras/source/autocorr/lang.
+
+The other word lists AutoCorrect uses (`data/en.ts`, `data/symbols.ts`,
+`data/capitals.ts` in the same folder) were written for this app.
+
 ## The PDF engine (editing PDFs)
 
 `pdf-engine/` is a modified copy of ten crates of **PdfCraft 0.7.1**
