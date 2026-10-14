@@ -16,7 +16,7 @@ import { bodyLook, pageDims, type DocSettings } from "../apps/documents/docSetti
 // node modules don't, so what the layout needs of them — how their
 // attributes are read — comes from schema/sanitize (harness/worker.test.ts
 // runs the worker where there is no window, and fails if that changes).
-import { colorAttr, firstIndentAttr, imageAlign, imageCaption, indentAttr, lineAtAttr, lineRuleAttr, linesAttr, MARKER_GLYPH, markerAttr, noteKind, noteNumber, parseBorder, parseCols, parseSection, sizeAttr, tocDepth, vscriptAttr, type Border, type ImageAlign, type LineRule, type NoteKind, type SectionProps, type TableLines, type VScript, cellEdges, imageBorder, imageRound, type CellEdges, type Edge } from "../editor/schema/sanitize";
+import { capsAttr, letterSpacingAttr, underlineKindAttr, type UnderlineKind, type Caps, colorAttr, decimalMark, parseTabs, type TabStop, firstIndentAttr, imageAlign, imageCaption, indentAttr, lineAtAttr, lineRuleAttr, linesAttr, MARKER_GLYPH, markerAttr, noteKind, noteLabel, noteFormat, noteRestart, parseBorder, parseCols, parseSection, sizeAttr, tocDepth, vscriptAttr, type Border, type ImageAlign, type LineRule, type NoteKind, type SectionProps, type TableLines, type VScript, cellEdges, imageBorder, imageRound, type CellEdges, type Edge, viewOf, type PictureView, cellVAlign, rowHeight, rowKeep, tableAlign, tableIndent, type CellVAlign, type TableAlign } from "../editor/schema/sanitize";
 import {
   BLOCK_GAP,
   BULLETS,
@@ -53,6 +53,14 @@ export interface DocRun {
   color?: string;
   highlight?: string;
   vscript?: VScript;
+  /** Capitals as formatting, and letter spacing (points). */
+  caps?: Caps;
+  track?: number;
+  /** An underline other than a single line, and its own colour. */
+  ul?: UnderlineKind;
+  ulc?: string;
+  /** A line through drawn twice. */
+  dstrike?: boolean;
   /** A note's reference number: which of the model's notes it cites. */
   note?: number;
   /** Where the run starts in the content of the editor's node (so the
@@ -135,6 +143,8 @@ export interface DocPara extends BlockBase {
   /** Not the start of its node but this far into its content (a line of a
    *  block of code). */
   from?: number;
+  /** Its tab stops, when a tab is in it (else none: a tab is a space). */
+  tabs?: { stops: TabStop[]; every: number; decimal: string };
 }
 
 export interface DocImage extends BlockBase {
@@ -149,6 +159,8 @@ export interface DocImage extends BlockBase {
   /** A line round it, and how round its corners are (see sanitize.ts). */
   border?: Edge;
   round?: number;
+  /** The part of it shown, and a quarter turn. */
+  view?: PictureView;
 }
 
 export interface DocRule extends BlockBase {
@@ -165,6 +177,8 @@ export interface DocCell {
   bg?: string;
   /** Lines of its own, by side (a side with no thickness has none). */
   edges?: CellEdges;
+  /** Where its words sit in a row taller than they are (absent: the top). */
+  va?: CellVAlign;
 }
 
 export interface DocTable extends BlockBase {
@@ -177,6 +191,16 @@ export interface DocTable extends BlockBase {
   rows: DocCell[][];
   /** Where each row is in the editor's document. */
   rowPos?: number[];
+  /** The least each row is tall, points (0: as its cells need). Set only
+   *  when a row has one. */
+  rowH?: number[];
+  /** Rows kept whole: moved to the next page rather than cut. Set only when
+   *  a row is. */
+  keep?: boolean[];
+  /** Where a table narrower than the text sits (absent: at the left), or
+   *  how far in from the left it starts. */
+  align?: TableAlign;
+  ind?: number;
 }
 
 /** A table of contents: the layout fills in the headings and their pages. */
@@ -281,6 +305,7 @@ interface Ctx {
 
 export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel {
   const s = opts.settings;
+  const lang = opts.lang ?? (s.lang || "en-US");
   const dims = pageDims(s);
   const lookup = opts.fonts?.face ?? ((id: string | null | undefined) => printFace(id));
   const bodyFace = lookup(s.bodyFont);
@@ -318,7 +343,9 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
   const noteOf = (node: JSONContent, src: number, within?: number): number => {
     const kind = noteKind(node.attrs?.kind);
     counts[kind] += 1;
-    const number = noteNumber(counts[kind], kind);
+    // (Footnotes that start again on each page are numbered again once the
+    // layout knows where each lands: doclayout/layout.ts.)
+    const number = noteLabel(counts[kind], kind === "foot" ? noteFormat(s.fnFormat, "1") : noteFormat(s.enFormat, "i"));
     const line = Math.min(body.line, 1.15);
     // A note belongs to the paragraph that cites it.
     const tag = element("Note", within);
@@ -367,8 +394,16 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       for (const m of child.marks ?? []) {
         if (m.type === "bold") run.bold = true;
         else if (m.type === "italic") run.italic = true;
-        else if (m.type === "underline") run.underline = true;
-        else if (m.type === "strike") run.strike = true;
+        else if (m.type === "underline") {
+          run.underline = true;
+          const kind = underlineKindAttr(m.attrs?.kind);
+          if (kind) run.ul = kind;
+          const c = colorAttr(m.attrs?.c);
+          if (c) run.ulc = c;
+        } else if (m.type === "strike") {
+          run.strike = true;
+          if (m.attrs?.dbl === true) run.dstrike = true;
+        }
         else if (m.type === "code") run.code = true;
         else if (m.type === "link" && typeof m.attrs?.href === "string" && SAFE_LINK.test(m.attrs.href)) {
           run.link = m.attrs.href;
@@ -385,6 +420,12 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         } else if (m.type === "vscript") {
           const v = vscriptAttr(m.attrs?.v);
           if (v) run.vscript = v;
+        } else if (m.type === "caps") {
+          const v = capsAttr(m.attrs?.v);
+          if (v) run.caps = v;
+        } else if (m.type === "letterSpacing") {
+          const pt = letterSpacingAttr(m.attrs?.pt);
+          if (pt !== null) run.track = pt;
         }
       }
       if (run.code) families.add(CODE_FONT);
@@ -417,14 +458,10 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     // paragraph with nothing in it is nothing.
     const tag = (node.content ?? []).length ? element(as ?? (look.outline ? `H${Math.min(6, Math.max(1, look.outline))}` : "P"), ctx.parent) : undefined;
     const runs = runsOf(node, ctx.src, tag);
-    // Tabs opening a paragraph are a hand-set indent.
-    let tabs = 0;
-    while (runs[0] && runs[0].text !== "\n" && /^\t/.test(runs[0].text)) {
-      const lead = /^\t+/.exec(runs[0].text)![0].length;
-      tabs += lead;
-      runs[0] = { ...runs[0], text: runs[0].text.slice(lead), at: (runs[0].at ?? 0) + lead };
-      if (!runs[0].text) runs.shift();
-    }
+    // A tab goes to the paragraph's next tab stop (its own, else its
+    // style's, else every so often from the margin).
+    const own = parseTabs(a.tabs);
+    const tabbed = runs.some((r) => r.text.includes("\t"));
     // A quote's own indents are its container's (below); every other style's
     // are the paragraph's.
     const styleL = styleId === QUOTE_STYLE ? 0 : look.indL;
@@ -452,8 +489,12 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       // A hanging first line starts that far to the left of the rest.
       left: ctx.left + indL - hang,
       right: ctx.right + indR,
-      first: Math.max(0, indF) + tabs * 36,
+      first: Math.max(0, indF),
     };
+    if (tabbed) {
+      const styled = parseTabs(look.tabs);
+      block.tabs = { stops: Array.isArray(own) ? own : own === "none" ? [] : Array.isArray(styled) ? styled : [], every: s.tabStop * 72, decimal: decimalMark(lang) };
+    }
     if (hang) block.hang = hang;
     if (rule && at !== null) {
       block.lineRule = rule;
@@ -611,6 +652,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         if (!url) return [];
         const w = num(node.attrs?.width);
         const h = num(node.attrs?.height);
+        const view = viewOf(node.attrs);
         const align = imageAlign(node.attrs?.align);
         const text = imageCaption(node.attrs?.caption);
         // A figure, with what it shows in words when the writer has said.
@@ -632,6 +674,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             ...(caption ? { caption } : {}),
             ...(imageBorder(node.attrs?.bdr) ? { border: imageBorder(node.attrs?.bdr)! } : {}),
             ...(imageRound(node.attrs?.round) ? { round: imageRound(node.attrs?.round)! } : {}),
+            ...(view ? { view } : {}),
             ...(pos !== undefined ? { pos } : {}),
             ...(figureTag !== undefined ? { tag: figureTag } : {}),
             before: 0,
@@ -645,14 +688,19 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         const tableTag = element("Table", ctx.parent);
         const headed = node.attrs?.head === true;
         let rowIndex = 0;
+        const rowH: number[] = [];
+        const keep: boolean[] = [];
         const rows: DocCell[][] = within(node, pos, (row, rowAt) => {
           const rowTag = element("TR", tableTag);
           const header = headed && rowIndex === 0;
           rowIndex += 1;
+          rowH.push(rowHeight(row.attrs?.h) ?? 0);
+          keep.push(rowKeep(row.attrs?.keep) === true);
           return [
           within(row, rowAt, (cell, cellAt): DocCell[] => {
             const bg = colorAttr(cell.attrs?.bg);
             const edges = cellEdges(cell.attrs?.bdr);
+            const va = cellVAlign(cell.attrs?.va);
             const whole = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 1 ? Math.min(v, 1000) : 1);
             const colspan = whole(cell.attrs?.colspan);
             const rowspan = whole(cell.attrs?.rowspan);
@@ -667,6 +715,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
                 rowspan,
                 ...(bg ? { bg } : {}),
                 ...(edges ? { edges } : {}),
+                ...(va ? { va } : {}),
               },
             ];
           }),
@@ -674,6 +723,8 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         });
         if (!rows.length) return [];
         const count = Math.max(1, ...rows.map((r) => r.reduce((n, c) => n + c.colspan, 0)));
+        const align = tableAlign(node.attrs?.align);
+        const ind = tableIndent(node.attrs?.ind);
         return [
           {
             kind: "table",
@@ -688,6 +739,10 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             head: headed,
             lines: linesAttr(node.attrs?.lines),
             rows,
+            ...(rowH.some((h) => h > 0) ? { rowH } : {}),
+            ...(keep.some(Boolean) ? { keep } : {}),
+            ...(align ? { align } : {}),
+            ...(!align && ind ? { ind } : {}),
           },
         ];
       }
@@ -724,9 +779,11 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     const here = index < virtual ? undefined : place;
     if (index >= virtual) place += sizeOf(node);
     const src = Math.max(0, index - virtual);
-    const made = block(node, { src, left: 0, right: 0, listed: false, ...(struct ? { parent: 0 } : {}) }, here);
-    // A section starts with a top-level paragraph that says so.
+    // A section starts with a top-level paragraph that says so (and may
+    // start its footnotes again).
     const sect = node.type === "paragraph" || node.type === "heading" ? parseSection(node.attrs?.sect) : null;
+    if (sect && noteRestart(s.fnRestart) === "section") counts.foot = 0;
+    const made = block(node, { src, left: 0, right: 0, listed: false, ...(struct ? { parent: 0 } : {}) }, here);
     if (sect && made[0]) made[0].sect = sect;
     blocks.push(...made);
   });
@@ -777,7 +834,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       date: opts.date ?? new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }),
       // The document's own language when it says one. (Never the device's
       // guess: words hyphenate by it, and two people's pages must agree.)
-      lang: opts.lang ?? (s.lang || "en-US"),
+      lang,
       subject: s.subject,
       keywords: s.keywords,
     },

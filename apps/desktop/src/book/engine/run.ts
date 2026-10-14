@@ -23,8 +23,8 @@ import { renderPdf, type PdfAttachment } from "../render/pdf";
 import { FaceSet, type FaceBytes } from "./faces";
 import { loadHyphenator, type Hyphenator } from "./hyphenate";
 import { designFor, layoutBook, SectionCache, smfGeometry } from "./layout";
-import type { PdfPicture, PictureWant } from "./pictures";
-import type { DisplayList, PageStart } from "./types";
+import { pictureKey, viewOfItem, type PdfPicture, type PictureWant } from "./pictures";
+import { BLEED_PT, type DisplayList, type PageStart } from "./types";
 
 export type PrintKind = "paperback" | "submission-pdf" | "booklet";
 
@@ -66,8 +66,7 @@ export interface PressOptions {
   bleed?: boolean;
 }
 
-/** The bleed printers ask for, in points (0.125 in). */
-export const BLEED_PT = 9;
+export { BLEED_PT } from "./types";
 
 /** A document (as opposed to a book): its own model and layout. */
 export interface DocRequest {
@@ -88,6 +87,8 @@ export interface PageMap {
   pages: number;
   starts: (PageStart | null)[];
   bodyH: number[];
+  /** Footnotes numbered again on each page: every note's label as set. */
+  notes?: string[];
 }
 
 export type AnyRequest = LayoutRequest | DocRequest;
@@ -176,7 +177,7 @@ export class TypesetSession {
   async pageMap(req: AnyRequest): Promise<PageMap> {
     if (!isDoc(req)) throw new Error("Only a document has a page map.");
     const { dl } = await this.layoutDocument(req);
-    return { pages: dl.pages.length, starts: dl.starts ?? [], bodyH: dl.bodyH ?? [] };
+    return { pages: dl.pages.length, starts: dl.starts ?? [], bodyH: dl.bodyH ?? [], ...(dl.noteLabels ? { notes: dl.noteLabels } : {}) };
   }
 
   private hyphenator(lang: string): Promise<Hyphenator | null> {
@@ -236,16 +237,19 @@ export class TypesetSession {
     const images = new Map<string, PdfPicture>();
     for (const i of req.images) if (i.bytes) images.set(i.url, i.bytes);
     // The largest each picture is printed: how many of its pixels are worth
-    // keeping is a matter of that, and known only now.
-    const placed = new Map<string, { w: number; h: number }>();
+    // keeping is a matter of that, and known only now. (A picture shown
+    // cropped or turned is a picture of its own: only that part is made.)
+    const placed = new Map<string, PictureWant>();
     for (const page of dl.pages) {
       for (const it of page.items) {
         if (it.t !== "image") continue;
-        const was = placed.get(it.ref);
-        placed.set(it.ref, { w: Math.max(was?.w ?? 0, it.w), h: Math.max(was?.h ?? 0, it.h) });
+        const key = pictureKey(it);
+        const was = placed.get(key);
+        const view = viewOfItem(it);
+        placed.set(key, { url: it.ref, w: Math.max(was?.w ?? 0, it.w), h: Math.max(was?.h ?? 0, it.h), ...(view ? { view, key } : {}) });
       }
     }
-    const feed = pictures ? (refs: string[]) => pictures(refs.map((url) => ({ url, ...(placed.get(url) ?? { w: 0, h: 0 }) }))) : undefined;
+    const feed = pictures ? (refs: string[]) => pictures(refs.map((key) => placed.get(key) ?? { url: key, w: 0, h: 0 })) : undefined;
     const fonts = dl.faces.map((_, i) => faces.font(i));
     const bytes = await renderPdf(
       dl,

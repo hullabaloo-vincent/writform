@@ -21,6 +21,7 @@ import * as Y from "yjs";
 import { backend, isCmdError, type CmdError, type LocalTrashListing } from "../../lib/backend";
 import { onFlush } from "../../platform/lifecycle";
 import { DOC_SCHEMA_LEVEL, levels, UNKNOWN_LEVEL } from "../../editor/schema/levels";
+import { STYLES_MAP, styleLevel } from "../../editor/styles/docStyles";
 import { b64decode, b64encode } from "./collab";
 import { stateDigest, ydocDigest } from "./docText";
 
@@ -113,6 +114,8 @@ export class LocalDocProvider {
     this.created_at = file.created_at ?? Date.now();
     if (file.state_b64) Y.applyUpdate(this.doc, b64decode(file.state_b64));
     this.doc.getXmlFragment(CONTENT).observeDeep(this.onContent);
+    // (A style with tab stops needs level 4 too.)
+    this.doc.getMap(STYLES_MAP).observe(this.onStyles);
     this.doc.on("update", this.onUpdate);
     window.addEventListener("beforeunload", this.onUnload);
     return file;
@@ -142,6 +145,10 @@ export class LocalDocProvider {
   private onUpdate = () => {
     if (this.closed) return;
     this.markDirty();
+  };
+
+  private onStyles = () => {
+    this.schema = Math.max(this.schema, styleLevel(this.doc));
   };
 
   /** The level of what was just written, kept with the file. */

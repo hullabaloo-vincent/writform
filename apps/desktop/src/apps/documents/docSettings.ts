@@ -1,7 +1,7 @@
 import type * as Y from "yjs";
 
 import type { PageSpec } from "../../editor/Paginate";
-import type { SectionProps } from "../../editor/schema/sanitize";
+import { noteFormat, noteRestart, type NoteFormat, type NoteRestart, type SectionProps } from "../../editor/schema/sanitize";
 import { BODY_AFTER, BODY_LINE, BODY_SIZE, lineCss, type BodyLook } from "../../editor/styles/sheet";
 import { fontCssFamily } from "../../fonts/css";
 import { isFontId } from "../../fonts/ids";
@@ -99,6 +99,14 @@ export interface DocSettings extends Record<SlotKey, string> {
   hyphenate: boolean;
   /** Number the lines down the left margin (restarting on each page). */
   lineNumbers: boolean;
+  /** How far apart the tab stops a paragraph doesn't set itself are,
+   *  inches (Word's "default tab stops"). */
+  tabStop: number;
+  /** How footnotes and endnotes are numbered, and where footnotes start
+   *  again (editor/nodes/NoteNumbers.ts). */
+  fnFormat: NoteFormat;
+  enFormat: NoteFormat;
+  fnRestart: NoteRestart;
   /** A different header and footer on the first page / on even pages. */
   hfFirst: boolean;
   hfEven: boolean;
@@ -143,6 +151,10 @@ export const DEFAULT_SETTINGS: DocSettings = {
   firstIndent: null,
   hyphenate: false,
   lineNumbers: false,
+  tabStop: 0.5,
+  fnFormat: "1",
+  enFormat: "i",
+  fnRestart: "doc",
   hfFirst: false,
   hfEven: false,
   hd: 0.5,
@@ -243,6 +255,10 @@ export function settingsFrom(get: (key: string) => unknown): DocSettings {
     firstIndent: numOrNull(get("firstIndent"), 0.05, 2),
     hyphenate: bool(get("hyphenate"), d.hyphenate),
     lineNumbers: bool(get("lineNumbers"), d.lineNumbers),
+    tabStop: num(get("tabStop"), 0.1, 2, d.tabStop),
+    fnFormat: noteFormat(get("fnFormat"), d.fnFormat),
+    enFormat: noteFormat(get("enFormat"), d.enFormat),
+    fnRestart: noteRestart(get("fnRestart")),
     hfFirst: bool(get("hfFirst"), d.hfFirst),
     hfEven: bool(get("hfEven"), d.hfEven),
     hd: num(get("hd"), 0.1, 2, d.hd),
@@ -262,15 +278,18 @@ export function readDocSettings(doc: Y.Doc): DocSettings {
   return settingsFrom((key) => m.get(key));
 }
 
-export function updateDocSettings(doc: Y.Doc, patch: Partial<DocSettings>): void {
+export function updateDocSettings(doc: Y.Doc, patch: Partial<DocSettings>, origin: unknown = null): void {
   const m = settingsMap(doc);
   doc.transact(() => {
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === undefined) m.delete(k);
       else m.set(k, v);
     }
-  });
+  }, origin);
 }
+
+/** The settings map itself (for an undo manager to watch). */
+export const docSettingsMap = (doc: Y.Doc): Y.Map<unknown> => settingsMap(doc);
 
 export function onDocSettingsChange(doc: Y.Doc, cb: () => void): () => void {
   const m = settingsMap(doc);
@@ -316,6 +335,7 @@ export function settingsVars(s: DocSettings): Record<string, string> {
   if (s.paraSpacing !== null) vars["--wfd-psp"] = `${s.paraSpacing}pt`;
   if (s.firstIndent) vars["--wfd-ind"] = `${s.firstIndent}in`;
   if (s.hyphenate) vars["--wfd-hyph"] = "auto";
+  if (s.tabStop !== DEFAULT_SETTINGS.tabStop) vars["--wfd-tab"] = `${s.tabStop}in`;
   return vars;
 }
 

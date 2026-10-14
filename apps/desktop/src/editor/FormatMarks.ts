@@ -3,6 +3,8 @@ import type { Node as PmNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet, type EditorView } from "@tiptap/pm/view";
 
+import { chapterFocus } from "./ChapterFocus";
+
 /**
  * Formatting marks: what is in the text and cannot be seen. A dot for each
  * space, an arrow for a tab, a small ring for a no-break space, a bent
@@ -85,13 +87,26 @@ function scrollerOf(el: HTMLElement): HTMLElement | null {
 function inView(view: EditorView, scroller: HTMLElement | null): { seen: [number, number]; wide: [number, number] } {
   const size = view.state.doc.content.size;
   const kids = view.dom.children;
-  const whole: [number, number] = [0, size];
+  // (While one chapter is shown the rest is hidden and has no place on the
+  // page: only the chapter's own blocks are looked through.)
+  const focus = chapterFocus(view.state);
+  const whole: [number, number] = focus ? [focus.from, focus.to] : [0, size];
   if (!kids.length) return { seen: whole, wide: whole };
+  let low = 0;
+  let high = kids.length - 1;
+  if (focus) {
+    const index = (pos: number) => Array.prototype.indexOf.call(kids, view.nodeDOM(pos)) as number;
+    const a = index(focus.from);
+    const b = index(focus.last);
+    if (a < 0 || b < a) return { seen: whole, wide: whole };
+    low = a;
+    high = b;
+  }
   const box = scroller ? scroller.getBoundingClientRect() : { top: 0, bottom: window.innerHeight };
   const range = (top: number, bottom: number): [number, number] => {
     // The first block that ends below `top`, the last that begins above `bottom`.
-    let lo = 0;
-    let hi = kids.length - 1;
+    let lo = low;
+    let hi = high;
     while (lo < hi) {
       const mid = (lo + hi) >> 1;
       if (kids[mid].getBoundingClientRect().bottom < top) lo = mid + 1;
@@ -99,7 +114,7 @@ function inView(view: EditorView, scroller: HTMLElement | null): { seen: [number
     }
     const first = lo;
     lo = first;
-    hi = kids.length - 1;
+    hi = high;
     while (lo < hi) {
       const mid = (lo + hi + 1) >> 1;
       if (kids[mid].getBoundingClientRect().top > bottom) hi = mid - 1;
@@ -107,8 +122,8 @@ function inView(view: EditorView, scroller: HTMLElement | null): { seen: [number
     }
     const last = lo;
     try {
-      const from = first === 0 ? 0 : Math.max(0, view.posAtDOM(kids[first], 0) - 1);
-      const to = last >= kids.length - 1 ? size : Math.min(size, view.posAtDOM(kids[last + 1], 0) - 1);
+      const from = first === low ? whole[0] : Math.max(0, view.posAtDOM(kids[first], 0) - 1);
+      const to = last >= high ? whole[1] : Math.min(size, view.posAtDOM(kids[last + 1], 0) - 1);
       return [from, Math.max(from, to)];
     } catch {
       return whole;

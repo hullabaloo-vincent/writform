@@ -56,7 +56,7 @@ import { zlibSync } from "fflate";
 import type * as fontkit from "fontkit";
 import PDFDocument from "pdfkit";
 
-import { filterRows, type PdfPicture, type RawPicture } from "../engine/pictures";
+import { filterRows, pictureKey, type PdfPicture, type RawPicture } from "../engine/pictures";
 import type { DisplayList } from "../engine/types";
 import { pageLabels, plainLabels } from "./labels";
 import { srgbProfile } from "./srgb";
@@ -82,6 +82,8 @@ interface Doc {
   lineWidth(w: number): Doc;
   moveTo(x: number, y: number): Doc;
   lineTo(x: number, y: number): Doc;
+  quadraticCurveTo(cpx: number, cpy: number, x: number, y: number): Doc;
+  dash(length: number, options: { space: number }): Doc;
   stroke(): Doc;
   save(): Doc;
   restore(): Doc;
@@ -186,6 +188,14 @@ export async function renderPdf(
   opts: RenderOptions = {},
 ): Promise<Uint8Array> {
   const ink: number[] | string = opts.color === "rgb" ? "#000000" : BLACK;
+  // A colour as this file writes it. In a book's black ink a grey is black
+  // alone (white is no ink at all), so its print standard holds.
+  const paint = (color: string): number[] | string => {
+    if (opts.color === "rgb") return color;
+    const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
+    if (!m || m[1].toLowerCase() !== m[2].toLowerCase() || m[2].toLowerCase() !== m[3].toLowerCase()) return color;
+    return [0, 0, 0, Math.round((1 - parseInt(m[1], 16) / 255) * 1000) / 10];
+  };
   const { w, h } = dl.trim;
   const sheetW = opts.booklet ? w * 2 : w;
   // Made and last changed at the same moment: this is a fresh file.
@@ -373,7 +383,11 @@ export async function renderPdf(
     if (!feed) return;
     const need = new Set<string>();
     for (const page of pages) {
-      for (const it of page?.items ?? []) if (it.t === "image" && !pictures.has(it.ref) && !waiting.has(it.ref) && !asked.has(it.ref)) need.add(it.ref);
+      for (const it of page?.items ?? []) {
+        if (it.t !== "image") continue;
+        const key = pictureKey(it);
+        if (!pictures.has(key) && !waiting.has(key) && !asked.has(key)) need.add(key);
+      }
     }
     if (!need.size) return;
     for (const ref of need) asked.add(ref);
@@ -461,7 +475,7 @@ export async function renderPdf(
         const face = dl.faces[it.face];
         const color = it.color ?? null;
         if (color !== fill) {
-          doc.fillColor(color ?? ink).strokeColor(color ?? ink);
+          doc.fillColor(color ? paint(color) : ink).strokeColor(color ? paint(color) : ink);
           fill = color;
         }
         const textOpts: Record<string, unknown> = {
@@ -490,8 +504,21 @@ export async function renderPdf(
       } else if (it.t === "rule") {
         within(undefined);
         doc.save().lineWidth(it.w);
-        if (it.color) doc.strokeColor(it.color);
-        doc.moveTo(it.x1, it.y1).lineTo(it.x2, it.y2).stroke().restore();
+        if (it.color) doc.strokeColor(paint(it.color));
+        if (it.dash) doc.dash(it.dash[0], { space: it.dash[1] });
+        if (it.wave) {
+          // A wave along the line: half a wave up, half down, to its end.
+          const a = it.wave;
+          const half = a * 2;
+          doc.moveTo(it.x1, it.y1);
+          let up = true;
+          for (let x = it.x1; x < it.x2 - 1e-6; x += half) {
+            const end = Math.min(it.x2, x + half);
+            doc.quadraticCurveTo((x + end) / 2, it.y1 + (up ? -a : a) * 2, end, it.y1);
+            up = !up;
+          }
+          doc.stroke().restore();
+        } else doc.moveTo(it.x1, it.y1).lineTo(it.x2, it.y2).stroke().restore();
       } else if (it.t === "rect") {
         within(undefined);
         doc.save().rect(it.x, it.y, it.w, it.h).fill(it.color).restore();
@@ -517,7 +544,8 @@ export async function renderPdf(
           const pageH = page.size?.h ?? h;
           if (!figure.A) figure.A = { O: "Layout", Placement: "Block", BBox: [it.x, pageH - (it.y + it.h), it.x + it.w, pageH - it.y] };
         }
-        const picture = pictureFor(it.ref);
+        // (A picture shown cropped or turned comes made so: never its file.)
+        const picture = pictureFor(pictureKey(it));
         // A picture's shape: its rectangle, or with corners rounded (all
         // the way: an oval), `by` inside its edge.
         const shape = (by: number) => {

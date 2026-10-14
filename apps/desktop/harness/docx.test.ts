@@ -687,8 +687,22 @@ const wp = (inner: string, pPr = "") => `<w:p>${pPr ? `<w:pPr>${pPr}</w:pPr>` : 
   check("headings come from the style's name, not its id", shape(read.content) === "h1 p p p h2 blockquote", shape(read.content));
   check("split runs join back into words", texts(read.content)[1] === "The quick brown fox jumps.");
   check("…with marks where they were", norm({ type: "doc", content: [c[1]] }) === norm({ type: "doc", content: [p(null, t("The quick brown "), t("fox", "bold"), t(" jumps."))] }), JSON.stringify(c[1]));
-  check("caps, hidden text, symbols and soft hyphens", texts(read.content)[2] === "SHOUTED and • co­operate", JSON.stringify(texts(read.content)[2]));
-  check("character styles, double strike and underline kinds", norm({ type: "doc", content: [c[3]] }) === norm({ type: "doc", content: [p(null, t("Strong run", "bold"), t(" then "), t("double struck", "strike"), t(" then not underlined then "), t("wavy", "underline"))] }), JSON.stringify(c[3]));
+  check("caps (formatting, the letters as typed), hidden text, symbols and soft hyphens", texts(read.content)[2] === "shouted and • co\u00adoperate" && JSON.stringify(c[2]).includes('"text":"shouted","marks":[{"type":"caps","attrs":{"v":"all"}}]'), JSON.stringify(texts(read.content)[2]));
+  check(
+    "character styles, a double line through and underline kinds kept as they were",
+    JSON.stringify(c[3]) ===
+      JSON.stringify({
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Strong run", marks: [{ type: "bold" }] },
+          { type: "text", text: " then " },
+          { type: "text", text: "double struck", marks: [{ type: "strike", attrs: { dbl: true } }] },
+          { type: "text", text: " then not underlined then " },
+          { type: "text", text: "wavy", marks: [{ type: "underline", attrs: { kind: "wavy" } }] },
+        ],
+      }),
+    JSON.stringify(c[3]),
+  );
   check("a heading's own bold and size aren't formatting", JSON.stringify(c[0]) === JSON.stringify({ type: "heading", attrs: { level: 1 }, content: [{ type: "text", text: "Chapter One" }] }), JSON.stringify(c[0]));
   check("a quote style's italics become the document's Quote style", !JSON.stringify(c[5]).includes('"italic"') && (read.styles.quote ?? "").includes('"italic":true'), read.styles.quote);
   check(

@@ -15,6 +15,7 @@ import { modelImages, type DocModel } from "../../doclayout/model";
 import { bookFileName } from "../exportBook";
 import { loadFaces, resolveFont, scriptFamilies } from "../../fonts/store";
 import { isCatalogBookFont } from "../fonts/registry";
+import { modelPictureUrls } from "../model/pictures";
 import type { BookModel, Warning } from "../model/types";
 import type { PdfOptions, PictureQuality } from "../render/options";
 import type { PdfAttachment } from "../render/pdf";
@@ -25,6 +26,7 @@ import { designFor, ornamentFor, smfFamily } from "./layout";
 import { geometryFor } from "../model/trims";
 import { canvasPixels, canvasTools } from "./pictureCanvas";
 import { makePicture, sniff, type PdfPicture, type PictureInfo, type PictureTools, type PictureWant } from "./pictures";
+import { viewKey } from "../../editor/schema/sanitize";
 import type { AnyRequest, DocRequest, JobImage, LayoutRequest, PageMap, PictureSource, PressOptions, PrintKind, PrintResult, TypesetSession } from "./run";
 import type { DisplayList } from "./types";
 
@@ -101,9 +103,8 @@ export async function bookFonts(kind: PrintKind, model: BookModel): Promise<Book
 
 // ---------------------------------------------------------------- images
 
-const bookImages = (model: BookModel) => [
-  ...new Set(model.sections.flatMap((s) => s.blocks.flatMap((b) => (b.kind === "image" ? [b.url] : [])))),
-];
+/** The pictures a book's pages draw: those in its text, and its own art. */
+const bookImages = (model: BookModel) => modelPictureUrls(model);
 
 /** What is known of a picture from its file (null: it couldn't be had, as
  *  of `at`). The files themselves are not kept. */
@@ -178,14 +179,14 @@ const sizeOf = (p: PdfPicture) => (p instanceof Uint8Array ? p.length : p.bytes.
 function pictureSource(quality: PictureQuality, flatten: boolean, failed: Set<string>, gray = false): PictureSource {
   const maxPixels = canvasPixels();
   const one = async (want: PictureWant): Promise<PdfPicture | null> => {
-    const key = `${quality}|${flatten ? 1 : 0}${gray ? "g" : ""}|${quality === "original" ? "" : `${Math.round(want.w)}x${Math.round(want.h)}`}|${want.url}`;
+    const key = `${quality}|${flatten ? 1 : 0}${gray ? "g" : ""}|${quality === "original" ? "" : `${Math.round(want.w)}x${Math.round(want.h)}`}|${viewKey(want.url, want.view)}`;
     const known = ready.get(key);
     if (known) return known;
     const bytes = await fetchPicture(want.url);
     const info = bytes ? sniff(bytes) : null;
     if (!bytes || !info) return null;
     try {
-      const made = await makePicture(bytes, info, want, quality, { flatten, maxPixels, gray }, tools);
+      const made = await makePicture(bytes, info, want, quality, { flatten, maxPixels, gray, view: want.view ?? null }, tools);
       const size = sizeOf(made);
       if (size <= READY_ONE) {
         ready.set(key, made);
@@ -206,7 +207,7 @@ function pictureSource(quality: PictureQuality, flatten: boolean, failed: Set<st
     const made = new Map<string, PdfPicture>();
     for (const w of want) {
       const picture = await one(w);
-      if (picture) made.set(w.url, picture);
+      if (picture) made.set(w.key ?? w.url, picture);
       else failed.add(w.url);
     }
     return made;

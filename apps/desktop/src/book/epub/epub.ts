@@ -11,6 +11,7 @@ import { xmlEscape as esc } from "../../apps/documents/ooxml";
 import type { Book } from "../model/bookMap";
 import { contentsLabel, copyrightParagraphs } from "../model/frontmatter";
 import type { Block, BookModel, Run, Section } from "../model/types";
+import { viewKey } from "../../editor/schema/sanitize";
 
 export interface EpubOptions {
   /** Stable identifier when there's no ebook ISBN (stored in the book map). */
@@ -104,7 +105,7 @@ ${body}
 `;
 }
 
-function css(book: Book, embedded: EpubOptions["fonts"]): string {
+function css(book: Book, embedded: EpubOptions["fonts"], art = false): string {
   const d = book.design;
   const fontFaces = (embedded ?? [])
     .map(
@@ -139,7 +140,8 @@ h1 .title { display: block; font-size: 1.35em; ${titleStyle} }
 .subtitle { text-align: ${d.headingAlign}; font-style: italic; margin: -1em 0 2em; text-indent: 0; }
 .ornament { text-align: center; margin: -0.8em 0 1.6em; text-indent: 0; }
 h2.subhead { font-size: 1em; font-weight: normal; font-variant: small-caps; letter-spacing: 0.06em; text-align: center; margin: 1.6em 0 0.6em; }
-.scene-break { text-align: center; margin: 1em 0; letter-spacing: 0.3em; }
+.scene-break { text-align: center; margin: 1em 0; letter-spacing: 0.3em; }${d.sceneBreak === "picture" ? `
+.scene-break img { height: ${Math.round((d.ornamentSize / d.bodySize) * 100) / 100}em; width: auto; max-width: 100%; vertical-align: middle; }` : ""}
 .page-break { page-break-before: always; break-before: page; }
 blockquote { margin: 1em 2em;${d.blockquote === "indent-italic" ? " font-style: italic;" : d.blockquote === "smaller" ? " font-size: 0.92em;" : ""} }
 .verse { margin: 1em 2em; }
@@ -149,7 +151,7 @@ blockquote { margin: 1em 2em;${d.blockquote === "indent-italic" ? " font-style: 
 .lead { font-size: 0.82em; letter-spacing: 0.05em; }
 .dropcap { float: left; font-size: 3.1em; line-height: 0.85; margin: 0.06em 0.08em 0 0; }
 figure { margin: 1.5em 0; text-align: center; }
-figure img { max-width: 100%; }
+figure img { max-width: 100%; }${art ? "\n.art-page { margin: 0; text-align: center; text-indent: 0; page-break-after: always; break-after: page; }\n.art-page img { max-width: 100%; max-height: 95vh; }" : ""}
 section.part { text-align: center; margin-top: 30%; }
 section.part h1 { margin-top: 0; }
 .titlepage { text-align: center; margin-top: 20%; }
@@ -380,7 +382,7 @@ ${ncxPoints(navItems)}
   zip.file("OEBPS/content.opf", opf);
   zip.file("OEBPS/nav.xhtml", navDoc);
   zip.file("OEBPS/toc.ncx", ncx);
-  zip.file("OEBPS/styles/book.css", css(book, fonts));
+  zip.file("OEBPS/styles/book.css", css(book, fonts, model.sections.some((s) => s.art)));
   for (const d of docs) zip.file(`OEBPS/${d.href}`, xhtml(d.title, lang, d.type, d.body));
   for (const i of images) zip.file(`OEBPS/${i.href}`, i.bytes);
   for (const f of fonts) zip.file(`OEBPS/fonts/${f.file}`, f.bytes);
@@ -436,6 +438,13 @@ function sectionXhtml(
   ].join("");
   const role = ROLE[type] ? ` role="${ROLE[type]}"` : "";
   const parts: string[] = [];
+  // A chapter's art: a page of its own for each picture (the facing one,
+  // then the one behind its first page), before the chapter. Ebook readers
+  // set words over a picture badly, so the words follow as usual.
+  for (const url of [section.art?.facing, section.art?.opener]) {
+    const href = url ? imageFor(url) : null;
+    if (href) parts.push(`<div class="art-page"><img src="../${href}" alt=""/></div>`);
+  }
   parts.push(`<section epub:type="${type}"${role} id="${section.id}"${section.kind === "part" ? ' class="part"' : ""}>`);
   if (head) parts.push(`<h1>${head}</h1>`);
   if (section.subtitle) parts.push(`<p class="subtitle">${esc(section.subtitle)}</p>`);
@@ -504,8 +513,12 @@ function blockXhtml(
       }
       return `<p${cls ? ` class="${cls}"` : ""}>${html}</p>`;
     }
-    case "scene":
+    case "scene": {
+      // The book's own picture, where it asks for one and it could be had.
+      const art = book.design.sceneBreak === "picture" && book.art?.ornament ? imageFor(book.art.ornament.src) : null;
+      if (art) return `<p class="scene-break" role="separator" aria-label="Scene break"><img src="../${art}" alt=""/></p>`;
       return `<p class="scene-break" role="separator" aria-label="Scene break">${esc(ornament)}</p>`;
+    }
     case "subheading":
       return `<h2 class="subhead">${inline(block.runs)}</h2>`;
     case "blockquote":
@@ -521,7 +534,8 @@ function blockXhtml(
       return `<${tag}>${block.items.map((i) => `<li>${inline(i)}</li>`).join("")}</${tag}>`;
     }
     case "image": {
-      const href = imageFor(block.url);
+      // (One cropped or turned is a file made of that part alone.)
+      const href = imageFor(block.view ? viewKey(block.url, block.view) : block.url);
       return href ? `<figure><img src="../${href}" alt="${esc(block.alt)}"/></figure>` : "";
     }
     case "pageBreak":

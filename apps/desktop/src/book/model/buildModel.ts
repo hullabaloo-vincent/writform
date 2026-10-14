@@ -11,6 +11,7 @@ import type { JSONContent } from "@tiptap/core";
 
 import { SECTION_ELEMENTS } from "../../editor/DocElement";
 import { quoteStyleFor } from "../../editor/SmartPunctuation";
+import { chapterArtValue, parseArt, type CoverArt } from "../cover/art";
 import type { Book } from "./bookMap";
 import {
   BACK_SECTIONS,
@@ -32,6 +33,7 @@ import type {
   Warning,
 } from "./types";
 import { finalJson } from "../../editor/review/final";
+import { viewOf } from "../../editor/schema/sanitize";
 
 function runsOf(node: JSONContent): Run[] {
   const runs: Run[] = [];
@@ -114,7 +116,9 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
   /** Still in the opener: an epigraph here belongs to the heading. */
   let inOpener = false;
 
-  const open = (kind: Section["kind"], src: number, heading = ""): Section => {
+  /** What each heading said of its own art (see the end). */
+  const ownArt = new Map<Section, { art: unknown; artFacing: unknown }>();
+  const open = (kind: Section["kind"], src: number, heading = "", attrs?: JSONContent["attrs"]): Section => {
     const parsed = kind === "chapter" || kind === "part" ? parseHeading(heading, kind) : null;
     let number: number | null = null;
     let label = "";
@@ -159,6 +163,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
       words: wordsIn(heading),
     };
     sections.push(section);
+    if (attrs?.art || attrs?.artFacing) ownArt.set(section, { art: attrs.art, artFacing: attrs.artFacing });
     current = section;
     fresh = true;
     inOpener = true;
@@ -210,7 +215,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
       const level = (node.attrs?.level as number) ?? 1;
       if (level === 1) {
         const kind = parseHeading(text, "part").labelled && format !== "manuscript" ? "part" : "chapter";
-        open(kind, src, text);
+        open(kind, src, text, node.attrs);
       } else {
         if (node.attrs?.pageBreakBefore) breakPage(src);
         ensure(src).blocks.push({ kind: "subheading", runs: fix(runs), src });
@@ -224,7 +229,7 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
       const text = textOf(runs);
       const headingKind = element ? SECTION_ELEMENTS.get(element) : undefined;
       if (headingKind) {
-        open(headingKind, src, text.trim());
+        open(headingKind, src, text.trim(), node.attrs);
         return;
       }
       // Any line can start a new page — verse, an epigraph, a letter's first
@@ -338,7 +343,8 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
 
     if (type === "image") {
       const url = node.attrs?.src as string | undefined;
-      if (url) ensure(src).blocks.push({ kind: "image", url, alt: String(node.attrs?.alt ?? ""), src });
+      const view = viewOf(node.attrs);
+      if (url) ensure(src).blocks.push({ kind: "image", url, alt: String(node.attrs?.alt ?? ""), src, ...(view ? { view } : {}) });
       fresh = true;
       return;
     }
@@ -417,6 +423,21 @@ export function buildModel(source: JSONContent, format: string, book: Book): Boo
       s.matter = "back";
     }
   });
+
+  // A chapter's art: its heading's own ("none" for no picture), else the
+  // book's. Chapters only, in the body of the book.
+  const artOf = (own: unknown, book: CoverArt | null): string | null => {
+    const value = chapterArtValue(own);
+    if (value === "none") return null;
+    return value ? (parseArt(value)?.src ?? null) : (book?.src ?? null);
+  };
+  for (const section of sections) {
+    if (section.kind !== "chapter" || section.matter !== "body") continue;
+    const own = ownArt.get(section);
+    const opener = artOf(own?.art, book.art?.opener ?? null);
+    const facing = artOf(own?.artFacing, book.art?.facing ?? null);
+    if (opener || facing) section.art = { opener, facing };
+  }
 
   if (blankLines > 0) {
     warnings.push({

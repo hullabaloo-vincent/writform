@@ -16,6 +16,8 @@ import type { Schema } from "@tiptap/pm/model";
 import StarterKit from "@tiptap/starter-kit";
 
 import { DocElement } from "../DocElement";
+import { ChapterArt } from "../nodes/ChapterArt";
+import { DEPTH_MARKS } from "../marks/RunDepth";
 import { ParaFormat } from "../format/ParaFormat";
 import { RUN_MARKS } from "../marks/RunFormat";
 import { Footnote } from "../nodes/Footnote";
@@ -62,6 +64,9 @@ export function docContentExtensions(opts: ContentOptions = {}): Extensions {
     Footnote,
     Toc,
     ...TRACK_EXTENSIONS,
+    // ---- level 4
+    ChapterArt,
+    ...DEPTH_MARKS,
   ];
 }
 

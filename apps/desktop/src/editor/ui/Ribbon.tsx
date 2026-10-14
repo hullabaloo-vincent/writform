@@ -9,7 +9,9 @@ import {
   AlignLeft,
   AlignRight,
   ArrowDownAZ,
+  ArrowRightToLine,
   Asterisk,
+  Palette,
   Baseline,
   Bold,
   CalendarDays,
@@ -63,6 +65,10 @@ import {
   Volume2,
   WrapText,
   X,
+  Crop,
+  RotateCcw,
+  RotateCw,
+  Replace,
 } from "lucide-react";
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
@@ -79,7 +85,7 @@ import { fontKey } from "../../fonts/docFonts";
 import { FontPicker } from "../../fonts/ui/FontPicker";
 import { isCmdError } from "../../lib/backend";
 import type { ImageUploader } from "../../lib/upload";
-import { toastError } from "../../platform/toast";
+import { toast, toastError } from "../../platform/toast";
 import { changeCase, clearFormatting, insertDate, insertSpecial, setListStart, setNumbering, sortBlocks, type CaseKind } from "../format/commands";
 import { curRun, type FormatContext } from "../format/effective";
 import { paintFormat, pickUpFormat, type Paint } from "../format/painter";
@@ -87,14 +93,18 @@ import { curParaFormat, setBorder, setLineHeight, setSection, setShade, stepInde
 import { setHighlight, setRunColor, setRunFont, setRunSize, stepRunSize, toggleScript } from "../format/run";
 import { toggleWordMark } from "../format/wordMark";
 import { insertNote } from "../nodes/Footnote";
-import { imageAlign, selectedImage, setImageAttrs, type ImageAlign } from "../nodes/Image";
+import { convertNotes } from "../nodes/NoteNumbers";
+import type { NoteFormat, NoteRestart } from "../schema/sanitize";
+import { curPictureView, imageAlign, replacePicture, selectedImage, setImageAttrs, turnPicture, type ImageAlign } from "../nodes/Image";
+import { startCrop } from "../nodes/imageCrop";
+import { sniff } from "../../book/engine/pictures";
 import { canMovePicture, movePicture } from "../format/movePicture";
 import { setBulletMarker, toggleChecklist } from "../nodes/TaskList";
 import { insertToc } from "../nodes/Toc";
 import { resolveAll, resolveInEditor, selectedChanges, stepChange, type ReviewMode } from "../review/Suggesting";
 import type { ReviewState } from "../review/useReview";
 import { curTable, isInTable, setTableAttrs, stepColumn, tableCommands, type TableLines } from "../tables/Table";
-import { BULLET_MARKERS, MARKER_GLYPH, parseBorder, type BulletMarker } from "../schema/sanitize";
+import { BULLET_MARKERS, MARKER_GLYPH, parseBorder, type BulletMarker, type UnderlineKind } from "../schema/sanitize";
 import { LEGAL, resolveStyles, styleFonts, type StyleEntry } from "../styles/sheet";
 import { curTypography, insertPageBreak, setDocAlign, setTypography, SIZE_LADDER } from "../TextFormat";
 import { CaptionFlyout } from "./CaptionFlyout";
@@ -105,7 +115,28 @@ import { LinkFlyout } from "./LinkFlyout";
 import { SectionFlyout } from "./SectionFlyout";
 import { StyleGallery } from "./StyleGallery";
 import { TableFlyout } from "./TableFlyout";
+import { TabsPanel } from "./TabsDialog";
+import { TablePlacePanel } from "./TablePlace";
+import { curDepth, setLetterSpacing, setUnderlineColor, setUnderlineKind, toggleCaps, toggleDoubleStrike } from "../marks/RunDepth";
+import { TableBorders } from "./TableBorders";
+import { applyTableLook, TABLE_LOOKS } from "../tables/borders";
+import { sortRows, splitTable, tableToText } from "../tables/convert";
 import { SPECIAL_CHARACTERS, SYMBOL_GROUPS } from "./symbols";
+
+/** How notes may be numbered, and where footnotes start again. */
+const NOTE_FORMAT_NAMES: [NoteFormat, string][] = [
+  ["1", "1 2 3"],
+  ["i", "i ii iii"],
+  ["I", "I II III"],
+  ["a", "a b c"],
+  ["A", "A B C"],
+  ["*", "* \u2020 \u2021"],
+];
+const NOTE_RESTART_NAMES: [NoteRestart, string][] = [
+  ["doc", "Numbered through the document"],
+  ["section", "From 1 again at each section"],
+  ["page", "From 1 again on each page"],
+];
 
 export type RibbonTab = "home" | "insert" | "layout" | "review" | "table" | "picture";
 
@@ -118,6 +149,23 @@ const TABS: { id: RibbonTab; label: string }[] = [
 /** Tabs that are there while there is something for them to act on. */
 const TABLE_TAB = { id: "table" as const, label: "Table" };
 const PICTURE_TAB = { id: "picture" as const, label: "Picture" };
+
+/** The underlines offered by name. */
+const UNDERLINE_NAMES: [UnderlineKind | "single", string][] = [
+  ["single", "Underline"],
+  ["double", "Double underline"],
+  ["dotted", "Dotted underline"],
+  ["dashed", "Dashed underline"],
+  ["wavy", "Wavy underline"],
+];
+
+/** Letter spacing offered by name, points. */
+const LETTER_SPACINGS: [number, string][] = [
+  [-0.5, "Letters closer"],
+  [0, "Letters as the font sets them"],
+  [1, "Letters wider apart"],
+  [2, "Letters much wider apart"],
+];
 
 const TABLE_LINES_NAMES: [TableLines, string][] = [
   ["all", "All lines"],
@@ -253,6 +301,7 @@ export function Ribbon({
   const [pictureAside, setPictureAside] = useState(false);
   const phone = useIsPhone();
   const fileRef = useRef<HTMLInputElement>(null);
+  const replaceRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   // Re-render on selection/content changes so active states track the cursor.
   const [, bump] = useState(0);
@@ -330,6 +379,21 @@ export function Ribbon({
     setUploading(true);
     try {
       chain().setImage({ src: await uploadImage(file) }).run();
+    } catch (e) {
+      toastError(isCmdError(e) ? e.message : "That picture couldn’t be added.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  /** Another picture in the selected one's place (its width and words stay). */
+  const replaceImage = async (file: File) => {
+    if (!uploadImage) return;
+    setUploading(true);
+    try {
+      const info = sniff(new Uint8Array(await file.arrayBuffer()));
+      const src = await uploadImage(file);
+      replacePicture(editor, src, info ? { w: info.w, h: info.h } : null);
     } catch (e) {
       toastError(isCmdError(e) ? e.message : "That picture couldn’t be added.");
     } finally {
@@ -531,6 +595,66 @@ export function Ribbon({
                     {c.label}
                   </FlyoutItem>
                 ))}
+                {format.level >= 4 && (
+                  <>
+                    <hr />
+                    <div className="wf-flyout-heading">Underline and line through</div>
+                    {UNDERLINE_NAMES.map(([kind, label]) => (
+                      <FlyoutItem
+                        key={kind}
+                        checked={curDepth(editor).ul === kind}
+                        onPick={() => {
+                          setUnderlineKind(editor, kind === "single" ? null : kind);
+                          close();
+                        }}
+                      >
+                        {label}
+                      </FlyoutItem>
+                    ))}
+                    <ColorFlyout title="Underline colour" icon={<Underline size={14} />} label="Underline colour" className="wf-flyout-row" value={curDepth(editor).ulc} colors={TEXT_COLORS} noneLabel="As the text" onPick={(c) => setUnderlineColor(editor, c)} />
+                    <FlyoutItem
+                      checked={curDepth(editor).dstrike}
+                      onPick={() => {
+                        toggleDoubleStrike(editor);
+                        close();
+                      }}
+                    >
+                      Double line through
+                    </FlyoutItem>
+                    <div className="wf-flyout-heading">Capitals and spacing</div>
+                    <FlyoutItem
+                      checked={curDepth(editor).caps === "all"}
+                      hint="the letters stay as typed"
+                      onPick={() => {
+                        toggleCaps(editor, "all");
+                        close();
+                      }}
+                    >
+                      All capitals
+                    </FlyoutItem>
+                    <FlyoutItem
+                      checked={curDepth(editor).caps === "small"}
+                      onPick={() => {
+                        toggleCaps(editor, "small");
+                        close();
+                      }}
+                    >
+                      Small capitals
+                    </FlyoutItem>
+                    {LETTER_SPACINGS.map(([pt, label]) => (
+                      <FlyoutItem
+                        key={pt}
+                        checked={(curDepth(editor).ls ?? 0) === pt}
+                        onPick={() => {
+                          setLetterSpacing(editor, pt || null);
+                          close();
+                        }}
+                      >
+                        {label}
+                      </FlyoutItem>
+                    ))}
+                  </>
+                )}
                 <hr />
                 <FlyoutItem
                   checked={!!paint}
@@ -834,6 +958,49 @@ export function Ribbon({
         <>
           {btn("Footnote: a note at the foot of the page", <Asterisk size={15} />, () => insertNote(editor, "foot"), false, false, "Footnote")}
           {btn("Endnote: a note at the end of the document", null, () => insertNote(editor, "end"), false, false, "Endnote")}
+          <Flyout title="How footnotes and endnotes are numbered" label="Note numbers" active={settings.fnFormat !== "1" || settings.enFormat !== "i" || settings.fnRestart !== "doc"}>
+            {(close) => (
+              <>
+                <p className="wf-flyout-heading">Footnotes</p>
+                {NOTE_FORMAT_NAMES.map(([value, label]) => (
+                  <FlyoutItem key={`f${value}`} checked={settings.fnFormat === value} onPick={() => onPatchSettings({ fnFormat: value })}>
+                    {label}
+                  </FlyoutItem>
+                ))}
+                <hr />
+                {NOTE_RESTART_NAMES.map(([value, label]) => (
+                  <FlyoutItem key={value} checked={settings.fnRestart === value} onPick={() => onPatchSettings({ fnRestart: value })}>
+                    {label}
+                  </FlyoutItem>
+                ))}
+                <p className="wf-flyout-heading">Endnotes</p>
+                {NOTE_FORMAT_NAMES.map(([value, label]) => (
+                  <FlyoutItem key={`e${value}`} checked={settings.enFormat === value} onPick={() => onPatchSettings({ enFormat: value })}>
+                    {label}
+                  </FlyoutItem>
+                ))}
+                <hr />
+                <FlyoutItem
+                  onPick={() => {
+                    const n = convertNotes(editor, "foot");
+                    toast(n ? `${n} ${n === 1 ? "footnote is" : "footnotes are"} now ${n === 1 ? "an endnote" : "endnotes"}.` : "There are no footnotes.", "info");
+                    close();
+                  }}
+                >
+                  Make every footnote an endnote
+                </FlyoutItem>
+                <FlyoutItem
+                  onPick={() => {
+                    const n = convertNotes(editor, "end");
+                    toast(n ? `${n} ${n === 1 ? "endnote is" : "endnotes are"} now ${n === 1 ? "a footnote" : "footnotes"}.` : "There are no endnotes.", "info");
+                    close();
+                  }}
+                >
+                  Make every endnote a footnote
+                </FlyoutItem>
+              </>
+            )}
+          </Flyout>
           {btn("Table of contents: a list of the headings that stays up to date", <TableOfContents size={15} />, () => insertToc(editor), false, !topLevel, "Contents")}
         </>
       ) : null,
@@ -1014,6 +1181,16 @@ export function Ribbon({
       id: "section",
       label: "Section",
       content: rich ? <SectionFlyout editor={editor} settings={settings} /> : null,
+    },
+    {
+      id: "tabs",
+      label: "Tab stops",
+      content:
+        format.level >= 4 ? (
+          <Flyout title="Tab stops" icon={<ArrowRightToLine size={15} />} label="Tabs" active={!!curParaFormat(editor).tabs} panelClass="wf-tabs-flyout">
+            {() => <TabsPanel editor={editor} settings={settings} onPatchSettings={onPatchSettings} />}
+          </Flyout>
+        ) : null,
     },
     {
       id: "setup",
@@ -1270,7 +1447,71 @@ export function Ribbon({
             }
           </Flyout>
           <ColorFlyout title="Cell shading" icon={<PaintBucket size={15} />} value={tableNow?.bg ?? null} colors={SHADE_COLORS} noneLabel="No shading" onPick={(c) => tableCommands.shade(editor, c)} />
+          <TableBorders editor={editor} />
+          <Flyout title="Table looks" icon={<Palette size={15} />} label="Looks">
+            {(close) =>
+              TABLE_LOOKS.map((look) => (
+                <FlyoutItem
+                  key={look.id}
+                  onPick={() => {
+                    applyTableLook(editor, look.id);
+                    close();
+                  }}
+                >
+                  {look.name}
+                </FlyoutItem>
+              ))
+            }
+          </Flyout>
         </>
+      ),
+    },
+    {
+      id: "arrange",
+      label: "Arrange",
+      content: (
+        <Flyout title="Sort, split and convert" icon={<ArrowDownAZ size={15} />} label="Arrange">
+          {(close) => (
+            <>
+              <FlyoutItem
+                hint="by this column"
+                onPick={() => {
+                  if (!sortRows(editor, 1)) toast("A cell that spans rows keeps this table from being sorted.", "info");
+                  close();
+                }}
+              >
+                Sort A to Z
+              </FlyoutItem>
+              <FlyoutItem
+                hint="by this column"
+                onPick={() => {
+                  if (!sortRows(editor, -1)) toast("A cell that spans rows keeps this table from being sorted.", "info");
+                  close();
+                }}
+              >
+                Sort Z to A
+              </FlyoutItem>
+              <FlyoutItem
+                hint="before this row"
+                onPick={() => {
+                  if (!splitTable(editor)) toast("A table splits before a row other than its first, where no cell spans the split.", "info");
+                  close();
+                }}
+              >
+                Split the table
+              </FlyoutItem>
+              <FlyoutItem
+                hint="cells parted by tabs"
+                onPick={() => {
+                  tableToText(editor);
+                  close();
+                }}
+              >
+                Make it text
+              </FlyoutItem>
+            </>
+          )}
+        </Flyout>
       ),
     },
     {
@@ -1283,6 +1524,21 @@ export function Ribbon({
           {btn("Share the width of the text equally between the columns", null, () => setTableAttrs(editor, { cols: null }), false, !tableNow?.sized, "Even widths")}
         </>
       ),
+    },
+    {
+      id: "place",
+      label: "Size and place",
+      content:
+        format.level >= 4 ? (
+          <Flyout
+            title="Row height, where the words sit, where the table sits"
+            icon={<Rows3 size={15} />}
+            label="Size and place"
+            active={!!tableNow && (tableNow.rowH !== null || tableNow.keep || tableNow.va !== null || tableNow.align !== null || tableNow.ind !== null)}
+          >
+            {() => <TablePlacePanel editor={editor} />}
+          </Flyout>
+        ) : null,
     },
   ];
 
@@ -1332,6 +1588,19 @@ export function Ribbon({
       content: <PictureSize editor={editor} />,
     },
     {
+      id: "crop",
+      label: "Crop and turn",
+      content:
+        format.level >= 4 || allowImages ? (
+          <>
+            {format.level >= 4 && btn("Crop the picture: drag its edges in, then Done", <Crop size={15} />, () => startCrop(editor), !!picture && !!curPictureView(editor)?.crop, false, "Crop")}
+            {format.level >= 4 && btn("Turn it a quarter to the left", <RotateCcw size={15} />, () => turnPicture(editor, -1))}
+            {format.level >= 4 && btn("Turn it a quarter to the right", <RotateCw size={15} />, () => turnPicture(editor, 1))}
+            {allowImages && btn(uploading ? "Uploading…" : "Put another picture in its place", <Replace size={15} />, () => replaceRef.current?.click(), false, uploading, "Replace")}
+          </>
+        ) : null,
+    },
+    {
       id: "caption",
       label: "Caption and description",
       content: (
@@ -1365,6 +1634,19 @@ export function Ribbon({
           onChange={(e) => {
             const file = e.target.files?.[0];
             if (file) void insertImage(file);
+            e.target.value = "";
+          }}
+        />
+      )}
+      {allowImages && (
+        <input
+          ref={replaceRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) void replaceImage(file);
             e.target.value = "";
           }}
         />

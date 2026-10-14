@@ -1,13 +1,22 @@
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, type EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { Editor } from "@tiptap/react";
 import { CaseSensitive, ChevronDown, ChevronRight, ChevronUp, Quote, Regex, WholeWord, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { chapterFocus } from "../../editor/ChapterFocus";
 import { showRange } from "../../editor/ui/reveal";
 import { toast } from "../../platform/toast";
-import { findInDoc, replaceOne, replacementFor, type FindOptions, type Match } from "./find/findInDoc";
+import { findInDoc as findInWhole, replaceOne, replacementFor, type FindOptions, type Match } from "./find/findInDoc";
 import type { FindRequest } from "./shell/hooks";
+
+/** Find in what can be seen: while one chapter is shown, only in it. */
+function findHere(state: EditorState, query: string, opts: FindOptions, limit?: number): ReturnType<typeof findInWhole> {
+  const found = findInWhole(state.doc, query, opts, limit);
+  const focus = chapterFocus(state);
+  if (!focus) return found;
+  return { ...found, matches: found.matches.filter((m) => m.from >= focus.from && m.to <= focus.to) };
+}
 
 /**
  * Find and replace (⌘F, ⌥⌘F / Ctrl+H). Highlights every match; Enter /
@@ -138,7 +147,7 @@ export function FindBar({
 
   // A new query or new options jump to the first match at or after the cursor.
   useEffect(() => {
-    const r = findInDoc(editor.state.doc, query, opts);
+    const r = findHere(editor.state, query, opts);
     setMatches(r.matches);
     setCapped(r.capped);
     setBad(r.bad === true);
@@ -156,7 +165,7 @@ export function FindBar({
     const recompute = () => {
       if (timer) clearTimeout(timer);
       timer = setTimeout(() => {
-        const r = findInDoc(editor.state.doc, query, opts);
+        const r = findHere(editor.state, query, opts);
         setMatches(r.matches);
         setCapped(r.capped);
         setCurrent((c) => Math.min(c, Math.max(0, r.matches.length - 1)));
@@ -208,10 +217,10 @@ export function FindBar({
   const replaceCurrent = () => {
     if (readonly) return;
     const m = live.current.matches[live.current.current];
-    const fresh = findInDoc(editor.state.doc, query, opts).matches.find((f) => m && f.from === m.from && f.to === m.to);
+    const fresh = findHere(editor.state, query, opts).matches.find((f) => m && f.from === m.from && f.to === m.to);
     const written = fresh ? replacementFor(fresh, replacement, query, opts) : "";
     if (fresh) editor.view.dispatch(replaceOne(editor.state.tr, fresh, written));
-    const after = findInDoc(editor.state.doc, query, opts);
+    const after = findHere(editor.state, query, opts);
     setMatches(after.matches);
     setCapped(after.capped);
     const pos = fresh ? fresh.from + written.length : (m?.from ?? 0);
@@ -222,7 +231,7 @@ export function FindBar({
 
   const replaceEvery = () => {
     if (readonly) return;
-    const all = findInDoc(editor.state.doc, query, opts, Infinity).matches;
+    const all = findHere(editor.state, query, opts, Infinity).matches;
     if (!all.length) return;
     // (Last first, so earlier positions hold. One transaction, one undo.)
     const tr = editor.state.tr;
@@ -238,9 +247,11 @@ export function FindBar({
       ? "Not a pattern this app can read"
       : matches.length === 0
       ? query
-        ? "No matches"
+        ? chapterFocus(editor.state)
+          ? "No matches in this chapter"
+          : "No matches"
         : ""
-      : `${current + 1} of ${capped ? "10,000+" : matches.length.toLocaleString()}${matches[current]?.note !== undefined ? " (in a note)" : ""}`;
+      : `${current + 1} of ${capped ? "10,000+" : matches.length.toLocaleString()}${chapterFocus(editor.state) ? " in this chapter" : ""}${matches[current]?.note !== undefined ? " (in a note)" : ""}`;
 
   const toggle = (key: keyof FindOptions, title: string, icon: React.ReactNode) => (
     <button

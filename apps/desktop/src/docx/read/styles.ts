@@ -5,6 +5,24 @@
  * definitions lists point at.
  */
 
+import type { TabKind, TabLeader, TabStop, UnderlineKind } from "../../editor/schema/sanitize";
+
+const UL_KINDS: Record<string, UnderlineKind> = {
+  double: "double",
+  dotted: "dotted",
+  dottedHeavy: "dotted",
+  dash: "dashed",
+  dashedHeavy: "dashed",
+  dashLong: "dashed",
+  dashLongHeavy: "dashed",
+  dotDash: "dashed",
+  dashDotHeavy: "dashed",
+  dotDotDash: "dotted",
+  dashDotDotHeavy: "dotted",
+  wave: "wavy",
+  wavyHeavy: "wavy",
+  wavyDouble: "wavy",
+};
 import { child, children, int, onOff, val, type XNode } from "../xml";
 
 /** Run formatting. Every field optional: absent means "not said here". */
@@ -25,6 +43,13 @@ export interface RProps {
   /** A highlighter (or run shading) colour, `rrggbb`; empty for none. */
   highlight?: string;
   vert?: "sup" | "sub";
+  /** Letter spacing, points (negative: closer). */
+  spacing?: number;
+  /** A line through drawn twice. */
+  dstrike?: boolean;
+  /** An underline other than a single line, and its colour (`rrggbb`). */
+  uKind?: UnderlineKind;
+  uColor?: string;
   styleId?: string;
   /** Set in a "code" character style (the reader's own flag). */
   code?: boolean;
@@ -59,6 +84,40 @@ export interface PProps {
   keepLines?: boolean;
   /** Set in a frame as a drop cap. */
   dropCap?: boolean;
+  /** Its tab stops as Word says them: stops set, and inherited stops
+   *  cleared (`mergeTabs` puts a style's and a paragraph's together). */
+  tabs?: TabOp[];
+}
+
+/** A tab stop of Word's, or one taken away ("clear"). Points from the
+ *  margin. */
+export interface TabOp {
+  pt: number;
+  kind: TabKind | "clear";
+  leader: TabLeader | null;
+}
+
+const TAB_KINDS: Record<string, TabKind | "clear"> = { left: "l", start: "l", num: "l", center: "c", right: "r", end: "r", decimal: "d", clear: "clear" };
+const TAB_LEADERS: Record<string, TabLeader> = { dot: "dot", middleDot: "dot", hyphen: "dash", underscore: "line", heavy: "line" };
+
+/** `over` on top of `base`: its stops set, its clears taking stops out. */
+export function mergeTabs(base: TabOp[] | undefined, over: TabOp[] | undefined): TabOp[] | undefined {
+  if (!over) return base;
+  const stops = new Map<number, TabOp>();
+  for (const op of base ?? []) if (op.kind !== "clear") stops.set(Math.round(op.pt), op);
+  for (const op of over) {
+    const key = Math.round(op.pt);
+    if (op.kind === "clear") {
+      // (Within a point: Word's positions are in twentieths.)
+      for (const k of [key - 1, key, key + 1]) stops.delete(k);
+    } else stops.set(key, op);
+  }
+  return [...stops.values()].sort((a, b) => a.pt - b.pt);
+}
+
+/** The stops left once every clear is done (in our terms). */
+export function tabStopsOf(ops: TabOp[] | undefined): TabStop[] {
+  return (ops ?? []).filter((o): o is TabOp & { kind: TabKind } => o.kind !== "clear" && o.pt > 0).map((o) => ({ pt: Math.round(o.pt * 10) / 10, kind: o.kind, leader: o.leader }));
 }
 
 export interface Theme {
@@ -117,11 +176,21 @@ export function readRPr(rPr: XNode | undefined, theme: Theme): RProps {
   set("caps", onOff(rPr, "w:caps"));
   set("smallCaps", onOff(rPr, "w:smallCaps"));
   set("hidden", onOff(rPr, "w:vanish"));
+  const spacing = int(val(rPr, "w:spacing"));
+  if (spacing !== undefined && spacing !== 0) out.spacing = spacing / 20;
   const strike = onOff(rPr, "w:strike");
   const dstrike = onOff(rPr, "w:dstrike");
   if (strike !== undefined || dstrike !== undefined) out.strike = !!strike || !!dstrike;
+  if (dstrike) out.dstrike = true;
   const u = val(rPr, "w:u");
-  if (child(rPr, "w:u")) out.u = u !== "none";
+  if (child(rPr, "w:u")) {
+    out.u = u !== "none";
+    // Word's eighteen underlines, as the nearest of this app's five.
+    const kind = UL_KINDS[u ?? ""];
+    if (kind) out.uKind = kind;
+    const c = child(rPr, "w:u")?.attrs["w:color"];
+    if (c && /^[0-9a-fA-F]{6}$/.test(c)) out.uColor = c.toLowerCase();
+  }
   const fonts = child(rPr, "w:rFonts");
   if (fonts) {
     set(
@@ -226,6 +295,18 @@ export function readPPr(pPr: XNode | undefined): PProps {
   if (child(pPr, "w:framePr")?.attrs["w:dropCap"] && child(pPr, "w:framePr")?.attrs["w:dropCap"] !== "none") {
     out.dropCap = true;
   }
+  const tabs = child(pPr, "w:tabs");
+  if (tabs) {
+    const ops: TabOp[] = [];
+    for (const tab of children(tabs, "w:tab")) {
+      const kind = TAB_KINDS[tab.attrs["w:val"] ?? ""];
+      const at = pt(tab.attrs["w:pos"]);
+      // (A bar tab draws a line, not a stop: left out.)
+      if (!kind || at === undefined || at < 0) continue;
+      ops.push({ pt: at, kind, leader: TAB_LEADERS[tab.attrs["w:leader"] ?? ""] ?? null });
+    }
+    out.tabs = ops;
+  }
   return out;
 }
 
@@ -316,7 +397,9 @@ export class Styles {
       rPr: { ...this.defaults.rPr },
     };
     for (const def of chain) {
+      const tabs = mergeTabs(out.pPr.tabs, def.pPr.tabs);
       Object.assign(out.pPr, def.pPr);
+      if (tabs) out.pPr.tabs = tabs;
       Object.assign(out.rPr, def.rPr);
     }
     this.paraCache.set(key, out);

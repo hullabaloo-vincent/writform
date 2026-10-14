@@ -15,7 +15,8 @@ import type { CoverFile } from "../cover/files";
 import { coverGeometry, movedText, pannedLook, printNotes, resizedText, sizeWords, slotBox, SPINE_TEXT_PAGES, spineDrift, textRun } from "../cover/geometry";
 import { updateBook, type Book } from "../model/bookMap";
 import { estimatePages } from "../model/trims";
-import { pagesKey, usePrintedPages, type CoverPictures } from "./Cover";
+import type { CoverPictures } from "./Cover";
+import { pagesKey, usePrintedPages } from "./printedPages";
 import { CoverSvg, useCoverScene, type CoverViewOf } from "./CoverView";
 
 const messageOf = (e: unknown, fallback: string): string => (e as Partial<CmdError> | null)?.message || fallback;

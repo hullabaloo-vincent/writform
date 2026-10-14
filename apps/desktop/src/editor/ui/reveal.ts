@@ -10,10 +10,13 @@
  *
  * Rule: anything outside the text that sends the reader to a place in it
  * goes through `showInText` or `showRange`, never `tr.scrollIntoView()`.
+ * (They also move to the chapter a place is in when only one is shown.)
  */
 
 import { Selection, TextSelection } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+
+import { followTo } from "../ChapterFocus";
 
 /** The element the text scrolls in. */
 function scrollerOf(dom: HTMLElement): HTMLElement | null {
@@ -64,7 +67,8 @@ export const touchFirst = (): boolean => typeof window !== "undefined" && typeof
  * in): leave it off while the reader is typing somewhere else.
  */
 export function showInText(view: EditorView, selection: Selection, focus = false): void {
-  view.dispatch(view.state.tr.setSelection(selection));
+  // (While one chapter is shown, a place in another shows that one.)
+  view.dispatch(followTo(view.state.tr.setSelection(selection), view.state, selection.from));
   reveal(view, selection.from, selection.to);
   if (focus && view.editable) view.focus();
 }

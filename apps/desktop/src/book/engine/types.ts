@@ -87,6 +87,10 @@ export interface DLRule {
   w: number;
   /** `#rrggbb` (absent: black). */
   color?: string;
+  /** Drawn in dashes: on, off (points). */
+  dash?: number[];
+  /** Drawn as a wave this high either side of the line (points). */
+  wave?: number;
 }
 
 /** A filled rectangle: a highlight, paragraph shading, a table cell. */
@@ -134,6 +138,12 @@ export interface DLImage {
   round?: number;
   /** Documents: a line round it, inside its own size (`#rrggbb`, points). */
   border?: { w: number; color: string };
+  /** The part of the picture shown (what is taken off its left, top, right
+   *  and bottom, upright, as parts) and a quarter turn clockwise: the box is
+   *  that part, turned (editor/schema/sanitize.ts `viewMatrix`). Absent: all
+   *  of it, upright. */
+  crop?: [number, number, number, number];
+  rot?: 90 | 180 | 270;
   /** Tagged documents: its Figure element. */
   s?: number;
 }
@@ -152,7 +162,14 @@ export type PageRole =
   | "part"
   | "body"
   | "blank"
-  | "back";
+  | "back"
+  /** A picture alone, facing a chapter's first page. */
+  | "art";
+
+/** The bleed printers ask for, in points (0.125 in). A chapter's art is
+ *  laid out this far past the page's outer edges whether or not a file
+ *  has bleed: without it the page cuts it off. */
+export const BLEED_PT = 9;
 
 export interface DLPage {
   /** Physical page number (1-based). */
@@ -202,6 +219,9 @@ export interface DisplayList {
    *  over, a table row cut in two), and how tall its text area is, pt. */
   starts?: (PageStart | null)[];
   bodyH?: number[];
+  /** Documents whose footnotes start again on each page: every note's label
+   *  as set (all of them, in the order cited). */
+  noteLabels?: string[];
   /** Documents, when asked for: the structure the items' `s` point into. */
   struct?: StructNode[];
 }

@@ -22,7 +22,7 @@ import { tocDepth } from "../../editor/nodes/Toc";
 import { parseRevs, revOf, type NodeRevs, type Rev } from "../../editor/review/TrackMarks";
 import { linesAttr, parseCols } from "../../editor/tables/Table";
 import { XML_HEAD, xmlEscape } from "../../apps/documents/ooxml";
-import { BORDER_PAD_X, BORDER_PAD_Y, colorAttr, firstIndentAttr, indentAttr, lineAtAttr, lineRuleAttr, MARKER_GLYPH, markerAttr, parseBorder, parseSection, sizeAttr, vscriptAttr, type BulletMarker, type SectionProps, type VScript, cellEdges, imageBorder, imageRound } from "../../editor/schema/sanitize";
+import { BORDER_PAD_X, BORDER_PAD_Y, capsAttr, letterSpacingAttr, parseTabs, underlineKindAttr, type UnderlineKind, type TabKind, type TabLeader, type TabStop, colorAttr, firstIndentAttr, indentAttr, lineAtAttr, lineRuleAttr, MARKER_GLYPH, markerAttr, parseBorder, parseSection, sizeAttr, vscriptAttr, type BulletMarker, type SectionProps, type VScript, cellEdges, imageBorder, imageRound, cellVAlign, rowHeight, rowKeep, tableAlign, tableIndent, viewOf, type NoteFormat } from "../../editor/schema/sanitize";
 import {
   BODY_AFTER,
   BODY_LINE,
@@ -43,6 +43,9 @@ import { DEFAULT_WORD_FONT, docxFontName, wordAltName, wordFamilyOf } from "../.
 import { parseFontId } from "../../fonts/ids";
 import { knownFont, type FontCategory } from "../../fonts/registry";
 import { ordered, wrap } from "./order";
+
+/** Word's names for how notes are numbered. */
+const WORD_NOTE_FORMAT: Record<NoteFormat, string> = { "1": "decimal", i: "lowerRoman", I: "upperRoman", a: "lowerLetter", A: "upperLetter", "*": "chicago" };
 
 export interface DocxImage {
   bytes: Uint8Array;
@@ -164,6 +167,13 @@ interface Marks {
   color?: string | null;
   highlight?: string | null;
   vscript?: VScript | null;
+  caps?: "all" | "small" | null;
+  /** Letter spacing, points. */
+  ls?: number | null;
+  /** An underline's kind and colour, and a line through drawn twice. */
+  ul?: UnderlineKind | null;
+  ulc?: string | null;
+  dstrike?: boolean;
 }
 
 /** A paragraph's own font and size, repeated on each of its runs. */
@@ -271,12 +281,16 @@ class Writer {
       rFonts: font ? `<w:rFonts w:ascii="${font}" w:hAnsi="${font}" w:cs="${font}"/>` : null,
       b: marks.bold ? "<w:b/>" : null,
       i: marks.italic ? "<w:i/>" : null,
-      strike: marks.strike ? "<w:strike/>" : null,
+      caps: marks.caps === "all" ? "<w:caps/>" : null,
+      smallCaps: marks.caps === "small" ? "<w:smallCaps/>" : null,
+      strike: marks.strike && !marks.dstrike ? "<w:strike/>" : null,
+      dstrike: marks.strike && marks.dstrike ? "<w:dstrike/>" : null,
       color: marks.color ? `<w:color w:val="${hexVal(marks.color)}"/>` : null,
+      spacing: marks.ls ? `<w:spacing w:val="${Math.round(marks.ls * 20)}"/>` : null,
       sz: size ? `<w:sz w:val="${halfPoints(size)}"/>` : null,
       szCs: size ? `<w:szCs w:val="${halfPoints(size)}"/>` : null,
       highlight: pen ? `<w:highlight w:val="${pen}"/>` : null,
-      u: marks.underline ? '<w:u w:val="single"/>' : null,
+      u: marks.underline ? `<w:u w:val="${marks.ul ? UL_VAL[marks.ul] : "single"}"${marks.ulc ? ` w:color="${hexVal(marks.ulc)}"` : ""}/>` : null,
       // A highlight in a colour Word has no pen for is shading on the run.
       shd: marks.highlight && !pen ? `<w:shd w:val="clear" w:color="auto" w:fill="${hexVal(marks.highlight)}"/>` : null,
       vertAlign: marks.vscript ? `<w:vertAlign w:val="${marks.vscript === "super" ? "superscript" : "subscript"}"/>` : null,
@@ -326,15 +340,22 @@ class Writer {
       for (const m of node.marks ?? []) {
         if (m.type === "bold") marks.bold = true;
         else if (m.type === "italic") marks.italic = true;
-        else if (m.type === "underline") marks.underline = true;
-        else if (m.type === "strike") marks.strike = true;
-        else if (m.type === "code") marks.code = true;
+        else if (m.type === "underline") {
+          marks.underline = true;
+          marks.ul = underlineKindAttr(m.attrs?.kind);
+          marks.ulc = colorAttr(m.attrs?.c);
+        } else if (m.type === "strike") {
+          marks.strike = true;
+          if (m.attrs?.dbl === true) marks.dstrike = true;
+        } else if (m.type === "code") marks.code = true;
         else if (m.type === "link" && typeof m.attrs?.href === "string" && m.attrs.href) marks.href = m.attrs.href;
         else if (m.type === "fontFamily") marks.font = this.fontName(typeof m.attrs?.f === "string" ? m.attrs.f : null);
         else if (m.type === "fontSize") marks.size = sizeAttr(m.attrs?.pt);
         else if (m.type === "textColor") marks.color = colorAttr(m.attrs?.c);
         else if (m.type === "highlight") marks.highlight = colorAttr(m.attrs?.c);
         else if (m.type === "vscript") marks.vscript = vscriptAttr(m.attrs?.v);
+        else if (m.type === "caps") marks.caps = capsAttr(m.attrs?.v);
+        else if (m.type === "letterSpacing") marks.ls = letterSpacingAttr(m.attrs?.pt);
       }
       // (A note is a part of its own, with no links of its own: its words
       // keep their look.)
@@ -441,11 +462,23 @@ class Writer {
     // The paragraph mark carries the face too, so an empty line keeps it —
     // and says when the break after it is a tracked change.
     const mark = this.rPr({}, face, this.breaks.get(node) ?? null);
+    // Its own tab stops ("none": its style's taken away).
+    const own = parseTabs(a.tabs);
+    let tabs: string | null = null;
+    if (Array.isArray(own)) tabs = tabsXml(own);
+    else if (own === "none") {
+      const level = Number(node.attrs?.level);
+      const element = typeof node.attrs?.element === "string" ? node.attrs.element : "";
+      const id = node.type === "heading" ? `h${Math.min(6, Math.max(1, level || 1))}` : element && this.styles.has(element) ? element : "normal";
+      const styled = parseTabs(this.styles.look(id).tabs);
+      if (Array.isArray(styled)) tabs = `<w:tabs>${styled.map((t) => `<w:tab w:val="clear" w:pos="${twips(t.pt)}"/>`).join("")}</w:tabs>`;
+    }
     return {
       keepNext: a.keepNext === true ? "<w:keepNext/>" : null,
       keepLines: a.keepLines === true ? "<w:keepLines/>" : null,
       pageBreakBefore: a.pageBreakBefore ? "<w:pageBreakBefore/>" : null,
       pBdr,
+      tabs,
       shd: shade ? `<w:shd w:val="clear" w:color="auto" w:fill="${hexVal(shade)}"/>` : null,
       spacing: spacing.length ? `<w:spacing ${spacing.join(" ")}/>` : null,
       ind: ind.length ? `<w:ind ${ind.join(" ")}/>` : null,
@@ -526,8 +559,16 @@ class Writer {
       h = (h * maxPx) / w;
       w = maxPx;
     }
-    const cx = Math.round(w * EMU_PER_PX);
-    const cy = Math.round(h * EMU_PER_PX);
+    // Turned a quarter, Word's box is the picture's before it is turned, and
+    // the space it takes on the line is made up by its effect extent.
+    const view = viewOf(node.attrs);
+    const sideways = view?.rot === 90 || view?.rot === 270;
+    const cx = Math.round((sideways ? h : w) * EMU_PER_PX);
+    const cy = Math.round((sideways ? w : h) * EMU_PER_PX);
+    const spare = sideways ? Math.round(((w - h) / 2) * EMU_PER_PX) : 0;
+    const effect = sideways ? `<wp:effectExtent l="${spare}" t="${-spare}" r="${spare}" b="${-spare}"/>` : "";
+    const srcRect = view?.crop ? `<a:srcRect l="${Math.round(view.crop[0] * 100000)}" t="${Math.round(view.crop[1] * 100000)}" r="${Math.round(view.crop[2] * 100000)}" b="${Math.round(view.crop[3] * 100000)}"/>` : "";
+    const turn = view?.rot ? ` rot="${view.rot * 60000}"` : "";
     this.drawingId += 1;
     const id = this.drawingId;
     const alt = xmlEscape(String(node.attrs?.alt ?? node.attrs?.title ?? ""));
@@ -541,13 +582,13 @@ class Writer {
     const edge = imageBorder(node.attrs?.bdr);
     const outline = edge ? `<a:ln w="${Math.round(edge.w * 12700)}"><a:solidFill><a:srgbClr val="${hexVal(edge.color)}"/></a:solidFill></a:ln>` : "";
     const drawing =
-      `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
+      `<w:drawing><wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>${effect}` +
       `<wp:docPr id="${id}" name="Picture ${id}"${alt ? ` descr="${alt}"` : ""}/>` +
       `<wp:cNvGraphicFramePr><a:graphicFrameLocks noChangeAspect="1"/></wp:cNvGraphicFramePr>` +
       `<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>` +
       `<pic:nvPicPr><pic:cNvPr id="${id}" name="Picture ${id}"/><pic:cNvPicPr/></pic:nvPicPr>` +
-      `<pic:blipFill><a:blip r:embed="${entry.id}"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
-      `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>${geom}${outline}</pic:spPr>` +
+      `<pic:blipFill><a:blip r:embed="${entry.id}"/>${srcRect}<a:stretch><a:fillRect/></a:stretch></pic:blipFill>` +
+      `<pic:spPr><a:xfrm${turn}><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm>${geom}${outline}</pic:spPr>` +
       `</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing>`;
     const align = imageAlign(node.attrs?.align);
     const jc = align ? `<w:jc w:val="${align}"/>` : null;
@@ -580,9 +621,13 @@ class Writer {
       insideH: side("insideH", lines === "all" || lines === "rows"),
       insideV: side("insideV", lines === "all"),
     });
+    const align = tableAlign(node.attrs?.align);
+    const ind = align ? null : tableIndent(node.attrs?.ind);
     const tblPr = wrap("tblPr", {
       // Its own width — or all of the text's, shared out.
       tblW: own ? `<w:tblW w:w="${widths.reduce((a, b) => a + b, 0)}" w:type="dxa"/>` : '<w:tblW w:w="5000" w:type="pct"/>',
+      jc: align ? `<w:jc w:val="${align}"/>` : null,
+      tblInd: ind ? `<w:tblInd w:w="${twips(ind)}" w:type="dxa"/>` : null,
       tblBorders: borders,
       tblLayout: '<w:tblLayout w:type="fixed"/>',
       tblCellMar: '<w:tblCellMar><w:top w:w="60" w:type="dxa"/><w:left w:w="100" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/><w:right w:w="100" w:type="dxa"/></w:tblCellMar>',
@@ -621,6 +666,7 @@ class Writer {
         const down = Math.min(whole(cell.attrs?.rowspan), rows.length - r);
         const bg = colorAttr(cell.attrs?.bg);
         const edges = cellEdges(cell.attrs?.bdr);
+        const va = cellVAlign(cell.attrs?.va);
         const names = { t: "top", l: "left", b: "bottom", r: "right" } as const;
         const tcBorders = edges
           ? `<w:tcBorders>${(["t", "l", "b", "r"] as const)
@@ -641,6 +687,7 @@ class Writer {
           vMerge: down > 1 ? '<w:vMerge w:val="restart"/>' : null,
           tcBorders,
           shd: bg ? `<w:shd w:val="clear" w:color="auto" w:fill="${hexVal(bg)}"/>` : null,
+          vAlign: va ? `<w:vAlign w:val="${va === "middle" ? "center" : "bottom"}"/>` : null,
         })}${inner}</w:tc>`;
         if (down > 1) {
           const held = { span, left: down - 1 };
@@ -649,7 +696,10 @@ class Writer {
         c += span;
       }
       // A table suggested (or struck) whole: each of its rows says so.
+      const rowH = rowHeight(row.attrs?.h);
       const trPr = wrap("trPr", {
+        cantSplit: rowKeep(row.attrs?.keep) ? "<w:cantSplit/>" : null,
+        trHeight: rowH ? `<w:trHeight w:val="${twips(rowH)}" w:hRule="atLeast"/>` : null,
         tblHeader: r === 0 && node.attrs?.head === true ? "<w:tblHeader/>" : null,
         ins: whose?.ins ? `<w:ins ${this.revAttrs(whose.ins)}/>` : null,
         del: whose?.del ? `<w:del ${this.revAttrs(whose.del)}/>` : null,
@@ -959,6 +1009,17 @@ function styleXml(
   })}</w:style>`;
 }
 
+const UL_VAL: Record<UnderlineKind, string> = { double: "double", dotted: "dotted", dashed: "dash", wavy: "wave" };
+
+const TAB_VAL: Record<TabKind, string> = { l: "left", c: "center", r: "right", d: "decimal" };
+const TAB_LEADER: Record<TabLeader, string> = { dot: "dot", dash: "hyphen", line: "underscore" };
+
+/** Tab stops as Word writes them. */
+function tabsXml(stops: TabStop[]): string | null {
+  if (!stops.length) return null;
+  return `<w:tabs>${stops.map((t) => `<w:tab w:val="${TAB_VAL[t.kind]}"${t.leader ? ` w:leader="${TAB_LEADER[t.leader]}"` : ""} w:pos="${twips(t.pt)}"/>`).join("")}</w:tabs>`;
+}
+
 /** A paragraph style from its look: everything stated, so nothing depends
  *  on what Word's own Normal would have said. */
 function lookStyleXml(
@@ -983,6 +1044,10 @@ function lookStyleXml(
       keepNext: look.keepNext ? "<w:keepNext/>" : null,
       keepLines: look.keepLines ? "<w:keepLines/>" : null,
       spacing: `<w:spacing w:before="${twips(look.before)}" w:after="${twips(look.after)}" w:line="${Math.round(look.line * 240)}" w:lineRule="auto"/>`,
+      tabs: (() => {
+        const stops = parseTabs(look.tabs);
+        return Array.isArray(stops) ? tabsXml(stops) : null;
+      })(),
       ind: `<w:ind w:left="${twips(look.indL)}" w:right="${twips(look.indR)}" ${first}/>`,
       jc: `<w:jc w:val="${look.align === "justify" ? "both" : look.align}"/>`,
       outlineLvl: look.outline ? `<w:outlineLvl w:val="${look.outline - 1}"/>` : null,
@@ -1321,11 +1386,16 @@ export async function writeDocx(doc: JSONContent, opts: DocxWriteOptions): Promi
   zip.file(
     "word/settings.xml",
     `${XML_HEAD}<w:settings ${NS}>${ordered("settings", {
+      // (Word's stops every so often, in twentieths of a point.)
+      defaultTabStop: `<w:defaultTabStop w:val="${Math.round(s.tabStop * 1440)}"/>`,
       mirrorMargins: s.mirror ? "<w:mirrorMargins/>" : null,
       autoHyphenation: s.hyphenate ? "<w:autoHyphenation/>" : null,
       evenAndOddHeaders: s.hfEven ? "<w:evenAndOddHeaders/>" : null,
-      footnotePr: hasNotes.foot ? '<w:footnotePr><w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>' : null,
-      endnotePr: hasNotes.end ? '<w:endnotePr><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>' : null,
+      // How notes are numbered, and where footnotes start again.
+      footnotePr: hasNotes.foot
+        ? `<w:footnotePr>${s.fnFormat !== "1" ? `<w:numFmt w:val="${WORD_NOTE_FORMAT[s.fnFormat]}"/>` : ""}${s.fnRestart !== "doc" ? `<w:numRestart w:val="${s.fnRestart === "page" ? "eachPage" : "eachSect"}"/>` : ""}<w:footnote w:id="-1"/><w:footnote w:id="0"/></w:footnotePr>`
+        : null,
+      endnotePr: hasNotes.end ? `<w:endnotePr><w:numFmt w:val="${WORD_NOTE_FORMAT[s.enFormat]}"/><w:endnote w:id="-1"/><w:endnote w:id="0"/></w:endnotePr>` : null,
       // Without this Word opens the file in compatibility mode.
       compat:
         '<w:compat><w:compatSetting w:name="compatibilityMode" w:uri="http://schemas.microsoft.com/office/word" w:val="15"/></w:compat>',

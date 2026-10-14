@@ -1,6 +1,8 @@
 import type { Editor } from "@tiptap/core";
 import { AllSelection, TextSelection, type EditorState, type Selection } from "@tiptap/pm/state";
 
+import { chapterText } from "../ChapterFocus";
+
 import { sentencesOf, splitter } from "../speech/readAloud";
 import { wordNear } from "./wordAt";
 
@@ -52,7 +54,10 @@ export function growSelection(editor: Editor, lang?: string): boolean {
     select(editor, TextSelection.create(state.doc, next.from, next.to));
     grown.set(editor, { steps, last: next });
   } else {
-    const all = new AllSelection(state.doc);
+    // Everything: the whole text, or the chapter when only one is shown.
+    const chapter = chapterText(state);
+    const all = chapter ? TextSelection.create(state.doc, chapter.start, chapter.end) : new AllSelection(state.doc);
+    if (chapter && all.from === now.from && all.to === now.to) return false;
     select(editor, all);
     grown.set(editor, { steps, last: { from: all.from, to: all.to } });
   }

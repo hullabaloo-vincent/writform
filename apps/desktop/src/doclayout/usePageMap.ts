@@ -17,6 +17,7 @@ import type { Editor } from "@tiptap/react";
 import { useEffect, useRef, type MutableRefObject } from "react";
 
 import { reflowPagination, type PageMapFor } from "../editor/Paginate";
+import { refreshNoteNumbers } from "../editor/nodes/NoteNumbers";
 import type { DocSource } from "./exportDoc";
 
 const PREF_KEY = "wf-doc-pageview";
@@ -144,8 +145,11 @@ export function usePageMap(
         // The text has moved on meanwhile: this answer is for one that is
         // gone, and the next is asked for below.
         if (map && editor.state.doc === doc) {
+          const before = into.current && into.current !== "pending" ? into.current.notes : undefined;
           into.current = { ...map, doc };
           reflowPagination(editor);
+          // (Footnotes numbered on each page show the numbers they print with.)
+          if (JSON.stringify(before ?? null) !== JSON.stringify(map.notes ?? null)) refreshNoteNumbers(editor);
         }
       } catch (e) {
         if (!alive) return;

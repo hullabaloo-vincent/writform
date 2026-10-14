@@ -22,6 +22,8 @@
  */
 
 import type { PictureQuality } from "../render/options";
+import { mulMatrix, shownSize, viewKey, viewMatrix, type Matrix, type PictureView } from "../../editor/schema/sanitize";
+import type { DLImage } from "./types";
 
 export type PictureType = "jpeg" | "png" | "gif";
 
@@ -74,6 +76,21 @@ export interface PictureWant {
   url: string;
   w: number;
   h: number;
+  /** Shown cropped or turned: only that part is made, turned, and the
+   *  picture is answered under `key` (`pictureKey`). */
+  view?: PictureView;
+  key?: string;
+}
+
+/** What a picture on a page is known by: its address, and how it is shown
+ *  when only part of it is, or it is turned. */
+export function pictureKey(it: Pick<DLImage, "ref" | "crop" | "rot">): string {
+  return it.crop || it.rot ? viewKey(it.ref, { ...(it.crop ? { crop: it.crop } : {}), ...(it.rot ? { rot: it.rot } : {}) }) : it.ref;
+}
+
+/** The view of a picture on a page, or null when all of it shows upright. */
+export function viewOfItem(it: Pick<DLImage, "crop" | "rot">): PictureView | null {
+  return it.crop || it.rot ? { ...(it.crop ? { crop: it.crop } : {}), ...(it.rot ? { rot: it.rot } : {}) } : null;
 }
 
 /** Pixels an inch aimed at, the density past which a picture is made
@@ -510,13 +527,30 @@ export interface Surface {
   /** It as a JPEG. Given pixels, those are what is encoded (all of them
    *  taken as opaque). */
   jpeg(quality: number, opaque?: Uint8ClampedArray): Promise<Uint8Array>;
+  /** It as a PNG (where the tools can write one). */
+  png?(): Promise<Uint8Array>;
   free(): void;
+}
+
+/**
+ * How to draw a picture's stored pixels onto a surface `w` by `h`: the
+ * matrix to draw with, and the size to draw the stored picture at. The
+ * stored pixels are turned upright (`orientation`), then the part `view`
+ * keeps is turned and fills the surface.
+ */
+export function viewDrawMatrix(orientation: number, w: number, h: number, view?: PictureView | null): { m: Matrix; dw: number; dh: number } {
+  const turned = orientation > 4;
+  if (!view || (!view.crop && !view.rot)) return { m: orientationMatrix(orientation, w, h), dw: turned ? h : w, dh: turned ? w : h };
+  const v = viewMatrix(view, w, h);
+  const m = mulMatrix(mulMatrix(v.m, [1, 0, 0, 1, v.x, v.y]), orientationMatrix(orientation, v.fw, v.fh));
+  return { m, dw: turned ? v.fh : v.fw, dh: turned ? v.fw : v.fh };
 }
 
 export interface PictureTools {
   /** Read a picture file and draw it `w` by `h` pixels, its stored pixels
-   *  turned as `orientation` says, on white where asked (else on nothing). */
-  draw(bytes: Uint8Array, type: PictureType, w: number, h: number, orientation: number, white: boolean): Promise<Surface>;
+   *  turned as `orientation` says, on white where asked (else on nothing).
+   *  With a `view`, only the part it keeps, turned (`viewDrawMatrix`). */
+  draw(bytes: Uint8Array, type: PictureType, w: number, h: number, orientation: number, white: boolean, view?: PictureView | null): Promise<Surface>;
 }
 
 /** The file itself, as the writer takes it. (`profile: false`: without the
@@ -546,14 +580,18 @@ export async function makePicture(
   info: PictureInfo,
   placed: { w: number; h: number },
   quality: PictureQuality,
-  opts: { flatten?: boolean; maxPixels?: number; gray?: boolean },
+  opts: { flatten?: boolean; maxPixels?: number; gray?: boolean; view?: PictureView | null },
   tools: PictureTools,
 ): Promise<PdfPicture> {
-  const plan = planPicture(info, placed, quality, opts);
+  // Shown cropped or turned: only the part kept is made, turned, and judged
+  // by its own pixels. Its file is never what goes in (it holds the rest).
+  const view = opts.view && (opts.view.crop || opts.view.rot) ? opts.view : null;
+  const seen: PictureInfo = view ? { ...info, ...shownSize(info.w, info.h, view), plain: false } : info;
+  const plan = planPicture(seen, placed, quality, opts);
   if (plan.act === "keep") return keptPicture(bytes, info, !opts.gray);
   const { w, h } = plan;
   if (opts.gray) {
-    const drawn = await tools.draw(sayUpright(bytes, info), info.type, w, h, info.orientation, true);
+    const drawn = await tools.draw(sayUpright(bytes, info), info.type, w, h, info.orientation, true, view);
     try {
       return { kind: "gray", bytes: grays(drawn.pixels(), w, h), w, h };
     } finally {
@@ -561,7 +599,7 @@ export async function makePicture(
     }
   }
   const photo = info.type === "jpeg";
-  const surface = await tools.draw(sayUpright(bytes, info), info.type, w, h, info.orientation, photo || !!opts.flatten);
+  const surface = await tools.draw(sayUpright(bytes, info), info.type, w, h, info.orientation, photo || !!opts.flatten, view);
   try {
     if (photo) {
       const made: RawPicture = { kind: "jpeg", bytes: await surface.jpeg(plan.jpeg), w, h };

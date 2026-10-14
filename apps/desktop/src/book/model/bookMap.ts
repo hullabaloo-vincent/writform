@@ -13,7 +13,7 @@
 
 import * as Y from "yjs";
 
-import { COVER_SLOTS, noCover, parseArt, type BookCover } from "../cover/art";
+import { COVER_SLOTS, noCover, parseArt, type BookCover, type CoverArt } from "../cover/art";
 import { parseLook, parseText, TEXT_MAX, type CoverText } from "../cover/design";
 import type { NumberStyle } from "./chapters";
 import { presetDesign, PRESETS, type BookDesign } from "./presets";
@@ -102,7 +102,23 @@ export interface Book {
   smf: BookSmf;
   /** Its cover artwork (see cover/art.ts). */
   cover: BookCover;
+  /** Its own pictures inside: kept apart from the design (`art.*`), so
+   *  choosing another preset leaves them where they are. */
+  art: BookArt;
 }
+
+/** The book's own pictures for its pages. */
+export interface BookArt {
+  /** Drawn at each scene break when the design asks for a picture. */
+  ornament: CoverArt | null;
+  /** Behind every chapter's first page, unless a chapter has its own. */
+  opener: CoverArt | null;
+  /** On the page facing every chapter's first page, unless a chapter has its own. */
+  facing: CoverArt | null;
+}
+
+export const ART_SLOTS = ["ornament", "opener", "facing"] as const;
+export type ArtSlot = (typeof ART_SLOTS)[number];
 
 type Validator = (v: unknown) => unknown;
 
@@ -197,8 +213,12 @@ const DESIGN: Record<keyof BookDesign, Validator> = {
   dropCap: oneOf(0, 2, 3, 4),
   leadIn: oneOf("none", "first-line", "first-words"),
   indent: num(0, 4),
-  sceneBreak: oneOf("ornament", "blank"),
+  // (An app older than the picture reads "picture" as nothing and draws its
+  // preset's ornament.)
+  sceneBreak: oneOf("ornament", "blank", "picture"),
   ornament: str(12),
+  ornamentSize: num(9, 72),
+  openerInk: oneOf("dark", "light"),
   blockquote: oneOf("indent", "indent-italic", "smaller"),
   justify: bool,
   hyphenate: bool,
@@ -294,7 +314,21 @@ export function readBook(doc: Y.Doc, fallbacks: { title?: string; author?: strin
     ebook: readGroup<BookEbook>(m, "ebook", EBOOK),
     smf: readGroup<BookSmf>(m, "smf", SMF),
     cover: readCover(m),
+    art: readArt(m),
   };
+}
+
+function readArt(m: Y.Map<unknown>): BookArt {
+  const art = {} as BookArt;
+  for (const slot of ART_SLOTS) art[slot] = parseArt(m.get(`art.${slot}`));
+  return art;
+}
+
+/** The addresses of the pictures the book's pages use (each once). */
+export function bookArtUrls(book: Book): string[] {
+  const urls: string[] = [];
+  if (book.design.sceneBreak === "picture" && book.art.ornament) urls.push(book.art.ornament.src);
+  return [...new Set(urls)];
 }
 
 function readCover(m: Y.Map<unknown>): BookCover {

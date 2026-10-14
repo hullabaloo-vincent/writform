@@ -107,9 +107,7 @@ const LEVEL_2: Vocab = {
  *  colour each, for what Word draws with cell borders), and a picture's
  *  outline (`bdr`) and rounded corners (`round`).
  *
- *  Not released yet: until a version ships with it, later vocabulary may
- *  still join this table. From that release on it is frozen and what comes
- *  after takes level 4. */
+ *  Shipped in 1.1.2, and frozen: nothing joins it now. */
 const LEVEL_3: Vocab = {
   nodes: {
     tableCell: ["bdr"],
@@ -118,10 +116,40 @@ const LEVEL_3: Vocab = {
   marks: {},
 };
 
-export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2, 3: LEVEL_3 };
+/** Level 4: a chapter's own art on its heading (`art` behind its first
+ *  page, `artFacing` on the page facing it: editor/nodes/ChapterArt.ts),
+ *  a paragraph's own tab stops (`tabs`: sanitize.ts `parseTabs`), and
+ *  capitals and letter spacing as formatting (marks `caps`, `letterSpacing`:
+ *  editor/marks/RunDepth.ts), an underline's kind and colour, and a line
+ *  through drawn twice (the level-1 marks' `kind`, `c` and `dbl`), and a
+ *  table's place, its rows' least height and keeping, and where a cell's
+ *  words sit (editor/tables/Table.ts), and a picture's crop and quarter
+ *  turns (editor/nodes/Image.ts).
+ *
+ *  Not released yet: until a version ships with it, later vocabulary may
+ *  still join this table. From that release on it is frozen and what comes
+ *  after takes level 5. */
+const LEVEL_4: Vocab = {
+  nodes: {
+    paragraph: ["art", "artFacing", "tabs"],
+    heading: ["art", "artFacing", "tabs"],
+    table: ["align", "ind"],
+    tableRow: ["h", "keep"],
+    tableCell: ["va"],
+    image: ["crop", "rot"],
+  },
+  marks: {
+    caps: ["v"],
+    letterSpacing: ["pt"],
+    underline: ["kind", "c"],
+    strike: ["dbl"],
+  },
+};
+
+export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2, 3: LEVEL_3, 4: LEVEL_4 };
 
 /** The newest level this build's editor understands. */
-export const DOC_SCHEMA_LEVEL = 3;
+export const DOC_SCHEMA_LEVEL = 4;
 
 /** The level of content this build doesn't know at all. */
 export const UNKNOWN_LEVEL = Infinity;

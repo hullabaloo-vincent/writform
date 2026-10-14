@@ -13,7 +13,7 @@
 import type { JSONContent } from "@tiptap/core";
 
 import { encodeRevs } from "../../editor/review/TrackMarks";
-import { encodeBorder, encodeSection, type BulletMarker, type SectionProps } from "../../editor/schema/sanitize";
+import { encodeBorder, encodeCrop, encodeSection, encodeTabs, type BulletMarker, type SectionProps } from "../../editor/schema/sanitize";
 import { encodeCols } from "../../editor/tables/Table";
 import { encodeStyleEntry } from "../../editor/styles/docStyles";
 import { CUSTOM_STYLE_MAX, LEGAL, resolveStyles, type StyleAlign, type StyleProps } from "../../editor/styles/sheet";
@@ -21,7 +21,7 @@ import { fontIdForWordName, type FontLookup } from "../../fonts/docx";
 import { isFontId } from "../../fonts/ids";
 import type { Block, CellBorders, FileRevs, Inline, Para, TableBlock } from "./body";
 import { sectionDiff, sectionProps } from "./section";
-import type { Numbering, NumLevel, PProps, ResolvedStyle, RProps, Styles } from "./styles";
+import { tabStopsOf, type Numbering, type NumLevel, type PProps, type ResolvedStyle, type RProps, type Styles } from "./styles";
 
 export const MEDIA_PREFIX = "docx-media:";
 
@@ -211,7 +211,7 @@ function withoutColumn(rows: TableBlock["rows"], k: number): TableBlock["rows"] 
       col += cell.span;
     }
     if (cells.length === 0) return null;
-    out.push({ cells });
+    out.push({ ...row, cells });
   }
   return out;
 }
@@ -316,6 +316,8 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
     // A style in the body's own face says nothing about its font: it
     // follows the body's, whatever that becomes.
     if (style.rPr.font && style.rPr.font !== baseFont) props.font = otherFontId(style.rPr.font);
+    const tabs = encodeTabs(tabStopsOf(style.pPr.tabs));
+    if (tabs && tabs !== "none") props.tabs = tabs;
     return props;
   };
 
@@ -443,14 +445,15 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
         const content = convert(cell.blocks, inside);
         const node: JSONContent = {
           type: "tableCell",
-          attrs: { colspan: cell.span, rowspan: 1, ...(cell.bg ? { bg: hex(cell.bg) } : {}), ...(cell.borders ? { bdr: bdrOf(cell.borders) } : {}) },
+          attrs: { colspan: cell.span, rowspan: 1, ...(cell.bg ? { bg: hex(cell.bg) } : {}), ...(cell.borders ? { bdr: bdrOf(cell.borders) } : {}), ...(cell.va ? { va: cell.va } : {}) },
           content: content.length ? content : [{ type: "paragraph" }],
         };
         for (let i = 0; i < cell.span && col + i < count; i += 1) open[col + i] = cell.merge === "start" ? node : null;
         cells.push(node);
         col += cell.span;
       }
-      rows.push({ type: "tableRow", content: cells });
+      const rowAttrs = { ...(row.h ? { h: Math.round(row.h * 10) / 10 } : {}), ...(row.keep ? { keep: true } : {}) };
+      rows.push({ type: "tableRow", ...(Object.keys(rowAttrs).length ? { attrs: rowAttrs } : {}), content: cells });
     }
     // Widths of its own — unless it is simply as wide as the text, shared
     // out equally (which is what a table without widths is here).
@@ -458,7 +461,14 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
     const cols = sized && !(block.full && even) ? encodeCols(grid) : null;
     return {
       type: "table",
-      attrs: { cols, head: block.head ? true : null, lines: block.lines === "all" ? null : block.lines, ...(block.rev ? { tc: tcOf(block.rev) } : {}) },
+      attrs: {
+        cols,
+        head: block.head ? true : null,
+        lines: block.lines === "all" ? null : block.lines,
+        ...(block.rev ? { tc: tcOf(block.rev) } : {}),
+        ...(block.align ? { align: block.align } : {}),
+        ...(!block.align && block.ind ? { ind: Math.round(block.ind * 10) / 10 } : {}),
+      },
       content: rows,
     };
   };
@@ -546,6 +556,8 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
             ...(n.w > 0 && n.h > 0 ? { width: n.w, height: n.h } : {}),
             ...(n.round ? { round: n.round } : {}),
             ...(n.border ? { bdr: `${n.border.w} ${hex(n.border.color)}` } : {}),
+            ...(n.crop && encodeCrop(n.crop) ? { crop: encodeCrop(n.crop) } : {}),
+            ...(n.rot ? { rot: n.rot } : {}),
           },
         });
       } else if (n.t === "note") {
@@ -562,9 +574,12 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
         else if (!isCode) {
           if (rp.b && !(styled && ref.rPr.b)) marks.push({ type: "bold" });
           if (rp.i && !(styled && ref.rPr.i)) marks.push({ type: "italic" });
-          if (rp.strike) marks.push({ type: "strike" });
+          if (rp.strike) marks.push(rp.dstrike ? { type: "strike", attrs: { dbl: true } } : { type: "strike" });
           // A link is underlined by its style; that underline isn't the writer's.
-          if (rp.u && !n.href && !(styled && ref.rPr.u)) marks.push({ type: "underline" });
+          if (rp.u && !n.href && !(styled && ref.rPr.u)) {
+            const ul = { ...(rp.uKind ? { kind: rp.uKind } : {}), ...(rp.uColor ? { c: hex(rp.uColor) } : {}) };
+            marks.push(Object.keys(ul).length ? { type: "underline", attrs: ul } : { type: "underline" });
+          }
           if (n.href && /^(https?:|mailto:|tel:)/i.test(n.href)) marks.push({ type: "link", attrs: { href: n.href } });
           if (rp.font && rp.font !== paraFont) {
             const id = otherFontId(rp.font);
@@ -576,8 +591,13 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
           if (color !== refColor && !n.href) marks.push({ type: "textColor", attrs: { c: hex(color) } });
           if (rp.highlight) marks.push({ type: "highlight", attrs: { c: hex(rp.highlight) } });
           if (rp.vert) marks.push({ type: "vscript", attrs: { v: rp.vert === "sup" ? "super" : "sub" } });
+          // Capitals and letter spacing stay formatting (the letters as
+          // typed), the style's included: this app's styles don't say them.
+          if (rp.caps) marks.push({ type: "caps", attrs: { v: "all" } });
+          else if (rp.smallCaps) marks.push({ type: "caps", attrs: { v: "small" } });
+          if (rp.spacing && Math.abs(rp.spacing) >= 0.1) marks.push({ type: "letterSpacing", attrs: { pt: Math.round(Math.min(20, Math.max(-5, rp.spacing)) * 10) / 10 } });
         }
-        const text = rp.caps ? n.text.toUpperCase() : n.text;
+        const text = n.text;
         const prev = content[content.length - 1];
         if (prev?.type === "text" && JSON.stringify(prev.marks ?? []) === JSON.stringify(marks)) {
           prev.text = (prev.text ?? "") + text;
@@ -589,20 +609,25 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
 
     let typed: ListInfo | undefined;
     if (!isCode) {
-      // Leading tabs and spaces were indentation, not text.
-      while (content[0]?.type === "text" && /^[\t ]*$/.test(content[0].text ?? "")) content.shift();
-      if (content[0]?.type === "text") content[0] = { ...content[0], text: content[0].text!.replace(/^[\t ]+/, "") };
-      // A list typed out by hand.
-      if (!headingLevel && !props.numId) {
+      // Leading spaces were indentation, not text. Leading tabs go to a
+      // stop, as they did in Word.
+      while (content[0]?.type === "text" && /^ *$/.test(content[0].text ?? "")) content.shift();
+      if (content[0]?.type === "text") content[0] = { ...content[0], text: content[0].text!.replace(/^ +/, "") };
+      // A list typed out by hand: a marker and a tab, in a paragraph with
+      // no stops of its own and no other tab.
+      const tabCount = content.reduce((n, c) => n + (c.type === "text" ? (c.text ?? "").split("\t").length - 1 : 0), 0);
+      if (!headingLevel && !props.numId && !tabStopsOf(props.tabs).length) {
         let lead = "";
         for (const c of content) {
-          if (c.type !== "text" || lead.length > 8) break;
+          if (c.type !== "text" || lead.length > 16) break;
           lead += c.text ?? "";
         }
-        const number = TYPED_NUMBER.exec(lead);
-        const marker = TYPED_BULLET.exec(lead)?.[0] ?? number?.[0];
-        if (marker) {
-          dropLeading(content, marker.length);
+        const leading = /^\t*/.exec(lead)![0].length;
+        const bare = lead.slice(leading);
+        const number = TYPED_NUMBER.exec(bare);
+        const marker = TYPED_BULLET.exec(bare)?.[0] ?? number?.[0];
+        if (marker && tabCount === leading + 1) {
+          dropLeading(content, leading + marker.length);
           typed = {
             numId: number ? -2 : -1,
             ilvl: Math.min(8, Math.max(0, Math.round((props.indL ?? 36) / 36) - 1)),
@@ -695,6 +720,11 @@ export function toContent(paras: Para[], styles: Styles, numbering: Numbering, l
       if (props.keepNext && !(styled && ref.pPr.keepNext) && !headingLevel) attrs.keepNext = true;
       if (props.keepLines && !headingLevel) attrs.keepLines = true;
       if (props.shade) attrs.shade = hex(props.shade);
+      // Its tab stops, where they aren't its style's ("none": the style's
+      // were all cleared).
+      const ownTabs = encodeTabs(tabStopsOf(props.tabs));
+      const refTabs = styled ? encodeTabs(tabStopsOf(ref.pPr.tabs)) : null;
+      if (ownTabs !== refTabs) attrs.tabs = ownTabs ?? "none";
     }
 
     const body = content.length ? { content } : {};

@@ -6,13 +6,15 @@ import { reviewMode } from "../../editor/review/Suggesting";
 import { toast } from "../../platform/toast";
 import type { Editor } from "@tiptap/react";
 import { TextSelection } from "@tiptap/pm/state";
-import { AlertTriangle, ArrowDown, ArrowUp, GripVertical } from "lucide-react";
+import { AlertTriangle, ArrowDown, ArrowUp, Focus, GripVertical } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { blockOffsets, scanStructure, type StructureEntry } from "../../book/model/structure";
 import type { BookDesign } from "../../book/model/presets";
 import { presetDesign } from "../../book/model/presets";
+import { focusEntry, showEverything } from "../../editor/ChapterFocus";
 import { showInText } from "../../editor/ui/reveal";
+import { useChapterFocus } from "./ChapterBar";
 import { confirmDialog } from "../../platform";
 
 /**
@@ -54,6 +56,8 @@ export function OutlinePanel({
     [editor, format, numbering.chapterNumber, numbering.chapterLabel, numbering.restartNumbersInParts],
   );
   const [{ entries, total }, setStructure] = useState(scan);
+  // The entry shown on its own, if one is.
+  const shown = useChapterFocus(editor);
   const [current, setCurrent] = useState(-1);
   const [reorder, setReorder] = useState(false);
   const [dragFrom, setDragFrom] = useState<number | null>(null);
@@ -264,6 +268,20 @@ export function OutlinePanel({
                     <span className="wf-doc-outline-words">{entry.words.toLocaleString()}</span>
                   )}
                 </button>
+                {editor && !reorder && (
+                  <button
+                    type="button"
+                    className={`wf-icon wf-doc-outline-only${shown?.index === entry.index ? " active" : ""}`}
+                    title={shown?.index === entry.index ? "Show the whole text" : `Show only this ${entry.kind === "chapter" || entry.kind === "part" ? entry.kind : "section"}`}
+                    aria-pressed={shown?.index === entry.index}
+                    onClick={() => {
+                      if (shown?.index === entry.index) showEverything(editor);
+                      else if (focusEntry(editor, entry.pos)) onNavigate?.();
+                    }}
+                  >
+                    <Focus size={13} />
+                  </button>
+                )}
                 {reorder && canMove(entry) && (
                   <span className="wf-doc-outline-moves">
                     <button

@@ -11,6 +11,8 @@ import { numberLabel, type NumberStyle } from "../model/chapters";
 import { PRESETS, type BookDesign } from "../model/presets";
 import { autoMargins, estimatePages, kdpMinInside, spineWidth } from "../model/trims";
 import { trimSize } from "../model/bookMap";
+import { ArtPicker, sharpness, useArtStore } from "./ArtPicker";
+import { ChapterArtSection, type ChapterArtSource } from "./ChapterArt";
 import { CoverTab, type CoverPictures } from "./Cover";
 
 type Tab = "book" | "design" | "print" | "ebook" | "cover";
@@ -37,12 +39,15 @@ export function BookInspector({
   pictures,
   countPages,
   onOpenCover,
+  chapterArt,
 }: {
   ydoc: Y.Doc;
   book: Book;
   readonly: boolean;
   words: number;
   chapters: number;
+  /** The chapters, for each one's own art (none: the book's alone). */
+  chapterArt?: ChapterArtSource;
   /** Where this manuscript keeps pictures (its cover artwork goes there). */
   pictures?: CoverPictures;
   /** The paperback's real page count, from the layout engine. */
@@ -81,7 +86,7 @@ export function BookInspector({
       </header>
       {tab === "book" && <BookTab book={book} disabled={readonly} patch={patch} />}
       {tab === "design" && (
-        <DesignTab ydoc={ydoc} book={book} disabled={readonly} patch={patch} />
+        <DesignTab ydoc={ydoc} book={book} disabled={readonly} patch={patch} pictures={pictures} chapterArt={chapterArt} />
       )}
       {tab === "print" && (
         <PrintTab book={book} disabled={readonly} patch={patch} words={words} chapters={chapters} />
@@ -491,13 +496,23 @@ function DesignTab({
   book,
   disabled,
   patch,
+  pictures,
+  chapterArt,
 }: {
   ydoc: Y.Doc;
   book: Book;
   disabled: boolean;
   patch: Patch;
+  /** Where the manuscript keeps its pictures (none: they can't be added). */
+  pictures?: CoverPictures;
+  chapterArt?: ChapterArtSource;
 }) {
   const d = book.design;
+  const { busy, choose } = useArtStore(pictures, patch);
+  // Characters of the writer's own for the ornament (shown while typed in,
+  // and whenever the ornament is not one of the list's).
+  const [ownOrnament, setOwnOrnament] = useState(false);
+  const own = ownOrnament || !(ORNAMENTS as readonly string[]).includes(d.ornament);
   const set = <K extends keyof BookDesign>(key: K, value: BookDesign[K]) => patch({ [`design.${key}`]: value });
   const customized = book.overridden.length > 0;
   return (
@@ -643,23 +658,62 @@ function DesignTab({
         />
       </section>
 
+      <ChapterArtSection book={book} disabled={disabled} patch={patch} pictures={pictures} chapters={chapterArt} />
+
       <section>
         <h4>Scene breaks</h4>
         <Select
           label="Style"
           value={d.sceneBreak}
-          options={[["ornament", "Ornament"], ["blank", "Blank line"]] as const}
+          options={[["ornament", "Ornament"], ["picture", "Your own picture"], ["blank", "Blank line"]] as const}
           onChange={(v) => set("sceneBreak", v)}
           disabled={disabled}
         />
         {d.sceneBreak === "ornament" && (
-          <Select
-            label="Ornament"
-            value={d.ornament}
-            options={ORNAMENTS.map((o) => [o, o] as const)}
-            onChange={(v) => set("ornament", v)}
-            disabled={disabled}
-          />
+          <>
+            <Select
+              label="Ornament"
+              value={own ? "own" : d.ornament}
+              options={[...ORNAMENTS.map((o) => [o, o] as const), ["own", "Your own…"] as const]}
+              onChange={(v) => {
+                setOwnOrnament(v === "own");
+                if (v !== "own") set("ornament", v);
+              }}
+              disabled={disabled}
+            />
+            {own && (
+              <TextField
+                label="Your own"
+                value={(ORNAMENTS as readonly string[]).includes(d.ornament) ? "" : d.ornament}
+                field="design.ornament"
+                patch={patch}
+                disabled={disabled}
+                placeholder="† † †"
+                hint="Up to 12 characters. One the book’s fonts can’t draw prints as * * * instead, and the preview shows which you get."
+              />
+            )}
+          </>
+        )}
+        {d.sceneBreak === "picture" && (
+          <>
+            <ArtPicker
+              name="Scene break picture"
+              hint="A JPEG or a PNG, on white or on a see-through ground"
+              art={book.art.ornament}
+              notes={book.art.ornament ? sharpness(book.art.ornament, d.ornamentSize / 72) : []}
+              disabled={disabled || !pictures}
+              busy={busy === "art.ornament"}
+              thumb="ornament"
+              onChoose={(file) => void choose("art.ornament", file)}
+              onRemove={() => patch({ "art.ornament": null })}
+            />
+            <label className="wf-inspector-row">
+              <span>Height</span>
+              <input type="range" min={9} max={72} step={1} disabled={disabled} value={d.ornamentSize} onChange={(e) => set("ornamentSize", Number(e.target.value))} />
+              <output className="wf-inspector-dim">{d.ornamentSize} pt</output>
+            </label>
+            {!book.art.ornament && <p className="wf-inspector-dim">Until there is a picture, the typed ornament prints.</p>}
+          </>
         )}
         {d.sceneBreak === "blank" && (
           <p className="wf-inspector-dim">A break that lands at the top or bottom of a page still shows the ornament, so it’s never lost.</p>

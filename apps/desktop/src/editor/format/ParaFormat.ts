@@ -23,6 +23,8 @@ import {
   lineRuleAttr,
   parseBorder,
   parseSection,
+  parseTabs,
+  encodeTabs,
   roundPt,
   type Border,
   type LineRule,
@@ -49,9 +51,13 @@ export interface ParaFormatAttrs {
   sect: string | null;
   /** The text goes on at the top of the next column from here. */
   colBreak: true | null;
+  /** Its own tab stops, encoded (`parseTabs`; level 4). */
+  tabs: string | null;
 }
 
 export const PARA_FORMAT_KEYS = ["indL", "indR", "indF", "lineRule", "lineAt", "keepNext", "keepLines", "shade", "bdr"] as const;
+/** The same, of level 4. */
+export const PARA_FORMAT_KEYS_4 = ["tabs"] as const;
 /** Where a paragraph falls on the page, not how it looks: not something a
  *  style, the painter or "clear formatting" carries. */
 export const PARA_BREAK_KEYS = ["sect", "colBreak"] as const;
@@ -155,6 +161,14 @@ export const ParaFormat = Extension.create({
               return v ? { "data-sect": v, "data-break": "section" } : {};
             },
           },
+          tabs: {
+            default: null,
+            parseHTML: (el: HTMLElement) => encodeTabs(parseTabs(el.getAttribute("data-tabs"))),
+            renderHTML: (attrs: { tabs?: unknown }) => {
+              const v = encodeTabs(parseTabs(attrs.tabs));
+              return v ? { "data-tabs": v } : {};
+            },
+          },
           colBreak: {
             default: null,
             keepOnSplit: false,
@@ -193,8 +207,9 @@ export const ParaFormat = Extension.create({
         // Splitting a paragraph in two copies its attributes to both halves
         // (only a split at its END leaves the ones marked not to be kept).
         // What says where a paragraph falls — a page, column or section
-        // break — and a drop cap belong to the first half alone.
-        const once = ["pageBreakBefore", "sect", "colBreak", "dropCap"].filter((k) => block.attrs[k]);
+        // break — a drop cap and a chapter's own art belong to the first
+        // half alone.
+        const once = ["pageBreakBefore", "sect", "colBreak", "dropCap", "art", "artFacing"].filter((k) => block.attrs[k]);
         if (once.length && isPara(block) && $from.depth === 1 && $from.sameParent($to) && $to.parentOffset < block.content.size) {
           return this.editor
             .chain()
@@ -308,6 +323,7 @@ export function curParaFormat(editor: Editor): ParaFormatAttrs {
     bdr: encodeBorder(parseBorder(pick("bdr"))),
     sect: encodeSection(parseSection(pick("sect"))),
     colBreak: pick("colBreak") === true ? true : null,
+    tabs: encodeTabs(parseTabs(pick("tabs"))),
   };
 }
 

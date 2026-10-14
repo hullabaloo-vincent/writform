@@ -12,7 +12,7 @@ import type { EditorState } from "@tiptap/pm/state";
 
 import { isFontId } from "../../fonts/ids";
 import { currentStyleId } from "../format/effective";
-import { colorAttr, firstIndentAttr, indentAttr, numberAttr, sizeAttr } from "../schema/sanitize";
+import { colorAttr, encodeTabs, firstIndentAttr, indentAttr, numberAttr, parseTabs, sizeAttr } from "../schema/sanitize";
 import { NORMAL_STYLE, QUOTE_STYLE, type ResolvedStyles, type StyleAlign, type StyleProps } from "./sheet";
 
 /** Paragraph formatting a style replaces when it's applied. */
@@ -29,6 +29,7 @@ const RESET: Record<string, null> = {
   indF: null,
   lineRule: null,
   lineAt: null,
+  tabs: null,
 };
 
 /** Marks a style can state, and so can absorb. */
@@ -116,6 +117,9 @@ export function capturedProps(editor: Editor): StyleProps {
   const indF = firstIndentAttr(a.indF);
   if (indF !== null) out.indF = indF;
   if (a.keepNext === true) out.keepNext = true;
+  // (Its own tab stops are level 4: the paragraph says they're allowed.)
+  const tabs = encodeTabs(parseTabs(a.tabs));
+  if (tabs && tabs !== "none") out.tabs = tabs;
 
   const marks = sharedMarks(block);
   if (marks.has("bold")) out.bold = true;

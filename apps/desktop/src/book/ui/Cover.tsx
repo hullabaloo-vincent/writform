@@ -1,14 +1,14 @@
-import { AlertTriangle, ImagePlus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { AlertTriangle } from "lucide-react";
+import { useMemo } from "react";
 
-import { normalizeAttachmentSrc, type CmdError } from "../../lib/backend";
 import type { ImageUploader } from "../../lib/upload";
-import { toast, toastError } from "../../platform/toast";
-import { encodeArt, type BookCover, type CoverArt, type CoverSlot } from "../cover/art";
+import type { BookCover, CoverArt, CoverSlot } from "../cover/art";
 import { coverGeometry, ebookNotes, printNotes, sizeWords, SPINE_TEXT_PAGES, spineDrift, type CoverGeometry } from "../cover/geometry";
 import type { Book } from "../model/bookMap";
 import { estimatePages } from "../model/trims";
+import { ArtPicker, useArtStore } from "./ArtPicker";
 import { CoverSvg, useCoverScene } from "./CoverView";
+import { pagesKey, usePrintedPages } from "./printedPages";
 
 /** Where a manuscript keeps its pictures, and the most one may weigh there. */
 export interface CoverPictures {
@@ -18,95 +18,11 @@ export interface CoverPictures {
 
 type Patch = (p: Record<string, unknown>) => void;
 
-const messageOf = (e: unknown, fallback: string): string => (e as Partial<CmdError> | null)?.message || fallback;
-
-/**
- * How many pages the cover is sized for: the layout engine's count, once it
- * has set the book (`count`), and an estimate until then. `key` is whatever
- * the count depends on: when it changes the pages are counted again, and
- * the last count stands meanwhile (not the estimate: the sheet's width
- * would jump there and back).
- */
-export function usePrintedPages(count: (() => Promise<number | null>) | undefined, estimate: number, key: string): { pages: number; exact: boolean } {
-  const [counted, setCounted] = useState<{ key: string; pages: number } | null>(null);
-  useEffect(() => {
-    if (!count) return;
-    let live = true;
-    const timer = setTimeout(() => {
-      void count().then((pages) => {
-        if (live && pages) setCounted({ key, pages });
-      });
-    }, 400);
-    return () => {
-      live = false;
-      clearTimeout(timer);
-    };
-  }, [count, key]);
-  return counted ? { pages: counted.pages, exact: counted.key === key } : { pages: estimate, exact: false };
-}
-
-/** What the page count depends on, near enough to know when to count again. */
-export const pagesKey = (book: Book, words: number): string => JSON.stringify([book.print, book.design, Math.round(words / 150)]);
-
 const SLOT_NAMES: Record<CoverSlot, string> = { front: "Front cover", back: "Back cover", spine: "Spine", wrap: "Whole cover" };
 
 /** One piece of artwork: what is there, and the buttons to change it. */
-function ArtSlot({
-  slot,
-  hint,
-  art,
-  notes,
-  disabled,
-  busy,
-  onChoose,
-  onRemove,
-}: {
-  slot: CoverSlot;
-  hint: string;
-  art: CoverArt | null;
-  notes: string[];
-  disabled: boolean;
-  busy: boolean;
-  onChoose: (file: File) => void;
-  onRemove: () => void;
-}) {
-  const input = useRef<HTMLInputElement>(null);
-  const name = SLOT_NAMES[slot];
-  return (
-    <div className="wf-cover-slot">
-      <div className={`wf-cover-thumb ${slot}`}>{art ? <img src={normalizeAttachmentSrc(art.src)} alt="" decoding="async" loading="lazy" /> : <ImagePlus size={16} aria-hidden />}</div>
-      <div className="wf-cover-slot-text">
-        <strong>{name}</strong>
-        <span>{art ? `${art.w.toLocaleString("en-US")} × ${art.h.toLocaleString("en-US")} pixels` : hint}</span>
-        <div className="wf-cover-slot-actions">
-          <input
-            ref={input}
-            type="file"
-            accept="image/jpeg,image/png"
-            hidden
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) onChoose(file);
-            }}
-          />
-          <button type="button" disabled={disabled || busy} onClick={() => input.current?.click()}>
-            {busy ? "Adding…" : art ? "Replace…" : "Choose a picture…"}
-          </button>
-          {art && (
-            <button type="button" className="wf-icon" disabled={disabled || busy} title={`Remove the ${name.toLowerCase()}`} aria-label={`Remove the ${name.toLowerCase()}`} onClick={onRemove}>
-              <Trash2 size={14} />
-            </button>
-          )}
-        </div>
-      </div>
-      {notes.map((note) => (
-        <p key={note} className="wf-cover-note">
-          <AlertTriangle size={12} aria-hidden /> {note}
-        </p>
-      ))}
-    </div>
-  );
+function ArtSlot({ slot, ...rest }: { slot: CoverSlot; hint: string; art: CoverArt | null; notes: string[]; disabled: boolean; busy: boolean; onChoose: (file: File) => void; onRemove: () => void }) {
+  return <ArtPicker name={SLOT_NAMES[slot]} thumb={slot} {...rest} />;
 }
 
 /** The spine isn't as wide as it was when the artwork was put in. */
@@ -148,7 +64,6 @@ export function CoverTab({
   /** Open the cover editor (and what is saved from it). */
   onOpen?: () => void;
 }) {
-  const [busy, setBusy] = useState<CoverSlot | null>(null);
   const { pages, exact } = usePrintedPages(countPages, estimatePages(words, chapters, book.print, book.design), pagesKey(book, words));
   const printKey = JSON.stringify(book.print);
   // eslint-disable-next-line react-hooks/exhaustive-deps -- `printKey` is the print settings, said once
@@ -158,24 +73,9 @@ export function CoverTab({
   const { scene } = useCoverScene(cover, g);
   const locked = disabled || !pictures;
 
-  const choose = async (slot: CoverSlot, file: File) => {
-    if (!pictures) return;
-    setBusy(slot);
-    try {
-      const { storeArt } = await import("../cover/files");
-      const { art, resaved } = await storeArt(file, pictures.upload, pictures.limit);
-      patch({
-        [`cover.${slot}`]: encodeArt(art),
-        // (What depends on the spine's width was made for this many pages.)
-        ...(slot === "wrap" || slot === "spine" ? { "cover.pages": g.pages } : {}),
-      });
-      if (resaved) toast("That picture was too heavy to keep as it was, so it was saved as a JPEG.", "info");
-    } catch (e) {
-      toastError(messageOf(e, "That picture couldn’t be added."));
-    } finally {
-      setBusy(null);
-    }
-  };
+  const { busy, choose: store } = useArtStore(pictures, patch);
+  // (What depends on the spine's width was made for this many pages.)
+  const choose = (slot: CoverSlot, file: File) => store(`cover.${slot}`, file, slot === "wrap" || slot === "spine" ? { "cover.pages": g.pages } : {});
   const slot = (which: CoverSlot, hint: string, notes: string[]) => (
     <ArtSlot
       slot={which}
@@ -183,7 +83,7 @@ export function CoverTab({
       art={cover[which]}
       notes={notes}
       disabled={locked}
-      busy={busy === which}
+      busy={busy === `cover.${which}`}
       onChoose={(file) => void choose(which, file)}
       onRemove={() => patch({ [`cover.${which}`]: null })}
     />

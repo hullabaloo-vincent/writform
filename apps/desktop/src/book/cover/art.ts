@@ -77,6 +77,15 @@ export function parseArt(value: unknown): CoverArt | null {
   return w > 0 && h > 0 ? { src: m[3], w, h } : null;
 }
 
+/** A chapter heading's own art (its `art` and `artFacing` attributes):
+ *  "none" (no picture, whatever the book's is), a picture as `encodeArt`
+ *  writes it, or null (the book's). */
+export function chapterArtValue(value: unknown): string | null {
+  if (value === "none") return "none";
+  const art = parseArt(value);
+  return art ? encodeArt(art) : null;
+}
+
 /** The pictures a paperback's cover is printed from: the whole cover when
  *  there is one, otherwise whichever of the three there are. */
 export function printPieces(cover: BookCover): CoverSlot[] {

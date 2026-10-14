@@ -29,6 +29,7 @@ import { levelOfJson } from "../../../editor/schema/levels";
 import { attachmentRef, backend, localDocMediaId, localDocMediaUrl, type CmdError } from "../../../lib/backend";
 import { SERVER_PICTURE_BYTES, uploadBlob } from "../../../lib/upload";
 import { COVER_SLOTS, encodeArt, parseArt } from "../../../book/cover/art";
+import { ART_SLOTS } from "../../../book/model/bookMap";
 import { fitUnder } from "../../../book/cover/files";
 import { featureLevel } from "../sync/caps";
 
@@ -389,15 +390,15 @@ export async function uploadDevicePictures(content: JSONContent): Promise<JSONCo
 }
 
 /**
- * The same for a book's cover artwork, which its settings name (not its
- * text). Artwork heavier than a server keeps is saved again as a JPEG.
+ * The same for a book's own pictures, which its settings name (not its
+ * text): the cover's artwork and the pictures of its pages. Artwork
+ * heavier than a server keeps is saved again as a JPEG.
  */
 export async function uploadDeviceCover(maps: DocMapsSnapshot): Promise<DocMapsSnapshot> {
   const book = maps.book;
   if (!book) return maps;
   let next: Record<string, unknown> | null = null;
-  for (const slot of COVER_SLOTS) {
-    const key = `cover.${slot}`;
+  for (const key of [...COVER_SLOTS.map((slot) => `cover.${slot}`), ...ART_SLOTS.map((slot) => `art.${slot}`)]) {
     const art = parseArt(book[key]);
     if (!art || !localDocMediaId(art.src)) continue;
     next ??= { ...book };

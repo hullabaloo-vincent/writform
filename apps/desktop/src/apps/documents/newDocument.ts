@@ -13,6 +13,7 @@
  */
 
 import type { Document } from "../../bindings/proto/Document";
+import { regionOf } from "../../lib/units";
 import { documentsApi } from "./api";
 import { b64encode } from "./collab";
 import { docMapsUpdate, type DocMapsSnapshot } from "./docMaps";
@@ -23,19 +24,6 @@ import { useLocalDocs } from "./local";
 export const LETTER_REGIONS: ReadonlySet<string> = new Set(["US", "CA", "MX", "PH", "CL", "CO", "CR", "GT", "PA", "PR", "SV", "VE", "BZ", "NI"]);
 
 export type RegionPaper = "letter" | "a4";
-
-/** The region a language tag speaks of ("en-GB" says GB, and "fr", which
- *  names none, most likely means FR). Null when it cannot be told. */
-function regionOf(tag: string): string | null {
-  try {
-    const region = new Intl.Locale(tag).maximize().region;
-    if (region) return region.toUpperCase();
-  } catch {
-    // An odd tag, or a webview without Intl.Locale: read the tag itself.
-  }
-  const said = /^[A-Za-z]{2,3}(?:[-_][A-Za-z]{4})?[-_]([A-Za-z]{2})(?:[-_]|$)/.exec(tag);
-  return said ? said[1].toUpperCase() : null;
-}
 
 /** The paper for someone whose languages are these, in their order of
  *  preference: the first that names a place decides. */

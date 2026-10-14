@@ -410,3 +410,58 @@ export function breakFirstFit(items: Items, widths: number[]): BreakResult {
   if (!breaks.length) breaks.push(Math.max(0, n - 1));
   return { breaks, ratios: breaks.map(() => 0), overfull, pass: 1 };
 }
+
+/**
+ * First-fit, as `breakFirstFit`, where some boxes are as wide as where they
+ * fall says (a tab, which goes to its stop): `variable(j, x)` gives box j's
+ * width when it starts `x` from the paragraph's left edge, or null for an
+ * ordinary box. `offsets` are the lines' left offsets (the last repeats).
+ */
+export function breakFirstFitTabs(items: Items, widths: number[], offsets: number[], variable: (j: number, x: number) => number | null): BreakResult {
+  const breaks: number[] = [];
+  const n = items.length;
+  const EPS = 1e-6;
+  let overfull = 0;
+  let from = 0;
+  while (from < n) {
+    const line = breaks.length;
+    const limit = widths[Math.min(line, widths.length - 1)];
+    const off = offsets[Math.min(line, offsets.length - 1)] ?? 0;
+    let s = from;
+    while (s < n && !items.isBox(s) && !(items.isPenalty(s) && items.cost[s] <= -INF_PENALTY)) s += 1;
+    let w = 0;
+    let best = -1;
+    let taken = -1;
+    for (let j = s; j < n; j += 1) {
+      if (items.isBox(j)) {
+        w += variable(j, off + w) ?? items.width[j];
+        if (w > limit + EPS && best >= 0) break;
+        continue;
+      }
+      const forced = items.isPenalty(j) && items.cost[j] <= -INF_PENALTY;
+      const legal = items.isPenalty(j) ? items.cost[j] < INF_PENALTY : j > s && items.isBox(j - 1);
+      if (legal) {
+        const fits = w + (items.isPenalty(j) ? items.width[j] : 0) <= limit + EPS;
+        if (forced) {
+          if (fits || best < 0) {
+            taken = j;
+            if (!fits) overfull += 1;
+          }
+          break;
+        }
+        if (fits) best = j;
+        else if (best < 0) {
+          taken = j;
+          overfull += 1;
+          break;
+        } else break;
+      }
+      if (items.isGlue(j)) w += items.width[j];
+    }
+    const b = taken >= 0 ? taken : best >= 0 ? best : n - 1;
+    breaks.push(b);
+    from = b + 1;
+  }
+  if (!breaks.length) breaks.push(Math.max(0, n - 1));
+  return { breaks, ratios: breaks.map(() => 0), overfull, pass: 1 };
+}

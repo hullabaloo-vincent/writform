@@ -11,11 +11,12 @@ import { loadCatalog } from "../../fonts/catalog";
 import { categoryOfWordFamily } from "../../fonts/docx";
 import { knownFont, type FontCategory } from "../../fonts/registry";
 import { systemFonts } from "../../fonts/store";
-import { child, children, int, onOff, type XNode } from "../xml";
+import { child, children, int, onOff, val, type XNode } from "../xml";
 import { BodyReader, type Para } from "./body";
 import { MEDIA_PREFIX, toContent } from "./content";
 import { DocxPackage } from "./package";
 import { sectionProps } from "./section";
+import type { NoteFormat } from "../../editor/schema/sanitize";
 import { Numbering, readTheme, Styles } from "./styles";
 
 export { DocxError } from "./package";
@@ -48,6 +49,16 @@ const IMAGE_TYPES: Record<string, string> = {
   jpg: "image/jpeg",
   jpeg: "image/jpeg",
   gif: "image/gif",
+};
+
+/** Word's ways of numbering notes, as this app has them. */
+const NOTE_FORMAT_OF: Record<string, NoteFormat | undefined> = {
+  decimal: "1",
+  lowerRoman: "i",
+  upperRoman: "I",
+  lowerLetter: "a",
+  upperLetter: "A",
+  chicago: "*",
 };
 
 const PN_FORMATS: Record<string, string> = {
@@ -272,6 +283,20 @@ export async function readDocx(buffer: ArrayBuffer | Uint8Array, opts: DocxReadO
     if (onOff(docSettings, "w:evenAndOddHeaders")) settings.hfEven = true;
     if (onOff(docSettings, "w:mirrorMargins")) settings.mirror = true;
     if (onOff(docSettings, "w:autoHyphenation")) settings.hyphenate = true;
+    // Word's stops every so often (twentieths of a point), as inches.
+    const every = Number(child(docSettings, "w:defaultTabStop")?.attrs["w:val"]);
+    if (Number.isFinite(every) && every > 0 && Math.abs(every - 720) > 1) settings.tabStop = Math.min(2, Math.max(0.1, Math.round((every / 1440) * 1000) / 1000));
+  }
+  // How notes are numbered: the document's, or its last section's (where
+  // Word's own dialog puts it).
+  for (const where of [docSettings ?? undefined, sect ?? undefined]) {
+    const fn = child(where, "w:footnotePr");
+    const fnFormat = NOTE_FORMAT_OF[val(fn, "w:numFmt") ?? ""];
+    if (fnFormat) settings.fnFormat = fnFormat;
+    const restart = val(fn, "w:numRestart");
+    if (restart) settings.fnRestart = restart === "eachPage" ? "page" : restart === "eachSect" ? "section" : "doc";
+    const enFormat = NOTE_FORMAT_OF[val(child(where, "w:endnotePr"), "w:numFmt") ?? ""];
+    if (enFormat) settings.enFormat = enFormat;
   }
 
   // Document properties.

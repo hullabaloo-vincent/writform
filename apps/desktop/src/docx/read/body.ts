@@ -7,7 +7,7 @@
 
 import { child, children, find, int, onOff, val, type XNode } from "../xml";
 import type { Rel } from "./package";
-import { readPPr, readRPr, type Numbering, type PProps, type ResolvedStyle, type RProps, type Styles, type Theme } from "./styles";
+import { mergeTabs, readPPr, readRPr, type Numbering, type PProps, type ResolvedStyle, type RProps, type Styles, type Theme } from "./styles";
 
 /** Who made a tracked change, and when (seconds since 1970; 0 unknown). */
 export interface FileRev {
@@ -25,7 +25,19 @@ export interface FileRevs {
 export type Inline =
   | { t: "text"; text: string; props: RProps; href?: string; rev?: FileRevs }
   | { t: "break" }
-  | { t: "image"; media: number; w: number; h: number; alt: string; round?: number; border?: { w: number; color: string } }
+  | {
+      t: "image";
+      media: number;
+      /** The box it shows in (turned, when it is). */
+      w: number;
+      h: number;
+      alt: string;
+      round?: number;
+      border?: { w: number; color: string };
+      /** The part kept (left, top, right, bottom, as parts) and a quarter turn. */
+      crop?: [number, number, number, number];
+      rot?: 90 | 180 | 270;
+    }
   /** A field the reader keeps as a field (headers and footers). */
   | { t: "field"; name: string }
   /** A footnote or endnote, with what it says. */
@@ -42,7 +54,14 @@ export interface TableBlock {
   /** Every row was inserted, or every row deleted, as a tracked change. */
   rev?: FileRevs;
   lines: "all" | "rows" | "box" | "none";
+  /** Where a table narrower than the text sits, or how far in it starts
+   *  (points). */
+  align?: "center" | "right";
+  ind?: number;
   rows: {
+    /** The least the row is tall (points), and whether it is kept whole. */
+    h?: number;
+    keep?: boolean;
     cells: {
       blocks: Block[];
       span: number;
@@ -53,6 +72,8 @@ export interface TableBlock {
       /** Lines of the cell's own, by side: a width in points and a colour
        *  (`rrggbb`), or none there whatever the table draws. */
       borders?: CellBorders;
+      /** Where its words sit in a row taller than they are. */
+      va?: "middle" | "bottom";
     }[];
   }[];
 }
@@ -248,6 +269,16 @@ export class BodyReader {
     const width = child(tblPr, "w:tblW");
     const full = width?.attrs["w:type"] === "pct" && (int(width.attrs["w:w"]) ?? 0) >= 4990;
     const block: TableBlock = { t: "table", grid: grid.every((w) => w > 0) ? grid : [], full, head: false, lines, rows: [] };
+    const jc = val(tblPr, "w:jc");
+    if (jc === "center") block.align = "center";
+    else if (jc === "right" || jc === "end") block.align = "right";
+    else {
+      // (A few points in is how older files line a table's words up with
+      // the text, not a table set in: left as it is.)
+      const ind = child(tblPr, "w:tblInd");
+      const twip = ind && (ind.attrs["w:type"] ?? "dxa") === "dxa" ? int(ind.attrs["w:w"]) : null;
+      if (typeof twip === "number" && twip >= 120) block.ind = twip / 20;
+    }
     const outerTarget = this.target;
     const cellsOf = (row: XNode): XNode[] =>
       row.children.flatMap((c) => (c.name === "w:tc" ? [c] : c.name === "w:sdt" ? children(child(c, "w:sdtContent"), "w:tc") : []));
@@ -261,6 +292,11 @@ export class BodyReader {
       if (gone && !this.track) return;
       if (r === 0 && onOff(trPr, "w:tblHeader")) block.head = true;
       const cells: TableBlock["rows"][number]["cells"] = [];
+      // A row's height is a least here (an exact one too: the words of a
+      // cell are never cut off).
+      const height = child(trPr, "w:trHeight");
+      const twip = height && height.attrs["w:hRule"] !== "auto" ? int(height.attrs["w:val"]) : null;
+      const rowFacts = { ...(twip && twip >= 80 ? { h: twip / 20 } : {}), ...(onOff(trPr, "w:cantSplit") ? { keep: true } : {}) };
       // Columns a row skips at its start are empty cells here.
       for (let i = 0; i < (int(val(trPr, "w:gridBefore")) ?? 0); i += 1) cells.push({ blocks: [], span: 1, merge: null });
       for (const tc of cellsOf(row)) {
@@ -268,19 +304,21 @@ export class BodyReader {
         const merge = child(tcPr, "w:vMerge");
         const fill = child(tcPr, "w:shd")?.attrs["w:fill"];
         const borders = cellBorders(child(tcPr, "w:tcBorders"));
+        const vAlign = val(tcPr, "w:vAlign");
         const cell: TableBlock["rows"][number]["cells"][number] = {
           blocks: [],
           span: Math.max(1, int(val(tcPr, "w:gridSpan")) ?? 1),
           merge: merge ? (merge.attrs["w:val"] === "restart" ? "start" : "continue") : null,
           ...(fill && /^[0-9a-fA-F]{6}$/.test(fill) && fill.toLowerCase() !== "ffffff" ? { bg: fill.toLowerCase() } : {}),
           ...(borders ? { borders } : {}),
+          ...(vAlign === "center" ? { va: "middle" as const } : vAlign === "bottom" ? { va: "bottom" as const } : {}),
         };
         this.target = cell.blocks;
         this.blocks(tc);
         cells.push(cell);
       }
       if (cells.length) {
-        block.rows.push({ cells });
+        block.rows.push({ ...rowFacts, cells });
         rowRevs.push({ ...(added ? { ins: revOf(added) } : {}), ...(gone ? { del: revOf(gone) } : {}) });
       }
     });
@@ -342,6 +380,9 @@ export class BodyReader {
     const direct = readPPr(pPr);
     const style = this.styles.para(direct.styleId);
     const props: PProps = { ...style.pPr, ...direct };
+    // (A paragraph's tab stops add to its style's, and may clear some.)
+    const tabs = mergeTabs(style.pPr.tabs, direct.tabs);
+    if (tabs) props.tabs = tabs;
     const markDirect = readRPr(child(pPr, "w:rPr"), this.theme);
     const mark: RProps = { ...style.rPr, ...this.styles.char(markDirect.styleId), ...markDirect };
 
@@ -452,6 +493,16 @@ export class BodyReader {
       const kind = shape?.attrs.prst ?? "";
       const adjust = Number(/val\s+(-?\d+)/.exec(find(shape ?? undefined, "a:gd")?.attrs.fmla ?? "")?.[1]);
       const round = kind === "ellipse" ? 50 : /round/i.test(kind) ? Math.min(50, Math.max(1, Number.isFinite(adjust) ? adjust / 1000 : 16.7)) : 0;
+      // The part of the picture kept, and a quarter turn (another angle is
+      // shown upright: there is nothing here to turn it by).
+      const src = find(node, "a:srcRect");
+      const cut = (k: string) => Math.max(0, (int(src?.attrs[k]) ?? 0) / 100000);
+      const crop: [number, number, number, number] | null = src ? [cut("l"), cut("t"), cut("r"), cut("b")] : null;
+      const xfrm = find(frame ?? undefined, "a:xfrm");
+      const deg = ((((int(xfrm?.attrs.rot) ?? 0) / 60000) % 360) + 360) % 360;
+      const rot = ([90, 180, 270] as const).find((q) => Math.abs(deg - q) < 1);
+      // (Word's box is the picture's before it is turned.)
+      if (rot === 90 || rot === 270) [w, h] = [h, w];
       const line = find(frame ?? undefined, "a:ln");
       const ink = line && !child(line, "a:noFill") ? find(line, "a:srgbClr")?.attrs.val : undefined;
       const border = line && ink && /^[0-9a-fA-F]{6}$/.test(ink) ? { w: Math.min(12, Math.max(0.25, (int(line.attrs.w) ?? 9525) / 12700)), color: ink.toLowerCase() } : null;
@@ -463,6 +514,8 @@ export class BodyReader {
         alt: docPr?.attrs.descr || docPr?.attrs.title || "",
         ...(round ? { round: Math.round(round * 10) / 10 } : {}),
         ...(border ? { border: { w: Math.round(border.w * 100) / 100, color: border.color } } : {}),
+        ...(crop && crop.some((v) => v > 0) ? { crop } : {}),
+        ...(rot ? { rot } : {}),
       });
     };
 
@@ -743,6 +796,10 @@ function sameRun(a: RProps, b: RProps): boolean {
     a.size === b.size &&
     (a.color ?? "") === (b.color ?? "") &&
     (a.highlight ?? "") === (b.highlight ?? "") &&
-    a.vert === b.vert
+    a.vert === b.vert &&
+    a.spacing === b.spacing &&
+    !!a.dstrike === !!b.dstrike &&
+    a.uKind === b.uKind &&
+    a.uColor === b.uColor
   );
 }

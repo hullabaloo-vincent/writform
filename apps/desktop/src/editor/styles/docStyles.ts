@@ -9,7 +9,7 @@
 import * as Y from "yjs";
 
 import { isFontId } from "../../fonts/ids";
-import { colorAttr, firstIndentAttr, indentAttr, numberAttr, sizeAttr } from "../schema/sanitize";
+import { colorAttr, encodeTabs, firstIndentAttr, indentAttr, numberAttr, parseTabs, sizeAttr } from "../schema/sanitize";
 import {
   CUSTOM_STYLE,
   CUSTOM_STYLE_MAX,
@@ -53,6 +53,11 @@ export function cleanStyleProps(raw: unknown): StyleProps {
   if (indR !== null) out.indR = indR;
   const indF = firstIndentAttr(v.indF);
   if (indF !== null) out.indF = indF;
+  if (v.tabs === null) out.tabs = null;
+  else {
+    const tabs = encodeTabs(parseTabs(v.tabs));
+    if (tabs && tabs !== "none") out.tabs = tabs;
+  }
   return out;
 }
 
@@ -135,4 +140,10 @@ export function newStyleId(taken: Iterable<string>): string {
     const id = `u-${Math.random().toString(36).slice(2, 8).padEnd(6, "0")}`;
     if (CUSTOM_STYLE.test(id) && !used.has(id)) return id;
   }
+}
+
+/** The format level a document's styles need: a style with tab stops is
+ *  level 4 (an older app changing that style would lose them). */
+export function styleLevel(doc: Y.Doc): number {
+  return Object.values(readDocStyles(doc)).some((entry) => entry.props.tabs) ? 4 : 1;
 }

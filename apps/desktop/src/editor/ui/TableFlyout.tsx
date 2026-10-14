@@ -2,8 +2,9 @@ import type { Editor } from "@tiptap/react";
 import { Table as TableIcon } from "lucide-react";
 import { useState } from "react";
 
+import { textToTable } from "../tables/convert";
 import { insertTable } from "../tables/Table";
-import { Flyout } from "./Flyout";
+import { Flyout, FlyoutItem } from "./Flyout";
 
 const ROWS = 6;
 const COLS = 8;
@@ -42,6 +43,17 @@ export function TableFlyout({ editor }: { editor: Editor }) {
           <p className="wf-table-size">
             {over[0]} {over[0] === 1 ? "row" : "rows"} × {over[1]} {over[1] === 1 ? "column" : "columns"}
           </p>
+          {!editor.state.selection.empty && (
+            <FlyoutItem
+              hint="a row a line, cells at its tabs"
+              onPick={() => {
+                textToTable(editor);
+                close();
+              }}
+            >
+              Make a table of the selected text
+            </FlyoutItem>
+          )}
         </>
       )}
     </Flyout>

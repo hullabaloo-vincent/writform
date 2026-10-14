@@ -7,6 +7,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
+import { chapterFocus } from "./ChapterFocus";
 import { textWindow } from "./ui/bubblePlace";
 import { boxOf } from "./ui/scale";
 
@@ -106,6 +107,8 @@ export interface PageMapFor {
   starts: ({ pos: number; inline: boolean; also?: { pos: number; inline: boolean }[] } | null)[];
   /** How tall each page's text area is, pt. */
   bodyH: number[];
+  /** Footnotes numbered again on each page: every note's label, as set. */
+  notes?: string[];
 }
 
 interface PaginateOptions {
@@ -413,7 +416,7 @@ class PaginateView {
 
   update(view: EditorView, prevState: EditorState) {
     void view;
-    if (this.view.state.doc !== prevState.doc) this.schedule();
+    if (this.view.state.doc !== prevState.doc || chapterFocus(this.view.state) !== chapterFocus(prevState)) this.schedule();
   }
 
   reflow = () => {
@@ -648,8 +651,10 @@ class PaginateView {
       return;
     }
 
-    // As printed, when the engine has said where the pages fall.
-    const map = this.opts.getMap();
+    // As printed, when the engine has said where the pages fall. (Not while
+    // one chapter is shown: the engine's pages are the whole text's.)
+    const focus = chapterFocus(view.state);
+    const map = focus ? null : this.opts.getMap();
     if (map === "pending") {
       if (this.exact) {
         this.measureExact(spec, cur);
@@ -688,7 +693,8 @@ class PaginateView {
     this.measureSimple(spec, cur);
   }
 
-  /** The simple view: push each block that would straddle a boundary. */
+  /** The simple view: push each block that would straddle a boundary.
+   *  While one chapter is shown, only its blocks, from its first page. */
   private measureSimple(spec: PageSpec, cur: DecorationSet) {
     const view = this.view;
     const state = view.state;
@@ -723,8 +729,11 @@ class PaginateView {
     // Blocks are walked in document order, so one sorted pass with a
     // running sum replaces a scan of every push per block (a novel has
     // thousands of blocks and hundreds of pushes).
+    const focus = chapterFocus(state);
+    const shown = (pos: number) => !focus || (pos >= focus.from && pos < focus.to);
     const applied: Push[] = cur
       .find()
+      .filter((d) => shown(d.from))
       .map((d) => ({
         pos: d.from,
         end: d.to,
@@ -762,10 +771,11 @@ class PaginateView {
         }
       }
       el ??= view.nodeDOM(offset) as Element | null;
+      if (el) beside = el.nextElementSibling;
+      if (!shown(offset)) return;
       const isFirst = index === 0;
       index += 1;
       if (!el || !(el instanceof HTMLElement)) return;
-      beside = el.nextElementSibling;
 
       const rect = box(el);
       const naturalTop = rect.top - originY - appliedBefore(offset);

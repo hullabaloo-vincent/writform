@@ -24,6 +24,7 @@ import { EditorView } from "@tiptap/pm/view";
 
 import { showRev } from "../review/TrackMarks";
 import { noteKind, noteNumber, type NoteKind } from "../schema/sanitize";
+import { noteLabelAt } from "./NoteNumbers";
 
 /** The note editors that are open, by the reference they hang from (so
  *  something outside — a test — can reach the one for a given note). */
@@ -160,8 +161,9 @@ export interface NoteEntry {
   removed: boolean;
 }
 
-/** Every footnote and endnote, in the order they are cited. */
-export function listNotes(doc: PmNode): NoteEntry[] {
+/** Every footnote and endnote, in the order they are cited. `label`: how
+ *  the document numbers them (the usual numbers without it). */
+export function listNotes(doc: PmNode, label?: (pos: number, kind: NoteKind, ordinal: number) => string): NoteEntry[] {
   const out: NoteEntry[] = [];
   const count = { foot: 0, end: 0 };
   doc.descendants((node, pos) => {
@@ -171,7 +173,7 @@ export function listNotes(doc: PmNode): NoteEntry[] {
     out.push({
       pos,
       kind,
-      label: noteNumber(count[kind], kind),
+      label: label ? label(pos, kind, count[kind]) : noteNumber(count[kind], kind),
       text: node.textContent,
       removed: typeof node.attrs.tc === "string" && /(^|\n)del:/.test(node.attrs.tc),
     });
@@ -261,7 +263,7 @@ export const Footnote = Node.create({
         const head = document.createElement("div");
         head.className = "wf-fn-head";
         const label = document.createElement("span");
-        label.textContent = `${kind === "end" ? "Endnote" : "Footnote"} ${noteNumber(numberAt(outer.state.doc, at, kind), kind)}`;
+        label.textContent = `${kind === "end" ? "Endnote" : "Footnote"} ${noteLabelAt(outer.state, at, kind, numberAt(outer.state.doc, at, kind))}`;
         head.append(label);
         const button = (text: string, title: string, run: () => void) => {
           const b = document.createElement("button");

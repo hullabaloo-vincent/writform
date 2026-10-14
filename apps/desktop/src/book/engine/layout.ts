@@ -30,7 +30,8 @@ import { roundedWordCount, smfNames } from "../smf/names";
 import { Composer, shift, type Align, type ParaInput, type SetPara, type TextStyle } from "./compose";
 import type { FaceSet } from "./faces";
 import type { Hyphenator } from "./hyphenate";
-import type { DisplayList, DLItem, DLPage, DLSection, PageRole } from "./types";
+import { BLEED_PT, type DisplayList, type DLImage, type DLItem, type DLPage, type DLSection, type PageRole } from "./types";
+import { shownSize, type PictureView } from "../../editor/schema/sanitize";
 
 const PT = 72;
 const EPS = 1e-6;
@@ -158,6 +159,8 @@ interface PageDraft {
   folio: "none" | "normal" | "drop";
   /** Arabic numbering starts on this page. */
   arabicStart?: boolean;
+  /** A chapter's art behind everything on the page (its address). */
+  art?: string;
 }
 
 interface HeadingSpec {
@@ -195,6 +198,9 @@ class Layout {
   private readonly sceneOrnament: { text: string; family: string };
   private readonly headingOrnament: { text: string; family: string } | null;
   private readonly warnings: Warning[] = [];
+  /** Chapter art already warned of: unread, or too few pixels for print. */
+  private artUnread = false;
+  private readonly artBlurred = new Set<string>();
   private readonly sections: DLSection[] = [];
   /** Running-head text per section. */
   private readonly heads: string[] = [];
@@ -242,13 +248,18 @@ class Layout {
     const textBottom = this.pageH - g.bottom * PT;
     this.footBaseline = Math.min(textBottom + 1.6 * this.L, this.pageH - 0.3 * PT);
 
-    this.sceneOrnament = this.smf ? { text: "#", family: d.bodyFont } : ornamentFor(d.ornament || "* * *", d);
+    this.sceneOrnament = this.smf ? { text: "#", family: d.bodyFont } : this.ornament(d.ornament || "* * *");
     if (!this.smf && d.sceneBreak === "ornament" && d.ornament && this.sceneOrnament.text !== d.ornament) {
       this.warnings.push({ kind: "missing-glyphs", message: `The ornament “${d.ornament}” isn’t in the book’s fonts, so asterisks print instead.` });
     }
-    this.headingOrnament = !this.smf && d.headingOrnament ? ornamentFor(d.headingOrnament, d) : null;
-    const { meta, smf } = o.model.book;
-    this.contextKey = JSON.stringify([o.target, d, g, meta.language, meta.title, smf.font, smf.italics, smf.paper, o.chains ?? {}]);
+    if (!this.smf && d.sceneBreak === "picture" && !this.sceneArt()) {
+      this.warnings.push({ kind: "image", message: "The scene break picture couldn’t be read, so the typed ornament prints instead." });
+    }
+    this.headingOrnament = !this.smf && d.headingOrnament ? this.ornament(d.headingOrnament) : null;
+    const { meta, smf, art } = o.model.book;
+    // (The book's own pictures, and their sizes, shape the pages too.)
+    const artKey = d.sceneBreak === "picture" && art.ornament ? [art.ornament.src, o.images?.get(art.ornament.src) ?? null] : null;
+    this.contextKey = JSON.stringify([o.target, d, g, meta.language, meta.title, smf.font, smf.italics, smf.paper, o.chains ?? {}, ...(artKey ? [artKey] : [])]);
   }
 
   run(): DisplayList {
@@ -464,7 +475,13 @@ class Layout {
     else if (section.matter !== "body") this.partOpen = false;
     const level = section.kind === "chapter" && this.partOpen ? 1 : 0;
 
-    if (!this.smf && (section.kind === "part" || startArabic || print.recto || section.matter !== "body")) {
+    // A picture facing the chapter's first page: on a left-hand page of its
+    // own, so the chapter opens on the right.
+    const facing = this.artSized(section.art?.facing);
+    if (!this.smf && facing) {
+      this.ensureVerso();
+      this.page("art", -1, { art: facing });
+    } else if (!this.smf && (section.kind === "part" || startArabic || print.recto || section.matter !== "body")) {
       this.ensureRecto();
     }
     const head = section.title || section.label || this.o.model.book.meta.title;
@@ -502,6 +519,7 @@ class Layout {
       if (k === "url" && typeof v === "string") images.push(this.o.images?.get(v) ?? null);
       return v;
     });
+    if (section.art) images.push(this.o.images?.get(section.art.opener ?? "") ?? null, this.o.images?.get(section.art.facing ?? "") ?? null);
     return `${this.contextKey}|${startArabic}|${JSON.stringify(images)}|${body}`;
   }
 
@@ -538,9 +556,11 @@ class Layout {
     const hasHeading = this.smf || section.kind !== "untitled";
     const heading = hasHeading && (section.label || section.title || section.subtitle || section.epigraph) ? this.opener(section) : null;
     const start = heading ? this.slotAfter(heading.bottom, (this.smf ? 1.6 : 2.2) * this.L) : 0;
+    const opener = heading && !this.smf ? this.artSized(section.art?.opener) : null;
     const first = this.page(heading ? "opener" : "body", index, {
       arabicStart: startArabic,
       folio: heading ? (d.folioOnOpeners || this.smf ? "drop" : "none") : "normal",
+      ...(opener ? { art: opener } : {}),
     });
     if (heading) first.items.push(...heading.items);
     this.flow(this.rows(section, !!heading), index, start, first);
@@ -803,7 +823,7 @@ class Layout {
           break;
         }
         case "image": {
-          const r = this.imageRow(block.url);
+          const r = this.imageRow(block.url, block.view);
           if (r) push(r);
           break;
         }
@@ -815,7 +835,74 @@ class Layout {
     return rows;
   }
 
+  /** An ornament and the family that draws it: one whose ornaments include
+   *  it, else the body face when it has the glyphs (characters of the
+   *  writer's own: a dagger, a letter), else asterisks. */
+  private ornament(text: string): { text: string; family: string } {
+    const d = this.design;
+    const found = ornamentFor(text, d);
+    if (found.text === text) return found;
+    const faces = this.o.faces;
+    return faces.has(d.bodyFont) && faces.covers(faces.face(d.bodyFont, "regular"), text) ? { text, family: d.bodyFont } : found;
+  }
+
+  /** A scene break that is the book's own picture: `ornamentSize` tall (no
+   *  wider than the text), centred in two grid lines or more. Null when the
+   *  design asks for none, or it can't be read. */
+  private sceneArt(): Row | null {
+    const d = this.design;
+    if (this.smf || d.sceneBreak !== "picture") return null;
+    const art = this.o.model.book.art?.ornament;
+    const info = art ? this.o.images?.get(art.src) : undefined;
+    if (!art || !info || !info.w || !info.h) return null;
+    let h = d.ornamentSize;
+    let w = (h * info.w) / info.h;
+    if (w > this.textW) {
+      w = this.textW;
+      h = (w * info.h) / info.w;
+    }
+    const slots = Math.max(2, Math.ceil((h + 0.6 * this.L) / this.L));
+    const cap = this.capOf(this.body);
+    const y = -cap + ((slots - 1) * this.L + cap - h) / 2;
+    const items: DLItem[] = [{ t: "image", x: (this.textW - w) / 2, y, w, h, ref: art.src }];
+    return { h: slots, items, scene: { top: cloneItems(items), blank: false } };
+  }
+
+  /** A chapter's art when its size is known (null, with a warning, when it
+   *  couldn't be read: the chapter prints without it). */
+  private artSized(url: string | null | undefined): string | null {
+    if (!url) return null;
+    const info = this.o.images?.get(url);
+    if (info && info.w && info.h) return url;
+    if (!this.artUnread) {
+      this.artUnread = true;
+      this.warnings.push({ kind: "image", message: "A chapter’s art couldn’t be read, so that chapter prints without it." });
+    }
+    return null;
+  }
+
+  /** A chapter's art, filling its page and the bleed past the page's top,
+   *  foot and outside edge (in page coordinates), cut to fit by its own
+   *  proportions. */
+  private artImage(url: string, recto: boolean): DLImage {
+    const info = this.o.images!.get(url)!;
+    const x0 = recto ? 0 : -BLEED_PT;
+    const x1 = recto ? this.pageW + BLEED_PT : this.pageW;
+    const y0 = -BLEED_PT;
+    const y1 = this.pageH + BLEED_PT;
+    const k = Math.max((x1 - x0) / info.w, (y1 - y0) / info.h);
+    const w = info.w * k;
+    const h = info.h * k;
+    if (72 / k < 200 && !this.artBlurred.has(url)) {
+      this.artBlurred.add(url);
+      this.warnings.push({ kind: "image", message: `A chapter’s art prints at ${Math.round(72 / k)} pixels an inch. 300 or more is best for print.` });
+    }
+    return { t: "image", x: x0 + (x1 - x0 - w) / 2, y: y0 + (y1 - y0 - h) / 2, w, h, ref: url };
+  }
+
   private sceneRow(): Row {
+    const art = this.sceneArt();
+    if (art) return art;
     const d = this.design;
     const orn = this.sceneOrnament;
     const asterisks = /^[*\s]+$/.test(orn.text);
@@ -842,8 +929,10 @@ class Layout {
     return { h: 2, items: shift(cloneItems(line.items), x, mid), scene: { top, blank: false } };
   }
 
-  private imageRow(url: string): Row | null {
-    const info = this.o.images?.get(url);
+  private imageRow(url: string, view?: PictureView): Row | null {
+    const own = this.o.images?.get(url);
+    // Its size as shown: the part kept, turned.
+    const info = own ? shownSize(own.w, own.h, view) : null;
     if (!info || !info.w || !info.h) return null;
     // At least 150 pixels per inch on paper; never wider than the text.
     let w = Math.min(this.textW, (info.w * PT) / 150);
@@ -856,7 +945,7 @@ class Layout {
     const slots = Math.max(1, Math.ceil((h + 0.6 * this.L) / this.L));
     const cap = this.capOf(this.body);
     const top = -cap + ((slots - 1) * this.L + cap - h) / 2;
-    return { h: slots, items: [{ t: "image", x: (this.textW - w) / 2, y: top, w, h, ref: url }] };
+    return { h: slots, items: [{ t: "image", x: (this.textW - w) / 2, y: top, w, h, ref: url, ...(view?.crop ? { crop: view.crop } : {}), ...(view?.rot ? { rot: view.rot } : {}) }] };
   }
 
   // ------------------------------------------------------------ front & back
@@ -1196,8 +1285,16 @@ class Layout {
         }
       }
 
+      // Text set over a dark picture is printed light.
+      if (draft.art && d.openerInk === "light") {
+        for (let k = 0; k < items.length; k += 1) {
+          const it = items[k];
+          if (it.t === "text" || it.t === "rule") items[k] = { ...it, color: "#ffffff" };
+        }
+      }
       // Text-block coordinates → page coordinates.
       shift(items, recto ? this.inside : this.outside, 0);
+      if (draft.art) items.unshift(this.artImage(draft.art, recto));
       return {
         n,
         folio: draft.role === "blank" || draft.folio === "none" || !folio ? null : folio,

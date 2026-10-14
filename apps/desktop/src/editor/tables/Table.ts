@@ -16,6 +16,10 @@
  *
  * `colspan` and `rowspan` default to 1 (the library does arithmetic on
  * them), the one exception to "new attributes default to null".
+ *
+ * Schema level 4 adds a row's least height (`h`, points) and keeping it
+ * whole (`keep`), where a cell's words sit (`va`), and where a table
+ * narrower than the text sits (`align`, or `ind` in from the left).
  */
 
 import { callOrReturn, getExtensionField, mergeAttributes, Node, type Editor } from "@tiptap/core";
@@ -45,7 +49,29 @@ import { scaleOf } from "../ui/scale";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
-import { CELL_SIDES, cellEdges, COL_MAX, COL_MIN, colorAttr, encodeCellEdges, encodeCols, linesAttr, parseCols, roundPt, TABLE_LINES, toHexColor, type CellEdges, type TableLines } from "../schema/sanitize";
+import {
+  CELL_SIDES,
+  cellEdges,
+  cellVAlign,
+  COL_MAX,
+  COL_MIN,
+  colorAttr,
+  encodeCellEdges,
+  encodeCols,
+  linesAttr,
+  parseCols,
+  roundPt,
+  rowHeight,
+  rowKeep,
+  TABLE_LINES,
+  tableAlign,
+  tableIndent,
+  toHexColor,
+  type CellEdges,
+  type CellVAlign,
+  type TableAlign,
+  type TableLines,
+} from "../schema/sanitize";
 
 declare module "@tiptap/core" {
   interface NodeConfig<Options, Storage> {
@@ -80,6 +106,25 @@ export const TableRow = Node.create({
   name: "tableRow",
   content: "tableCell*",
   tableRole: "row",
+  addAttributes() {
+    return {
+      // As tall as its tallest cell needs, and at least this (points).
+      h: {
+        default: null,
+        parseHTML: (el: HTMLElement) => rowHeight(Number(el.getAttribute("data-h"))),
+        renderHTML: (attrs: { h?: unknown }) => {
+          const h = rowHeight(attrs.h);
+          return h ? { "data-h": String(h), style: `height: ${h}pt` } : {};
+        },
+      },
+      // Goes to the next page whole rather than being cut.
+      keep: {
+        default: null,
+        parseHTML: (el: HTMLElement) => (el.getAttribute("data-keep") ? true : null),
+        renderHTML: (attrs: { keep?: unknown }) => (rowKeep(attrs.keep) ? { "data-keep": "1" } : {}),
+      },
+    };
+  },
   parseHTML() {
     return [{ tag: "tr" }];
   },
@@ -112,6 +157,15 @@ export const TableCell = Node.create({
         renderHTML: (attrs: { bg?: unknown }) => {
           const c = colorAttr(attrs.bg);
           return c ? { "data-bg": c, style: `background-color: ${c}` } : {};
+        },
+      },
+      // Where its words sit when the row is taller than they are (level 4).
+      va: {
+        default: null,
+        parseHTML: (el: HTMLElement) => cellVAlign(el.getAttribute("data-va")),
+        renderHTML: (attrs: { va?: unknown }) => {
+          const va = cellVAlign(attrs.va);
+          return va ? { "data-va": va } : {};
         },
       },
       // Lines of the cell's own (schema level 3): what Word draws with cell
@@ -163,10 +217,24 @@ const colElements = (table: PmNode): [string, Record<string, string>][] => {
   return Array.from({ length: count }, (_, i): [string, Record<string, string>] => ["col", parts ? { style: `width: ${parts[i]}` } : {}]);
 };
 
-const tableStyle = (table: PmNode): string | null => {
+/** Where the table sits: its own width (or the text's, shared out) and,
+ *  narrower than the text, at the left, in the middle or at the right. */
+const placeCss = (table: PmNode): { width: string; marginLeft: string; marginRight: string } => {
   const widths = parseCols(table.attrs.cols, columnCount(table));
-  // Its own widths, or the width of the text shared out.
-  return widths ? `width: ${widthCss(widths)}` : null;
+  const align = tableAlign(table.attrs.align);
+  const ind = align ? null : tableIndent(table.attrs.ind);
+  const own = widths ? roundPt(widths.reduce((a, b) => a + b, 0)) : null;
+  return {
+    width: ind ? (own ? `min(100% - ${ind}pt, ${own}pt)` : `calc(100% - ${ind}pt)`) : own ? widthCss(widths!) : "",
+    marginLeft: ind ? `${ind}pt` : align ? "auto" : "",
+    marginRight: align === "center" ? "auto" : "",
+  };
+};
+
+const tableStyle = (table: PmNode): string | null => {
+  const place = placeCss(table);
+  const parts = [place.width && `width: ${place.width}`, place.marginLeft && `margin-left: ${place.marginLeft}`, place.marginRight && `margin-right: ${place.marginRight}`].filter(Boolean);
+  return parts.length ? parts.join("; ") : null;
 };
 
 export const Table = Node.create({
@@ -205,6 +273,23 @@ export const Table = Node.create({
           return v && v !== "all" && (TABLE_LINES as readonly string[]).includes(v) ? v : null;
         },
         renderHTML: (attrs: { lines?: unknown }) => (linesAttr(attrs.lines) !== "all" ? { "data-lines": linesAttr(attrs.lines) } : {}),
+      },
+      // Where it sits when narrower than the text (level 4).
+      align: {
+        default: null,
+        parseHTML: (el: HTMLElement) => tableAlign(el.getAttribute("data-align")),
+        renderHTML: (attrs: { align?: unknown }) => {
+          const align = tableAlign(attrs.align);
+          return align ? { "data-align": align } : {};
+        },
+      },
+      ind: {
+        default: null,
+        parseHTML: (el: HTMLElement) => tableIndent(Number(el.getAttribute("data-ind"))),
+        renderHTML: (attrs: { ind?: unknown }) => {
+          const ind = tableIndent(attrs.ind);
+          return ind ? { "data-ind": String(ind) } : {};
+        },
       },
     };
   },
@@ -250,10 +335,17 @@ export const Table = Node.create({
         if (typeof n.attrs.cols === "string" && n.attrs.cols) table.setAttribute("data-cols", n.attrs.cols);
         if (n.attrs.head === true) table.setAttribute("data-head", "1");
         if (linesAttr(n.attrs.lines) !== "all") table.setAttribute("data-lines", linesAttr(n.attrs.lines));
+        const align = tableAlign(n.attrs.align);
+        if (align) table.setAttribute("data-align", align);
+        const ind = tableIndent(n.attrs.ind);
+        if (ind) table.setAttribute("data-ind", String(ind));
         const count = columnCount(n);
         const widths = parseCols(n.attrs.cols, count);
         const parts = widths ? shares(widths) : null;
-        table.style.width = widths ? widthCss(widths) : "";
+        const place = placeCss(n);
+        table.style.width = place.width;
+        table.style.marginLeft = place.marginLeft;
+        table.style.marginRight = place.marginRight;
         while (colgroup.children.length > count) colgroup.lastChild!.remove();
         while (colgroup.children.length < count) colgroup.append(document.createElement("col"));
         [...colgroup.children].forEach((col, i) => {
@@ -464,7 +556,7 @@ export function insertTable(editor: Editor, rows: number, cols: number): boolean
 }
 
 /** The table the selection is in. */
-function tableAt(state: EditorState): { node: PmNode; pos: number } | null {
+export function tableAt(state: EditorState): { node: PmNode; pos: number } | null {
   const { $from } = state.selection;
   for (let d = $from.depth; d > 0; d -= 1) {
     if ($from.node(d).type.name === "table") return { node: $from.node(d), pos: $from.before(d) };
@@ -520,7 +612,7 @@ export const tableCommands = {
 };
 
 /** Change the table the selection is in. */
-export function setTableAttrs(editor: Editor, patch: { head?: true | null; lines?: TableLines | null; cols?: string | null }): boolean {
+export function setTableAttrs(editor: Editor, patch: { head?: true | null; lines?: TableLines | null; cols?: string | null; align?: TableAlign | null; ind?: number | null }): boolean {
   const at = tableAt(editor.state);
   if (!at) return false;
   const next = { ...at.node.attrs, ...patch, ...(patch.lines === "all" ? { lines: null } : {}) };
@@ -530,23 +622,141 @@ export function setTableAttrs(editor: Editor, patch: { head?: true | null; lines
 }
 
 /** What the ribbon's Table tab shows about the table under the caret. */
-export function curTable(editor: Editor): { head: boolean; lines: TableLines; sized: boolean; bg: string | null } | null {
+export function curTable(editor: Editor): {
+  head: boolean;
+  lines: TableLines;
+  sized: boolean;
+  bg: string | null;
+  align: TableAlign | null;
+  ind: number | null;
+  va: CellVAlign | null;
+  rowH: number | null;
+  keep: boolean;
+} | null {
   const at = tableAt(editor.state);
   if (!at) return null;
   const { $from } = editor.state.selection;
   let bg: string | null = null;
+  let va: CellVAlign | null = null;
+  let rowH: number | null = null;
+  let keep = false;
   for (let d = $from.depth; d > 0; d -= 1) {
-    if ($from.node(d).type.name === "tableCell") {
-      bg = colorAttr($from.node(d).attrs.bg);
+    const n = $from.node(d);
+    if (n.type.name === "tableCell") {
+      bg = colorAttr(n.attrs.bg);
+      va = cellVAlign(n.attrs.va);
+    } else if (n.type.name === "tableRow") {
+      rowH = rowHeight(n.attrs.h);
+      keep = rowKeep(n.attrs.keep) === true;
       break;
     }
   }
+  const align = tableAlign(at.node.attrs.align);
   return {
     head: at.node.attrs.head === true,
     lines: linesAttr(at.node.attrs.lines),
     sized: parseCols(at.node.attrs.cols, columnCount(at.node)) !== null,
     bg,
+    align,
+    ind: align ? null : tableIndent(at.node.attrs.ind),
+    va,
+    rowH,
+    keep,
   };
+}
+
+/** The rows the selection touches: the selected cells' rows, or the row of
+ *  the caret. Positions of the rows, in order. */
+function selectedRows(state: EditorState): number[] {
+  const at = tableAt(state);
+  if (!at) return [];
+  const rect = selectedRect(state);
+  const out: number[] = [];
+  let pos = at.pos + 1;
+  at.node.forEach((row, _offset, i) => {
+    if (i >= rect.top && i < rect.bottom) out.push(pos);
+    pos += row.nodeSize;
+  });
+  return out;
+}
+
+/** Change the rows the selection touches. */
+export function setRowAttrs(editor: Editor, patch: { h?: number | null; keep?: true | null }): boolean {
+  const rows = selectedRows(editor.state);
+  if (!rows.length) return false;
+  const tr = editor.state.tr;
+  for (const pos of rows) {
+    const row = tr.doc.nodeAt(pos);
+    if (!row || row.type.name !== "tableRow") continue;
+    const next = { ...row.attrs, ...("h" in patch ? { h: rowHeight(patch.h) } : {}), ...("keep" in patch ? { keep: rowKeep(patch.keep) } : {}) };
+    tr.setNodeMarkup(pos, undefined, next);
+  }
+  editor.view.dispatch(tr);
+  editor.view.focus();
+  return true;
+}
+
+/** Where the words of the selected cells sit (null: at the top). */
+export function setCellVAlign(editor: Editor, va: CellVAlign | null): boolean {
+  return plain(editor, setCellAttr("va", va));
+}
+
+/**
+ * The rows the selection touches all as tall as the tallest of them (every
+ * row of the table when the caret is in one cell), as they are drawn now.
+ * A row's height is a least: a row with more to hold still grows.
+ */
+export function distributeRows(editor: Editor): boolean {
+  const { state, view } = editor;
+  const at = tableAt(state);
+  if (!at) return false;
+  const many = state.selection instanceof CellSelection;
+  const rows = many ? selectedRows(state) : [];
+  if (!many) {
+    let pos = at.pos + 1;
+    at.node.forEach((row) => {
+      rows.push(pos);
+      pos += row.nodeSize;
+    });
+  }
+  if (rows.length < 2) return false;
+  let tallest = 0;
+  for (const pos of rows) {
+    const dom = view.nodeDOM(pos);
+    if (!(dom instanceof HTMLElement)) continue;
+    tallest = Math.max(tallest, dom.getBoundingClientRect().height * (0.75 / scaleOf(dom)));
+  }
+  const h = rowHeight(Math.round(tallest * 10) / 10);
+  if (!h) return false;
+  const tr = state.tr;
+  for (const pos of rows) {
+    const row = tr.doc.nodeAt(pos);
+    if (row && row.type.name === "tableRow") tr.setNodeMarkup(pos, undefined, { ...row.attrs, h });
+  }
+  view.dispatch(tr);
+  view.focus();
+  return true;
+}
+
+/**
+ * The selected columns all the same width, sharing what they take now (every
+ * column when the caret is in one cell).
+ */
+export function distributeColumns(editor: Editor): boolean {
+  const { state } = editor;
+  const at = tableAt(state);
+  if (!at || !isInTable(state)) return false;
+  const rect = selectedRect(state);
+  const count = rect.map.width;
+  const own = parseCols(at.node.attrs.cols, count);
+  // (Without widths of its own the columns already share the width equally.)
+  if (!own) return false;
+  const many = state.selection instanceof CellSelection && rect.right - rect.left > 1;
+  const from = many ? rect.left : 0;
+  const to = many ? rect.right : count;
+  const share = own.slice(from, to).reduce((a, b) => a + b, 0) / (to - from);
+  const widths = own.map((w, i) => (i >= from && i < to ? Math.max(COL_MIN, Math.min(COL_MAX, share)) : w));
+  return setTableAttrs(editor, { cols: encodeCols(widths) });
 }
 
 /** Make the column the caret is in wider or narrower (touch screens, where

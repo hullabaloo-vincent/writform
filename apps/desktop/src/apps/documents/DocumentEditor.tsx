@@ -1,4 +1,5 @@
 import Collaboration from "@tiptap/extension-collaboration";
+import { NoteNumbers, numberingOf, refreshNoteNumbers } from "../../editor/nodes/NoteNumbers";
 import CollaborationCaret from "@tiptap/extension-collaboration-caret";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor } from "@tiptap/react";
@@ -56,8 +57,11 @@ import { SchemaGuard } from "../../editor/schema/guard";
 import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
 import { ManuscriptLabels, refreshManuscriptLabels } from "../../book/editor/manuscriptLabels";
 import { ManuscriptPaste } from "../../book/editor/manuscriptPaste";
+import { chapterArtSource } from "../../book/editor/chapterArt";
 import { BookInspector } from "../../book/ui/BookInspector";
 import type { CoverPictures } from "../../book/ui/Cover";
+import { pagesKey, usePrintedPages } from "../../book/ui/printedPages";
+import { chapterFocus } from "../../editor/ChapterFocus";
 import { CoverEditor } from "../../book/ui/CoverEditor";
 import { ConvertDialog } from "../../book/ui/ConvertDialog";
 import { ExportBookDialog, type BookExportKind } from "../../book/ui/ExportBookDialog";
@@ -67,7 +71,9 @@ import { bookSource } from "../../book/preview/usePreviewLayout";
 import { scriptedAsDocument } from "../../doclayout/scripted";
 import { docSource, scriptSource } from "../../doclayout/useDocLayout";
 import { exactPageView, usePageMap } from "../../doclayout/usePageMap";
+import type { Book } from "../../book/model/bookMap";
 import { scanStructure } from "../../book/model/structure";
+import { estimatePages } from "../../book/model/trims";
 import { documentsApi } from "./api";
 import { b64encode, type DocProvider } from "./collab";
 import { sideFromFile } from "./compareFile";
@@ -109,6 +115,11 @@ import { useEditorCommands } from "../../editor/commands/useEditorCommands";
 import { autoCorrect } from "../../editor/autocorrect/AutoCorrect";
 import { capitalsHere } from "../../editor/autocorrect/where";
 import { EditPlaces } from "../../editor/EditPlaces";
+import { refreshTabStops, styleTabStops, TabStops } from "../../editor/format/TabStops";
+import { ChapterFocus } from "../../editor/ChapterFocus";
+import { ChapterBar, useChapterFocus } from "./ChapterBar";
+import { Ruler, useRulerShown } from "../../editor/ui/Ruler";
+import { useIsPhone } from "../../editor/ui/Flyout";
 import { FormatMarks, refreshFormatMarks } from "../../editor/FormatMarks";
 import { useDarkPaper, useDarkPaperCss } from "../../editor/ui/darkPaper";
 import { ListStarts } from "../../editor/format/listStarts";
@@ -298,6 +309,9 @@ function EditorInner({
   useEffect(() => {
     langRef.current = lang;
   }, [lang]);
+  // How far apart the tab stops a paragraph doesn't set are (points).
+  const tabEveryRef = useRef(docSettings.tabStop * 72);
+  tabEveryRef.current = docSettings.tabStop * 72;
 
   // The document as the editor's commands find it (set further down, once
   // everything they need is known).
@@ -325,6 +339,14 @@ function EditorInner({
         : []),
       // Where the text was last changed, to go back to.
       EditPlaces,
+      // One chapter shown on its own, when asked for.
+      ChapterFocus.configure({
+        format: () => format,
+        design: () => (format === "manuscript" ? bookRef.current.design : undefined),
+        onLost: () => toast("The heading of the chapter shown is gone. Showing the whole text.", "info"),
+      }),
+      // Tab stops: each tab given the width that takes it to its stop.
+      ...(format === "none" ? [TabStops.configure({ every: () => tabEveryRef.current, lang: () => langRef.current, styleStops: (node) => styleTabStops(node, docStyles.formatRef.current?.styles) })] : []),
       // A sign over each space, tab and line break, while marks are shown.
       ...(format === "none" ? [FormatMarks.configure({ on: () => marksOnRef.current })] : []),
       // Bold, italic and underline act on the word the caret is in.
@@ -339,6 +361,13 @@ function EditorInner({
       ...(format === "none" ? [ListStarts] : []),
       // The keys the command list binds itself (moving a paragraph, …).
       CommandKeys.configure({ ctx: () => commandCtxRef.current }),
+      NoteNumbers.configure({
+        numbering: () => numberingOf(commandCtxRef.current?.settings),
+        pageLabels: () => {
+          const map = pageMapRef.current;
+          return map && map !== "pending" ? (map.notes ?? null) : null;
+        },
+      }),
       FeedbackHighlights,
       ReadAloudHighlight,
       Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
@@ -487,6 +516,12 @@ function EditorInner({
     if (!editor) return null;
     const { countBookPages: count } = await import("../../book/cover/files");
     return count(editor.getJSON(), "manuscript", bookRef.current);
+  }, [editor, bookRef]);
+  // (The toolbar counts on a channel of its own, so the two never overtake each other.)
+  const countStatsPages = useCallback(async () => {
+    if (!editor) return null;
+    const { countBookPages: count } = await import("../../book/cover/files");
+    return count(editor.getJSON(), "manuscript", bookRef.current, "stats-pages");
   }, [editor, bookRef]);
   // ⌘P: a manuscript prints through its book exports; everything else here.
   const missingFonts = useDocFonts(editor, docSettings.bodyFont, format === "none", styleFonts(docStyles.styles));
@@ -683,6 +718,16 @@ function EditorInner({
     commandCtxRef.current = commandCtx;
   });
   useEditorCommands(editor, commandCtx);
+  // Notes numbered as the document says, once it says so.
+  useEffect(() => refreshNoteNumbers(editor), [editor, docSettings.fnFormat, docSettings.enFormat, docSettings.fnRestart]);
+  // The stops every so often moved: the tabs are measured again.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) refreshTabStops(editor.view);
+  }, [editor, docSettings.tabStop]);
+  const chapterShown = useChapterFocus(editor);
+  // The ruler over the page (desktop, Documents, when asked for).
+  const rulerOn = useRulerShown((st) => st.on);
+  const rulerPhone = useIsPhone();
 
   return (
     <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
@@ -927,7 +972,7 @@ function EditorInner({
               }}
               trailing={
                 <>
-                <ZoomControl />
+                <ZoomControl ruler />
                 <DocumentStats
                   editor={editor}
                   format={format}
@@ -966,6 +1011,8 @@ function EditorInner({
                   goalKey={goalKey}
                   pagesExact={pageGuides ? pagesExact : null}
                   pageInches={pageSpecFor(format, docSettings).h}
+                  book={format === "manuscript" ? book : undefined}
+                  countPages={countStatsPages}
                   onGoTo={() => setGoToOpen(true)}
                 />
                 </>
@@ -1025,7 +1072,13 @@ function EditorInner({
       )}
 
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className={`wf-doc-scroll${darkPaper ? " wf-paper-dark" : ""}`} ref={scrollRef} lang={lang}>
+        <div className={`wf-doc-scroll${darkPaper ? " wf-paper-dark" : ""}${chapterShown ? " wf-chapter-only" : ""}`} ref={scrollRef} lang={lang}>
+          <div className="wf-doc-top">
+            {editor && chapterShown && <ChapterBar editor={editor} focus={chapterShown} noun={format === "manuscript" ? "chapter" : "section"} />}
+            {editor && format === "none" && rulerOn && !rulerPhone && (
+              <Ruler editor={editor} ydoc={provider.doc} settings={docSettings} styleStops={(node) => styleTabStops(node, docStyles.formatRef.current?.styles)} />
+            )}
+          </div>
           <ZoomFrame scroller={scrollRef} paper={pageSpecFor(format, docSettings)}>
           <div
             className={`wf-page wf-fmt-${format}${showMarks && format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
@@ -1077,6 +1130,7 @@ function EditorInner({
             pictures={coverPictures}
             countPages={countBookPages}
             onOpenCover={() => setCoverOpen(true)}
+            chapterArt={chapterArtSource(editor, book.design, provider.level)}
           />
         )}
         {panel === "history" && <VersionHistoryPanel editor={editor} onCompare={compareWith} />}
@@ -1319,12 +1373,20 @@ function groupElements(elements: ElementSpec[]): [string, ElementSpec[]][] {
   );
 }
 
+/** The words of the chapter shown, or null when the whole text is. */
+function shownWords(editor: Editor): number | null {
+  const focus = chapterFocus(editor.state);
+  return focus ? countRangeWords(editor.state.doc, focus.from, focus.to) : null;
+}
+
 export function DocumentStats({
   editor,
   format,
   goalKey,
   pagesExact,
   pageInches = 11,
+  book,
+  countPages,
   onGoTo,
 }: {
   editor: Editor;
@@ -1335,6 +1397,10 @@ export function DocumentStats({
   pagesExact?: number | null;
   /** How tall the document's paper is, for that estimate. */
   pageInches?: number;
+  /** A manuscript's book: its pages are the paperback's, counted by the
+   *  layout engine (`countPages`) and estimated from its design until then. */
+  book?: Book;
+  countPages?: () => Promise<number | null>;
   /** When set, the page count is a button that opens Go to. */
   onGoTo?: () => void;
 }) {
@@ -1346,11 +1412,16 @@ export function DocumentStats({
   // Counting is cached per paragraph (stats.ts) and runs only when the text
   // changed — debounced, but at least every 1.5s while typing — instead of
   // re-reading the whole book (and forcing a layout) on every transaction.
+  const designRef = useRef(book?.design);
+  designRef.current = book?.design;
   const measure = useCallback(
     () => ({
       words: countDocWords(editor.state.doc),
       blocks: editor.state.doc.childCount,
       height: editor.view.dom.offsetHeight,
+      chapters: designRef.current ? scanStructure(editor.state.doc, "manuscript", designRef.current).entries.filter((e) => e.kind === "chapter").length : 0,
+      // While one chapter is shown, its own words are the ones counted.
+      shown: shownWords(editor),
     }),
     [editor],
   );
@@ -1374,49 +1445,69 @@ export function DocumentStats({
       const { from, to } = editor.state.selection;
       setSelected(countRangeWords(editor.state.doc, from, to));
     };
+    // (Showing one chapter, or the whole text again, counts again.)
+    let focus = chapterFocus(editor.state)?.from ?? null;
+    const onTransaction = () => {
+      const now = chapterFocus(editor.state)?.from ?? null;
+      if (now === focus) return;
+      focus = now;
+      setCounts(measure());
+    };
     setCounts(measure());
     editor.on("update", onUpdate);
     editor.on("selectionUpdate", onSelection);
+    editor.on("transaction", onTransaction);
     return () => {
       if (timer) clearTimeout(timer);
       editor.off("update", onUpdate);
       editor.off("selectionUpdate", onSelection);
+      editor.off("transaction", onTransaction);
     };
   }, [editor, measure]);
 
-  const { words, blocks } = counts;
+  const { words, blocks, shown } = counts;
   useEffect(() => {
     if (goalKey && goal !== null) noteGoalProgress(goalKey, words, goal);
   }, [goalKey, goal, words]);
 
-  // Page view reports an exact block-level count; otherwise estimate from
-  // the sheet (CSS inches, so 96px/in maps exactly).
-  const pages = pagesExact ?? Math.max(1, Math.ceil(counts.height / (pageInches * 96)));
+  // A book counts the paperback's pages. Otherwise page view reports an
+  // exact count, or the sheet gives an estimate (CSS inches, so 96px/in
+  // maps exactly).
+  const printed = usePrintedPages(
+    book ? countPages : undefined,
+    book ? estimatePages(words, counts.chapters, book.print, book.design) : 0,
+    book ? pagesKey(book, words) : "",
+  );
+  const exact = book ? printed.exact : pagesExact !== null && pagesExact !== undefined;
+  const pages = book ? printed.pages : (pagesExact ?? Math.max(1, Math.ceil(counts.height / (pageInches * 96))));
 
+  // (One span: in the goal button, the words are one line over its bar.)
   const body = (
-    <>
+    <span className="wf-doc-stats-line">
       {selected !== null && selected > 0 && `${selected.toLocaleString()} of `}
-      {words.toLocaleString()}
-      {goal !== null && ` / ${goal.toLocaleString()}`} {words === 1 && goal === null ? "word" : "words"}
+      {(shown ?? words).toLocaleString()}
+      {goal !== null && shown === null && ` / ${goal.toLocaleString()}`} {(shown ?? words) === 1 && (goal === null || shown !== null) ? "word" : "words"}
+      {shown !== null && " in this chapter"}
       {/* Phones keep just the count. */}
       <span className="wf-doc-stats-more">
-        {format !== "screenplay" && words > 0 && ` · ${readingTime(words)}`}
+        {format !== "screenplay" && (shown ?? words) > 0 && ` · ${readingTime(shown ?? words)}`}
         {format === "screenplay" && ` · ${blocks} elements`}
       </span>
-    </>
+    </span>
   );
   // How many pages, and (where there is somewhere to go) a way to one.
-  const count = `${pagesExact === null || pagesExact === undefined ? "~" : ""}${pages} page${pages === 1 ? "" : "s"}`;
+  const count = `${exact ? "" : "~"}${pages} page${pages === 1 ? "" : "s"}`;
+  const about = book ? "Pages in the typeset paperback, with its front matter." : "On-screen pages (export pagination may differ)";
   const pageCount =
     words > 0 ? (
       <span className="wf-doc-stats-more">
         {" · "}
         {onGoTo ? (
-          <button type="button" className="wf-doc-stats-btn wf-doc-pages-btn" title="Go to a page or a heading" onClick={onGoTo}>
+          <button type="button" className="wf-doc-stats-btn wf-doc-pages-btn" title={book ? `${about} Click to go to a chapter.` : "Go to a page or a heading"} onClick={onGoTo}>
             {count}
           </button>
         ) : (
-          <span title="On-screen pages (export pagination may differ)">{count}</span>
+          <span title={about}>{count}</span>
         )}
       </span>
     ) : null;

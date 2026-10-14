@@ -23,12 +23,14 @@ use crate::UnixMillis;
 /// shading, checklists, tables, footnotes, contents, sections, tracked
 /// changes.
 ///
-/// Level 3: a table cell's own borders, a picture's outline and rounded
-/// corners.
+/// Level 3 (shipped in 1.1.2): a table cell's own borders, a picture's
+/// outline and rounded corners.
+///
+/// Level 4: a chapter's own art on its heading.
 ///
 /// The tables are `editor/schema/levels.ts` in the client; this constant
 /// moves with them.
-pub const MAX_DOC_SCHEMA_LEVEL: u32 = 3;
+pub const MAX_DOC_SCHEMA_LEVEL: u32 = 4;
 
 fn level_one() -> u32 {
     1

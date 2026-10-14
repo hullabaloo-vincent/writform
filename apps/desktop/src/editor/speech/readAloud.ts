@@ -16,6 +16,8 @@ import type { Node as PmNode } from "@tiptap/pm/model";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
+import { chapterFocus, inFocus } from "../ChapterFocus";
+
 export interface Sentence {
   from: number;
   to: number;
@@ -245,7 +247,9 @@ export class ReadAloud {
     return Math.min(this.last?.to ?? 0, this.editor.state.doc.content.size);
   }
 
-  private speak(sentence: Sentence | null) {
+  private speak(found: Sentence | null) {
+    // (While one chapter is shown, reading ends where it does.)
+    const sentence = found && inFocus(this.editor.state, found.from) ? found : null;
     const engine = synth();
     this.turn += 1;
     const turn = this.turn;
@@ -285,7 +289,8 @@ export class ReadAloud {
       return;
     }
     const { from } = this.editor.state.selection;
-    this.speak(sentenceFrom(this.editor.state.doc, from, this.split) ?? sentenceFrom(this.editor.state.doc, 0, this.split));
+    const start = chapterFocus(this.editor.state)?.from ?? 0;
+    this.speak(sentenceFrom(this.editor.state.doc, from, this.split) ?? sentenceFrom(this.editor.state.doc, start, this.split));
   }
 
   pause(): void {

@@ -1,4 +1,5 @@
 import Collaboration from "@tiptap/extension-collaboration";
+import { NoteNumbers, numberingOf, refreshNoteNumbers } from "../../editor/nodes/NoteNumbers";
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor } from "@tiptap/react";
 import {
@@ -47,6 +48,7 @@ import { DOC_SCHEMA_LEVEL } from "../../editor/schema/levels";
 import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
 import { ManuscriptLabels, refreshManuscriptLabels } from "../../book/editor/manuscriptLabels";
 import { ManuscriptPaste } from "../../book/editor/manuscriptPaste";
+import { chapterArtSource } from "../../book/editor/chapterArt";
 import { BookInspector } from "../../book/ui/BookInspector";
 import type { CoverPictures } from "../../book/ui/Cover";
 import { CoverEditor } from "../../book/ui/CoverEditor";
@@ -107,6 +109,11 @@ import { useEditorCommands } from "../../editor/commands/useEditorCommands";
 import { autoCorrect } from "../../editor/autocorrect/AutoCorrect";
 import { capitalsHere } from "../../editor/autocorrect/where";
 import { EditPlaces } from "../../editor/EditPlaces";
+import { refreshTabStops, styleTabStops, TabStops } from "../../editor/format/TabStops";
+import { ChapterFocus } from "../../editor/ChapterFocus";
+import { ChapterBar, useChapterFocus } from "./ChapterBar";
+import { Ruler, useRulerShown } from "../../editor/ui/Ruler";
+import { useIsPhone } from "../../editor/ui/Flyout";
 import { FormatMarks, refreshFormatMarks } from "../../editor/FormatMarks";
 import { useDarkPaper, useDarkPaperCss } from "../../editor/ui/darkPaper";
 import { ListStarts } from "../../editor/format/listStarts";
@@ -222,6 +229,9 @@ function LocalEditorInner({
   useEffect(() => {
     langRef.current = lang;
   }, [lang]);
+  // How far apart the tab stops a paragraph doesn't set are (points).
+  const tabEveryRef = useRef(docSettings.tabStop * 72);
+  tabEveryRef.current = docSettings.tabStop * 72;
 
   // The document as the editor's commands find it (set further down, once
   // everything they need is known).
@@ -248,6 +258,14 @@ function LocalEditorInner({
         : []),
       // Where the text was last changed, to go back to.
       EditPlaces,
+      // One chapter shown on its own, when asked for.
+      ChapterFocus.configure({
+        format: () => format,
+        design: () => (format === "manuscript" ? bookRef.current.design : undefined),
+        onLost: () => toast("The heading of the chapter shown is gone. Showing the whole text.", "info"),
+      }),
+      // Tab stops: each tab given the width that takes it to its stop.
+      ...(format === "none" ? [TabStops.configure({ every: () => tabEveryRef.current, lang: () => langRef.current, styleStops: (node) => styleTabStops(node, docStyles.formatRef.current?.styles) })] : []),
       // A sign over each space, tab and line break, while marks are shown.
       ...(format === "none" ? [FormatMarks.configure({ on: () => marksOnRef.current })] : []),
       // Bold, italic and underline act on the word the caret is in.
@@ -262,6 +280,13 @@ function LocalEditorInner({
       ...(format === "none" ? [ListStarts] : []),
       // The keys the command list binds itself (moving a paragraph, …).
       CommandKeys.configure({ ctx: () => commandCtxRef.current }),
+      NoteNumbers.configure({
+        numbering: () => numberingOf(commandCtxRef.current?.settings),
+        pageLabels: () => {
+          const map = pageMapRef.current;
+          return map && map !== "pending" ? (map.notes ?? null) : null;
+        },
+      }),
       FeedbackHighlights,
       ReadAloudHighlight,
       Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
@@ -357,6 +382,12 @@ function LocalEditorInner({
     if (!editor) return null;
     const { countBookPages: count } = await import("../../book/cover/files");
     return count(editor.getJSON(), "manuscript", bookRef.current);
+  }, [editor, bookRef]);
+  // (The toolbar counts on a channel of its own, so the two never overtake each other.)
+  const countStatsPages = useCallback(async () => {
+    if (!editor) return null;
+    const { countBookPages: count } = await import("../../book/cover/files");
+    return count(editor.getJSON(), "manuscript", bookRef.current, "stats-pages");
   }, [editor, bookRef]);
   // ⌘P: a manuscript prints through its book exports; everything else here.
   const missingFonts = useDocFonts(editor, docSettings.bodyFont, meta.format === "none", styleFonts(docStyles.styles));
@@ -569,6 +600,16 @@ function LocalEditorInner({
     commandCtxRef.current = commandCtx;
   });
   useEditorCommands(editor, commandCtx);
+  // Notes numbered as the document says, once it says so.
+  useEffect(() => refreshNoteNumbers(editor), [editor, docSettings.fnFormat, docSettings.enFormat, docSettings.fnRestart]);
+  // The stops every so often moved: the tabs are measured again.
+  useEffect(() => {
+    if (editor && !editor.isDestroyed) refreshTabStops(editor.view);
+  }, [editor, docSettings.tabStop]);
+  const chapterShown = useChapterFocus(editor);
+  // The ruler over the page (desktop, Documents, when asked for).
+  const rulerOn = useRulerShown((st) => st.on);
+  const rulerPhone = useIsPhone();
 
   if (!provider) return null;
   return (
@@ -834,7 +875,7 @@ function LocalEditorInner({
               }}
               trailing={
                 <>
-                <ZoomControl />
+                <ZoomControl ruler />
                 <DocumentStats
                   editor={editor}
                   format={meta.format}
@@ -865,6 +906,8 @@ function LocalEditorInner({
                   goalKey={`local:${meta.id}`}
                   pagesExact={pageGuides ? pagesExact : null}
                   pageInches={pageSpecFor(meta.format, docSettings).h}
+                  book={meta.format === "manuscript" ? book : undefined}
+                  countPages={countStatsPages}
                   onGoTo={() => setGoToOpen(true)}
                 />
                 </>
@@ -924,7 +967,13 @@ function LocalEditorInner({
       )}
 
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className={`wf-doc-scroll${darkPaper ? " wf-paper-dark" : ""}`} ref={scrollRef} lang={lang}>
+        <div className={`wf-doc-scroll${darkPaper ? " wf-paper-dark" : ""}${chapterShown ? " wf-chapter-only" : ""}`} ref={scrollRef} lang={lang}>
+          <div className="wf-doc-top">
+            {editor && chapterShown && <ChapterBar editor={editor} focus={chapterShown} noun={meta.format === "manuscript" ? "chapter" : "section"} />}
+            {editor && meta.format === "none" && rulerOn && !rulerPhone && (
+              <Ruler editor={editor} ydoc={provider.doc} settings={docSettings} styleStops={(node) => styleTabStops(node, docStyles.formatRef.current?.styles)} />
+            )}
+          </div>
           <ZoomFrame scroller={scrollRef} paper={pageSpecFor(meta.format, docSettings)}>
           <div
             className={`wf-page wf-fmt-${meta.format}${showMarks && meta.format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
@@ -990,6 +1039,7 @@ function LocalEditorInner({
             pictures={coverPictures}
             countPages={countBookPages}
             onOpenCover={() => setCoverOpen(true)}
+            chapterArt={chapterArtSource(editor, book.design, DOC_SCHEMA_LEVEL)}
           />
         )}
         {panel === "history" && <LocalHistoryPanel docId={meta.id} editor={editor} onCompare={compareWith} />}

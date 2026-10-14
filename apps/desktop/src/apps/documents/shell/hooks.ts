@@ -6,6 +6,7 @@ import { onBookChange, readBook, type Book } from "../../../book/model/bookMap";
 import { bookFont, isCatalogBookFont } from "../../../book/fonts/registry";
 import { blockOffsets } from "../../../book/model/structure";
 import { showRange } from "../../../editor/ui/reveal";
+import { normalizeAttachmentSrc } from "../../../lib/backend";
 import type { BookExportKind } from "../../../book/ui/ExportBookDialog";
 import type { DocProvider, SyncState } from "../collab";
 import type { ExportItem } from "./ExportMenu";
@@ -113,12 +114,22 @@ export function useBook(doc: Y.Doc, fallbacks: { title?: string; author?: string
 
 /** CSS variables that style the manuscript view from the book design. */
 export function manuscriptVars(book: Book): Record<string, string> {
-  const ornament = book.design.sceneBreak === "blank" ? "* * *" : book.design.ornament || "⁂";
-  return {
-    "--wfb-font": bookFont(book.design.bodyFont).css,
-    "--wfb-head-font": bookFont(book.design.headingFont).css,
+  const d = book.design;
+  const ornament = d.sceneBreak === "blank" ? "* * *" : d.ornament || "⁂";
+  const vars: Record<string, string> = {
+    "--wfb-font": bookFont(d.bodyFont).css,
+    "--wfb-head-font": bookFont(d.headingFont).css,
     "--wfb-ornament": JSON.stringify(ornament),
   };
+  // The book's own picture at each scene break, as tall beside the text as
+  // it prints.
+  const art = d.sceneBreak === "picture" ? book.art?.ornament : null;
+  if (art) {
+    vars["--wfb-ornament"] = '""';
+    vars["--wfb-ornament-img"] = `url(${JSON.stringify(normalizeAttachmentSrc(art.src))})`;
+    vars["--wfb-ornament-h"] = `${Math.round((d.ornamentSize / d.bodySize) * 100) / 100}em`;
+  }
+  return vars;
 }
 
 /**

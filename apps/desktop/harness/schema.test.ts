@@ -84,15 +84,19 @@ const merged = (a: Vocab, b: Vocab): Vocab => {
     }
   }
   check(
-    "levels 2 and 3 together are exactly what the document schema adds to level 1",
-    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(merged(VOCAB[2], VOCAB[3]))),
+    "levels 2, 3 and 4 together are exactly what the document schema adds to level 1",
+    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]))),
     JSON.stringify(sorted(beyond)),
   );
   // Level 2 shipped in 1.1.0: it is what it was then, for good.
   const SHIPPED_2 =
     '{"nodes":{"bulletList":["marker"],"codeBlock":["tc"],"footnote":["kind","tc"],"hardBreak":["tc"],"heading":["bdr","colBreak","indF","indL","indR","keepLines","keepNext","lineAt","lineRule","sect","shade","tc"],"horizontalRule":["tc"],"image":["align","caption","tc"],"paragraph":["bdr","colBreak","indF","indL","indR","keepLines","keepNext","lineAt","lineRule","sect","shade","tc"],"table":["cols","head","lines","tc"],"tableCell":["bg","colspan","rowspan"],"tableRow":[],"taskItem":["checked"],"taskList":[],"toc":["depth","tc"]},"marks":{"deletion":["a","t"],"fontFamily":["f"],"fontSize":["pt"],"highlight":["c"],"insertion":["a","t"],"textColor":["c"],"vscript":["v"]}}';
   check("level 2 is frozen as it shipped", JSON.stringify(sorted(VOCAB[2])) === SHIPPED_2, JSON.stringify(sorted(VOCAB[2])));
-  check("level 3 is a cell's own lines and a picture's outline and corners", JSON.stringify(sorted(VOCAB[3])) === '{"nodes":{"image":["bdr","round"],"tableCell":["bdr"]},"marks":{}}', JSON.stringify(sorted(VOCAB[3])));
+  // Level 3 shipped in 1.1.2: frozen too.
+  const SHIPPED_3 = '{"nodes":{"image":["bdr","round"],"tableCell":["bdr"]},"marks":{}}';
+  check("level 3 is frozen as it shipped: a cell's own lines and a picture's outline and corners", JSON.stringify(sorted(VOCAB[3])) === SHIPPED_3, JSON.stringify(sorted(VOCAB[3])));
+  check("level 4 so far: a chapter's own art, tab stops, capitals, letter spacing, underline styles, a double line through, table rows, cells and place, and a picture's crop and turn", JSON.stringify(sorted(VOCAB[4])) === '{"nodes":{"heading":["art","artFacing","tabs"],"image":["crop","rot"],"paragraph":["art","artFacing","tabs"],"table":["align","ind"],"tableCell":["va"],"tableRow":["h","keep"]},"marks":{"caps":["v"],"letterSpacing":["pt"],"strike":["dbl"],"underline":["c","kind"]}}', JSON.stringify(sorted(VOCAB[4])));
+  check("this build writes level 4", DOC_SCHEMA_LEVEL === 4);
 }
 
 const Sparkle = Mark.create({
@@ -129,7 +133,7 @@ const level3 = (history = true): Extensions => [...docContentExtensions({ histor
 // levels, the last of them unknown to the build.)
 const VOCAB3: Record<number, Vocab> = {
   1: VOCAB[1],
-  2: merged(VOCAB[2], VOCAB[3]),
+  2: merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]),
   3: { nodes: { xCallout: [], xAside: ["kind"], paragraph: ["xGlow"] }, marks: { xSparkle: ["c"] } },
 };
 const lv = levelsFor(VOCAB3);
@@ -164,6 +168,29 @@ const future = doc(
 // ---------------------------------------------------------------- detection: JSON
 
 check("plain content is level 1", lv.ofJson(plain) === 1);
+{
+  // A chapter's own art (level 4), with the build's own tables.
+  const art = "600x900 writform-att://attachment/3";
+  const book = doc(p("One", { element: "chapter_heading", art }), p("The chapter's text."));
+  check("a chapter's own art needs level 4", levels.ofJson(book) === 4);
+  check("as does saying a chapter has none", levels.ofJson(doc(p("One", { element: "chapter_heading", artFacing: "none" }))) === 4);
+  const down = downlevelJson(book, 3, schema2);
+  check("for a level-3 server the art goes and the heading and text stay", levels.ofJson(down) <= 3 && JSON.stringify(down).includes("The chapter") && !JSON.stringify(down).includes("attachment/3"));
+  const e = new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: book });
+  const html = e.getHTML();
+  check("the art is written on the heading and read back from it", html.includes(`data-art="${art}"`) && new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: html }).getJSON().content?.[0].attrs?.art === art);
+  e.commands.setTextSelection(4);
+  e.commands.splitBlock();
+  check("a paragraph split off the heading's end doesn't take its art", e.getJSON().content?.[0].attrs?.art === art && !e.getJSON().content?.[1].attrs?.art);
+  e.commands.setTextSelection(3);
+  const enter = new KeyboardEvent("keydown", { key: "Enter", keyCode: 13, bubbles: true, cancelable: true });
+  e.view.someProp("handleKeyDown", (f) => f(e.view, enter));
+  check("nor one split off its middle by Enter", e.getJSON().content?.[0].attrs?.art === art && !e.getJSON().content?.[1].attrs?.art, JSON.stringify(e.getJSON().content?.slice(0, 2).map((n) => n.attrs?.art)));
+  const foreign = new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: doc(p("One", { art: "1x1 https://example.com/a.png" })) });
+  check("a picture that isn't the app's own is never drawn", !foreign.getHTML().includes("data-art"));
+  foreign.destroy();
+  e.destroy();
+}
 check("a null attribute isn't use of it", lv.ofJson(doc(p("x", { indL: null, align: null }))) === 1);
 check("the rich document needs level 2", lv.ofJson(rich) === 2 && levels.ofJson(rich) === 2);
 check("a checklist alone needs level 2", lv.ofJson(doc(rich.content![2])) === 2);
@@ -178,9 +205,13 @@ check("an unknown mark is unknown", lv.ofJson(doc(p([text("x", [{ type: "sparkle
   const full = vocabOf(level2());
   const lv = levels;
   const missed: string[] = [];
-  // (Each at the level its table says: 2, or 3 for what came after 1.1.0.)
-  const nodeAt = (name: string, a?: string) => ((a ? levels.knowsNodeAttr(name, a, 2) : levels.knowsNode(name, 2)) ? 2 : 3);
-  const markAt = (name: string, a?: string) => ((a ? levels.knowsMarkAttr(name, a, 2) : levels.knowsMark(name, 2)) ? 2 : 3);
+  // (Each at the first level whose table knows it.)
+  const first = (knows: (level: number) => boolean) => {
+    for (let level = 2; level <= DOC_SCHEMA_LEVEL; level += 1) if (knows(level)) return level;
+    return UNKNOWN_LEVEL;
+  };
+  const nodeAt = (name: string, a?: string) => first((l) => (a ? levels.knowsNodeAttr(name, a, l) : levels.knowsNode(name, l)));
+  const markAt = (name: string, a?: string) => first((l) => (a ? levels.knowsMarkAttr(name, a, l) : levels.knowsMark(name, l)));
   for (const [name, attrs] of Object.entries(full.nodes)) {
     const isNew = !levels.knowsNode(name, 1);
     if (isNew && lv.ofJson({ type: name }) !== nodeAt(name)) missed.push(name);

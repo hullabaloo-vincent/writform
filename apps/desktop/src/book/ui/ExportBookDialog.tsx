@@ -8,6 +8,7 @@ import { saveExport } from "../../lib/saveFile";
 import { Modal } from "../../platform";
 import type { PressOptions } from "../engine/run";
 import { updateBook, type Book } from "../model/bookMap";
+import { modelPictureUrls, modelPictureViews } from "../model/pictures";
 import { buildModel } from "../model/buildModel";
 import type { BookModel, Warning } from "../model/types";
 
@@ -75,6 +76,7 @@ export function ExportBookDialog({
   onClose: () => void;
 }) {
   const model = useMemo<BookModel>(() => buildModel(editor.getJSON(), format, book), [editor, format, book]);
+  const modelHasArt = model.sections.some((section) => section.art);
   const [cover, setCover] = useState<{ bytes: Uint8Array; type: "image/jpeg" | "image/png"; name: string } | null>(null);
   // The cover kept with the book (Book ▸ Cover) goes in unless asked not to.
   // (A front cover: its picture, or one made in the cover editor.)
@@ -97,10 +99,20 @@ export function ExportBookDialog({
       if (kind === "epub") {
         setProgress("Gathering images…");
         const { collectImages, bookFileName } = await import("../exportBook");
-        const urls = model.sections.flatMap((s) =>
-          s.blocks.flatMap((b) => (b.kind === "image" ? [b.url] : [])),
-        );
+        // The pictures in the text, and the book's own.
+        const urls = modelPictureUrls(model);
         const { images, failed } = await collectImages(urls);
+        // A picture shown cropped or turned goes in as a file of that part
+        // alone: never the whole of it.
+        const views = modelPictureViews(model);
+        if (views.length) {
+          const { viewedFile } = await import("../engine/pictureCanvas");
+          for (const v of views) {
+            const whole = images.get(v.url);
+            const made = whole ? await viewedFile(whole.bytes, v.view).catch(() => null) : null;
+            if (made) images.set(v.key, made);
+          }
+        }
         let uuid = book.ebook.uuid;
         if (!uuid) {
           uuid = crypto.randomUUID();
@@ -244,6 +256,7 @@ export function ExportBookDialog({
             <span>
               With bleed
               <small>Each page is made 0.125 in larger at the top, the bottom and the outside edge. Choose it when the printer asks for a file with bleed.</small>
+              {!press.bleed && modelHasArt && <small className="wf-export-art-note">This book has chapter art. Without bleed the printer may trim it short of the paper’s edge.</small>}
             </span>
           </label>
         </div>

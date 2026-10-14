@@ -101,6 +101,8 @@ export interface StyleProps {
   indR?: number;
   indF?: number;
   keepNext?: boolean;
+  /** Its tab stops, encoded (sanitize.ts `parseTabs`); null: none. */
+  tabs?: string | null;
 }
 
 /** A style with nothing left to look up. */
@@ -123,6 +125,8 @@ export interface StyleLook {
   keepLines: boolean;
   /** Outline level 1–6 (headings). */
   outline?: number;
+  /** Its tab stops, encoded, or none. */
+  tabs: string | null;
 }
 
 /** What a document says about one style: a built-in's changes, or a style
@@ -258,6 +262,7 @@ export function resolveStyles(body: BodyLook, overrides: StyleOverrides = {}): R
     indF: body.firstIndent,
     keepNext: false,
     keepLines: false,
+    tabs: null,
   };
   const looks = new Map<string, StyleLook>();
   const merge = (base: StyleLook, props: StyleProps): StyleLook => {

@@ -10,7 +10,7 @@ import type { Editor } from "@tiptap/core";
 import type { Mark } from "@tiptap/pm/model";
 
 import { RUN_MARK_NAMES } from "../marks/RunFormat";
-import { PARA_FORMAT_KEYS } from "./ParaFormat";
+import { PARA_FORMAT_KEYS, PARA_FORMAT_KEYS_4 } from "./ParaFormat";
 
 /** What the painter carries: marks (never a link — that's content), and
  *  paragraph attributes. */
@@ -36,7 +36,7 @@ export function pickUpFormat(editor: Editor, level: number): Paint {
   const block: Record<string, unknown> = {};
   const parent = $from.parent;
   if (parent.type.name === "paragraph" || parent.type.name === "heading") {
-    for (const key of [...BLOCK_KEYS_1, ...(level >= 2 ? PARA_FORMAT_KEYS : [])]) block[key] = parent.attrs[key] ?? null;
+    for (const key of [...BLOCK_KEYS_1, ...(level >= 2 ? PARA_FORMAT_KEYS : []), ...(level >= 4 ? PARA_FORMAT_KEYS_4 : [])]) block[key] = parent.attrs[key] ?? null;
   }
   return { marks: source.filter((m) => names.has(m.type.name)), block, level };
 }

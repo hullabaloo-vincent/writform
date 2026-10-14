@@ -74,6 +74,8 @@ export interface ImageBlock {
   url: string;
   alt: string;
   src: number;
+  /** The part of it shown, and a quarter turn (absent: all of it, upright). */
+  view?: import("../../editor/schema/sanitize").PictureView;
 }
 
 export interface PageBreakBlock {
@@ -111,6 +113,9 @@ export interface Section {
   /** The heading's block index (-1 for untitled opening text). */
   src: number;
   words: number;
+  /** A chapter's art: the picture behind its first page and the one facing
+   *  it (the heading's own, else the book's). Absent when it has neither. */
+  art?: { opener: string | null; facing: string | null };
 }
 
 export interface Warning {

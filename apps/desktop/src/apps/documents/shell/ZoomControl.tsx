@@ -1,11 +1,12 @@
 import { useDarkPaper } from "../../../editor/ui/darkPaper";
 import { Flyout, FlyoutItem, useIsPhone } from "../../../editor/ui/Flyout";
+import { useRulerShown } from "../../../editor/ui/Ruler";
 import { useDocZoom, ZOOM_STEPS, zoomLabel } from "./zoom";
 
 /** The page's size while writing: the figure it is at, and a menu of the
  *  others. (Ctrl or ⌘ with the wheel and a pinch change it too.) Phones
  *  have none: there the page already fits the screen. */
-export function ZoomControl() {
+export function ZoomControl({ ruler = false }: { ruler?: boolean }) {
   const phone = useIsPhone();
   const mode = useDocZoom((s) => s.mode);
   const z = useDocZoom((s) => s.z);
@@ -14,6 +15,8 @@ export function ZoomControl() {
   const fit = useDocZoom((s) => s.fit);
   const dark = useDarkPaper((s) => s.dark);
   const setDark = useDarkPaper((s) => s.set);
+  const rulerOn = useRulerShown((s) => s.on);
+  const setRuler = useRulerShown((s) => s.set);
   if (phone) return null;
   return (
     <Flyout title="Zoom" label={zoomLabel(shown)} className="wf-zoom-btn">
@@ -60,6 +63,17 @@ export function ZoomControl() {
           >
             Dark paper
           </FlyoutItem>
+          {ruler && (
+            <FlyoutItem
+              checked={rulerOn}
+              onPick={() => {
+                setRuler(!rulerOn);
+                close();
+              }}
+            >
+              Ruler
+            </FlyoutItem>
+          )}
         </>
       )}
     </Flyout>

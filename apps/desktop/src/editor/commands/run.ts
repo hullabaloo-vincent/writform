@@ -8,6 +8,7 @@ import type { Editor } from "@tiptap/core";
 
 import type { DocSettings, SetupSection } from "../../apps/documents/docSettings";
 import { stepZoom, useDocZoom } from "../../apps/documents/shell/zoom";
+import { chapterAt, chapterFocus, focusChapterAt, showEverything } from "../ChapterFocus";
 import { editPlaces, goBackToEdit } from "../EditPlaces";
 import { changeCase, clearFormatting, insertDate, insertSpecial, setListStart, type CaseKind } from "../format/commands";
 import type { FormatContext } from "../format/effective";
@@ -24,6 +25,7 @@ import { applyStyle } from "../styles/apply";
 import { insertTable } from "../tables/Table";
 import { insertPageBreak, setDocAlign } from "../TextFormat";
 import { useDarkPaper } from "../ui/darkPaper";
+import { useRulerShown } from "../ui/Ruler";
 import { EDITOR_COMMANDS } from "./catalog";
 
 /** What the room around the text can do. Each editor gives what it has. */
@@ -180,7 +182,10 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
   "doc.marks": { enabled: (_e, ctx) => !!ctx.shell.toggleMarks, run: (_e, ctx) => ctx.shell.toggleMarks?.() },
   "doc.pageview": { enabled: (_e, ctx) => !!ctx.shell.togglePageView, run: (_e, ctx) => ctx.shell.togglePageView?.() },
   "doc.focus": { enabled: (_e, ctx) => !!ctx.shell.toggleFocus, run: (_e, ctx) => ctx.shell.toggleFocus?.() },
+  "doc.chapter.only": { enabled: (e) => !!chapterAt(e) && chapterAt(e)?.from !== chapterFocus(e.state)?.from, run: (e) => focusChapterAt(e) },
+  "doc.chapter.all": { enabled: (e) => !!chapterFocus(e.state), run: (e) => showEverything(e) },
   "doc.paper": { enabled: () => true, run: () => useDarkPaper.getState().set(!useDarkPaper.getState().dark) },
+  "doc.ruler": { enabled: () => true, run: () => useRulerShown.getState().set(!useRulerShown.getState().on) },
   "doc.zoom.in": zoom((now) => useDocZoom.getState().set(stepZoom(now, 1))),
   "doc.zoom.out": zoom((now) => useDocZoom.getState().set(stepZoom(now, -1))),
   "doc.zoom.100": zoom(() => useDocZoom.getState().set(1)),

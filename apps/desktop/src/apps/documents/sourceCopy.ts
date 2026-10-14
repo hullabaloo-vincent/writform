@@ -72,12 +72,12 @@ const unreadable = (): SourceError => ({ code: "source_unreadable", message: "Th
 const EXTENSION: Record<string, string> = { jpeg: "jpg", png: "png", gif: "gif" };
 const FORMATS = /^[a-z][a-z0-9-]{0,31}$/;
 
-/** A book's cover is artwork kept elsewhere (and not the document's text):
- *  it stays behind. */
+/** A book's cover and its pages' pictures are artwork kept elsewhere (and
+ *  not the document's text): they stay behind. */
 function withoutCover(maps: DocMapsSnapshot): DocMapsSnapshot {
   const book = maps.book;
   if (!book) return maps;
-  const kept = Object.fromEntries(Object.entries(book).filter(([key]) => !key.startsWith("cover.")));
+  const kept = Object.fromEntries(Object.entries(book).filter(([key]) => !key.startsWith("cover.") && !key.startsWith("art.")));
   return { ...maps, book: kept };
 }
 
@@ -132,7 +132,7 @@ function cleanMaps(raw: unknown): DocMapsSnapshot {
     const kept: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(map)) {
       if (keys >= MAX_KEYS) break;
-      if (key.length > 200 || key.startsWith("cover.")) continue;
+      if (key.length > 200 || key.startsWith("cover.") || key.startsWith("art.")) continue;
       const fine = value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value)) || (typeof value === "string" && value.length <= MAX_VALUE);
       if (!fine) continue;
       kept[key] = value;

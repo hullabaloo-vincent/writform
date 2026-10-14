@@ -1821,6 +1821,52 @@ async fn a_level_one_server_refuses_newer_content() {
 }
 
 #[tokio::test]
+async fn a_level_three_server_refuses_level_four() {
+    // A server from 1.1.2 or 1.2.0 stores level 3: a chapter's own art
+    // (level 4) is refused plainly, in an update and in a new document.
+    let server = boot_at(3).await;
+    let alice = server.register("alice").await;
+    let doc = create_doc(&server, &alice.token, "A book").await;
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates?sl=4", doc.id),
+            Some(json!({"update_b64": B64.encode(text_update(&yrs::Doc::new(), "x")), "schema_level": 4})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            "/documents",
+            Some(json!({"title": "Too new", "schema_level": 4})),
+        )
+        .await;
+    assert_eq!(
+        error_code(res).await,
+        (400, "schema_unsupported".to_string())
+    );
+    // Level 3 content is still taken.
+    let res: AppendUpdateResponse = server
+        .req(
+            reqwest::Method::POST,
+            &alice.token,
+            &format!("/documents/{}/updates?sl=4", doc.id),
+            Some(json!({"update_b64": B64.encode(text_update(&yrs::Doc::new(), "fine")), "schema_level": 3})),
+        )
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!((res.seq, res.schema_level), (1, 3));
+}
+
+#[tokio::test]
 async fn a_stock_server_reports_this_builds_level() {
     let server = boot().await;
     let alice = server.register("alice").await;

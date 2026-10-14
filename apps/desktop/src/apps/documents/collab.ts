@@ -27,6 +27,7 @@ import * as Y from "yjs";
 
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
 import { DOC_SCHEMA_LEVEL, levels, UNKNOWN_LEVEL } from "../../editor/schema/levels";
+import { STYLES_MAP, styleLevel } from "../../editor/styles/docStyles";
 import { backend, type WsEvent } from "../../lib/backend";
 import { onResync } from "../../platform";
 import { documentsApi } from "./api";
@@ -155,6 +156,7 @@ export class DocProvider {
     await backend.wsSub(this.rooms);
 
     this.doc.getXmlFragment(CONTENT).observeDeep(this.onContent);
+    this.doc.getMap(STYLES_MAP).observe(this.onStyles);
     this.doc.on("update", this.onLocalUpdate);
     if (this.opts.presence) {
       this.awareness.on("update", this.onAwarenessUpdate);
@@ -257,6 +259,7 @@ export class DocProvider {
     }
     this.doc.off("update", this.onLocalUpdate);
     this.doc.getXmlFragment(CONTENT).unobserveDeep(this.onContent);
+    this.doc.getMap(STYLES_MAP).unobserve(this.onStyles);
     this.awareness.destroy();
     for (const u of this.unsubs) u();
     if (this.flushTimer) clearTimeout(this.flushTimer);
@@ -295,6 +298,11 @@ export class DocProvider {
     }
     if (tr.origin === REMOTE) this.docLevel = Math.max(this.docLevel, level);
     else this.neededLevel = Math.max(this.neededLevel, level);
+  };
+
+  /** A style changed here: what level do the styles need? */
+  private onStyles = (_event: Y.YMapEvent<unknown>, tr: Y.Transaction) => {
+    if (tr.origin !== REMOTE) this.neededLevel = Math.max(this.neededLevel, styleLevel(this.doc));
   };
 
   /** Stop for good: from here the editor's copy can't be trusted. Edits made

@@ -1,6 +1,7 @@
 import { memo } from "react";
 
 import { normalizeAttachmentSrc } from "../../lib/backend";
+import { viewMatrix } from "../../editor/schema/sanitize";
 import type { DisplayList, DLItem, DLPage, DLText, FaceRef } from "../engine/types";
 
 /**
@@ -39,23 +40,52 @@ export const PageSvg = memo(function PageSvg({
 function item(it: DLItem, key: number, faces: FaceRef[], page: number) {
   if (it.t === "text") return <TextRun key={key} it={it} face={faces[it.face]} />;
   if (it.t === "rule") {
-    return <line key={key} x1={it.x1} y1={it.y1} x2={it.x2} y2={it.y2} stroke={it.color ?? "currentColor"} strokeWidth={it.w} />;
+    if (it.wave) {
+      // A wave along the line, as the PDF draws it.
+      const a = it.wave;
+      const half = a * 2;
+      let d = `M${it.x1} ${it.y1}`;
+      let up = true;
+      for (let x = it.x1; x < it.x2 - 1e-6; x += half) {
+        const end = Math.min(it.x2, x + half);
+        d += ` Q${(x + end) / 2} ${it.y1 + (up ? -a : a) * 2} ${end} ${it.y1}`;
+        up = !up;
+      }
+      return <path key={key} d={d} fill="none" stroke={it.color ?? "currentColor"} strokeWidth={it.w} />;
+    }
+    return <line key={key} x1={it.x1} y1={it.y1} x2={it.x2} y2={it.y2} stroke={it.color ?? "currentColor"} strokeWidth={it.w} {...(it.dash ? { strokeDasharray: it.dash.join(" ") } : {})} />;
   }
   if (it.t === "rect") return <rect key={key} x={it.x} y={it.y} width={it.w} height={it.h} fill={it.color} />;
   // Links and anchors are for the PDF; the preview only shows the page.
   if (it.t === "link" || it.t === "anchor") return null;
-  const picture = (clip?: string) => (
-    <image
-      key={key}
-      href={normalizeAttachmentSrc(it.ref)}
-      x={it.x}
-      y={it.y}
-      width={it.w}
-      height={it.h}
-      preserveAspectRatio="xMidYMid meet"
-      {...(clip ? { clipPath: `url(#${clip})` } : {})}
-    />
-  );
+  const picture = (clip?: string) => {
+    if (it.crop || it.rot) {
+      // Its kept part, turned, as the PDF has it: the whole picture placed
+      // and turned inside a box that shows only that part.
+      const v = viewMatrix({ ...(it.crop ? { crop: it.crop } : {}), ...(it.rot ? { rot: it.rot } : {}) }, it.w, it.h);
+      return (
+        <g key={key} {...(clip ? { clipPath: `url(#${clip})` } : {})}>
+          <svg x={it.x} y={it.y} width={it.w} height={it.h} viewBox={`0 0 ${it.w} ${it.h}`} overflow="hidden">
+            <g transform={`matrix(${v.m.join(" ")})`}>
+              <image href={normalizeAttachmentSrc(it.ref)} x={v.x} y={v.y} width={v.fw} height={v.fh} preserveAspectRatio="none" />
+            </g>
+          </svg>
+        </g>
+      );
+    }
+    return (
+      <image
+        key={key}
+        href={normalizeAttachmentSrc(it.ref)}
+        x={it.x}
+        y={it.y}
+        width={it.w}
+        height={it.h}
+        preserveAspectRatio="xMidYMid meet"
+        {...(clip ? { clipPath: `url(#${clip})` } : {})}
+      />
+    );
+  };
   if (!it.round && !it.border) return picture();
   // A picture with rounded corners or a line round it (documents): cut to
   // its shape, the line drawn inside its edge, as the PDF has it.

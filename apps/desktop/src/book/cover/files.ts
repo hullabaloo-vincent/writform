@@ -222,11 +222,12 @@ export async function buildTemplateFile(book: Book, g: CoverGeometry): Promise<C
 }
 
 /** How many pages the paperback really has (the layout engine sets it, on
- *  its own thread). Null when it can't be set. */
-export async function countBookPages(doc: JSONContent, format: string, book: Book): Promise<number | null> {
+ *  its own thread). Null when it can't be set. A newer count asked for on
+ *  the same `channel` overtakes this one. */
+export async function countBookPages(doc: JSONContent, format: string, book: Book, channel = "cover-pages"): Promise<number | null> {
   try {
     const [{ buildModel }, { typesetter }] = await Promise.all([import("../model/buildModel"), import("../engine/client")]);
-    const dl = await typesetter().layout("paperback", buildModel(doc, format, book), () => {}, "cover-pages");
+    const dl = await typesetter().layout("paperback", buildModel(doc, format, book), () => {}, channel);
     return dl ? dl.pages.length : null;
   } catch {
     return null;

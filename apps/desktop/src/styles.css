@@ -5438,6 +5438,248 @@ textarea.wf-el-shape-text {
   flex: none;
 }
 
+/* Show only this chapter: on the row the pointer is over, or the one shown. */
+.wf-doc-outline-list li button.wf-doc-outline-only {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  min-height: 0;
+  color: var(--wf-text-dim);
+  opacity: 0;
+}
+.wf-doc-outline-list li:hover button.wf-doc-outline-only,
+.wf-doc-outline-list li button.wf-doc-outline-only:focus-visible,
+.wf-doc-outline-list li button.wf-doc-outline-only.active {
+  opacity: 1;
+}
+.wf-doc-outline-list li button.wf-doc-outline-only.active {
+  color: var(--wf-accent);
+}
+@media (hover: none) {
+  .wf-doc-outline-list li button.wf-doc-outline-only {
+    opacity: 1;
+  }
+}
+
+/* The ruler (editor/ui/Ruler.tsx): the paper's width at the page's own
+   zoom, its margins shaded, the paragraph's indents and tab stops. */
+.wf-ruler {
+  position: relative;
+  height: 26px;
+  margin-bottom: 6px;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.wf-ruler-paper {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #f4f2ec;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 2px;
+  color: #55545c;
+  cursor: copy;
+  overflow: visible;
+}
+.wf-ruler-margin {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.09);
+  pointer-events: none;
+}
+.wf-ruler-tick {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 4px;
+  background: currentColor;
+  pointer-events: none;
+}
+.wf-ruler-tick.half {
+  height: 7px;
+}
+.wf-ruler-tick.whole {
+  height: 10px;
+}
+.wf-ruler-tick i {
+  position: absolute;
+  bottom: 11px;
+  left: -8px;
+  width: 16px;
+  font-size: 9px;
+  font-style: normal;
+  text-align: center;
+}
+.wf-ruler button {
+  position: absolute;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.wf-ruler button:disabled {
+  cursor: default;
+}
+.wf-ruler-edge {
+  top: 0;
+  bottom: 0;
+  width: 9px;
+  margin-left: -4px;
+}
+.wf-ruler-edge:hover,
+.wf-ruler-edge:focus-visible {
+  background: rgba(91, 75, 214, 0.25);
+}
+/* The indents: two triangles at the left (the first line above, the rest
+   below) and one at the right. */
+.wf-ruler-indent {
+  width: 11px;
+  height: 7px;
+  margin-left: -5.5px;
+  color: #5b4bd6;
+}
+.wf-ruler-indent::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: currentColor;
+}
+.wf-ruler-indent.first {
+  top: 0;
+}
+.wf-ruler-indent.first::before {
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+.wf-ruler-indent.left,
+.wf-ruler-indent.right {
+  bottom: 0;
+}
+.wf-ruler-indent.left::before,
+.wf-ruler-indent.right::before {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+}
+/* A tab stop: an L for left, ⅃ for right, ⊥ for centre, ⊥ with a dot for
+   decimal. */
+.wf-ruler-tab {
+  bottom: 2px;
+  width: 9px;
+  height: 9px;
+  margin-left: -1px;
+  color: #202026;
+}
+.wf-ruler-tab::before,
+.wf-ruler-tab::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+.wf-ruler-tab::before {
+  left: 0;
+  bottom: 0;
+  width: 1.5px;
+  height: 9px;
+}
+.wf-ruler-tab::after {
+  left: 0;
+  bottom: 0;
+  width: 7px;
+  height: 1.5px;
+}
+.wf-ruler-tab.r {
+  margin-left: -7.5px;
+}
+.wf-ruler-tab.r::before {
+  left: auto;
+  right: 0;
+}
+.wf-ruler-tab.r::after {
+  left: auto;
+  right: 0;
+}
+.wf-ruler-tab.c,
+.wf-ruler-tab.d {
+  margin-left: -4.5px;
+}
+.wf-ruler-tab.c::before,
+.wf-ruler-tab.d::before {
+  left: 3.75px;
+}
+.wf-ruler-tab.c::after,
+.wf-ruler-tab.d::after {
+  width: 9px;
+}
+.wf-ruler-tab.d {
+  background: radial-gradient(circle at 80% 30%, currentColor 1.2px, transparent 1.4px);
+}
+.wf-ruler-tab.off {
+  opacity: 0.3;
+}
+.wf-ruler-tab.new {
+  position: absolute;
+  opacity: 0.6;
+  pointer-events: none;
+}
+.wf-paper-dark .wf-ruler-paper {
+  background: #2a2a31;
+  color: #b4b3bc;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+.wf-paper-dark .wf-ruler-tab {
+  color: #dcdce2;
+}
+
+/* One chapter on its own (editor/ChapterFocus.ts): the rest is hidden, and
+   a bar over the page says which chapter, with the ones either side. */
+.ProseMirror .wf-unfocused {
+  display: none !important;
+}
+/* Over the page as it scrolls: the chapter bar and the ruler. */
+.wf-doc-top {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+}
+.wf-doc-top:empty {
+  display: none;
+}
+.wf-chapter-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: min(720px, calc(100% - 16px));
+  margin: 0 auto 10px;
+  padding: 4px 6px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  background: var(--wf-bg-raised);
+  color: var(--wf-text);
+  font-size: 12.5px;
+}
+.wf-chapter-bar-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.wf-chapter-bar button.wf-chapter-bar-all {
+  flex: none;
+  height: 26px;
+  min-height: 0;
+  padding: 0 10px;
+  font-size: 12px;
+}
+/* (Page numbers would be the chapter's own, not the book's: none.) */
+.wf-chapter-only .wf-page-gap span,
+.wf-chapter-only .wf-page-num-first {
+  visibility: hidden;
+}
+
 .wf-doc-outline-moves button {
   width: 34px;
   height: 34px;
@@ -5806,6 +6048,37 @@ textarea.wf-el-shape-text {
   tab-size: 4;
 }
 
+/* A Document's tabs go to stops every half inch (or the document's own
+   spacing) until editor/format/TabStops.ts has measured each one. */
+@supports (tab-size: 1in) {
+  .wf-page.wf-fmt-none .ProseMirror {
+    tab-size: var(--wfd-tab, 0.5in);
+  }
+}
+/* What fills the gap before a tab stop's text. */
+.ProseMirror .wf-tab[data-leader] {
+  position: relative;
+}
+.ProseMirror .wf-tab[data-leader="dot"]::after,
+.ProseMirror .wf-tab[data-leader="dash"]::after {
+  position: absolute;
+  left: 0.15em;
+  right: 0.15em;
+  bottom: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  letter-spacing: 0.18em;
+  pointer-events: none;
+  content: "........................................................................................................................................................................";
+}
+.ProseMirror .wf-tab[data-leader="dash"]::after {
+  letter-spacing: 0.08em;
+  content: "------------------------------------------------------------------------------------------------------------------------------------------------------------------------";
+}
+.ProseMirror .wf-tab[data-leader="line"] {
+  background: linear-gradient(currentColor, currentColor) left calc(100% - 0.18em) / 100% 1px no-repeat;
+}
+
 /* Page view: the paginator supplies --wfd-fill so the last page reads as a
    full sheet instead of stopping mid-page. */
 .wf-page[data-paged] .wf-doc-content .ProseMirror {
@@ -6037,6 +6310,10 @@ textarea.wf-el-shape-text {
 
 .wf-fmt-manuscript .ProseMirror hr::after {
   content: var(--wfb-ornament, "⁂");
+  display: block;
+  /* (The book's own picture, when it has one: shell/hooks.ts manuscriptVars.) */
+  height: var(--wfb-ornament-h, auto);
+  background: var(--wfb-ornament-img, none) center / contain no-repeat;
   letter-spacing: 0.4em;
 }
 
@@ -9204,6 +9481,11 @@ input[type="checkbox"] {
   white-space: nowrap;
 }
 
+/* The words, reading time and so on: one line, over the goal's bar. */
+.wf-doc-stats-line {
+  white-space: nowrap;
+}
+
 .wf-editor-toolbar button.wf-doc-stats-btn:hover,
 .wf-doc-stats-btn:hover {
   background: transparent;
@@ -10580,6 +10862,250 @@ body {
   object-fit: contain;
 }
 
+/* Book ▸ Design ▸ Chapter art: each chapter's own choice. */
+.wf-chapter-art-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+}
+.wf-chapter-art-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 88px 88px;
+  align-items: center;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.wf-chapter-art-row.head {
+  color: var(--wf-text-dim);
+  font-size: 11px;
+}
+.wf-chapter-art-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-chapter-art-row button.wf-chapter-art-pick {
+  width: 100%;
+  justify-content: space-between;
+  height: 26px;
+  min-height: 0;
+  padding: 0 6px;
+  font-size: 12px;
+}
+
+/* Table ▸ Borders: which sides, how heavy, what colour. */
+.wf-flyout.wf-borders-flyout {
+  width: min(300px, calc(100vw - 32px));
+}
+.wf-borders {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 6px 6px;
+  font-size: 12.5px;
+}
+.wf-borders-sides {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+}
+.wf-borders-side {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  height: auto;
+  min-height: 0;
+  padding: 5px 2px;
+  font-size: 11px;
+}
+.wf-borders-icon {
+  width: 18px;
+  height: 18px;
+  border: 1px dashed var(--wf-text-dim);
+}
+.wf-borders-side.all .wf-borders-icon,
+.wf-borders-side.outside .wf-borders-icon {
+  border: 2px solid currentColor;
+}
+.wf-borders-side.inside .wf-borders-icon {
+  background: linear-gradient(currentColor, currentColor) center / 2px 100% no-repeat, linear-gradient(currentColor, currentColor) center / 100% 2px no-repeat;
+}
+.wf-borders-side.top .wf-borders-icon {
+  border-top: 2px solid currentColor;
+}
+.wf-borders-side.bottom .wf-borders-icon {
+  border-bottom: 2px solid currentColor;
+}
+.wf-borders-side.left .wf-borders-icon {
+  border-left: 2px solid currentColor;
+}
+.wf-borders-side.right .wf-borders-icon {
+  border-right: 2px solid currentColor;
+}
+.wf-borders-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wf-borders-row > span {
+  min-width: 52px;
+  color: var(--wf-text-dim);
+}
+.wf-borders-color {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid var(--wf-border);
+  border-radius: 50%;
+}
+.wf-borders-color.on {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
+}
+
+/* Layout ▸ Tabs: a paragraph's tab stops and the document's spacing. */
+.wf-flyout.wf-tabs-flyout {
+  width: min(360px, calc(100vw - 32px));
+}
+/* Cropping a picture in place (editor/nodes/imageCrop.ts). */
+.wf-crop {
+  position: fixed;
+  z-index: 95;
+  overflow: hidden;
+  touch-action: none;
+}
+.wf-crop-whole {
+  position: absolute;
+  inset: 0;
+}
+.wf-crop-whole > img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  max-width: none;
+  display: block;
+  pointer-events: none;
+}
+.wf-crop-window {
+  position: absolute;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55);
+  outline: 1px solid #fff;
+  cursor: move;
+}
+.wf-crop-grip {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  background: #fff;
+  border: 2px solid var(--wf-accent);
+  border-radius: 2px;
+}
+.wf-crop-grip.nw { left: 0; top: 0; cursor: nwse-resize; }
+.wf-crop-grip.n { left: 50%; top: 0; cursor: ns-resize; }
+.wf-crop-grip.ne { left: 100%; top: 0; cursor: nesw-resize; }
+.wf-crop-grip.e { left: 100%; top: 50%; cursor: ew-resize; }
+.wf-crop-grip.se { left: 100%; top: 100%; cursor: nwse-resize; }
+.wf-crop-grip.s { left: 50%; top: 100%; cursor: ns-resize; }
+.wf-crop-grip.sw { left: 0; top: 100%; cursor: nesw-resize; }
+.wf-crop-grip.w { left: 0; top: 50%; cursor: ew-resize; }
+@media (pointer: coarse) {
+  .wf-crop-grip {
+    width: 22px;
+    height: 22px;
+    margin: -11px 0 0 -11px;
+  }
+}
+.wf-crop-bar {
+  position: fixed;
+  z-index: 96;
+  display: flex;
+  gap: 6px;
+  padding: 6px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+}
+
+/* The Table tab's Size and place. */
+.wf-tplace {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 2px 4px 6px;
+  font-size: 12.5px;
+  min-width: 250px;
+}
+.wf-tplace-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 6px;
+}
+.wf-tplace-row > span:first-child {
+  flex: 1;
+}
+.wf-tplace-row .wf-inspector-number {
+  width: 72px;
+}
+.wf-tplace-unit,
+.wf-tplace-note {
+  color: var(--wf-text-dim);
+}
+.wf-tplace-note {
+  margin: 0 6px 2px;
+}
+
+.wf-tabs-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px 6px 6px;
+  font-size: 12.5px;
+}
+.wf-tabs-none {
+  margin: 0;
+  color: var(--wf-text-dim);
+}
+.wf-tabs-row {
+  display: grid;
+  grid-template-columns: 64px auto minmax(0, 1fr) minmax(0, 1fr) 28px;
+  align-items: center;
+  gap: 4px;
+}
+.wf-tabs-row.add {
+  grid-template-columns: 64px auto minmax(0, 1fr) minmax(0, 1fr) auto;
+  padding-top: 6px;
+  border-top: 1px solid var(--wf-border);
+}
+.wf-tabs-row select {
+  min-width: 0;
+}
+.wf-tabs-unit {
+  color: var(--wf-text-dim);
+}
+.wf-tabs-clear {
+  align-self: flex-start;
+}
+.wf-tabs-every {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.wf-tabs-every .wf-inspector-number {
+  width: 64px;
+}
+
+/* A scene break's picture: short and wide, on paper as it prints. */
+.wf-cover-thumb.ornament {
+  height: 40px;
+  background: #fbfaf6;
+}
+
 .wf-cover-slot-text {
   display: flex;
   flex-direction: column;
@@ -11141,8 +11667,11 @@ body {
 }
 
 .wf-bp-page text {
-  fill: currentColor;
   cursor: pointer;
+}
+/* (Text the layout gave a colour keeps it: white over a chapter's art.) */
+.wf-bp-page text:not([fill]) {
+  fill: currentColor;
 }
 
 .wf-bp-paper-cream .wf-bp-sheet {
@@ -13053,6 +13582,50 @@ body {
 .wf-rich-wrap .ProseMirror [data-ff] {
   font-family: var(--wf-ff);
 }
+/* An underline's kind and colour, a line through drawn twice (longhands,
+   with WebKit's own beside them). */
+.wf-fmt-none .ProseMirror [data-ul],
+.wf-rich-wrap .ProseMirror [data-ul] {
+  -webkit-text-decoration-style: var(--wf-uls);
+  text-decoration-style: var(--wf-uls);
+  text-underline-offset: 0.12em;
+}
+.ProseMirror [data-ul="double"] {
+  --wf-uls: double;
+}
+.ProseMirror [data-ul="dotted"] {
+  --wf-uls: dotted;
+}
+.ProseMirror [data-ul="dashed"] {
+  --wf-uls: dashed;
+}
+.ProseMirror [data-ul="wavy"] {
+  --wf-uls: wavy;
+}
+.wf-fmt-none .ProseMirror [data-ulc],
+.wf-rich-wrap .ProseMirror [data-ulc] {
+  -webkit-text-decoration-color: var(--wf-ulc);
+  text-decoration-color: var(--wf-ulc);
+}
+.wf-fmt-none .ProseMirror s[data-dbl],
+.wf-rich-wrap .ProseMirror s[data-dbl] {
+  -webkit-text-decoration-style: double;
+  text-decoration-style: double;
+}
+/* Capitals and letter spacing as formatting (editor/marks/RunDepth.ts). */
+.wf-fmt-none .ProseMirror [data-caps="all"],
+.wf-rich-wrap .ProseMirror [data-caps="all"] {
+  text-transform: uppercase;
+}
+.wf-fmt-none .ProseMirror [data-caps="small"],
+.wf-rich-wrap .ProseMirror [data-caps="small"] {
+  font-variant: small-caps;
+  font-variant-caps: small-caps;
+}
+.wf-fmt-none .ProseMirror [data-ls],
+.wf-rich-wrap .ProseMirror [data-ls] {
+  letter-spacing: var(--wf-ls);
+}
 .wf-fmt-none .ProseMirror [data-fs],
 .wf-rich-wrap .ProseMirror [data-fs] {
   font-size: var(--wf-fs);
@@ -13638,6 +14211,13 @@ body {
   min-width: 4pt;
   overflow-wrap: anywhere;
 }
+/* Where a cell's words sit in a row taller than they are. */
+.ProseMirror .wf-table-wrap td[data-va="middle"] {
+  vertical-align: middle;
+}
+.ProseMirror .wf-table-wrap td[data-va="bottom"] {
+  vertical-align: bottom;
+}
 .wf-rich.editable .ProseMirror .wf-table-wrap.wf-table-on {
   --wf-cell-guide: rgba(128, 128, 128, 0.45);
 }
@@ -13750,6 +14330,23 @@ body {
 .ProseMirror sup.wf-fn[data-kind="end"]::before {
   counter-increment: wf-en;
   content: counter(wf-en, lower-roman);
+}
+/* A document's own numbering (editor/nodes/NoteNumbers.ts): the counters
+   in another style, or each note's label worked out and said on it. */
+.ProseMirror[data-fnf="lower"] sup.wf-fn:not([data-kind="end"])::before {
+  content: counter(wf-fn, lower-roman);
+}
+.ProseMirror[data-fnf="upper"] sup.wf-fn:not([data-kind="end"])::before {
+  content: counter(wf-fn, upper-roman);
+}
+.ProseMirror[data-enf="upper"] sup.wf-fn[data-kind="end"]::before {
+  content: counter(wf-en, upper-roman);
+}
+.ProseMirror[data-enf="digits"] sup.wf-fn[data-kind="end"]::before {
+  content: counter(wf-en);
+}
+.ProseMirror sup.wf-fn[data-n][data-n]::before {
+  content: attr(data-n);
 }
 .ProseMirror sup.wf-fn.ProseMirror-selectednode,
 .ProseMirror sup.wf-fn.open {
@@ -13886,9 +14483,40 @@ body {
   display: flex;
   margin: 0 0 var(--wfd-psp, 0.85em);
 }
-.ProseMirror .wf-figure > img {
+.ProseMirror .wf-img-box {
+  position: relative;
+  max-width: 100%;
+  line-height: 0;
+}
+.ProseMirror .wf-img-box > img {
   max-width: 100%;
   height: auto;
+}
+/* A picture cropped or turned: its <img> holds the box and is not seen,
+   and a layer over it draws the kept part, turned (editor/nodes/Image.ts). */
+.ProseMirror img.wf-img-viewed {
+  opacity: 0;
+}
+.ProseMirror .wf-img-ink {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.ProseMirror .wf-img-ink-region {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  overflow: hidden;
+}
+.ProseMirror .wf-img-ink-pic {
+  position: absolute;
+  max-width: none;
+  display: block;
+}
+.ProseMirror [data-resize-container].ProseMirror-selectednode [data-resize-wrapper] > .wf-img-ink {
+  outline: 2px solid var(--wf-accent);
+  outline-offset: 1px;
 }
 .ProseMirror [data-resize-container][data-align="center"],
 .ProseMirror .wf-figure[data-align="center"] {

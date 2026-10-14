@@ -27,7 +27,7 @@ import type { FaceSet } from "../book/engine/faces";
 import type { Hyphenator } from "../book/engine/hyphenate";
 import type { DisplayList, DLItem, DLPage, DLSection, PageStart, StructNode } from "../book/engine/types";
 import type { Warning } from "../book/model/types";
-import { BORDER_PAD_X, BORDER_PAD_Y, type SectionProps } from "../editor/schema/sanitize";
+import { BORDER_PAD_X, BORDER_PAD_Y, noteFormat, noteLabel, noteRestart, shownSize, type SectionProps } from "../editor/schema/sanitize";
 import { CODE_FONT, CODE_SIZE, LIST_HANG, SINGLE } from "../editor/styles/sheet";
 import { lineOffsets } from "./lineStarts";
 import { type DocCell, LINK_COLOR, type DocBlock, type DocImage, type DocModel, type DocPara, type DocRun, type DocTable, type DocToc } from "./model";
@@ -251,7 +251,69 @@ function geometryOf(base: DocSettings, props: SectionProps | null): Geometry {
   };
 }
 
+/**
+ * A document's pages. Footnotes that start again on each page are numbered
+ * by where they land, which is known only once the pages are made: so the
+ * pages are made, the footnotes numbered again, and the pages made again
+ * until no number changes (a label of another width can move a line), four
+ * times at most.
+ */
 export function layoutDoc(input: DocLayoutInput): DisplayList {
+  const { model } = input;
+  if (noteRestart(model.settings.fnRestart) !== "page" || !model.notes.some((n) => n.kind === "foot")) return layoutPass(input);
+  const format = noteFormat(model.settings.fnFormat, "1");
+  let current = model;
+  let used = model.notes.map((n) => n.number);
+  let dl: DisplayList | null = null;
+  for (let round = 0; round < 4; round += 1) {
+    const where = new Map<number, number>();
+    dl = layoutPass({ ...input, model: current }, where);
+    const perPage = new Map<number, number>();
+    const next = current.notes.map((note, i) => {
+      if (note.kind !== "foot") return note.number;
+      const page = where.get(i) ?? -1;
+      const k = (perPage.get(page) ?? 0) + 1;
+      perPage.set(page, k);
+      return noteLabel(k, format);
+    });
+    if (round === 3 || next.every((label, i) => label === used[i])) break;
+    used = next;
+    current = relabelNotes(current, next);
+  }
+  return { ...dl!, noteLabels: used };
+}
+
+/** The model with its notes' numbers as given (each, in the order cited). */
+export function relabelNotes(model: DocModel, labels: readonly string[]): DocModel {
+  const runs = (list: DocRun[]): DocRun[] | null => {
+    let changed = false;
+    const out = list.map((r) => {
+      const label = r.note !== undefined ? labels[r.note] : undefined;
+      if (label === undefined || label === r.text) return r;
+      changed = true;
+      return { ...r, text: label };
+    });
+    return changed ? out : null;
+  };
+  const block = (b: DocBlock): DocBlock => {
+    if (b.kind === "para") {
+      const next = runs(b.runs);
+      return next ? { ...b, runs: next } : b;
+    }
+    if (b.kind === "table") return { ...b, rows: b.rows.map((row) => row.map((cell) => ({ ...cell, blocks: cell.blocks.map(block) }))) };
+    if (b.kind === "image" && b.caption) return { ...b, caption: block(b.caption) as DocPara };
+    return b;
+  };
+  const notes = model.notes.map((note, i) => {
+    const label = labels[i];
+    if (label === undefined || label === note.number) return note;
+    const [first, ...rest] = note.para.runs;
+    return { ...note, number: label, para: { ...note.para, runs: [{ ...first, text: label }, ...rest] } };
+  });
+  return { ...model, notes, blocks: model.blocks.map(block) };
+}
+
+function layoutPass(input: DocLayoutInput, notePage?: Map<number, number>): DisplayList {
   const { model, faces } = input;
   const s = model.settings;
   const cache = input.cache ?? new ParaCache();
@@ -333,7 +395,8 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     coverRuns(
       b.runs.map((r: DocRun): RichRun => {
         if (r.text === "\n") return { text: "\n" };
-        const run: RichRun = { text: r.text.replace(/\t/g, " ") };
+        // (A tab is a space unless the paragraph has stops to take it to.)
+        const run: RichRun = { text: b.tabs ? r.text : r.text.replace(/\t/g, " ") };
         if (r.bold) run.bold = true;
         if (r.italic) run.italic = true;
         if (r.underline || r.link || b.underline) run.underline = true;
@@ -357,6 +420,13 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         // notes a line brings with it).
         else if (r.note !== undefined && model.notes[r.note]?.kind === "foot") run.link = `${NOTE_LINK}${r.note}`;
         if (r.highlight) run.highlight = r.highlight;
+        // Capitals as formatting: the letters stay as typed, drawn as
+        // capitals or small capitals. Letter spacing in ems of its size.
+        if (r.caps) run.caps = r.caps === "all" ? "upper" : "small";
+        if (r.underline && r.ul) run.ul = r.ul;
+        if (r.underline && r.ulc) run.ulColor = r.ulc;
+        if (r.dstrike) run.strike2 = true;
+        if (r.track) run.tracking = r.track / size;
         return run;
       }),
       b.family,
@@ -391,6 +461,11 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         hyphenate: !!input.hyphenator && !b.pre,
         dropCap: b.dropCap ? { lines: 3, family: b.family, leading: b.leading } : null,
         firstFit: true,
+        // Stops are measured from the margin (a cell's left edge): the
+        // paragraph's own left edge is that far in. (A hanging indent is no
+        // stop here: a list's marker is hung without a tab, and a verse's
+        // turnover isn't where a typed tab means to go.)
+        ...(b.tabs ? { tabs: { ...b.tabs, origin: b.left, hang: null } } : {}),
       });
       if (set.overfull && !overfull.has(b.src)) {
         overfull.add(b.src);
@@ -443,7 +518,9 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
   // the column and the page; its caption under it, kept with it
   const imageUnit = (b: DocImage, availW: number, colH: number): Unit => {
     const avail = Math.max(24, availW - b.left - b.right);
-    const natural = input.images.get(b.url);
+    // Its own size as shown: the part kept, turned.
+    const own = input.images.get(b.url);
+    const natural = own ? shownSize(own.w, own.h, b.view) : undefined;
     let w = (b.w ?? natural?.w ?? 0) * PX;
     let h = (b.h ?? 0) * PX;
     if (!w || (!h && !natural)) {
@@ -463,7 +540,23 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     return {
       block: b,
       rows: [
-        { h: h + gap, items: [{ t: "image", x, y: 0, w, h, ref: b.url, ...(b.round ? { round: b.round } : {}), ...(b.border ? { border: b.border } : {}) }] },
+        {
+          h: h + gap,
+          items: [
+            {
+              t: "image",
+              x,
+              y: 0,
+              w,
+              h,
+              ref: b.url,
+              ...(b.round ? { round: b.round } : {}),
+              ...(b.border ? { border: b.border } : {}),
+              ...(b.view?.crop ? { crop: b.view.crop } : {}),
+              ...(b.view?.rot ? { rot: b.view.rot } : {}),
+            },
+          ],
+        },
         ...caption.map((r) => ({ h: r.h, items: r.items, ...(r.notes ? { notes: r.notes } : {}) })),
       ],
       before: b.before,
@@ -496,13 +589,17 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
   const tableUnit = (b: DocTable, availW: number, colH: number): Unit => {
     const empty: Unit = { block: b, rows: [], before: 0, after: 0, splittable: false, keepFirst: 0 };
     const count = Math.max(1, ...b.rows.map((r) => r.reduce((n, c) => n + c.colspan, 0)));
-    const room = Math.max(count * 12, availW - b.left - b.right);
+    const full = Math.max(count * 12, availW - b.left - b.right);
+    // A table at the left may start further in, and has that much less room.
+    const indent = b.ind ? Math.max(0, Math.min(b.ind, full - count * 12)) : 0;
+    const room = full - indent;
     let widths = b.cols && b.cols.length === count ? [...b.cols] : Array.from({ length: count }, () => room / count);
     const total = widths.reduce((a, w) => a + w, 0);
     // Wider than the text: every column gives a little.
     if (total > room) widths = widths.map((w) => (w * room) / total);
     const xs = [0];
     for (const w of widths) xs.push(xs[xs.length - 1] + w);
+    const tableW = xs[xs.length - 1];
 
     // Where each cell sits: a cell spanning rows takes its columns out of
     // the rows below.
@@ -513,6 +610,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       rs: number;
       bg?: string;
       edges?: DocCell["edges"];
+      va?: DocCell["va"];
       rows: Row[];
       h: number;
     }
@@ -528,14 +626,16 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         for (let i = r; i < r + rs; i += 1) for (let j = c; j < c + cs; j += 1) taken[i][j] = true;
         const inner = Math.max(12, xs[c + cs] - xs[c] - 2 * CELL_PAD_X);
         const rows = stack(unitsOf(cell.blocks, inner, colH));
-        cells.push({ row: r, col: c, cs, rs, ...(cell.bg ? { bg: cell.bg } : {}), ...(cell.edges ? { edges: cell.edges } : {}), rows, h: rows.reduce((n, x) => n + x.h, 0) });
+        cells.push({ row: r, col: c, cs, rs, ...(cell.bg ? { bg: cell.bg } : {}), ...(cell.edges ? { edges: cell.edges } : {}), ...(cell.va ? { va: cell.va } : {}), rows, h: rows.reduce((n, x) => n + x.h, 0) });
         c += cs;
       }
     });
     if (!cells.length) return empty;
 
     const least = model.body.size * SINGLE + 2 * CELL_PAD_Y;
-    const heights = b.rows.map(() => least);
+    /** The least a row is tall: a line of text, or the row's own height. */
+    const rowLeast = (r: number) => Math.max(least, b.rowH?.[r] ?? 0);
+    const heights = b.rows.map((_, r) => rowLeast(r));
     for (const cell of cells) if (cell.rs === 1) heights[cell.row] = Math.max(heights[cell.row], cell.h + 2 * CELL_PAD_Y);
     for (const cell of cells) {
       if (cell.rs === 1) continue;
@@ -554,7 +654,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       r = end + 1;
     }
 
-    const x0 = b.left;
+    const x0 = b.left + indent + (b.align === "center" ? (room - tableW) / 2 : b.align === "right" ? room - tableW : 0);
     const lines = b.lines;
     const rule = (ax: number, ay: number, bx: number, by: number): DLItem => ({ t: "rule", x1: ax, y1: ay, x2: bx, y2: by, w: CELL_LINE, color: TABLE_INK });
     const tall = (rows: Row[]) => rows.reduce((n, r) => n + r.h, 0);
@@ -624,6 +724,13 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         for (let i = row; i < row + rs; i += 1) ch += hs[i];
         if (cell.bg) under.push({ t: "rect", x: left, y: top, w: right - left, h: ch, color: cell.bg });
         let y = top + CELL_PAD_Y;
+        // In the middle or at the foot of a row taller than its words, when
+        // the whole of the cell is here (a cell cut over a page starts at
+        // the top on both).
+        if (cell.va && set.length && set.length === cell.rows.length) {
+          const spare = ch - 2 * CELL_PAD_Y - tall(set);
+          if (spare > EPS) y += cell.va === "middle" ? spare / 2 : spare;
+        }
         for (const line of set) {
           text.push(...place(line.items, left + CELL_PAD_X, y));
           if (line.notes) cited.push(...line.notes);
@@ -662,6 +769,10 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       // The row the column's end falls in.
       let rc = 0;
       while (rc + 1 < hs.length && tops[rc + 1] <= h + EPS) rc += 1;
+      // A row kept whole is cut only when it must be (taller than a page):
+      // otherwise the rows above it stay and it goes on whole.
+      const keptRow = !force && b.keep?.[band.at + rc] === true;
+      if (keptRow && rc === 0) return null;
       /** How many of a cell's lines fit above a line drawn at `y`. */
       const fits = (c: BandCell, y: number, atLeast: number): number => {
         const room = y - tops[c.row] - 2 * CELL_PAD_Y;
@@ -682,7 +793,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       // it starts (the rows above stay) or, the band's first, not cut.
       let whole = false;
       const begun = (c: BandCell) => c.lines.length === 0 || take[band.cells.indexOf(c)] > 0;
-      if (!band.cells.filter((c) => c.row === rc).every(begun)) {
+      if (keptRow || !band.cells.filter((c) => c.row === rc).every(begun)) {
         if (rc === 0) {
           if (!force) return null;
           take = band.cells.map((c) => (covers(c) ? fits(c, h, c.lines.length ? 1 : 0) : 0));
@@ -761,7 +872,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
 
     const out: Row[] = bands.map((band, bi) =>
       rowOf({
-        base: heights.slice(band.from, band.to + 1).map(() => least),
+        base: heights.slice(band.from, band.to + 1).map((_, i) => rowLeast(band.from + i)),
         cells: cells.filter((c) => c.row >= band.from && c.row <= band.to).map((cell) => ({ cell, row: cell.row - band.from, rs: cell.rs, lines: cell.rows })),
         first: bi === 0,
         last: bi === bands.length - 1,
@@ -1199,6 +1310,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
           // The notes these lines cite: as much as the column has room for.
           for (const id of cited) {
             placed.add(id);
+            notePage?.set(id, pages.length - 1);
             const rows = rowsOfNote(id, geo.colW);
             let i = 0;
             for (; i < rows.length; i += 1) {

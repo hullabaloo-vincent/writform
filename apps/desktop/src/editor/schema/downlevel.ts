@@ -38,6 +38,9 @@ function converter(level: number, schema: Schema, lv: Levels): Converter {
     for (const [key, value] of Object.entries(attrs)) {
       if (lv.knowsNodeAttr(name, key, level)) kept[key] = value;
     }
+    // A picture that loses its crop or its turn shows whole and upright: its
+    // height (its cropped box's) would squash it, so it takes its own.
+    if (name === "image" && ((attrs.crop != null && !("crop" in kept)) || (attrs.rot != null && !("rot" in kept))) && "height" in kept) kept.height = null;
     return kept;
   };
 
@@ -74,7 +77,10 @@ function converter(level: number, schema: Schema, lv: Levels): Converter {
       if (struck(child)) continue;
       const name = child.type ?? "text";
       if (name === "text") {
-        if (child.text) out.push(tidy({ ...child, marks: marksOf(child.marks) }));
+        // Capitals as formatting, where the level has none: every letter
+        // made a capital in the text itself (small capitals are dropped).
+        const allCaps = !lv.knowsMark("caps", level) && !!child.marks?.some((m) => m.type === "caps" && m.attrs?.v === "all");
+        if (child.text) out.push(tidy({ ...child, ...(allCaps ? { text: child.text.toUpperCase() } : {}), marks: marksOf(child.marks) }));
       } else if (lv.knowsNode(name, level)) {
         out.push(
           tidy({

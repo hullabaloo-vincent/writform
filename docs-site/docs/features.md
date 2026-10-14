@@ -144,6 +144,22 @@ submission manuscript.
   size, KDP-safe margins that grow with the page count, right-hand chapter
   starts, front and back matter, spine width) and **ebook** settings. Saved
   in the document, so collaborators see the same book.
+- **Your own scene break** (Book ▸ Design ▸ Scene breaks): one of the
+  typed ornaments, characters of your own (a dagger, a cross), a picture
+  of your own (blood drops, a pair of fangs) at the height you choose,
+  or a blank line. The picture is drawn in the manuscript, the preview,
+  the paperback and the ebook. Your own characters print when the book's
+  fonts have them, and asterisks print otherwise.
+- **Chapter art** (Book ▸ Design ▸ Chapter art): a picture behind each
+  chapter's first page with the chapter's words printed over it, and a
+  picture on the left-hand page facing it. Choose them once for every
+  chapter, and under them give any chapter its own or none. **Words on a
+  picture** sets the words over the art dark or light. A chapter with a
+  facing picture opens on a right-hand page, with a blank page before it
+  where needed. The art reaches the paper's edge when the paperback is
+  exported **With bleed**. In the ebook each picture is a page of its
+  own before its chapter. A picture for a single chapter needs the
+  server updated to this version.
 - **Book preview** (the eye button, Manuscript): every page exactly as it will
   print, with facing pages on a desk, page 1 alone on the right, chapter
   jump, zoom, and "Edit here" from any line. On a wide window it docks
@@ -235,6 +251,19 @@ submission manuscript.
   **Reorder** moves a heading with everything under it, up or down past
   its neighbours, and takes it up or down a level with the headings
   beneath it. Drag a heading to do the same by hand.
+- **Show only this chapter** (the button at the end of a row in the
+  outline, or ⌘K): the page shows one chapter, from its heading to the
+  next. It is the same document, with the rest hidden and not taken
+  out, so co-writers and exports see the whole text. A bar over the page
+  names the chapter and steps to the one before or after. The caret
+  keeps to the chapter, Select All selects it, Find looks only in it and
+  the word count is its own. Going somewhere else from outside the text
+  (Go to, the outline, a comment, the Check panel) shows the chapter
+  that place is in. **Show everything** brings the whole text back. In a
+  Document it shows a heading's section, in a screenplay an act.
+- **Page count** beside the word count: in a manuscript, the pages of
+  the paperback as it is typeset with its front matter, the same count
+  as the preview. Elsewhere it is the pages of the sheet you write on.
 - **Spellcheck** underlines as you type and uses the dictionary of the
   text's language, so a document set to German is checked as German on a
   device that speaks English.

@@ -32,8 +32,13 @@ export interface BookDesign {
   leadIn: "none" | "first-line" | "first-words";
   /** First-line indent in ems. */
   indent: number;
-  sceneBreak: "ornament" | "blank";
+  /** A typed ornament, a blank line, or the book's own picture (`art.ornament`). */
+  sceneBreak: "ornament" | "blank" | "picture";
   ornament: string;
+  /** How tall the scene break's picture is printed, in points. */
+  ornamentSize: number;
+  /** The ink of a chapter's first page when a picture is behind it. */
+  openerInk: "dark" | "light";
   blockquote: "indent" | "indent-italic" | "smaller";
   justify: boolean;
   hyphenate: boolean;
@@ -66,6 +71,8 @@ const BASE: BookDesign = {
   indent: 1.2,
   sceneBreak: "ornament",
   ornament: "⁂",
+  ornamentSize: 18,
+  openerInk: "dark",
   blockquote: "indent",
   justify: true,
   hyphenate: true,

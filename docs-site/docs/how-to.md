@@ -116,6 +116,9 @@ Anything the ribbon does can also be asked for by name. Press **⌘K**
 - **Move a section:** open the outline, press **Reorder**, and use the
   arrows beside a heading. Up and down move it past its neighbours. Left
   and right change its level.
+- **Work on one chapter at a time:** open the outline and press the
+  button at the end of the chapter's row. The bar over the page steps to
+  the chapters either side. **Show everything** ends it.
 - **See why text looks the way it does:** open the sliders panel. The top
   of its Text tab names the style, then what the paragraph and the words
   have of their own, with a Clear beside each.
@@ -328,6 +331,29 @@ check their template.
 
 Every font the editor offers is open-licensed and free to use on a book
 you sell.
+
+## Give a book's chapters their look
+
+Open a manuscript, press the book button and choose **Design**.
+
+- **Your own scene break.** Under **Scene breaks**, choose **Your own
+  picture** and a JPEG or a PNG (blood drops, a pair of fangs). A
+  picture on white or on a see-through ground works best. **Height**
+  sets how tall it prints. For characters of your own instead, choose
+  **Ornament**, then **Your own…**, and type up to 12.
+- **Art behind each chapter's first page.** Under **Chapter art**, choose
+  a picture for **Behind the first page**. The chapter's heading and its
+  first lines are printed over it. Set **Words on a picture** to **Light**
+  for dark art.
+- **A picture facing each chapter.** Choose one for **Facing the first
+  page**. It fills the left-hand page and the chapter opens on the right.
+- **One chapter different.** The list under the pictures has every
+  chapter. Set a chapter's **Behind** or **Facing** to its own picture or
+  to none.
+
+A whole page wants a picture of 300 pixels an inch: for a 6 × 9 in book,
+2,775 pixels tall. When you export the paperback for a printer, tick
+**With bleed** so the art runs to the edge of the paper.
 
 ## Place and frame a picture
 

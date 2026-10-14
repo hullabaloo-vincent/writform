@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 
 import { showInText } from "./reveal";
 import { listNotes, mountNoteEditor, openNotes, type NoteEditorHandle, type NoteEntry } from "../nodes/Footnote";
+import { isNoteRefresh, noteLabelAt } from "../nodes/NoteNumbers";
 
 /** A note being written in the list: its own small editor, bound to the
  *  note in the document (see mountNoteEditor). */
@@ -48,6 +49,9 @@ function NoteField({ editor, pos, onDone }: { editor: Editor; pos: number; onDon
   return <div ref={mount} className="wf-fn-body wf-docnotes-field" />;
 }
 
+/** The document's notes, numbered as it numbers them. */
+const labelled = (editor: Editor): NoteEntry[] => listNotes(editor.state.doc, (pos, kind, ordinal) => noteLabelAt(editor.state, pos, kind, ordinal));
+
 /**
  * The document's footnotes and endnotes, listed under its last page.
  *
@@ -58,17 +62,17 @@ function NoteField({ editor, pos, onDone }: { editor: Editor; pos: number; onDon
  * document without notes.
  */
 export function NotesList({ editor, style }: { editor: Editor; style?: CSSProperties }) {
-  const [notes, setNotes] = useState<NoteEntry[]>(() => listNotes(editor.state.doc));
+  const [notes, setNotes] = useState<NoteEntry[]>(() => labelled(editor));
   /** The note being written here, by where its reference is. */
   const [active, setActive] = useState<number | null>(null);
   const [editable, setEditable] = useState(editor.isEditable);
 
   useEffect(() => {
-    const onChange = ({ transaction }: { transaction: { docChanged: boolean; mapping: { map(pos: number, assoc?: number): number } } }) => {
+    const onChange = ({ transaction }: { transaction: { docChanged: boolean; mapping: { map(pos: number, assoc?: number): number }; getMeta(key: string): unknown } }) => {
       setEditable(editor.isEditable);
-      if (!transaction.docChanged) return;
+      if (!transaction.docChanged && !isNoteRefresh(transaction)) return;
       const doc = editor.state.doc;
-      setNotes(listNotes(doc));
+      setNotes(labelled(editor));
       // The note being written stays the same note as the text around it moves.
       setActive((was) => {
         if (was === null) return null;
@@ -79,7 +83,7 @@ export function NotesList({ editor, style }: { editor: Editor; style?: CSSProper
     // (Being made read-only — Viewing, a lost permission — is announced as
     // an update, not a transaction.)
     const onMode = () => setEditable(editor.isEditable);
-    setNotes(listNotes(editor.state.doc));
+    setNotes(labelled(editor));
     onMode();
     editor.on("transaction", onChange);
     editor.on("update", onMode);

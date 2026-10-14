@@ -17,7 +17,8 @@ import { bookFont } from "../fonts/registry";
 import type { Run } from "../model/types";
 import type { FaceSet } from "./faces";
 import type { Hyphenator } from "./hyphenate";
-import { breakFirstFit, breakLines, FIL, INF_PENALTY, Items, lineStarts } from "./linebreak";
+import { nextTab, type TabLeader, type TabStop, type UnderlineKind } from "../../editor/schema/sanitize";
+import { breakFirstFit, breakFirstFitTabs, breakLines, FIL, INF_PENALTY, Items, lineStarts } from "./linebreak";
 import type { DLItem, DLLink, DLRect, DLRule, DLText, StyleKey } from "./types";
 
 export type Caps = "none" | "small" | "all" | "upper";
@@ -46,6 +47,14 @@ export interface TextStyle {
   highlight?: string;
   /** Raised (or, negative, lowered) from the baseline, pt. */
   rise?: number;
+  /** Documents: an underline other than a single line, its own colour, and
+   *  a line through drawn twice. */
+  ul?: UnderlineKind;
+  ulColor?: string;
+  strike2?: boolean;
+  /** Capitals keep the letters' count (documents: where the page view
+   *  counts its way through the text). */
+  sameLength?: boolean;
 }
 
 /** A book's run, plus what a document's run may also carry. */
@@ -62,6 +71,14 @@ export interface RichRun extends Run {
   highlight?: string;
   /** Superscript (positive) or subscript (negative) shift, pt. */
   rise?: number;
+  /** Capitals as formatting (documents): every letter, or the small ones
+   *  as small capitals. The letters keep their count (ß is drawn ẞ). */
+  caps?: "upper" | "small";
+  /** Letter spacing, em. */
+  tracking?: number;
+  ul?: UnderlineKind;
+  ulColor?: string;
+  strike2?: boolean;
 }
 
 export type Align = "justify" | "left" | "center" | "right";
@@ -95,7 +112,27 @@ export interface ParaInput {
   /** Break first-fit, as a word processor does (documents), instead of
    *  weighing the whole paragraph. */
   firstFit?: boolean;
+  /** Tab stops (documents): a tab goes to the next of them. Without them
+   *  a tab is a space between words, as it has always been in a book. */
+  tabs?: TabSpec;
 }
+
+/** Where a paragraph's tabs go (see `nextTab`). Stops are measured from
+ *  the margin (a table cell's left edge), points. */
+export interface TabSpec {
+  stops: TabStop[];
+  /** Points between the stops past the paragraph's own. */
+  every: number;
+  /** Where the paragraph's left edge is from the margin. */
+  origin: number;
+  /** A hanging indent's place from the margin (a stop too), or null. */
+  hang: number | null;
+  /** The decimal mark, for decimal stops. */
+  decimal: string;
+}
+
+/** A tab's box carries `TAB_DATA - k` (k: which tab of the paragraph). */
+const TAB_DATA = -2;
 
 export interface SetLine {
   /** x from the paragraph's left edge; y from the line's baseline. */
@@ -133,6 +170,9 @@ interface Glyphs {
   link?: string;
   highlight?: string;
   rise?: number;
+  ul?: UnderlineKind;
+  ulc?: string;
+  strike2?: boolean;
   w: number;
 }
 
@@ -146,7 +186,7 @@ interface Word {
   lead: boolean;
 }
 
-type Token = { k: "word"; w: Word } | { k: "space" } | { k: "br" };
+type Token = { k: "word"; w: Word } | { k: "space" } | { k: "br" } | { k: "tab" };
 
 interface WordBreak {
   penalty: number;
@@ -173,6 +213,9 @@ interface Prepared {
   lead: number;
   /** Characters the drop cap took. */
   skipped: number;
+  /** Each tab's text up to the next tab: its width, and its width up to
+   *  the decimal mark (the whole width when it has none). */
+  tabs: { seg: number; before: number }[];
 }
 
 // Breaking spaces only: no-break, figure and narrow no-break spaces stay
@@ -200,13 +243,16 @@ function sameRun(a: { face: number; size: number; feat?: string[]; cs?: number; 
 /** Line-through, link, highlight and shift: what two neighbouring runs
  *  must share to be one. */
 const sameDeco = (a: Glyphs, b: Glyphs) =>
-  !!a.strike === !!b.strike && a.link === b.link && a.highlight === b.highlight && (a.rise ?? 0) === (b.rise ?? 0);
+  !!a.strike === !!b.strike && a.link === b.link && a.highlight === b.highlight && (a.rise ?? 0) === (b.rise ?? 0) && a.ul === b.ul && a.ulc === b.ulc && !!a.strike2 === !!b.strike2;
 
 /** A style's decorations, as the fields a glyph run carries. */
-function deco(style: TextStyle): { strike?: boolean; color?: string; link?: string; highlight?: string; rise?: number } {
-  if (!style.strike && !style.color && !style.link && !style.highlight && !style.rise) return {};
+function deco(style: TextStyle): { strike?: boolean; color?: string; link?: string; highlight?: string; rise?: number; ul?: UnderlineKind; ulc?: string; strike2?: boolean } {
+  if (!style.strike && !style.color && !style.link && !style.highlight && !style.rise && !style.ul && !style.ulColor) return {};
   return {
     ...(style.strike ? { strike: true } : {}),
+    ...(style.strike && style.strike2 ? { strike2: true } : {}),
+    ...(style.ul ? { ul: style.ul } : {}),
+    ...(style.ulColor ? { ulc: style.ulColor } : {}),
     ...(style.color ? { color: style.color } : {}),
     ...(style.link ? { link: style.link } : {}),
     ...(style.highlight ? { highlight: style.highlight } : {}),
@@ -288,7 +334,7 @@ export class Composer {
     const real = this.faces.hasFeature(face, "smcp");
     switch (caps) {
       case "upper":
-        add(text.toLocaleUpperCase(this.lang), size, base);
+        add(style.sameLength ? upperSameLength(text, this.lang) : text.toLocaleUpperCase(this.lang), size, base);
         break;
       case "small":
         if (real) add(text, size, [...(base ?? []), "smcp"]);
@@ -384,18 +430,31 @@ export class Composer {
       if (run.link) style.link = run.link;
       if (run.highlight) style.highlight = run.highlight;
       if (run.rise) style.rise = run.rise;
-      for (const part of run.text.replace(INVISIBLE, "").split(SPACES)) {
-        if (!part) continue;
-        if (ONLY_SPACES.test(part)) {
-          const prev = last();
-          if (prev && prev.k === "word") tokens.push({ k: "space" });
-          continue;
-        }
-        const prev = last();
-        const pieces = this.cover(part, style);
-        if (prev?.k === "word") prev.w.pieces.push(...pieces);
-        else tokens.push({ k: "word", w: { pieces, lead: false } });
+      if (run.caps) {
+        style.caps = run.caps;
+        style.sameLength = true;
       }
+      if (run.tracking) style.tracking = run.tracking;
+      if (run.ul) style.ul = run.ul;
+      if (run.ulColor) style.ulColor = run.ulColor;
+      if (run.strike2) style.strike2 = true;
+      // (With tab stops a tab is its own token. Without, a space.)
+      const chunks = input.tabs ? run.text.split("\t") : [run.text];
+      chunks.forEach((chunk, ci) => {
+        if (ci > 0) tokens.push({ k: "tab" });
+        for (const part of chunk.replace(INVISIBLE, "").split(SPACES)) {
+          if (!part) continue;
+          if (ONLY_SPACES.test(part)) {
+            const prev = last();
+            if (prev && prev.k === "word") tokens.push({ k: "space" });
+            continue;
+          }
+          const prev = last();
+          const pieces = this.cover(part, style);
+          if (prev?.k === "word") prev.w.pieces.push(...pieces);
+          else tokens.push({ k: "word", w: { pieces, lead: false } });
+        }
+      });
     }
     while (last()?.k === "space" || last()?.k === "br") tokens.pop();
     return tokens;
@@ -472,6 +531,7 @@ export class Composer {
     if (indent > 0) items.box(indent, -1);
 
     let wordNo = 0;
+    let tabNo = 0;
     let lastGlyphs: Glyphs | null = null;
     for (const t of tokens) {
       if (t.k === "word") {
@@ -510,6 +570,10 @@ export class Composer {
           if (glyphs.length) lastGlyphs = glyphs[glyphs.length - 1];
         });
         wordNo += 1;
+      } else if (t.k === "tab") {
+        // As wide as where it falls says (see `tabStep`).
+        items.box(0, TAB_DATA - tabNo);
+        tabNo += 1;
       } else if (t.k === "space") {
         const g = lastGlyphs as Glyphs | null;
         const sp = g ? this.faces.measure(g.face, g.size, " ") + g.cs : space0;
@@ -537,7 +601,53 @@ export class Composer {
       offsets.push(off);
       widths.push(Math.max(style.size * 2, input.width - off));
     }
-    return { input, items, syl, widths, offsets, avail: widths.slice(), dropItems, dropLines, lead: leadWords, skipped };
+    return { input, items, syl, widths, offsets, avail: widths.slice(), dropItems, dropLines, lead: leadWords, skipped, tabs: tabNo ? this.tabSegments(items, syl, input.tabs?.decimal ?? ".") : [] };
+  }
+
+  /** Each tab's text up to the next tab (or the line's end): how wide it
+   *  is, and how wide before its decimal mark. */
+  private tabSegments(items: Items, syl: Prepared["syl"], mark: string): Prepared["tabs"] {
+    const out: Prepared["tabs"] = [];
+    for (let j = 0; j < items.length; j += 1) {
+      if (!items.isBox(j) || items.data[j] > TAB_DATA) continue;
+      let seg = 0;
+      let before = -1;
+      for (let m = j + 1; m < items.length; m += 1) {
+        if (items.isBox(m)) {
+          const d = items.data[m];
+          if (d <= TAB_DATA) break;
+          if (d < 0) continue;
+          if (before < 0) {
+            let acc = 0;
+            for (const g of syl[d].glyphs) {
+              const at = g.text.indexOf(mark);
+              if (at >= 0) {
+                before = seg + acc + this.faces.measure(g.face, g.size, g.text.slice(0, at), g.feat, g.cs);
+                break;
+              }
+              acc += g.w;
+            }
+          }
+          seg += items.width[m];
+        } else if (items.isGlue(m)) seg += items.width[m];
+        else if (items.cost[m] <= -INF_PENALTY) break;
+      }
+      out.push({ seg, before: before >= 0 ? before : seg });
+    }
+    return out;
+  }
+
+  /** How wide tab `k` is when it starts `x` from the paragraph's left
+   *  edge, and the leader of the stop it goes to. */
+  private tabStep(p: Prepared, k: number, x: number): { w: number; leader: TabLeader | null } {
+    const spec = p.input.tabs;
+    const min = p.input.style.size * 0.25;
+    if (!spec) return { w: min, leader: null };
+    const from = spec.origin + x;
+    const stop = nextTab(spec.stops, spec.every, from, spec.hang, min);
+    const info = p.tabs[k] ?? { seg: 0, before: 0 };
+    const target = stop.pt - (stop.kind === "r" ? info.seg : stop.kind === "c" ? info.seg / 2 : stop.kind === "d" ? info.before : 0);
+    return { w: Math.max(min, target - from), leader: stop.leader };
   }
 
   /** A word's style pieces (soft hyphens removed), its syllables as parts
@@ -633,7 +743,9 @@ export class Composer {
     // A looser or tighter setting (to fill a page) is only worth having
     // when its spacing stays comfortable.
     const result0 = input.firstFit
-      ? breakFirstFit(p.items, widths)
+      ? p.tabs.length
+        ? breakFirstFitTabs(p.items, widths, p.offsets, (j, x) => (p.items.data[j] <= TAB_DATA ? this.tabStep(p, TAB_DATA - p.items.data[j], x).w : null))
+        : breakFirstFit(p.items, widths)
       : breakLines(
           p.items,
           looseness
@@ -684,6 +796,7 @@ export class Composer {
   }
 
   private build(p: Prepared, breaks: number[]): SetLine[] {
+    if (p.tabs.length) return this.buildTabbed(p, breaks);
     const { items, syl, input } = p;
     const starts = lineStarts(items, breaks);
     const lines: SetLine[] = [];
@@ -759,6 +872,7 @@ export class Composer {
       let textUnderline = false;
       let ulStart: number | null = null;
       let ulColor: string | undefined;
+      let ulKind: UnderlineKind | undefined;
       // Runs with a line through them or a link, where they were set.
       const placed: { g: Glyphs; x1: number; x2: number }[] = [];
       words.forEach((word, wi) => {
@@ -772,12 +886,17 @@ export class Composer {
             textUnderline = g.underline;
             out.push(text);
           }
+          if (g.underline && ulStart !== null && (g.ul !== ulKind || (g.ulc ?? g.color) !== ulColor)) {
+            rules.push(...underlineRule(ulStart, x, g.size, ulColor, ulKind));
+            ulStart = null;
+          }
           if (g.underline && ulStart === null) {
             ulStart = x;
-            ulColor = g.color;
+            ulColor = g.ulc ?? g.color;
+            ulKind = g.ul;
           }
           if (!g.underline && ulStart !== null) {
-            rules.push(underlineRule(ulStart, x, g.size, ulColor));
+            rules.push(...underlineRule(ulStart, x, g.size, ulColor, ulKind));
             ulStart = null;
           }
           if (g.strike || g.link || g.highlight) placed.push({ g, x1: x, x2: x + g.w });
@@ -787,21 +906,21 @@ export class Composer {
         if (wi < words.length - 1) {
           const nextUnderlined = words[wi + 1][0]?.underline;
           if (ulStart !== null && !nextUnderlined) {
-            rules.push(underlineRule(ulStart, x, word[word.length - 1].size, ulColor));
+            rules.push(...underlineRule(ulStart, x, word[word.length - 1].size, ulColor, ulKind));
             ulStart = null;
           }
           x += gaps[wi] + adj;
         }
       });
-      if (ulStart !== null) rules.push(underlineRule(ulStart, x, input.style.size, ulColor));
+      if (ulStart !== null) rules.push(...underlineRule(ulStart, x, input.style.size, ulColor, ulKind));
       // Neighbours sharing a line-through (or one link) share it across the
       // space between them.
       const extras: DLItem[] = [];
       for (let i = 0; i < placed.length; ) {
         const first = placed[i];
         let j = i;
-        while (j + 1 < placed.length && !!placed[j + 1].g.strike === !!first.g.strike && first.g.strike) j += 1;
-        if (first.g.strike) extras.push(strikeRule(first.x1, placed[j].x2, first.g.size, first.g.color));
+        while (j + 1 < placed.length && !!placed[j + 1].g.strike === !!first.g.strike && !!placed[j + 1].g.strike2 === !!first.g.strike2 && first.g.strike) j += 1;
+        if (first.g.strike) extras.push(...strikeRule(first.x1, placed[j].x2, first.g.size, first.g.color, !!first.g.strike2));
         i = j + 1;
       }
       for (let i = 0; i < placed.length; ) {
@@ -839,6 +958,196 @@ export class Composer {
     });
     return lines;
   }
+
+  /**
+   * The lines of a paragraph with tabs in it: as `build`, but a tab takes
+   * the text after it to its stop (with the stop's leader drawn in the
+   * gap). Such a line is set from the left: a tab means the writer placed
+   * the words.
+   */
+  private buildTabbed(p: Prepared, breaks: number[]): SetLine[] {
+    const { items, syl, input } = p;
+    const starts = lineStarts(items, breaks);
+    const lines: SetLine[] = [];
+    const at = <T>(arr: T[], i: number) => arr[Math.min(i, arr.length - 1)];
+    type Sep = { space: boolean; tabs: number[] };
+
+    breaks.forEach((b, li) => {
+      const words: Glyphs[][] = [];
+      const seps: Sep[] = [];
+      let cur: Glyphs[] = [];
+      let sep: Sep = { space: false, tabs: [] };
+      let indentW = 0;
+      let chars = 0;
+      for (let i = starts[li]; i < b; i += 1) {
+        if (items.isBox(i)) {
+          const d = items.data[i];
+          if (d <= TAB_DATA) {
+            if (cur.length) {
+              words.push(cur);
+              cur = [];
+            }
+            sep.tabs.push(TAB_DATA - d);
+            continue;
+          }
+          if (d < 0) {
+            indentW += items.width[i];
+            continue;
+          }
+          if (cur.length && (sep.space || sep.tabs.length)) {
+            words.push(cur);
+            cur = [];
+          }
+          if (!cur.length) {
+            seps.push(sep);
+            sep = { space: false, tabs: [] };
+          }
+          for (const g of syl[d].glyphs) {
+            chars += g.text.length;
+            const prev = cur[cur.length - 1];
+            if (prev && sameRun(prev, g, prev.underline) && sameDeco(prev, g)) cur[cur.length - 1] = { ...prev, text: prev.text + g.text };
+            else cur.push({ ...g });
+          }
+        } else if (items.isGlue(i) && (cur.length || sep.tabs.length)) {
+          sep.space = true;
+        }
+      }
+      if (items.isPenalty(b) && items.width[b] > 0 && cur.length) {
+        const g = cur[cur.length - 1];
+        cur[cur.length - 1] = { ...g, text: `${g.text}-` };
+      }
+      if (cur.length) words.push(cur);
+      const trailing = sep.tabs;
+      for (const word of words) for (const g of word) g.w = this.faces.measure(g.face, g.size, g.text, g.feat, g.cs);
+
+      let x = at(p.offsets, li) + indentW;
+      const out: DLItem[] = [];
+      const rules: DLRule[] = [];
+      const leaders: DLItem[] = [];
+      let text: DLText | null = null;
+      let textUnderline = false;
+      let ulStart: number | null = null;
+      let ulColor: string | undefined;
+      let ulKind: UnderlineKind | undefined;
+      const placed: { g: Glyphs; x1: number; x2: number }[] = [];
+      const like = words[0]?.[0] ?? null;
+      const tabTo = (k: number, g: Glyphs | null) => {
+        const step = this.tabStep(p, k, x);
+        if (step.leader && g) leaders.push(...this.leader(step.leader, x, x + step.w, g));
+        x += step.w;
+      };
+      words.forEach((word, wi) => {
+        const s = seps[wi] ?? { space: false, tabs: [] };
+        const prev = wi > 0 ? words[wi - 1][words[wi - 1].length - 1] : null;
+        if (prev && (ulStart !== null) && (s.tabs.length || !word[0]?.underline)) {
+          rules.push(...underlineRule(ulStart, x, prev.size, ulColor, ulKind));
+          ulStart = null;
+        }
+        if (s.space && prev) x += this.faces.measure(prev.face, prev.size, " ") + prev.cs;
+        for (const k of s.tabs) tabTo(k, prev ?? word[0]);
+        word.forEach((g, gi) => {
+          if (text && gi === 0 && wi > 0 && !s.tabs.length && sameRun(text, g, textUnderline) && text.y === -(g.rise ?? 0)) {
+            text.text += ` ${g.text}`;
+            text.xs!.push(x);
+          } else {
+            text = textItem(g, x, input.src);
+            textUnderline = g.underline;
+            out.push(text);
+          }
+          if (g.underline && ulStart !== null && (g.ul !== ulKind || (g.ulc ?? g.color) !== ulColor)) {
+            rules.push(...underlineRule(ulStart, x, g.size, ulColor, ulKind));
+            ulStart = null;
+          }
+          if (g.underline && ulStart === null) {
+            ulStart = x;
+            ulColor = g.ulc ?? g.color;
+            ulKind = g.ul;
+          }
+          if (!g.underline && ulStart !== null) {
+            rules.push(...underlineRule(ulStart, x, g.size, ulColor, ulKind));
+            ulStart = null;
+          }
+          if (g.strike || g.link || g.highlight) placed.push({ g, x1: x, x2: x + g.w });
+          else if (placed.length) placed.push({ g, x1: x, x2: x });
+          x += g.w;
+        });
+      });
+      if (ulStart !== null) rules.push(...underlineRule(ulStart, x, input.style.size, ulColor, ulKind));
+      // A tab ending the line still goes to its stop (a leader to the margin).
+      for (const k of trailing) tabTo(k, words.length ? words[words.length - 1][words[words.length - 1].length - 1] : like);
+
+      const extras: DLItem[] = [];
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && !!placed[j + 1].g.strike === !!first.g.strike && !!placed[j + 1].g.strike2 === !!first.g.strike2 && first.g.strike) j += 1;
+        if (first.g.strike) extras.push(...strikeRule(first.x1, placed[j].x2, first.g.size, first.g.color, !!first.g.strike2));
+        i = j + 1;
+      }
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && placed[j + 1].g.link === first.g.link && first.g.link) j += 1;
+        if (first.g.link) {
+          const size = Math.max(...placed.slice(i, j + 1).map((e) => e.g.size));
+          const link: DLLink = { t: "link", x: first.x1, y: -size * 0.85, w: placed[j].x2 - first.x1, h: size * 1.15, url: first.g.link };
+          extras.push(link);
+        }
+        i = j + 1;
+      }
+      const bars: DLItem[] = [];
+      for (let i = 0; i < placed.length; ) {
+        const first = placed[i];
+        let j = i;
+        while (j + 1 < placed.length && placed[j + 1].g.highlight === first.g.highlight && first.g.highlight) j += 1;
+        if (first.g.highlight) {
+          let top = 0;
+          let bottom = 0;
+          for (const e of placed.slice(i, j + 1)) {
+            top = Math.max(top, this.faces.ascent(e.g.face) * e.g.size + (e.g.rise ?? 0));
+            bottom = Math.max(bottom, this.faces.descent(e.g.face) * e.g.size - (e.g.rise ?? 0));
+          }
+          const bar: DLRect = { t: "rect", x: first.x1, y: -top, w: placed[j].x2 - first.x1, h: top + bottom, color: first.g.highlight };
+          bars.push(bar);
+        }
+        i = j + 1;
+      }
+      if (li === 0 && p.dropItems.length) out.unshift(...p.dropItems.map((d) => ({ ...d })));
+      lines.push({ items: [...bars, ...leaders, ...out, ...rules, ...extras], width: x, chars });
+    });
+    return lines;
+  }
+
+  /** What fills a tab's gap: dots or dashes on a grid of their own (so
+   *  leaders down a page line up), or a line. */
+  private leader(kind: TabLeader, x1: number, x2: number, g: Glyphs): DLItem[] {
+    if (kind === "line") {
+      const rule: DLRule = { t: "rule", x1, y1: g.size * 0.13, x2, y2: g.size * 0.13, w: Math.max(0.4, g.size * 0.05) };
+      if (g.color) rule.color = g.color;
+      return [rule];
+    }
+    const ch = kind === "dot" ? "." : "-";
+    const w = this.faces.measure(g.face, g.size, ch);
+    const step = g.size * (kind === "dot" ? 0.5 : 0.6);
+    const pad = g.size * 0.2;
+    const xs: number[] = [];
+    for (let x = Math.ceil((x1 + pad) / step) * step; x + w <= x2 - pad + 1e-6; x += step) xs.push(x);
+    if (!xs.length) return [];
+    const t: DLText = { t: "text", x: xs[0], y: 0, face: g.face, size: g.size, text: xs.map(() => ch).join(" "), xs };
+    if (g.color) t.color = g.color;
+    return [t];
+  }
+}
+
+/** Capitals letter for letter: where a capital is more than one letter
+ *  (ß), the one letter that is (ẞ), or the letter as it is. */
+function upperSameLength(text: string, lang: string): string {
+  let out = "";
+  for (const ch of text) {
+    const up = ch.toLocaleUpperCase(lang);
+    out += up.length === ch.length ? up : ch === "ß" ? "ẞ" : ch;
+  }
+  return out;
 }
 
 function textItem(g: Glyphs, x: number, src?: number): DLText {
@@ -850,18 +1159,41 @@ function textItem(g: Glyphs, x: number, src?: number): DLText {
   return t;
 }
 
-function underlineRule(x1: number, x2: number, size: number, color?: string): DLRule {
+function underlineRule(x1: number, x2: number, size: number, color?: string, kind?: UnderlineKind): DLRule[] {
   const y = size * 0.13;
-  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w: Math.max(0.4, size * 0.05) };
+  const w = Math.max(0.4, size * 0.05);
+  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w };
   if (color) rule.color = color;
-  return rule;
+  switch (kind) {
+    case "double": {
+      const thin = Math.max(0.3, w * 0.7);
+      return [
+        { ...rule, w: thin },
+        { ...rule, w: thin, y1: y + thin * 2.5, y2: y + thin * 2.5 },
+      ];
+    }
+    case "dotted":
+      return [{ ...rule, dash: [w, w * 1.6] }];
+    case "dashed":
+      return [{ ...rule, dash: [w * 5, w * 3] }];
+    case "wavy":
+      return [{ ...rule, y1: y + w, y2: y + w, wave: w * 1.4 }];
+    default:
+      return [rule];
+  }
 }
 
-function strikeRule(x1: number, x2: number, size: number, color?: string): DLRule {
+function strikeRule(x1: number, x2: number, size: number, color?: string, twice = false): DLRule[] {
   const y = -size * 0.27;
-  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w: Math.max(0.4, size * 0.05) };
+  const w = Math.max(0.4, size * 0.05);
+  const rule: DLRule = { t: "rule", x1, y1: y, x2, y2: y, w };
   if (color) rule.color = color;
-  return rule;
+  if (!twice) return [rule];
+  const thin = Math.max(0.3, w * 0.7);
+  return [
+    { ...rule, w: thin, y1: y - thin * 1.3, y2: y - thin * 1.3 },
+    { ...rule, w: thin, y1: y + thin * 1.3, y2: y + thin * 1.3 },
+  ];
 }
 
 /** Move items by (dx, dy) — in place, returning them. */
