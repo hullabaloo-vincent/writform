@@ -17,6 +17,9 @@ export function CommandPalette() {
   const [selected, setSelected] = useState(0);
   const [jumps, setJumps] = useState<JumpEntry[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
+  // What had the focus when it opened (the text being written, say): given
+  // back when it closes without doing anything.
+  const cameFrom = useRef<HTMLElement | null>(null);
   const seq = useRef(0);
   const commands = usePlatform((s) => s.commands);
   const connected = useSession((s) => s.link === "connected");
@@ -51,6 +54,7 @@ export function CommandPalette() {
 
   const entries = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const words = q.split(/\s+/).filter(Boolean);
     const places = jumps.map(({ item, appId }) => ({
       key: `jump:${appId}:${item.id}`,
       title: item.title,
@@ -59,12 +63,13 @@ export function CommandPalette() {
     }));
     const cmds = Object.values(commands)
       // What needs a server isn't offered without one.
+      // (Every word typed must be somewhere in its name or its other words.)
+      .filter((c) => (q ? words.every((w) => c.title.toLowerCase().includes(w) || (c.keywords ?? "").includes(w) || c.id.includes(w)) : !c.typed))
       .filter((c) => (connected || apps[c.appId]?.offline) && (c.available?.() ?? true))
-      .filter((c) => !q || c.title.toLowerCase().includes(q) || c.id.includes(q))
       .map((c) => ({
         key: `cmd:${c.id}`,
         title: c.title,
-        hint: apps[c.appId]?.name ?? c.appId,
+        hint: c.keybinding ?? apps[c.appId]?.name ?? c.appId,
         run: () => executeCommand(c.id),
       }));
     const shortcuts = {
@@ -78,15 +83,28 @@ export function CommandPalette() {
   }, [commands, apps, query, jumps, connected]);
 
   useEffect(() => {
+    const giveBack = () => {
+      const el = cameFrom.current;
+      cameFrom.current = null;
+      // (After this render: the palette's own field is still on the page.)
+      if (el && el.isConnected) setTimeout(() => el.focus(), 0);
+    };
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === "k") {
         e.preventDefault();
-        setOpen((o) => !o);
+        setOpen((o) => {
+          if (!o) cameFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          else giveBack();
+          return !o;
+        });
         setQuery("");
         setJumps([]);
         setSelected(0);
       } else if (e.key === "Escape") {
-        setOpen(false);
+        setOpen((o) => {
+          if (o) giveBack();
+          return false;
+        });
       }
     };
     window.addEventListener("keydown", onKey);

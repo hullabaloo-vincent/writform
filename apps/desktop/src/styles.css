@@ -5318,6 +5318,17 @@ textarea.wf-el-shape-text {
   color: #16161c;
 }
 
+/* A footnote or endnote with a match inside it: its number is marked (the
+   note's words open from it). */
+.ProseMirror sup.wf-fn.wf-find-note {
+  background: rgba(255, 214, 10, 0.32);
+  border-radius: 2px;
+}
+.ProseMirror sup.wf-fn.wf-find-note.current {
+  background: rgba(255, 196, 0, 0.75);
+  color: #16161c;
+}
+
 /* ---- outline panel ---- */
 
 .wf-doc-outline-list {
@@ -5457,6 +5468,50 @@ textarea.wf-el-shape-text {
   border: 1px solid rgba(0, 0, 0, 0.12);
   border-radius: 3px;
   box-shadow: 0 12px 34px rgba(0, 0, 0, 0.3), 0 2px 7px rgba(0, 0, 0, 0.22);
+}
+
+/* The page at another size (apps/documents/shell/ZoomFrame.tsx). At 100%
+   these two boxes are plain and the page is as above. Zoomed, the page
+   keeps its paper's width, the inner box is drawn scaled from its corner,
+   and the outer one is given the room that takes (by the frame), so the
+   window scrolls over the scaled page and no more. */
+.wf-zoom-box.on {
+  margin: 0 auto;
+}
+.wf-zoom-box.on > .wf-zoom {
+  width: max-content;
+  transform-origin: 0 0;
+}
+.wf-zoom-box.on .wf-page,
+.wf-zoom-box.on .wf-docnotes {
+  width: var(--wfd-w, 8.5in);
+}
+/* Its control, beside the word count: as quiet as the count is. (The
+   toolbars' own button rules are named here so this one wins.) */
+.wf-editor-toolbar button.wf-zoom-btn,
+.wf-ribbon button.wf-zoom-btn,
+.wf-zoom-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  width: auto;
+  min-width: 0;
+  height: 22px;
+  min-height: 0;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.wf-editor-toolbar button.wf-zoom-btn:hover,
+.wf-ribbon button.wf-zoom-btn:hover,
+.wf-zoom-btn:hover,
+.wf-zoom-btn.active {
+  background: transparent;
+  color: var(--wf-text);
 }
 
 .wf-doc-content .ProseMirror {
@@ -13395,8 +13450,9 @@ body {
   border-radius: 2px;
 }
 .wf-fn-pop {
-  /* Fixed where its number is (Footnote.ts places it): nothing that clips
-     or scrolls — the sheet, a table — can cut it off. */
+  /* On the body, fixed where its number is (Footnote.ts places it): nothing
+     that clips, scrolls or scales (the sheet, a table, a zoomed page) cuts
+     it off or resizes it. */
   position: fixed;
   z-index: 40;
   width: min(340px, 78vw);

@@ -1,10 +1,25 @@
-# Freeform canvas / storyboarding — plan & implementation notes
+# Freeform canvas and storyboarding: the original plan
 
-Status: **v1 implemented** as a platform app (`apps/desktop/src/apps/canvas/`),
-server side in `crates/writform-server/src/routes/canvas.rs` + migration
-`0002_canvas.sql`, covered by `tests/canvas_flow.rs`. The sections below are
-the original plan annotated with what shipped and what was deliberately
-deferred.
+**This is a historical document.** It is the plan the canvas was first
+built from, annotated with what its first version shipped. The canvas has
+grown well past it since, and what it does today is described in the Canvas
+section of [the feature guide](../docs-site/docs/features.md).
+
+Since the first version the canvas has gained shapes, images (pasted or
+dropped, with crop, rotate and flip), sketches drawn on a pad, link cards
+with previews, live references to documents, pages within a board,
+multi-select, smart guides and snap to grid, copy and paste, undo and redo,
+find and replace, page backgrounds, other people's cursors and which page
+they are on, and boards kept on the device with no server. So the "Not yet"
+list further down is out of date.
+
+What still holds from this page: elements are server-side rows updated
+last-write-wins (the CRDT design below was not adopted), and the canvas is
+drawn with DOM elements and an SVG layer, not Canvas2D.
+
+The code is the platform app in `apps/desktop/src/apps/canvas/`, with the
+server side in `crates/writform-server/src/routes/canvas.rs`, covered by
+`tests/canvas_flow.rs`.
 
 ## What shipped in v1
 

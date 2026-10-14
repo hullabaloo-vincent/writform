@@ -8,6 +8,7 @@ import type { EditorView } from "@tiptap/pm/view";
 import { ySyncPluginKey } from "@tiptap/y-tiptap";
 
 import { textWindow } from "./ui/bubblePlace";
+import { boxOf } from "./ui/scale";
 
 /**
  * Page view for the writing sheet, two ways.
@@ -527,6 +528,9 @@ class PaginateView {
       this.present(null, null);
       return;
     }
+    // (On a zoomed page the browser's rectangles are in screen pixels and
+    // everything else here is in the page's own: read them through this.)
+    const box = boxOf(dom);
     const cs = getComputedStyle(dom);
     const padT = parseFloat(cs.paddingTop) || 0;
     const padB = parseFloat(cs.paddingBottom) || 0;
@@ -554,7 +558,7 @@ class PaginateView {
     const settled = this.applied?.doc === view.state.doc;
     const give = marginGive(marginBottom);
 
-    const sheetTop = sheet.getBoundingClientRect().top;
+    const sheetTop = box(sheet).top;
     const placed = cur
       .find()
       .map((d) => ({ at: d.from, page: (d.spec as Partial<SpaceSpec>).page, el: (d.spec as Partial<SpaceSpec>).el }))
@@ -570,7 +574,7 @@ class PaginateView {
     }
     const beside = pagesMarked.some((group) => group.length > 1);
 
-    let pmRect = dom.getBoundingClientRect();
+    let pmRect = box(dom);
     let bands: PageBand[] = [];
     let rooms = new Map<number, { from: number; h: number }>();
     let contentStart = pmRect.top + padT;
@@ -580,10 +584,10 @@ class PaginateView {
     // row do lean on each other while they are being sized: then it is done
     // again, a few times at most, until they agree.)
     for (let round = 0; round < (beside ? 4 : 1); round += 1) {
-      pmRect = dom.getBoundingClientRect();
+      pmRect = box(dom);
       const read = pagesMarked.map((group) =>
         group.map((m) => {
-          const rect = m.el.getBoundingClientRect();
+          const rect = box(m.el);
           return { ...m, top: rect.top, height: rect.height };
         }),
       );
@@ -709,8 +713,9 @@ class PaginateView {
     const between = breakSpace(0, marginBottom, marginTop);
     const span = contentH + between.height;
 
-    const pmRect = dom.getBoundingClientRect();
-    const sheetRect = sheet.getBoundingClientRect();
+    const box = boxOf(dom);
+    const pmRect = box(dom);
+    const sheetRect = box(sheet);
     const originY = pmRect.top + padT; // content-space zero, viewport coords
     const sheetOffset = originY - sheetRect.top; // content zero within the sheet
 
@@ -762,7 +767,7 @@ class PaginateView {
       if (!el || !(el instanceof HTMLElement)) return;
       beside = el.nextElementSibling;
 
-      const rect = el.getBoundingClientRect();
+      const rect = box(el);
       const naturalTop = rect.top - originY - appliedBefore(offset);
       const naturalH = Math.max(0, rect.height - appliedAt(offset));
 

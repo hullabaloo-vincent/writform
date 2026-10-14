@@ -54,8 +54,13 @@ export interface Command {
   id: string;
   appId: string;
   title: string;
-  /** Optional keybinding hint, e.g. "mod+k". Binding itself comes later. */
+  /** The key that does it, as people read it ("⌘B"), shown beside it. */
   keybinding?: string;
+  /** More words to find it by (lowercase). */
+  keywords?: string;
+  /** Offer it only once something has been typed (one of many: it would
+   *  crowd the list the palette opens with). */
+  typed?: boolean;
   /** Offer it only while this holds (the palette asks each time it opens). */
   available?: () => boolean;
   run: () => void | Promise<void>;

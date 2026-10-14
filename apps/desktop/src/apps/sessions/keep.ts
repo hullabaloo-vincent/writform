@@ -22,12 +22,18 @@ export function pieceTitle(sessionTitle: string, promptNumber: number): string {
 export async function keepAsDocument(title: string, doc: unknown): Promise<void> {
   const content = typeof doc === "object" && doc !== null && (doc as JSONContent).type === "doc" ? (doc as JSONContent) : EMPTY_DOC;
   // (Asked for only now: the documents' own machinery is no part of a sprint.)
-  const [{ createLocalDocument, createServerDocument }, { openLocalDoc, openServerDoc }] = await Promise.all([import("../documents/import/importFile"), import("../documents/navigation")]);
+  const [{ createLocalDocument, createServerDocument }, { openLocalDoc, openServerDoc }, { newDocumentMaps }] = await Promise.all([
+    import("../documents/import/importFile"),
+    import("../documents/navigation"),
+    import("../documents/newDocument"),
+  ]);
+  // (A piece kept as a document is a new one: it takes the paper of where the writer is.)
+  const maps = newDocumentMaps("none");
   if (isWeb) {
-    const made = await createServerDocument(title, "none", content, {}, "From a writing session");
+    const made = await createServerDocument(title, "none", content, maps, "From a writing session");
     toast("Saved to your documents.", "success", { action: { label: "Open", run: () => void openServerDoc(made.id) } });
   } else {
-    const id = await createLocalDocument(title, "none", content, {});
+    const id = await createLocalDocument(title, "none", content, maps);
     toast("Saved to your documents on this device.", "success", { action: { label: "Open", run: () => void openLocalDoc(id) } });
   }
 }

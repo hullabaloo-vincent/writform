@@ -1,5 +1,9 @@
-/** The curated shortcut cheat sheet shown by the ⌘/ overlay. Keep this in
- *  step with the actual bindings — it is documentation, not wiring. */
+/** The shortcut cheat sheet shown by the ⌘/ overlay. Chat and Canvas are
+ *  written out here (documentation, not wiring: keep them in step with the
+ *  bindings). The Documents sections are made from the editor's own command
+ *  list, which a harness holds to the keys that really work. */
+
+import { EDITOR_COMMANDS, keyCaps, keysOf, type CommandGroup } from "../editor/commands/catalog";
 
 export interface ShortcutRow {
   keys: string[];
@@ -14,6 +18,22 @@ export interface ShortcutSection {
 const isMac = navigator.platform.toUpperCase().includes("MAC");
 const mod = isMac ? "⌘" : "Ctrl";
 const shift = isMac ? "⇧" : "Shift";
+
+const DOCUMENT_GROUPS: CommandGroup[] = ["Text", "Paragraph", "Lists", "Insert", "Page and view", "Review", "Find and undo", "While typing"];
+
+/** Every command of the document editor that has a key, by its group. */
+export function documentSections(): ShortcutSection[] {
+  const out: ShortcutSection[] = [];
+  for (const group of DOCUMENT_GROUPS) {
+    const rows: ShortcutRow[] = [];
+    for (const row of EDITOR_COMMANDS) {
+      const key = row.group === group ? keysOf(row, isMac) : null;
+      if (key) rows.push({ keys: keyCaps(key, isMac), what: row.label });
+    }
+    if (rows.length) out.push({ title: `Documents: ${group}`, rows });
+  }
+  return out;
+}
 
 export function shortcutSections(): ShortcutSection[] {
   return [
@@ -34,15 +54,7 @@ export function shortcutSections(): ShortcutSection[] {
         { keys: ["Tab"], what: "Complete @mention or #channel" },
       ],
     },
-    {
-      title: "Documents",
-      rows: [
-        { keys: [mod, "F"], what: "Find in the document" },
-        { keys: [mod, "B"], what: "Bold (I italic, U underline)" },
-        { keys: ["Tab"], what: "Indent list / cycle the element type" },
-        { keys: [mod, "1–6"], what: "Element type (writing formats)" },
-      ],
-    },
+    ...documentSections(),
     {
       title: "Canvas",
       rows: [

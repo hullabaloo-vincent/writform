@@ -101,7 +101,14 @@ import { OutlinePanel } from "./OutlinePanel";
 import { ShareLocalDialog } from "./ShareLocalDialog";
 import { countDocWords } from "./stats";
 import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
-import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, usePrintShortcut } from "./shell/hooks";
+import { CommandKeys } from "../../editor/commands/CommandKeys";
+import type { CommandCtx, ShellActions } from "../../editor/commands/run";
+import { useEditorCommands } from "../../editor/commands/useEditorCommands";
+import { ListStarts } from "../../editor/format/listStarts";
+import { WordMarks } from "../../editor/format/wordMark";
+import { ZoomControl } from "./shell/ZoomControl";
+import { ZoomFrame } from "./shell/ZoomFrame";
+import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveIndicator } from "./shell/SyncStatus";
 
@@ -201,6 +208,17 @@ function LocalEditorInner({
   });
   const format = meta.format;
   const meRef = useRef("Me");
+  // The language of the text (see `textLanguage`): the spell checker, the
+  // quote marks typed, the Check panel and reading aloud all go by it.
+  const lang = textLanguage(format, book, docSettings);
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
+
+  // The document as the editor's commands find it (set further down, once
+  // everything they need is known).
+  const commandCtxRef = useRef<CommandCtx | null>(null);
 
   const extensions = useMemo(
     () => [
@@ -212,11 +230,17 @@ function LocalEditorInner({
       }),
       Placeholder.configure({ placeholder: "Write…" }),
       ...(format === "none" || format === "manuscript" || format === "poetry"
-        ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(bookRef.current.meta.language) })]
+        ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(langRef.current) })]
         : []),
       ...(format === "manuscript"
         ? [ManuscriptLabels.configure({ getDesign: () => bookRef.current.design }), ManuscriptPaste]
         : []),
+      // Bold, italic and underline act on the word the caret is in.
+      WordMarks,
+      // "1) ", "a. " and "i. " start a numbered list, as "1. " does.
+      ...(format === "none" ? [ListStarts] : []),
+      // The keys the command list binds itself (moving a paragraph, …).
+      CommandKeys.configure({ ctx: () => commandCtxRef.current }),
       FeedbackHighlights,
       ReadAloudHighlight,
       Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
@@ -273,8 +297,6 @@ function LocalEditorInner({
   const [feedbackTab, setFeedbackTab] = useState<FeedbackTab>("comments");
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
-  // The language of the text: a book's own, else the document's when it says one, else this device's.
-  const lang = (meta.format === "manuscript" && book.meta.language) || docSettings.lang || (typeof navigator !== "undefined" && navigator.language) || "en";
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
@@ -450,6 +472,62 @@ function LocalEditorInner({
     }
     setFocus(!focus);
   };
+
+  // What this room can do when asked by name: the editor's commands are in
+  // the command palette (⌘K) for as long as the document is open.
+  const shellActions: ShellActions = {
+    find: (replace) => {
+      if (editor) openFind(replace, selectedPhrase(editor));
+    },
+    comments: () => {
+      setFeedbackTab("comments");
+      setPanel("feedback");
+    },
+    changes: () => {
+      setFeedbackTab("changes");
+      setPanel("feedback");
+    },
+    check: () => setPanel("check"),
+    history: () => setPanel("history"),
+    toggleFocus,
+    ...(speaks ? { readAloud: () => setReading(true) } : {}),
+    ...(hasPreview ? { preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)) } : {}),
+    ...(canPrint ? { print: openPrint } : {}),
+    ...(meta.format !== "manuscript"
+      ? {
+          togglePageView: () => {
+            const next = !pageViewOn;
+            setPageGuides(next);
+            localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+          },
+        }
+      : {}),
+    ...(meta.format === "none"
+      ? {
+          toggleMarks,
+          compareFile: () => compareFileRef.current?.click(),
+          pageSetup: (section?: SetupSection) => {
+            if (section) setSetupAt((was) => ({ section, n: (was?.n ?? 0) + 1 }));
+            setPanel("settings");
+          },
+        }
+      : {}),
+  };
+  const commandCtx: CommandCtx = {
+    format: meta.format,
+    rich: meta.format === "none" ? docStyles.format : null,
+    editable: !!editor && editor.isEditable,
+    settings: docSettings,
+    patchSettings: (patch) => {
+      if (provider) updateDocSettings(provider.doc, patch);
+    },
+    review,
+    shell: shellActions,
+  };
+  useEffect(() => {
+    commandCtxRef.current = commandCtx;
+  });
+  useEditorCommands(editor, commandCtx);
 
   if (!provider) return null;
   return (
@@ -714,12 +792,16 @@ function LocalEditorInner({
                 print: openPrint,
               }}
               trailing={
+                <>
+                <ZoomControl />
                 <DocumentStats
                   editor={editor}
                   format={meta.format}
                   goalKey={`local:${meta.id}`}
                   pagesExact={pageGuides ? pagesExact : null}
+                  pageInches={pageSpecFor(meta.format, docSettings).h}
                 />
+                </>
               }
             />
           ) : (
@@ -733,12 +815,16 @@ function LocalEditorInner({
                 FORMAT_SPECS[meta.format] ? <ElementSelect editor={editor} format={meta.format} /> : undefined
               }
               trailing={
+                <>
+                <ZoomControl />
                 <DocumentStats
                   editor={editor}
                   format={meta.format}
                   goalKey={`local:${meta.id}`}
                   pagesExact={pageGuides ? pagesExact : null}
+                  pageInches={pageSpecFor(meta.format, docSettings).h}
                 />
+                </>
               }
             />
               )}
@@ -782,7 +868,8 @@ function LocalEditorInner({
       />
 
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className="wf-doc-scroll" ref={scrollRef}>
+        <div className="wf-doc-scroll" ref={scrollRef} lang={lang}>
+          <ZoomFrame scroller={scrollRef} paper={pageSpecFor(meta.format, docSettings)}>
           <div
             className={`wf-page wf-fmt-${meta.format}${showMarks && meta.format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
             style={sheetStyle}
@@ -795,6 +882,7 @@ function LocalEditorInner({
           </div>
           {/* Its footnotes and endnotes, where they can be seen and changed. */}
           {editor && <NotesList editor={editor} style={sheetStyle} />}
+          </ZoomFrame>
         </div>
         {panel === "settings" && (
           <DocSettingsPanel

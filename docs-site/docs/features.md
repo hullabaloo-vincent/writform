@@ -76,8 +76,23 @@ submission manuscript.
   heading), and pasted headings and `***` lines become chapters and scene
   breaks.
 - **Smart quotes and dashes** as you type (Settings ▸ Writing to turn off):
-  curly quotes in the book's language style, `--` becomes an em dash, and
-  `...` becomes an ellipsis (…).
+  curly quotes in the style of the text's language, `--` becomes an em
+  dash, and `...` becomes an ellipsis (…). The text's language is the
+  book's for a Manuscript. For any other document it is the language set
+  in its Details, and this device's language when none is set.
+- **Bold, italic and underline reach the whole word** when the caret is
+  inside one and nothing is selected. At a word's edge or in a space they
+  set what you type next, as before.
+- **Lists start as you type them** in a Document: `1. `, `1) `, `a. `,
+  `A. `, `i. ` or `I. ` at the start of an empty paragraph begins a
+  numbered list of that kind, and `* ` or `- ` a bulleted one. Start at
+  `c. ` or `3) ` and the list starts there. A label typed under a list
+  that it continues joins that list.
+- **Move a paragraph by key**: Alt+Shift+Up or Down (Ctrl+Shift with the
+  arrows on a Mac) moves the paragraph the caret is in, every paragraph a
+  selection touches, or a list item with all that is under it. A selected
+  picture moves the same way. Each step is one undo. While you are
+  suggesting, switch to Editing to move things.
 - **Make it a book manuscript**: switching a Document to Manuscript (or
   Export ▸ Make it a book manuscript…) detects chapters, parts, scene breaks
   and front matter and shows what it found before converting. One undo puts
@@ -163,8 +178,19 @@ submission manuscript.
   curly and straight quotes match each other, and match case and whole words
   are a click away. ⌘G / F3 step through matches. Replace keeps the
   formatting and Replace All is a single undo. Opening it never moves your
-  cursor until you step to a match.
-- **Spellcheck** underlines as you type.
+  cursor until you step to a match. Footnotes and endnotes are
+  searched too. A match inside a note marks the note's number, the count
+  says "in a note", and Replace changes the note's words like any others.
+- **Spellcheck** underlines as you type and uses the dictionary of the
+  text's language, so a document set to German is checked as German on a
+  device that speaks English.
+- **Zoom** the page you are writing on, from 50% to 300%. The figure
+  beside the word count opens the sizes, with **Page width** and **Whole
+  page** to fit the window. Ctrl or ⌘ with the wheel and a pinch on a
+  trackpad change it too. The choice is this device's and holds for every
+  document. Zooming moves no line of text: the page is laid out once and
+  drawn larger or smaller. The print preview has a zoom of its own. Phones
+  have none, since the page already fits the screen there.
 - **Focus mode** (the target button, Esc leaves): the app chrome steps
   away and it's just you and the page. Optional **typewriter scrolling**
   keeps the line you're writing vertically centred.
@@ -314,7 +340,10 @@ submission manuscript.
   next**, **keep lines together**, start on a new page, plus a **drop cap**
   for chapter openers. Document tab (the page setup): **paper** (US Letter,
   Legal, Tabloid, Executive, Half Letter, US Trade 6×9, A3, A4, A5, B5, or a
-  custom size) and orientation, **margins**, a binding **gutter** and
+  custom size. A new Document starts on the paper of where you are: US
+  Letter in the countries that print on it and A4 everywhere else. The
+  choice is kept with the document, so everyone who opens it sees the same
+  sheet) and orientation, **margins**, a binding **gutter** and
   **facing pages** (mirrored margins), and one to three **columns**.
   **Headers and footers** have a left, centre and right slot each and live
   fields (page number, page count, title, author, date), and are optionally
@@ -899,7 +928,14 @@ into their own vault.
 
 - **⌘K** (Ctrl+K) is the quick switcher: type a few letters and jump to any
   channel, group, document, board, note, or conversation, or run a command.
-- **⌘/** shows a keyboard-shortcut cheat sheet.
+  While a document is open it also runs the editor's commands by name:
+  type "table", "heading 2" or "page break" and press Enter. Each command
+  shows its key beside it, the selection stays where it was, and the text
+  has the focus again afterwards. Only what can be done just then is
+  offered, so someone who can only read a document is offered Find and
+  Print and nothing that changes the text.
+- **⌘/** shows a keyboard-shortcut cheat sheet, with every key of the
+  document editor listed by what it is for.
 - The desktop window remembers its size and position between launches, and
   unread counts appear on the app's dock icon (macOS/Linux). The installed
   web app badges its icon too.

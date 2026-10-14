@@ -77,12 +77,20 @@ export function FindBar({
     const build = (doc: Parameters<typeof DecorationSet.create>[0]) => {
       const { matches: ms, current: cur } = paint.current;
       if (ms.length === 0) return DecorationSet.empty;
-      return DecorationSet.create(
-        doc,
-        ms
-          .filter((m) => m.to <= doc.content.size)
-          .map((m, i) => Decoration.inline(m.from, m.to, { class: `wf-find-hit${i === cur ? " current" : ""}` })),
-      );
+      const marks: Decoration[] = [];
+      // A note's words are not on the page (they open from its number): a
+      // note with a match in it has its number marked, once.
+      const notes = new Map<number, boolean>();
+      ms.forEach((m, i) => {
+        if (m.to > doc.content.size) return;
+        if (m.note === undefined) marks.push(Decoration.inline(m.from, m.to, { class: `wf-find-hit${i === cur ? " current" : ""}` }));
+        else notes.set(m.note, (notes.get(m.note) ?? false) || i === cur);
+      });
+      notes.forEach((isCurrent, pos) => {
+        const node = doc.nodeAt(pos);
+        if (node && !node.isText) marks.push(Decoration.node(pos, pos + node.nodeSize, { class: `wf-find-note${isCurrent ? " current" : ""}` }));
+      });
+      return DecorationSet.create(doc, marks);
     };
     const plugin = new Plugin<DecorationSet>({
       key: findKey,
@@ -119,7 +127,11 @@ export function FindBar({
   const goTo = useCallback(
     (m: Match | undefined) => {
       if (!m || m.to > editor.state.doc.content.size) return;
-      showRange(editor.view, m.from, m.to);
+      // A match in a note: the caret goes beside the note's number. (The
+      // note itself is not selected: that opens it for writing and takes
+      // the focus from the field being typed in.)
+      if (m.note !== undefined) showRange(editor.view, m.note, m.note);
+      else showRange(editor.view, m.from, m.to);
     },
     [editor],
   );
@@ -228,7 +240,7 @@ export function FindBar({
       ? query
         ? "No matches"
         : ""
-      : `${current + 1} of ${capped ? "10,000+" : matches.length.toLocaleString()}`;
+      : `${current + 1} of ${capped ? "10,000+" : matches.length.toLocaleString()}${matches[current]?.note !== undefined ? " (in a note)" : ""}`;
 
   const toggle = (key: keyof FindOptions, title: string, icon: React.ReactNode) => (
     <button

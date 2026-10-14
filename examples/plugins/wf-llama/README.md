@@ -1,4 +1,4 @@
-# Llama AI plugin for WritForm
+# Llama AI plugin for subScribe
 
 Connects a group to a [llama.cpp](https://github.com/ggml-org/llama.cpp)
 server so anyone in the group can ask the model from chat with `/ai`.
@@ -14,16 +14,16 @@ works (llama.cpp `llama-server`, Ollama with `/v1`, LM Studio, vLLM, …).
 
 ## 2. Install the plugin
 
-Copy this folder into WritForm's plugin directory and enable it:
+Copy this folder into subScribe's plugin directory and enable it:
 
 - macOS: `~/Library/Application Support/com.writform.desktop/plugins/wf-llama/`
 - Linux: `~/.local/share/com.writform.desktop/plugins/wf-llama/`
 - Windows: `%APPDATA%\com.writform.desktop\plugins\wf-llama\`
 
-Then open the **Plugins** app inside WritForm, enable **Llama AI**, and reload
+Then open the **Plugins** app inside subScribe, enable **Llama AI**, and reload
 when prompted. Enabling shows the permission list — this plugin uses `chat`
 (register the `/ai` command and post replies), `net`/`data` (store per-group
-settings on your WritForm server), and it talks to your llama server directly
+settings on your subScribe server), and it talks to your llama server directly
 from the app.
 
 ## 3. Configure a group
@@ -36,7 +36,7 @@ Open the **Llama AI** icon in the dock, pick a group, and set:
 - **System prompt** — the model's standing instructions
 
 Use **Test connection** to verify, then **Save for this group**. Settings are
-stored per group on your WritForm server; only group admins should edit them.
+stored per group on your subScribe server; only group admins should edit them.
 
 ## 4. Ask away
 

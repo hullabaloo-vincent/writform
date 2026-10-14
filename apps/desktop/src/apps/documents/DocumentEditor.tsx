@@ -103,7 +103,14 @@ import { OutlinePanel } from "./OutlinePanel";
 import { SendToCanvasDialog } from "./SendToCanvasDialog";
 import { countDocWords, countRangeWords } from "./stats";
 import { ExportMenu, WORD_EXPORT, type ExportItem } from "./shell/ExportMenu";
-import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
+import { CommandKeys } from "../../editor/commands/CommandKeys";
+import type { CommandCtx, ShellActions } from "../../editor/commands/run";
+import { useEditorCommands } from "../../editor/commands/useEditorCommands";
+import { ListStarts } from "../../editor/format/listStarts";
+import { WordMarks } from "../../editor/format/wordMark";
+import { ZoomControl } from "./shell/ZoomControl";
+import { ZoomFrame } from "./shell/ZoomFrame";
+import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveAction } from "./shell/SyncStatus";
 import { openServerDoc } from "./navigation";
@@ -277,6 +284,17 @@ function EditorInner({
   useEffect(() => {
     meRef.current = state.me;
   }, [state.me]);
+  // The language of the text (see `textLanguage`): the spell checker, the
+  // quote marks typed, the Check panel and reading aloud all go by it.
+  const lang = textLanguage(format, book, docSettings);
+  const langRef = useRef(lang);
+  useEffect(() => {
+    langRef.current = lang;
+  }, [lang]);
+
+  // The document as the editor's commands find it (set further down, once
+  // everything they need is known).
+  const commandCtxRef = useRef<CommandCtx | null>(null);
 
   const extensions = useMemo(
     () => [
@@ -289,11 +307,17 @@ function EditorInner({
       Placeholder.configure({ placeholder: "Write…" }),
       formatKeymap(format),
       ...(format === "none" || format === "manuscript" || format === "poetry"
-        ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(bookRef.current.meta.language) })]
+        ? [SmartPunctuation.configure({ quotes: () => quoteStyleFor(langRef.current) })]
         : []),
       ...(format === "manuscript"
         ? [ManuscriptLabels.configure({ getDesign: () => bookRef.current.design }), ManuscriptPaste]
         : []),
+      // Bold, italic and underline act on the word the caret is in.
+      WordMarks,
+      // "1) ", "a. " and "i. " start a numbered list, as "1. " does.
+      ...(format === "none" ? [ListStarts] : []),
+      // The keys the command list binds itself (moving a paragraph, …).
+      CommandKeys.configure({ ctx: () => commandCtxRef.current }),
       FeedbackHighlights,
       ReadAloudHighlight,
       Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
@@ -334,8 +358,6 @@ function EditorInner({
   const [feedbackTab, setFeedbackTab] = useState<FeedbackTab>("comments");
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
-  // The language of the text: a book's own, else the document's when it says one, else this device's.
-  const lang = (format === "manuscript" && book.meta.language) || docSettings.lang || (typeof navigator !== "undefined" && navigator.language) || "en";
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
@@ -566,6 +588,60 @@ function EditorInner({
     }
     setFocus(!focus);
   };
+
+  // What this room can do when asked by name: the editor's commands are in
+  // the command palette (⌘K) for as long as the document is open.
+  const shellActions: ShellActions = {
+    find: (replace) => {
+      if (editor) openFind(replace, selectedPhrase(editor));
+    },
+    comments: () => {
+      setFeedbackTab("comments");
+      setPanel("feedback");
+    },
+    changes: () => {
+      setFeedbackTab("changes");
+      setPanel("feedback");
+    },
+    check: () => setPanel("check"),
+    history: () => setPanel("history"),
+    toggleFocus,
+    ...(speaks ? { readAloud: () => setReading(true) } : {}),
+    ...(hasPreview ? { preview: () => (canDockPreview() ? setPanel("preview") : setPreviewOpen(true)) } : {}),
+    ...(canPrint ? { print: openPrint } : {}),
+    ...(format !== "manuscript"
+      ? {
+          togglePageView: () => {
+            const next = !pageViewOn;
+            setPageGuides(next);
+            localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+          },
+        }
+      : {}),
+    ...(format === "none"
+      ? {
+          toggleMarks,
+          compareFile: () => compareFileRef.current?.click(),
+          pageSetup: (section?: SetupSection) => {
+            if (section) setSetupAt((was) => ({ section, n: (was?.n ?? 0) + 1 }));
+            setPanel("settings");
+          },
+        }
+      : {}),
+  };
+  const commandCtx: CommandCtx = {
+    format: format,
+    rich: format === "none" ? docStyles.format : null,
+    editable: !!editor && editor.isEditable,
+    settings: docSettings,
+    patchSettings: (patch) => updateDocSettings(provider.doc, patch),
+    review,
+    shell: shellActions,
+  };
+  useEffect(() => {
+    commandCtxRef.current = commandCtx;
+  });
+  useEditorCommands(editor, commandCtx);
 
   return (
     <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
@@ -809,12 +885,16 @@ function EditorInner({
                 print: openPrint,
               }}
               trailing={
+                <>
+                <ZoomControl />
                 <DocumentStats
                   editor={editor}
                   format={format}
                   goalKey={goalKey}
                   pagesExact={pageGuides ? pagesExact : null}
+                  pageInches={pageSpecFor(format, docSettings).h}
                 />
+                </>
               }
             />
           ) : (
@@ -836,12 +916,16 @@ function EditorInner({
                 ) : undefined
               }
               trailing={
+                <>
+                <ZoomControl />
                 <DocumentStats
                   editor={editor}
                   format={format}
                   goalKey={goalKey}
                   pagesExact={pageGuides ? pagesExact : null}
+                  pageInches={pageSpecFor(format, docSettings).h}
                 />
+                </>
               }
             />
               )}
@@ -885,7 +969,8 @@ function EditorInner({
       />
 
       <div className="wf-doc-body" {...panelSwipe}>
-        <div className="wf-doc-scroll" ref={scrollRef}>
+        <div className="wf-doc-scroll" ref={scrollRef} lang={lang}>
+          <ZoomFrame scroller={scrollRef} paper={pageSpecFor(format, docSettings)}>
           <div
             className={`wf-page wf-fmt-${format}${showMarks && format === "none" ? " wf-show-marks" : ""}${review.mode === "view" ? " wf-rev-final" : ""}`}
             style={sheetStyle}
@@ -898,6 +983,7 @@ function EditorInner({
           </div>
           {/* Its footnotes and endnotes, where they can be seen and changed. */}
           {editor && <NotesList editor={editor} style={sheetStyle} />}
+          </ZoomFrame>
         </div>
         {/* Panel state lives above the format-keyed remount, so a format
             switch could otherwise leave a stale inspector open. */}
@@ -1182,6 +1268,7 @@ export function DocumentStats({
   format,
   goalKey,
   pagesExact,
+  pageInches = 11,
 }: {
   editor: Editor;
   format: string;
@@ -1189,6 +1276,8 @@ export function DocumentStats({
   goalKey?: string;
   /** Page-view count from the paginator; null falls back to the estimate. */
   pagesExact?: number | null;
+  /** How tall the document's paper is, for that estimate. */
+  pageInches?: number;
 }) {
   const [goalOpen, setGoalOpen] = useState(false);
   const [goal, setGoal] = useState<number | null>(() => (goalKey ? loadGoal(goalKey) : null));
@@ -1243,7 +1332,7 @@ export function DocumentStats({
 
   // Page view reports an exact block-level count; otherwise estimate from
   // the sheet (CSS inches, so 96px/in maps exactly).
-  const pages = pagesExact ?? Math.max(1, Math.ceil(counts.height / (11 * 96)));
+  const pages = pagesExact ?? Math.max(1, Math.ceil(counts.height / (pageInches * 96)));
 
   const body = (
     <>

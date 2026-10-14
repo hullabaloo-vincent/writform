@@ -35,6 +35,7 @@ import {
   togglePageBreakBefore,
 } from "./TextFormat";
 import { opensSection } from "./DocElement";
+import { toggleWordMark } from "./format/wordMark";
 import { quoteStyleFor, SmartPunctuation } from "./SmartPunctuation";
 import { LEVEL1_EXTENSIONS } from "./schema/level1";
 
@@ -175,11 +176,11 @@ export function Toolbar({
     <div className="wf-editor-toolbar">
       {leading}
       {leading && <span className="wf-toolbar-sep" />}
-      {btn("Bold", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
+      {btn("Bold", <Bold size={15} />, () => toggleWordMark(editor, "bold"), editor.isActive("bold"))}
       {btn(
         "Italic",
         <Italic size={15} />,
-        () => chain().toggleItalic().run(),
+        () => toggleWordMark(editor, "italic"),
         editor.isActive("italic"),
       )}
       {richBlocks && (

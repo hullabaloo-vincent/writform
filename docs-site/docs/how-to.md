@@ -26,6 +26,18 @@
 4. **⌘P** (Ctrl+P) prints. **Export** saves the same pages as a PDF, or the
    document as Word.
 
+To make the page larger or smaller while you write, click the percentage
+beside the word count, or hold Ctrl (⌘ on a Mac) and turn the wheel.
+**Page width** and **Whole page** fit it to the window.
+
+A new Document starts on the paper of where you are (US Letter or A4).
+Change it with the paper list on the **Layout** tab and the document keeps
+your choice for everyone.
+
+To write in another language, open the sliders button, go to **Details**
+and set the **language**. Spelling is then checked in that language and
+quote marks are typed in its style.
+
 ## Export a PDF
 
 **Export ▸ Export PDF…** opens the choices. They are remembered on this
@@ -57,6 +69,10 @@ its own for a printer that asks for them: **PDF/X-1a for a printer** and
 **With bleed**.
 
 ## Format a document
+
+Anything the ribbon does can also be asked for by name. Press **⌘K**
+(Ctrl+K), type a word or two of what you want ("checklist", "margins",
+"zoom page width") and press Enter. **⌘/** lists every key.
 
 1. Select words: a small menu appears above them with bold, italic,
    underline, colour, highlight, link and comment. The ribbon's **Home**

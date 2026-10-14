@@ -2,6 +2,8 @@ import { TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/react";
 import { useEffect } from "react";
 
+import { useDocZoom } from "./zoom";
+
 /**
  * Reopen a document where you left off: the cursor and the scroll position,
  * remembered per document on this device (the 50 most recent). Saved as you
@@ -11,6 +13,14 @@ import { useEffect } from "react";
 
 const STORE = "wf-doc-pos";
 const KEEP = 50;
+
+/** The page's zoom now. A place down the text is kept as it would be at
+ *  100%, so it is the same place when the page is next opened at another
+ *  size. */
+const zoomNow = (): number => {
+  const z = useDocZoom.getState().shown;
+  return z > 0 ? z : 1;
+};
 
 interface Saved {
   sel: number;
@@ -61,7 +71,7 @@ export function useReopenPosition(
         } catch {
           // The text changed under the saved spot; the scroll still helps.
         }
-        if (scroller.current) scroller.current.scrollTop = saved.top;
+        if (scroller.current) scroller.current.scrollTop = saved.top * zoomNow();
       });
     });
     return () => cancelAnimationFrame(frame);
@@ -77,7 +87,7 @@ export function useReopenPosition(
     // editor may already be gone.
     let last: Omit<Saved, "at"> | null = null;
     const capture = () => {
-      if (!editor.isDestroyed) last = { sel: editor.state.selection.head, top: el?.scrollTop ?? 0 };
+      if (!editor.isDestroyed) last = { sel: editor.state.selection.head, top: (el?.scrollTop ?? 0) / zoomNow() };
     };
     const now = () => {
       capture();

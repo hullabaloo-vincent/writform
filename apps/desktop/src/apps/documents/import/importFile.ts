@@ -16,6 +16,7 @@ import { documentsApi } from "../api";
 import { b64encode } from "../collab";
 import { applyDocMaps, docMapsUpdate, type DocMapsSnapshot } from "../docMaps";
 import { useLocalDocs } from "../local";
+import { regionPaper } from "../newDocument";
 import { chooseDialog } from "../../../platform/confirm";
 import { toast } from "../../../platform/toast";
 import { FORMAT_LABELS } from "../formats/elements";
@@ -32,6 +33,8 @@ import { fitUnder } from "../../../book/cover/files";
 import { featureLevel } from "../sync/caps";
 
 const EXTENSIONS = docContentExtensions();
+/** Kinds of file that carry no page of their own. */
+const PAPERLESS = new Set(["txt", "md", "markdown", "rtf"]);
 const SEED_BATCH_JSON_BYTES = 48 * 1024;
 // Leave headroom under the server's 256 KiB decoded-update ceiling.
 const MAX_SEED_UPDATE_BYTES = 240 * 1024;
@@ -202,6 +205,9 @@ export async function convertFile(file: File): Promise<ConvertedFile> {
   if (!content.content || content.content.length === 0) {
     content = { type: "doc", content: [{ type: "paragraph" }] };
   }
+  // Plain words say nothing of a page: they are set on the paper of where
+  // the writer is, as a new document is.
+  if (PAPERLESS.has(ext)) fileSettings = { ...fileSettings, pageSize: regionPaper() };
 
   // A file that's clearly a book comes in as a book manuscript; anything
   // else keeps the page setup it was written with.

@@ -7,6 +7,7 @@ import { normalizeAttachmentSrc } from "../../lib/backend";
 import { moveHandle, movePicture } from "../format/movePicture";
 import { showRev } from "../review/TrackMarks";
 import { CAPTION_MAX, encodeImageBorder, imageAlign, imageBorder, imageCaption, imageRound, type Edge, type ImageAlign } from "../schema/sanitize";
+import { scaleOf } from "../ui/scale";
 
 // (How a picture's attributes are read lives with the other readers, where
 // the page layout — which runs in a worker — can reach it.)
@@ -105,8 +106,27 @@ const Image2 = Image1.extend({
       if (resizable) {
         // The library's view (image, handles), with the caption under it.
         const view = resizable(props);
+        // An extension made from this one inherits this very method AND
+        // has it as its parent's (the library copies a parent's methods
+        // into what extends it), so it runs once inside itself. What the
+        // inner run dressed is done.
+        const done = view as unknown as { wfDressed?: boolean };
+        if (done.wfDressed) return view;
+        done.wfDressed = true;
         const holder = view.dom as HTMLElement;
         holder.append(caption);
+        // Its corner handles go by how far the pointer moved on the screen,
+        // and size the picture in the page's own pixels: on a zoomed page
+        // those differ. (The library keeps the method to itself: it is
+        // looked for, and left alone if a later version has renamed it.)
+        const sized = view as unknown as { handleResize?: (dx: number, dy: number) => void };
+        const resize = sized.handleResize;
+        if (typeof resize === "function") {
+          sized.handleResize = (dx, dy) => {
+            const k = scaleOf(holder);
+            resize.call(view, dx / k, dy / k);
+          };
+        }
         // A handle to move it by, on the picture's corner while it is selected.
         const getPos = props.getPos;
         const handle = moveHandle(

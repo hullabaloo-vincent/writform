@@ -77,6 +77,28 @@ function addSlotContribution(slot: SlotName, contribution: SlotContribution): ()
   };
 }
 
+/**
+ * Put several commands in the palette at once, and take them out again
+ * with what this returns. For commands that come and go with something on
+ * screen (an open document's), where an app's own `ctx.commands.register`
+ * at start-up is for the ones that are always there.
+ */
+export function registerCommands(appId: string, commands: Omit<Command, "appId">[]): () => void {
+  const ids = commands.map((c) => c.id);
+  usePlatform.setState((s) => {
+    const next = { ...s.commands };
+    for (const cmd of commands) next[cmd.id] = { ...cmd, appId };
+    return { commands: next };
+  });
+  return () => {
+    usePlatform.setState((s) => {
+      const next = { ...s.commands };
+      for (const id of ids) delete next[id];
+      return { commands: next };
+    });
+  };
+}
+
 function makeContext(manifest: AppManifest): AppContext {
   return {
     manifest,

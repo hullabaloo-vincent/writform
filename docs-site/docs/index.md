@@ -13,25 +13,37 @@ pick up what you were last working on, or join the people you write with.
 
 ## What's inside
 
+- **Documents**: a word processor with a ribbon, named styles, tables,
+  footnotes, a table of contents, sections, headers and footers, page setup
+  and a page view that matches the printed page. Write with others live,
+  suggest changes, comment, and go back through every version. Manuscript,
+  screenplay, stage play and poetry formats set the page for you
+- **Word and PDF**: Word files open and save with their formatting and
+  tracked changes. PDFs are typeset by the app, with tags for screen
+  readers and an archive format. A PDF can be imported back into a document
+- **Check**: an editing pass over the whole text. It finds what is
+  inconsistent, holds the text to your house style, and reports on repeats,
+  sentences, dialogue, word choice and pace
+- **Books**: a manuscript becomes a paperback interior, an EPUB and a
+  submission manuscript, with a cover editor for the printer's sheet
+- **PDF editor**: reorder pages, mark up, fill in forms, sign and change
+  text in a PDF, without converting it
 - **Writing sessions**: WYSIWYG prompts (formatting + images), optional
   timers and live side-chat, with everything recorded and browsable forever
-- **Documents**: live collaborative editing, writing formats (screenplay,
-  stage play, manuscript, poetry), version history, folders, search,
-  anchored feedback threads, file import, sharing with friends or groups
 - **Chat**: Discord-style groups with channels, markdown, custom emotes,
   @mentions and #channel references, image uploads, slash commands
-- **Voice**: audio channels over peer-to-peer WebRTC (the server only relays
-  signaling), with per-device input/output settings
-- **Canvas**: shared storyboards with stickies, colored frames, connectors,
-  images, link cards and live document references
+- **Voice and video**: channels over peer-to-peer WebRTC (the server only
+  relays signaling), with per-device input/output settings
+- **Canvas**: shared storyboards with stickies, shapes, colored frames,
+  connectors, images, sketches, link cards and live document references
 - **Notes**: an Obsidian-compatible local vault with `[[wiki-links]]` and
   notes you can share with friends
 - **Plugins**: every feature is an app on an internal platform, and you can
   add your own (see [Plugins](plugins.md))
 
-Presence status (online/busy/invisible), profile cards, and native
-notifications for DMs, mentions, sessions, and shares round out the day-to-day
-experience.
+Documents, books, PDFs, boards and notes need no server. Presence status
+(online/busy/invisible), profile cards, and native notifications for DMs,
+mentions, sessions, and shares round out the day-to-day experience on one.
 
 ## Security in one paragraph
 

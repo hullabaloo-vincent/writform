@@ -1,8 +1,10 @@
-# WritForm crypto spec
+# subScribe crypto spec
 
-Status: **draft** — this document is written ahead of the Phase 1 implementation
-and is the source of truth for `crates/writform-crypto` and the client's pinning
-logic. Change the doc first, then the code.
+Status: **implemented**, in `crates/writform-crypto`, the server's TLS
+set-up and the client's pinning logic in `apps/desktop/src-tauri`. This
+document was written ahead of the code and stays the source of truth for
+it. Change the doc first, then the code. ("WritForm" is the project's
+working name and is what the crates are called.)
 
 ## Goals & posture
 

@@ -85,6 +85,7 @@ import { curRun, type FormatContext } from "../format/effective";
 import { paintFormat, pickUpFormat, type Paint } from "../format/painter";
 import { curParaFormat, setBorder, setLineHeight, setSection, setShade, stepIndent, toggleColumnBreak } from "../format/ParaFormat";
 import { setHighlight, setRunColor, setRunFont, setRunSize, stepRunSize, toggleScript } from "../format/run";
+import { toggleWordMark } from "../format/wordMark";
 import { insertNote } from "../nodes/Footnote";
 import { imageAlign, selectedImage, setImageAttrs, type ImageAlign } from "../nodes/Image";
 import { canMovePicture, movePicture } from "../format/movePicture";
@@ -432,9 +433,9 @@ export function Ribbon({
       label: "Text",
       content: (
         <>
-          {btn("Bold (⌘B)", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
-          {btn("Italic (⌘I)", <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic"))}
-          {btn("Underline (⌘U)", <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline"))}
+          {btn("Bold (⌘B)", <Bold size={15} />, () => toggleWordMark(editor, "bold"), editor.isActive("bold"))}
+          {btn("Italic (⌘I)", <Italic size={15} />, () => toggleWordMark(editor, "italic"), editor.isActive("italic"))}
+          {btn("Underline (⌘U)", <Underline size={15} />, () => toggleWordMark(editor, "underline"), editor.isActive("underline"))}
           {rich && (
             <ColorFlyout
               title="Text colour"

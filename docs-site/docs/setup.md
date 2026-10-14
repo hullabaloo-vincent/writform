@@ -177,7 +177,9 @@ version…"). That message is the cue to run the update above.
 **Update the server before the apps start using new formatting.** Text
 colour, highlight, fonts and sizes on part of a paragraph, indents, borders,
 checklists, tables, footnotes, a table of contents, sections and suggested
-changes (the release after 1.0.6) are stored in a newer document format. A server that hasn't been updated can't hold it: the apps simply
+changes (from version 1.1.0), and a table cell's own borders and a
+picture's outline and rounded corners (from 1.1.2), are stored in a newer
+document format. A server that hasn't been updated can't hold it: the apps simply
 don't offer those controls for its documents, and a document from a device
 that already uses them can only be published there as a simplified copy.
 Once the server is updated the controls appear (within a few minutes, or

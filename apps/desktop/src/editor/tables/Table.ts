@@ -41,6 +41,7 @@ import {
 } from "@tiptap/pm/tables";
 
 import { showRev } from "../review/TrackMarks";
+import { scaleOf } from "../ui/scale";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 
@@ -263,13 +264,17 @@ export const Table = Node.create({
 
       // ---- dragging a column's right edge (a mouse; touch uses the ribbon)
       let hover = -1;
-      let drag: { col: number; startX: number; widths: number[] } | null = null;
-      const PX = 0.75;
+      let drag: { col: number; startX: number; widths: number[]; pt: number } | null = null;
+      /** Points to a pixel on the screen: 0.75 of one, on a page at its own
+       *  size. (A zoomed page's pixels are larger or smaller than that.) */
+      const pt = (): number => 0.75 / scaleOf(dom);
       /** The columns' widths in points: the table's own, or as they are
        *  drawn when it has none (the text's width shared out). */
       const measured = (): number[] => {
         const own = parseCols(current.attrs.cols, colgroup.children.length);
-        return own ?? [...colgroup.children].map((col) => (col as HTMLElement).getBoundingClientRect().width * PX);
+        if (own) return own;
+        const PX = pt();
+        return [...colgroup.children].map((col) => (col as HTMLElement).getBoundingClientRect().width * PX);
       };
       const columnAt = (e: PointerEvent): number => {
         const cell = (e.target as Element | null)?.closest?.("td");
@@ -301,7 +306,7 @@ export const Table = Node.create({
       };
       const onMove = (e: PointerEvent) => {
         if (drag) {
-          const next = Math.max(COL_MIN, drag.widths[drag.col] + (e.clientX - drag.startX) * PX);
+          const next = Math.max(COL_MIN, drag.widths[drag.col] + (e.clientX - drag.startX) * drag.pt);
           (colgroup.children[drag.col] as HTMLElement).style.width = `${next}pt`;
           const total = drag.widths.reduce((a, b, i) => a + (i === drag!.col ? next : b), 0);
           table.style.width = `${total}pt`;
@@ -318,7 +323,7 @@ export const Table = Node.create({
         if (hover < 0 || e.button !== 0 || !editor.isEditable) return;
         e.preventDefault();
         const widths = measured();
-        drag = { col: Math.min(hover, widths.length - 1), startX: e.clientX, widths };
+        drag = { col: Math.min(hover, widths.length - 1), startX: e.clientX, widths, pt: pt() };
         // Every column gets a width of its own from here on.
         widths.forEach((w, i) => {
           (colgroup.children[i] as HTMLElement).style.width = `${w}pt`;
@@ -331,7 +336,7 @@ export const Table = Node.create({
         drag = null;
         dom.releasePointerCapture(e.pointerId);
         const widths = d.widths.slice();
-        widths[d.col] = Math.max(COL_MIN, d.widths[d.col] + (e.clientX - d.startX) * PX);
+        widths[d.col] = Math.max(COL_MIN, d.widths[d.col] + (e.clientX - d.startX) * d.pt);
         const pos = typeof getPos === "function" ? getPos() : undefined;
         if (pos === undefined) return;
         const now = editor.state.doc.nodeAt(pos);

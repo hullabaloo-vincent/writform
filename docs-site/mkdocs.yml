@@ -2,7 +2,7 @@
 # The SAME markdown pages render inside the app (Docs icon in the dock) and
 # build into this static site:  pip install mkdocs-material && mkdocs serve
 site_name: subScribe
-site_description: Self-hosted group creative writing — sessions, chat, voice, canvas, plugins.
+site_description: A writing suite you own. Documents, books, PDFs, boards and notes on your device, and a self-hosted server for writing together.
 repo_url: https://github.com/hullabaloo-vincent/writform
 theme:
   name: material

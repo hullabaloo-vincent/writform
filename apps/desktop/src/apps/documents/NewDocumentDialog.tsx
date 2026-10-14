@@ -7,6 +7,7 @@ import { documentsApi } from "./api";
 import { FORMAT_LABELS } from "./formats/elements";
 import { useLocalDocs } from "./local";
 import { openLocalDoc, openServerDoc } from "./navigation";
+import { createBlankOnDevice, createBlankOnServer } from "./newDocument";
 
 const FORMAT_HINTS: Record<string, string> = {
   none: "Letters, essays and reports on a page you format yourself",
@@ -57,11 +58,11 @@ export function NewDocumentDialog({
     setError(null);
     try {
       if (where === "server") {
-        const doc = await documentsApi.create(name, format);
+        const doc = await createBlankOnServer(name, format);
         if (folderId) await documentsApi.moveDocument(doc.id, folderId).catch(() => {});
         await openServerDoc(doc.id);
       } else {
-        const id = await useLocalDocs.getState().create(name, format);
+        const id = await createBlankOnDevice(name, format);
         if (localFolderId) await useLocalDocs.getState().moveTo([id], localFolderId).catch(() => {});
         await openLocalDoc(id);
       }

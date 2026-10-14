@@ -294,14 +294,17 @@ export const Footnote = Node.create({
         const body = document.createElement("div");
         body.className = "wf-fn-body";
         pop.append(head, body);
-        dom.append(pop);
+        // On the body, not in the page: a zoomed page is drawn scaled, and
+        // anything inside it would be scaled with it, be placed against it
+        // and not the window, and be cut off at the sheet's edge.
+        document.body.append(pop);
         dom.classList.add("open");
 
         inner = mountNoteEditor({ editor, position, node: current, mount: body, onDone: () => close(true) });
         openNotes.set(dom, inner.view);
 
-        // Beside its number, wherever that is on the screen — fixed there,
-        // so nothing that clips or scrolls (the sheet, a table) cuts it off.
+        // Beside its number, wherever that is on the screen: fixed there,
+        // and kept there as the text scrolls.
         reposition = () => {
           if (!pop) return;
           const at2 = dom.getBoundingClientRect();

@@ -1,8 +1,11 @@
-# WritForm plugin API (v1)
+# subScribe plugin API (v1)
 
-WritForm's client is a platform: chat, sessions, notes — every built-in
-feature is an "app" on an internal extension-point layer, and third-party
-plugins use the **same surface**.
+subScribe's client is a platform. Every built-in feature (home, documents,
+chat, sessions, canvas, notes) is an "app" on an internal extension-point
+layer, and third-party plugins use the **same surface**. The host object a
+plugin is handed is called `writform`, after the project's working name.
+
+The browser client does not load plugins.
 
 ## Anatomy
 
@@ -51,7 +54,7 @@ Capabilities appear on `writform` **only if declared** in the manifest:
 | Permission | Surface |
 |------------|---------|
 | `ui` | `ctx.ui.addToSlot(slot, contribution)`, `ctx.ui.registerMainView(render)` — slots: `nav.rail`, `panel.right`, `statusbar`, `settings.section` |
-| `commands` | `ctx.commands.register/execute` (command palette integration) |
+| `commands` | `ctx.commands.register/execute` (command palette integration). A command is `{ id, title, run }`, with optional `keybinding` (shown beside it), `keywords` (more lowercase words to find it by), `typed` (offer it only once something has been typed, for one of many) and `available()` (asked each time the palette opens) |
 | `chat` | `ctx.chat.registerCommand({ name, description, run(args, cctx) })` registers a `/name` slash command available in every chat composer; `cctx` is `{ channelId, groupId, send(content) }` where `send` posts a markdown message to the invoking channel. `ctx.chat.send(channelId, content)` posts directly. Thrown errors surface inline in the composer. |
 | `net` | `writform.net.fetch(method, path, body)` — **only** `/api/v1/` paths on the connected server, over the pinned TLS client |
 | `data` | `writform.data.get/put/list(scope, scopeId, key)` — server-side JSON storage scoped to `user` / `group` / `channel`, membership-checked server-side; updates fan out as `plugin_data.updated` WS events |
@@ -66,7 +69,7 @@ clients without the plugin render a graceful fallback card.
 
 ## Security model (read this)
 
-WritForm plugins follow the **Obsidian model**: consent-based, not a hard
+subScribe plugins follow the **Obsidian model**: consent-based, not a hard
 sandbox. Plugin code runs inside the app's webview with the app's privileges —
 the permission list controls which *conveniences* are handed to it, and the
 enable-time prompt makes the request visible, but a malicious plugin is
@@ -91,7 +94,7 @@ scope) persistence through the server.
 
 ## External network access
 
-`writform.net.fetch` only reaches the connected WritForm server, but plugin
+`writform.net.fetch` only reaches the connected subScribe server, but plugin
 code runs in the webview with app privileges and **can call the webview's own
 `fetch` to any origin** (there is no CSP sandbox — the Obsidian model). The
 bundled `wf-llama` plugin does exactly this to talk to a llama.cpp server.

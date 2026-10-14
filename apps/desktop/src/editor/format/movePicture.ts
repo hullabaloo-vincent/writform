@@ -9,8 +9,10 @@
 
 import type { Editor } from "@tiptap/core";
 import { Fragment, type Node as PmNode, type NodeType, type ResolvedPos } from "@tiptap/pm/model";
-import { NodeSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
+import { NodeSelection, TextSelection, type EditorState, type Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
+
+import { reviewMode } from "../review/Suggesting";
 
 const isCell = (node: PmNode): boolean => {
   const role = node.type.spec.tableRole as string | undefined;
@@ -56,6 +58,100 @@ export function stepTarget(doc: PmNode, pos: number, dir: -1 | 1): number | null
   const out = dir < 0 ? $pos.before() : $pos.after();
   const $out = doc.resolve(out);
   return $out.parent.canReplaceWith($out.index(), $out.index(), node.type) ? out : null;
+}
+
+/** The blocks the selection is in, as one run of neighbours: the list
+ *  item (or items) when it is in a list, else the paragraphs (or whatever
+ *  blocks) it touches where they stand. */
+function selectedSpan(state: EditorState): { from: number; to: number } | null {
+  const { $from, $to } = state.selection;
+  for (let d = $from.depth; d > 0; d -= 1) {
+    const name = $from.node(d).type.name;
+    if (name !== "listItem" && name !== "taskItem") continue;
+    // (The same list holds where the selection ends: else it is not one run.)
+    if ($to.depth < d || $to.before(d - 1) !== $from.before(d - 1)) return null;
+    return { from: $from.before(d), to: $to.after(d) };
+  }
+  const range = $from.blockRange($to);
+  return range ? { from: range.start, to: range.end } : null;
+}
+
+/**
+ * The neighbouring blocks from `from` to `end` taken out and put at `to`,
+ * with the selection kept on the same words. Null when that can't be.
+ */
+function moveSpan(state: EditorState, from: number, end: number, to: number): Transaction | null {
+  if (to >= from && to <= end) return null;
+  const $from = state.doc.resolve(from);
+  const parent = $from.parent;
+  const first = $from.index();
+  const last = state.doc.resolve(end).index();
+  const nodes: PmNode[] = [];
+  for (let i = first; i < last; i += 1) nodes.push(parent.child(i));
+  if (!nodes.length) return null;
+  const moved = Fragment.from(nodes);
+  const $to = state.doc.resolve(to);
+  if (!$to.parent.canReplace($to.index(), $to.index(), moved)) return null;
+  const tr = state.tr;
+  const alone = parent.childCount === nodes.length && !parent.type.validContent(Fragment.empty);
+  const filler = alone ? parent.type.contentMatch.defaultType?.createAndFill() : null;
+  if (alone && !filler) return null;
+  if (filler) tr.replaceWith(from, end, filler);
+  else tr.delete(from, end);
+  const at = tr.mapping.map(to, to > from ? -1 : 1);
+  tr.insert(at, moved);
+  const { anchor, head } = state.selection;
+  const within = (pos: number) => Math.max(at, Math.min(at + moved.size, at + (pos - from)));
+  return tr.setSelection(TextSelection.create(tr.doc, within(anchor), within(head))).scrollIntoView();
+}
+
+/** Where the selection's blocks would go, a step that way. */
+function blocksStep(state: EditorState, dir: -1 | 1): { from: number; to: number; target: number } | null {
+  const span = selectedSpan(state);
+  if (!span) return null;
+  // (Up goes over what is before the first of them, down over what is
+  // after the last.)
+  const edge = dir < 0 ? span.from : span.to - (state.doc.resolve(span.to).nodeBefore?.nodeSize ?? 0);
+  const target = stepTarget(state.doc, edge, dir);
+  return target === null ? null : { ...span, target };
+}
+
+/**
+ * Move what the caret is in one step up or down, as a writer reorders:
+ * the paragraph, every paragraph the selection touches, or the list item
+ * (with all that is under it). A selected picture or other block moves as
+ * itself. One step, one undo.
+ *
+ * Not while suggesting: a move would have to be shown as a deletion here
+ * and an insertion there, and it is left to be made in Editing.
+ */
+export function moveBlocks(editor: Editor, dir: -1 | 1): boolean {
+  const { state, view } = editor;
+  if (!editor.isEditable || reviewMode(editor) === "suggest") return false;
+  const sel = state.selection;
+  if (sel instanceof NodeSelection) {
+    if (!sel.node.isBlock) return false;
+    const to = stepTarget(state.doc, sel.from, dir);
+    const tr = to === null ? null : moveBlock(state, sel.from, to);
+    if (!tr) return false;
+    view.dispatch(tr);
+    return true;
+  }
+  const step = blocksStep(state, dir);
+  const tr = step ? moveSpan(state, step.from, step.to, step.target) : null;
+  if (!tr) return false;
+  view.dispatch(tr);
+  return true;
+}
+
+/** Whether that move can be made now. */
+export function canMoveBlocks(editor: Editor, dir: -1 | 1): boolean {
+  const { state } = editor;
+  if (!editor.isEditable || reviewMode(editor) === "suggest") return false;
+  const sel = state.selection;
+  if (sel instanceof NodeSelection) return sel.node.isBlock && stepTarget(state.doc, sel.from, dir) !== null;
+  const step = blocksStep(state, dir);
+  return !!step && !!moveSpan(state, step.from, step.to, step.target);
 }
 
 /** Move the selected picture one block up or down. */

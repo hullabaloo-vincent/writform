@@ -177,7 +177,11 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   check("…selected, so it opens for writing", e.state.selection instanceof NodeSelection && e.state.selection.node.type.name === "footnote");
   const sup = (e.view.dom as HTMLElement).querySelector("sup.wf-fn")!;
   const inner = openNotes.get(sup);
-  check("the note opens in an editor of its own, under its number", !!sup && !!inner && !!sup.querySelector(".wf-fn-pop .wf-fn-text") && (sup.querySelector(".wf-fn-head span")?.textContent ?? "") === "Footnote 1");
+  // (The note's box is on the body, beside its number and not inside the
+  // page: a zoomed page would scale and clip it.)
+  const pop = () => [...document.body.children].filter((el) => el.classList.contains("wf-fn-pop")).pop() as HTMLElement | undefined;
+  check("the note opens in an editor of its own, under its number", !!sup && !!inner && !!pop()?.querySelector(".wf-fn-text") && (pop()?.querySelector(".wf-fn-head span")?.textContent ?? "") === "Footnote 1");
+  check("…in a box of its own on the window, not inside the page", !sup.querySelector(".wf-fn-pop") && !(e.view.dom as HTMLElement).contains(pop() ?? null));
   inner!.dispatch(inner!.state.tr.insertText("Its source."));
   check("what's typed in the note is in the document", JSON.stringify(e.getJSON().content?.[0].content?.[1]) === JSON.stringify({ type: "footnote", attrs: { tc: null, kind: null }, content: [{ type: "text", text: "Its source." }] }), JSON.stringify(e.getJSON().content?.[0].content?.[1]));
   // A change from elsewhere (a collaborator, an undo) reaches the open note.
@@ -188,15 +192,14 @@ const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
   check("a note's words aren't the text's", countDocWords(e.state.doc) === 5 && countRangeWords(e.state.doc, 0, e.state.doc.content.size) === 5, `${countDocWords(e.state.doc)} / ${countRangeWords(e.state.doc, 0, e.state.doc.content.size)}`);
 
   // Make it an endnote from the note's own bar.
-  const toEnd = [...sup.querySelectorAll<HTMLButtonElement>(".wf-fn-head button")].find((b) => b.textContent === "Make endnote")!;
+  const toEnd = [...pop()!.querySelectorAll<HTMLButtonElement>(".wf-fn-head button")].find((b) => b.textContent === "Make endnote")!;
   toEnd.click();
   check("a footnote can be made an endnote", e.getJSON().content?.[0].content?.[1]?.attrs?.kind === "end" && e.getHTML().includes('data-kind="end"'));
   check("notes are counted by kind; numbered 1, 2, 3 and i, ii, iii", countNotes(e.state.doc).end === 1 && countNotes(e.state.doc).foot === 0 && noteNumber(4, "foot") === "4" && noteNumber(4, "end") === "iv" && noteNumber(19, "end") === "xix");
 
   e.commands.setTextSelection(find(e, "another"));
   insertNote(e, "foot");
-  const second = [...(e.view.dom as HTMLElement).querySelectorAll("sup.wf-fn")][1];
-  const del = [...second.querySelectorAll<HTMLButtonElement>(".wf-fn-head button")].find((b) => b.textContent === "Delete")!;
+  const del = [...pop()!.querySelectorAll<HTMLButtonElement>(".wf-fn-head button")].find((b) => b.textContent === "Delete")!;
   del.click();
   check("a note is deleted from its own bar", countNotes(e.state.doc).foot === 0 && countNotes(e.state.doc).end === 1);
 

@@ -132,11 +132,20 @@ export function manuscriptVars(book: Book): Record<string, string> {
 export const EDITOR_PROPS = {
   attributes: {
     spellcheck: "true",
-    // The spell checker picks its dictionary from the text's language; the
-    // device's is the best guess for what's being written.
-    lang: typeof navigator !== "undefined" && navigator.language ? navigator.language : "en",
   },
 };
+
+/**
+ * The language the text is written in: a book's own, else the document's
+ * when it says one, else this device's. One answer for everything that
+ * cares: the spell checker's dictionary (it reads the `lang` of the
+ * element around the text, which is why the editors put this on the
+ * scrolling area and not in `EDITOR_PROPS`, whose identity must not
+ * change), the quote marks typed, the Check panel and reading aloud.
+ */
+export function textLanguage(format: string, book: { meta: { language: string } }, settings: { lang: string }): string {
+  return (format === "manuscript" && book.meta.language) || settings.lang || (typeof navigator !== "undefined" && navigator.language) || "en";
+}
 
 /** ⌘F / Ctrl+F opens find (with the selected words); ⌥⌘F / Ctrl+H opens
  *  find and replace. Pressed again while the bar is open, they refocus it. */

@@ -32,6 +32,7 @@ import { LocalDocumentEditor } from "./LocalDocumentEditor";
 import { NewDocumentDialog } from "./NewDocumentDialog";
 import { searchLocalDocs, useLocalDocs } from "./local";
 import { openKeptPdf, openLocalDoc, openPdfFile, openServerDoc } from "./navigation";
+import { createBlankOnDevice } from "./newDocument";
 import { deleteItems, duplicate, type ItemRef } from "./organizer/actions";
 import { ContextMenu, type MenuItem } from "./organizer/ContextMenu";
 import { DocCard } from "./organizer/DocCard";
@@ -539,7 +540,7 @@ export function DocumentsView() {
 
   /** A new, empty document on this device — in the folder that's open. */
   const newOnDevice = async () => {
-    const id = await useLocalDocs.getState().create("Untitled", "none");
+    const id = await createBlankOnDevice("Untitled", "none");
     if (view.kind === "localFolder") await useLocalDocs.getState().moveTo([id], view.id).catch(() => {});
     await openLocalDoc(id);
   };
