@@ -315,6 +315,37 @@ const click = async (el: Element, more: Record<string, unknown> = {}) => {
       await wait(0);
     });
   };
+  /**
+   * A click as a browser makes it: pointer down, then the mouse-down whose
+   * own doing is to move the focus to what was pressed (or off everything,
+   * when that takes no focus), then up, then the click. A box opened on the
+   * way down and given the focus LOSES it again to that mouse-down, which
+   * is how a note's box used to close the moment it opened.
+   */
+  const tap = async (el: Element, x: number, y: number) => {
+    const fire = (type: string) => {
+      const e = new window.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, clientX: x, clientY: y });
+      el.dispatchEvent(e);
+      return e;
+    };
+    await act(async () => {
+      fire("pointerdown");
+      await wait(0);
+    });
+    await act(async () => {
+      const down = fire("mousedown");
+      const focused = document.activeElement as HTMLElement | null;
+      const takes = el instanceof window.HTMLElement && (el.tabIndex >= 0 || /^(INPUT|TEXTAREA|BUTTON|SELECT)$/.test(el.tagName));
+      if (!down.defaultPrevented && focused && focused !== document.body && focused !== el && !takes) focused.blur();
+      await wait(0);
+    });
+    await act(async () => {
+      fire("pointerup");
+      fire("mouseup");
+      fire("click");
+      await wait(0);
+    });
+  };
   const quiet = () => until(() => tool("Highlight")?.disabled === false);
   const inEngine = async () => (await PdfSession.open("probe", (await lastSaved()) ?? form)).close();
   const lastSaved = async (): Promise<Uint8Array | null> => {
@@ -347,20 +378,48 @@ const click = async (el: Element, more: Record<string, unknown> = {}) => {
   check("the tools are offered by name", ["Read", "Note", "Draw", "Box", "Arrow", "Type", "Sign", "Change text"].every((label) => !!tool(label)) && tool("Read")?.getAttribute("aria-pressed") === "true");
   await pick("Note");
   check("a tool taken up says what to do with it", body().includes("Click the page where a note goes") && over().classList.contains("making"));
-  await point(over(), "pointerdown", 300, 400);
+  await tap(over(), 300, 400);
   const box = () => document.querySelector<HTMLTextAreaElement>(".wf-pdf-typing");
   check("a click on the page opens somewhere to write the note", !!box() && box()!.getAttribute("aria-label") === "What the note says");
-  await act(async () => {
-    const setter = Object.getOwnPropertyDescriptor((window as unknown as { HTMLTextAreaElement: typeof HTMLTextAreaElement }).HTMLTextAreaElement.prototype, "value")!.set!;
-    setter.call(box()!, "Check the berth number.");
-    box()!.dispatchEvent(new window.Event("input", { bubbles: true }));
-    box()!.dispatchEvent(new window.FocusEvent("focusout", { bubbles: true }));
-    await wait(0);
-  });
+  check("and it is still there, with the caret in it, once the click is over", !!box() && document.activeElement === box());
+  const write = async (text: string) =>
+    act(async () => {
+      const setter = Object.getOwnPropertyDescriptor((window as unknown as { HTMLTextAreaElement: typeof HTMLTextAreaElement }).HTMLTextAreaElement.prototype, "value")!.set!;
+      setter.call(box()!, text);
+      box()!.dispatchEvent(new window.Event("input", { bubbles: true }));
+      await wait(0);
+    });
+  await write("Check the berth number.");
+  // A click inside the box is a click in the box.
+  await tap(box()!, 310, 410);
+  check("a click in the box leaves it open", !!box() && box()!.value === "Check the berth number.");
+  // A click on the page beside it says the note is done.
+  await tap(over(), 500, 700);
+  check("a click away finishes the note, and does not start another", box() === null);
   await quiet();
   await pick("Read");
   await until(() => document.querySelectorAll(".wf-pdf-mark").length === 1);
   check("the note is a mark on the page, saying what was written", document.querySelector(".wf-pdf-mark")?.getAttribute("title") === "Check the berth number.");
+
+  // Words typed onto the page.
+  await pick("Type");
+  check("Type says what to do with it", over().classList.contains("making"));
+  await tap(over(), 120, 520);
+  check("a click on the page opens somewhere to type", !!box() && box()!.getAttribute("aria-label") === "The words" && document.activeElement === box());
+  await write("Seen and agreed.");
+  await tap(over(), 400, 300);
+  check("a click away puts the words on the page", box() === null);
+  await quiet();
+  await tap(over(), 400, 300);
+  check("the next click starts the next piece", !!box() && box()!.value === "");
+  await act(async () => {
+    box()!.dispatchEvent(new window.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await wait(0);
+  });
+  check("Escape puts an empty one away", box() === null);
+  await pick("Read");
+  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 2);
+  check("the typed words are a mark on the page", document.querySelectorAll(".wf-pdf-mark").length === 2);
 
   // A box drawn round something.
   await pick("Box");
@@ -370,8 +429,8 @@ const click = async (el: Element, more: Record<string, unknown> = {}) => {
   await point(over(), "pointerup", 260, 180);
   await quiet();
   await pick("Read");
-  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 2);
-  check("…and is a mark when let go", document.querySelectorAll(".wf-pdf-mark").length === 2);
+  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 3);
+  check("…and is a mark when let go", document.querySelectorAll(".wf-pdf-mark").length === 3);
 
   // A mark picked up: what can be done with it.
   const note = [...document.querySelectorAll<HTMLElement>(".wf-pdf-mark")].find((el) => el.getAttribute("title"))!;
@@ -380,8 +439,8 @@ const click = async (el: Element, more: Record<string, unknown> = {}) => {
   check("a mark clicked is picked, with what can be done to it", note.classList.contains("picked") && body().includes("Change the words") && body().includes("Take it off"));
   await press("Take it off");
   await quiet();
-  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 1);
-  check("Take it off takes it off", document.querySelectorAll(".wf-pdf-mark").length === 1 && !body().includes("Take it off"));
+  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 2);
+  check("Take it off takes it off", document.querySelectorAll(".wf-pdf-mark").length === 2 && !body().includes("Take it off"));
 
   // Marking the text that is selected.
   await press("Highlight the selected text");
@@ -424,8 +483,8 @@ const click = async (el: Element, more: Record<string, unknown> = {}) => {
   await point(over(), "pointerdown", 300, 600);
   await quiet();
   await until(() => tool("Read")?.getAttribute("aria-pressed") === "true");
-  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 2);
-  check("…and is on the page, the tool put away", document.querySelectorAll(".wf-pdf-mark").length === 2 && tool("Read")?.getAttribute("aria-pressed") === "true");
+  await until(() => document.querySelectorAll(".wf-pdf-mark").length === 3);
+  check("…and is on the page, the tool put away", document.querySelectorAll(".wf-pdf-mark").length === 3 && tool("Read")?.getAttribute("aria-pressed") === "true");
 
   // All of it, in the file that is saved.
   const out = await lastSaved();

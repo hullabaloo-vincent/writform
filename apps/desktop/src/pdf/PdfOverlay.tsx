@@ -102,6 +102,8 @@ export function PageOverlay({ session, index, width, stamp, near, tool, signing,
   /** Words being typed: a note or typed text at a place, or a block of the page's own text. */
   const [typing, setTyping] = useState<{ kind: "note" | "type"; at: Point } | { kind: "block"; block: BlockInfo } | { kind: "mark"; mark: MarkInfo } | null>(null);
   const moving = useRef<{ index: number; from: Point; by: Point } | null>(null);
+  /** The press now under way began with a box of words open (see `onDown`). */
+  const closing = useRef(false);
   const [nudge, setNudge] = useState<Point | null>(null);
 
   // The marks on this page, whenever it has changed.
@@ -146,12 +148,14 @@ export function PageOverlay({ session, index, width, stamp, near, tool, signing,
   const making = tool === "note" || tool === "draw" || tool === "box" || tool === "arrow" || tool === "type" || (tool === "sign" && !!signing);
 
   const onDown = (e: React.PointerEvent) => {
+    // (Pressed while a box of words is open: this press is what closes it,
+    // and the click it ends in is not one that asks for another.)
+    closing.current = !!typing;
     if (e.button !== 0 || typing) return;
+    // A note and typed words are put down by the click, not the press: see
+    // `onPlace`.
+    if (tool === "note" || tool === "type") return;
     const p = at(e);
-    if (tool === "note" || tool === "type") {
-      setTyping({ kind: tool, at: p });
-      return;
-    }
     if (tool === "sign" && signing) {
       const w = Math.min(SIGN_WIDTH, page.w * 0.6);
       const h = w / Math.max(0.2, signing.aspect);
@@ -162,6 +166,23 @@ export function PageOverlay({ session, index, width, stamp, near, tool, signing,
     }
     (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
     setTrail([p]);
+  };
+  /**
+   * A note, or words to type, where the page was clicked: a box to write in
+   * opens there.
+   *
+   * On the CLICK, once the button is up. Opened on the press, the box got
+   * the caret and lost it again at once: a press on the page moves the
+   * focus to what was pressed, which took it out of the new box, and a box
+   * that loses the focus is taken as finished (with nothing in it).
+   */
+  const onPlace = (e: React.MouseEvent) => {
+    if (e.button !== 0 || typing || (tool !== "note" && tool !== "type")) return;
+    if (closing.current) {
+      closing.current = false;
+      return;
+    }
+    setTyping({ kind: tool, at: at(e) });
   };
   const onMove = (e: React.PointerEvent) => {
     if (!trail) return;
@@ -240,7 +261,7 @@ export function PageOverlay({ session, index, width, stamp, near, tool, signing,
     : null;
 
   return (
-    <div ref={holder} className={`wf-pdf-over${making ? " making" : ""}`} onPointerDown={making ? onDown : undefined} onPointerMove={making ? onMove : undefined} onPointerUp={making ? onUp : undefined} onPointerCancel={() => setTrail(null)}>
+    <div ref={holder} className={`wf-pdf-over${making ? " making" : ""}`} onPointerDown={making ? onDown : undefined} onPointerMove={making ? onMove : undefined} onPointerUp={making ? onUp : undefined} onPointerCancel={() => setTrail(null)} onClick={making ? onPlace : undefined}>
       {here.map(({ field, widget, n }) => (
         <FieldControl key={`${field.name}-${n}`} field={field} widget={widget} k={k} disabled={!session.info.may.fillForms || session.busy} onSet={(value) => void act(() => session.change("setField", field.name, value))} />
       ))}
@@ -305,6 +326,7 @@ export function PageOverlay({ session, index, width, stamp, near, tool, signing,
           aria-label={typing.kind === "note" ? "What the note says" : typing.kind === "block" ? "The text" : "The words"}
           placeholder={typing.kind === "note" ? "What the note says" : typing.kind === "type" ? "Type here" : undefined}
           onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => e.stopPropagation()}
           onBlur={(e) => commit(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Escape") {
