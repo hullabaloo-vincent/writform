@@ -18,9 +18,11 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 
 import { backend, isCmdError, isWeb } from "../../lib/backend";
+import { looksLikePdf, pdfIntent, usePdfDesk } from "../../pdf/desk";
+import { PdfShelf } from "../../pdf/PdfShelf";
 import { confirmDialog, SkeletonRows, toast } from "../../platform";
 import { useSession } from "../../stores/session";
 import { useWhenConnected } from "../../stores/whenConnected";
@@ -29,7 +31,7 @@ import { DocumentEditor } from "./DocumentEditor";
 import { LocalDocumentEditor } from "./LocalDocumentEditor";
 import { NewDocumentDialog } from "./NewDocumentDialog";
 import { searchLocalDocs, useLocalDocs } from "./local";
-import { openLocalDoc, openServerDoc } from "./navigation";
+import { openKeptPdf, openLocalDoc, openPdfFile, openServerDoc } from "./navigation";
 import { deleteItems, duplicate, type ItemRef } from "./organizer/actions";
 import { ContextMenu, type MenuItem } from "./organizer/ContextMenu";
 import { DocCard } from "./organizer/DocCard";
@@ -64,7 +66,12 @@ type Dialog =
 
 const IMPORT_TYPES = ".pdf,.docx,.rtf,.pages,.txt,.md,.markdown";
 
+/** The PDF editor, with pdf.js and the engine behind it: loaded when a PDF
+ *  is first opened to be edited. */
+const PdfEditor = lazy(() => import("../../pdf/PdfEditor").then((m) => ({ default: m.PdfEditor })));
+
 export function DocumentsView() {
+  const pdfOpen = usePdfDesk((d) => d.open !== null);
   const items = useDocuments((s) => s.items);
   const folders = useDocuments((s) => s.folders);
   const loaded = useDocuments((s) => s.loaded);
@@ -187,6 +194,13 @@ export function DocumentsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  if (pdfOpen) {
+    return (
+      <Suspense fallback={<SkeletonRows rows={6} />}>
+        <PdfEditor />
+      </Suspense>
+    );
+  }
   if (activeLocalId !== null) return <LocalDocumentEditor />;
   if (activeDocId !== null) return <DocumentEditor />;
 
@@ -289,6 +303,15 @@ export function DocumentsView() {
    *  open folder). One file opens. */
   const importFiles = async (files: File[]) => {
     if (!files.length || importing) return;
+    // One PDF: it can be edited as the PDF it is, or made a document of.
+    if (files.length === 1 && looksLikePdf(files[0])) {
+      const how = await pdfIntent();
+      if (how === null) return;
+      if (how === "edit") {
+        await openPdfFile(files[0]).catch(fail);
+        return;
+      }
+    }
     const mod = await import("./import/importFile");
     // Into the folder that's open — a folder on this device keeps them here.
     const toDevice = offline || view.kind === "localFolder";
@@ -308,7 +331,8 @@ export function DocumentsView() {
           made.push({ kind: "server", id: doc.id });
         }
       } catch (e) {
-        failed.push(`${file.name} (${isCmdError(e) ? e.message : String(e)})`);
+        // (Thought better of: nothing to report.)
+        if (!mod.importCancelled(e)) failed.push(`${file.name} (${isCmdError(e) ? e.message : String(e)})`);
       }
     }
     setImporting(null);
@@ -809,6 +833,7 @@ export function DocumentsView() {
             {shown.kind === "folder" && inView.length === 0 && loaded && (
               <p className="wf-documents-empty">This folder is empty. Move documents here from their ⋯ menu, or import files while it’s open.</p>
             )}
+            {shown.kind === "all" && !searching && <PdfShelf onOpen={(id) => void openKeptPdf(id).catch(fail)} onError={fail} />}
             {shown.kind === "all" && shared.length > 0 && (
               <section className="wf-documents-section">
                 <h3>Shared with me</h3>

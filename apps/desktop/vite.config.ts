@@ -9,9 +9,13 @@ export default defineConfig(async () => ({
   plugins: [react()],
 
   // Modern webview targets (Tauri 2) — needed for top-level await in the
-  // backend selection module.
+  // backend selection module. The app's floor is Safari 15 (iOS 15), which
+  // reads all of ES2022 but class static blocks: naming it makes the build
+  // lower those, in our code and in what we bundle (pdf.js ships one in its
+  // "legacy" build, which stopped the PDF reader loading at all there).
+  // harness/webkit.test.ts holds the built files to this.
   build: {
-    target: "es2022",
+    target: ["es2022", "safari15"],
   },
 
   // The book typesetter runs in a module worker that code-splits

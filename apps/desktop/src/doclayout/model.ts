@@ -32,6 +32,7 @@ import {
   SINGLE,
   type StyleOverrides,
 } from "../editor/styles/sheet";
+import type { StructNode } from "../book/engine/types";
 import { isFontId } from "../fonts/ids";
 import { printFace, type PrintFace } from "../fonts/substitutes";
 
@@ -78,6 +79,9 @@ interface BlockBase {
    *  what isn't there: a note's text, a title put in for print). Moves
    *  with every edit above it, so it is never part of how a block is set. */
   pos?: number;
+  /** A tagged PDF: which element of the model's `struct` this block's
+   *  content is. (Like `pos`, no part of how it is set.) */
+  tag?: number;
 }
 
 export interface DocPara extends BlockBase {
@@ -109,6 +113,8 @@ export interface DocPara extends BlockBase {
   border?: Border;
   /** A list marker, hung to the left of the text. */
   marker?: string;
+  /** A tagged PDF: the element the marker is (its item's label). */
+  lblTag?: number;
   /** A drawn marker instead: a checklist's box (ticked or not), or a tick. */
   sign?: "box" | "boxOn" | "tick";
   /** Bordered like its neighbour above / below: the two share one box
@@ -199,7 +205,7 @@ export interface DocModel {
   settings: DocSettings;
   /** Body face and size, for headers, footers and line numbers. */
   body: { family: string; size: number };
-  meta: { title: string; author: string; date: string; lang: string };
+  meta: { title: string; author: string; date: string; lang: string; subject: string; keywords: string };
   /** Bundled families the layout draws with. */
   families: string[];
   /** Families tried, in order, for characters a block's own face lacks. */
@@ -211,6 +217,9 @@ export interface DocModel {
   substitutions: [asked: string, drawn: string, why: "missing" | "licence"][];
   /** Footnotes and endnotes, in the order they are cited. */
   notes: DocNote[];
+  /** When asked for: the document's structure, for a tagged PDF. Blocks
+   *  point into it (`tag`). The first is the document itself. */
+  struct?: StructNode[];
 }
 
 export interface DocModelOptions {
@@ -228,6 +237,8 @@ export interface DocModelOptions {
   /** Blocks at the start that aren't in the editor (a title put in for
    *  print): they have no place there, and the rest are counted without. */
   virtual?: number;
+  /** Work out the document's structure too (a tagged PDF). */
+  struct?: boolean;
 }
 
 /** Nodes without content: one position each in the editor's document. */
@@ -264,6 +275,8 @@ interface Ctx {
   listed: boolean;
   /** Inside a quote: paragraphs are in the Quote style. */
   quoted?: boolean;
+  /** A tagged PDF: the element what is made here belongs to. */
+  parent?: number;
 }
 
 export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel {
@@ -288,21 +301,34 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
   };
   face(s.bodyFont);
 
+  // The structure, when asked for: elements in the order the document
+  // reads, each made before what it holds (so a parent's index is always
+  // lower than its children's: the PDF writer leans on that).
+  const struct: StructNode[] | null = opts.struct ? [{ role: "Document", parent: -1 }] : null;
+  const element = (role: string, parent: number | undefined, more?: Partial<StructNode>): number | undefined => {
+    if (!struct || parent === undefined) return undefined;
+    struct.push({ role, parent, ...more });
+    return struct.length - 1;
+  };
+
   const notes: DocNote[] = [];
   const counts: Record<NoteKind, number> = { foot: 0, end: 0 };
   const noteSize = Math.max(7, Math.round(bodySize * 0.85 * 2) / 2);
   /** A note, set small: its number, then what it says. */
-  const noteOf = (node: JSONContent, src: number): number => {
+  const noteOf = (node: JSONContent, src: number, within?: number): number => {
     const kind = noteKind(node.attrs?.kind);
     counts[kind] += 1;
     const number = noteNumber(counts[kind], kind);
     const line = Math.min(body.line, 1.15);
+    // A note belongs to the paragraph that cites it.
+    const tag = element("Note", within);
     notes.push({
       kind,
       number,
       para: {
         kind: "para",
         src,
+        ...(tag !== undefined ? { tag } : {}),
         runs: [{ text: number, vscript: "super" }, { text: " " }, ...runsOf(node, src)],
         family: bodyFace.family,
         size: noteSize,
@@ -319,7 +345,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     return notes.length - 1;
   };
 
-  const runsOf = (node: JSONContent, src = 0): DocRun[] => {
+  const runsOf = (node: JSONContent, src = 0, within?: number): DocRun[] => {
     const out: DocRun[] = [];
     let next = 0;
     for (const child of node.content ?? []) {
@@ -332,7 +358,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       if (child.type === "footnote") {
         // In the text: its number, raised. The note itself is the layout's
         // to place (the foot of the page, or the end of the document).
-        const index = noteOf(child, src);
+        const index = noteOf(child, src, within);
         out.push({ text: notes[index].number, vscript: "super", note: index, at });
         continue;
       }
@@ -370,7 +396,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
 
   const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
-  const para = (node: JSONContent, ctx: Ctx, pos?: number): DocPara => {
+  const para = (node: JSONContent, ctx: Ctx, pos?: number, as?: string): DocPara => {
     const a = node.attrs ?? {};
     const heading = node.type === "heading";
     // The style it takes its look from: what it is, the style it names, or
@@ -386,7 +412,11 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     const size = num(a.size) ?? look.size;
     const line = num(a.line) ?? look.line;
     const align: DocAlign = a.align === "center" || a.align === "right" || a.align === "justify" ? a.align : look.align;
-    const runs = runsOf(node, ctx.src);
+    // What it is, for a tagged PDF: a heading of its level, else a
+    // paragraph (or what the caller says: a picture's caption). A
+    // paragraph with nothing in it is nothing.
+    const tag = (node.content ?? []).length ? element(as ?? (look.outline ? `H${Math.min(6, Math.max(1, look.outline))}` : "P"), ctx.parent) : undefined;
+    const runs = runsOf(node, ctx.src, tag);
     // Tabs opening a paragraph are a hand-set indent.
     let tabs = 0;
     while (runs[0] && runs[0].text !== "\n" && /^\t/.test(runs[0].text)) {
@@ -444,6 +474,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     if (a.colBreak === true) block.colBreak = true;
     if (a.dropCap && !heading) block.dropCap = true;
     if (pos !== undefined) block.pos = pos;
+    if (tag !== undefined) block.tag = tag;
     return block;
   };
 
@@ -474,6 +505,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     let itemPos = pos === undefined ? undefined : pos + 1;
     const ordered = node.type === "orderedList";
     const tasks = node.type === "taskList";
+    const listTag = element("L", ctx.parent);
     const type = typeof node.attrs?.type === "string" ? node.attrs.type : null;
     // An untyped numbered list inside a legal one carries the numbering on.
     const isLegal = ordered && (type === LEGAL || (type === null && legal !== null));
@@ -485,14 +517,20 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       let first = true;
       let childPos = itemPos === undefined ? undefined : itemPos + 1;
       if (itemPos !== undefined) itemPos += sizeOf(item);
+      // An item: its label (a bullet or number set in type: a drawn box
+      // or tick is decoration) and its body.
+      const itemTag = element("LI", listTag);
+      const lblTag = tasks || (!ordered && marker === "check") ? undefined : element("Lbl", itemTag);
+      const bodyTag = element("LBody", itemTag);
       for (const child of item.content ?? []) {
         const at = childPos;
         if (childPos !== undefined) childPos += sizeOf(child);
         if (isList(child.type)) {
-          out.push(...list(child, { ...ctx, left, listed: true }, depth + 1, isLegal ? [...(legal ?? []), n] : null, at));
+          out.push(...list(child, { ...ctx, left, listed: true, parent: bodyTag }, depth + 1, isLegal ? [...(legal ?? []), n] : null, at));
         } else {
-          const inner = block(child, { ...ctx, left, listed: true }, at);
+          const inner = block(child, { ...ctx, left, listed: true, parent: bodyTag }, at);
           const head = inner[0];
+          if (first && head?.kind === "para" && lblTag !== undefined) head.lblTag = lblTag;
           if (first && head?.kind === "para") {
             if (tasks) head.sign = item.attrs?.checked === true ? "boxOn" : "box";
             else if (ordered) head.marker = isLegal ? listMarker(n, LEGAL, legal ?? []) : listMarker(n, type);
@@ -515,7 +553,8 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         return [para(node, ctx, pos)];
       case "blockquote": {
         const quote = styles.look(QUOTE_STYLE);
-        const inner = within(node, pos, (n, at) => block(n, { ...ctx, left: ctx.left + quote.indL, right: ctx.right + quote.indR, quoted: true }, at));
+        const quoteTag = element("BlockQuote", ctx.parent);
+        const inner = within(node, pos, (n, at) => block(n, { ...ctx, left: ctx.left + quote.indL, right: ctx.right + quote.indR, quoted: true, parent: quoteTag }, at));
         fence(inner);
         return inner;
       }
@@ -533,6 +572,8 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         families.add(CODE_FONT);
         const size = bodySize * CODE_SIZE;
         let lineAt = 0;
+        // (Its lines are one paragraph, for a reader.)
+        const codeTag = text.trim() ? element("P", ctx.parent) : undefined;
         const lines: DocBlock[] = text.split("\n").map((line) => {
           // Leading spaces are the code's shape. The face is monospaced, so
           // they become an indent of exactly their width.
@@ -544,6 +585,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             kind: "para",
             src: ctx.src,
             ...(pos !== undefined ? { pos, ...(from > 0 ? { from } : {}) } : {}),
+            ...(codeTag !== undefined ? { tag: codeTag } : {}),
             runs: rest ? [{ text: rest, at: from + (line.length - rest.length) }] : [],
             family: CODE_FONT,
             size,
@@ -571,10 +613,13 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         const h = num(node.attrs?.height);
         const align = imageAlign(node.attrs?.align);
         const text = imageCaption(node.attrs?.caption);
+        // A figure, with what it shows in words when the writer has said.
+        const alt = typeof node.attrs?.alt === "string" ? node.attrs.alt.trim().slice(0, 2000) : "";
+        const figureTag = element("Figure", ctx.parent, alt ? { alt } : undefined);
         // The caption is a paragraph in the Caption style, set under the
         // picture and to the same side.
         const caption = text
-          ? para({ type: "paragraph", attrs: { element: "caption", align: align && align !== "left" ? align : null }, content: [{ type: "text", text }] }, ctx)
+          ? para({ type: "paragraph", attrs: { element: "caption", align: align && align !== "left" ? align : null }, content: [{ type: "text", text }] }, { ...ctx, parent: figureTag }, undefined, "Caption")
           : null;
         return [
           {
@@ -588,6 +633,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             ...(imageBorder(node.attrs?.bdr) ? { border: imageBorder(node.attrs?.bdr)! } : {}),
             ...(imageRound(node.attrs?.round) ? { round: imageRound(node.attrs?.round)! } : {}),
             ...(pos !== undefined ? { pos } : {}),
+            ...(figureTag !== undefined ? { tag: figureTag } : {}),
             before: 0,
             after: caption ? caption.after : bodyAfter,
             left: ctx.left,
@@ -596,24 +642,36 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
         ];
       }
       case "table": {
-        const rows: DocCell[][] = within(node, pos, (row, rowAt) => [
+        const tableTag = element("Table", ctx.parent);
+        const headed = node.attrs?.head === true;
+        let rowIndex = 0;
+        const rows: DocCell[][] = within(node, pos, (row, rowAt) => {
+          const rowTag = element("TR", tableTag);
+          const header = headed && rowIndex === 0;
+          rowIndex += 1;
+          return [
           within(row, rowAt, (cell, cellAt): DocCell[] => {
             const bg = colorAttr(cell.attrs?.bg);
             const edges = cellEdges(cell.attrs?.bdr);
             const whole = (v: unknown) => (typeof v === "number" && Number.isInteger(v) && v >= 1 ? Math.min(v, 1000) : 1);
+            const colspan = whole(cell.attrs?.colspan);
+            const rowspan = whole(cell.attrs?.rowspan);
+            // (A header row's cells say they head their columns.)
+            const cellTag = element(header ? "TH" : "TD", rowTag, { ...(colspan > 1 ? { colspan } : {}), ...(rowspan > 1 ? { rowspan } : {}), ...(header ? { scope: "Column" as const } : {}) });
             return [
               {
                 // A cell is a little page of its own: its blocks start at its
                 // edge (and know where they are, for a row cut across pages).
-                blocks: within(cell, cellAt, (n, at) => block(n, { src: ctx.src, left: 0, right: 0, listed: false }, at)),
-                colspan: whole(cell.attrs?.colspan),
-                rowspan: whole(cell.attrs?.rowspan),
+                blocks: within(cell, cellAt, (n, at) => block(n, { src: ctx.src, left: 0, right: 0, listed: false, parent: cellTag }, at)),
+                colspan,
+                rowspan,
                 ...(bg ? { bg } : {}),
                 ...(edges ? { edges } : {}),
               },
             ];
           }),
-        ]);
+          ];
+        });
         if (!rows.length) return [];
         const count = Math.max(1, ...rows.map((r) => r.reduce((n, c) => n + c.colspan, 0)));
         return [
@@ -621,23 +679,26 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             kind: "table",
             src: ctx.src,
             ...(pos !== undefined ? { pos, rowPos: within(node, pos, (_row, at) => [at ?? 0]) } : {}),
+            ...(tableTag !== undefined ? { tag: tableTag } : {}),
             before: 0,
             after: bodyAfter,
             left: ctx.left,
             right: ctx.right,
             cols: parseCols(node.attrs?.cols, count),
-            head: node.attrs?.head === true,
+            head: headed,
             lines: linesAttr(node.attrs?.lines),
             rows,
           },
         ];
       }
-      case "toc":
+      case "toc": {
+        const tocTag = element("TOC", ctx.parent);
         return [
           {
             kind: "toc",
             src: ctx.src,
             ...(pos !== undefined ? { pos } : {}),
+            ...(tocTag !== undefined ? { tag: tocTag } : {}),
             before: 0,
             after: bodyAfter,
             left: ctx.left,
@@ -648,6 +709,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
             leading: bodySize * SINGLE * Math.min(body.line, 1.3),
           },
         ];
+      }
       default:
         return within(node, pos, (n, at) => block(n, ctx, at));
     }
@@ -662,7 +724,7 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
     const here = index < virtual ? undefined : place;
     if (index >= virtual) place += sizeOf(node);
     const src = Math.max(0, index - virtual);
-    const made = block(node, { src, left: 0, right: 0, listed: false }, here);
+    const made = block(node, { src, left: 0, right: 0, listed: false, ...(struct ? { parent: 0 } : {}) }, here);
     // A section starts with a top-level paragraph that says so.
     const sect = node.type === "paragraph" || node.type === "heading" ? parseSection(node.attrs?.sect) : null;
     if (sect && made[0]) made[0].sect = sect;
@@ -713,13 +775,18 @@ export function buildDocModel(doc: JSONContent, opts: DocModelOptions): DocModel
       title: opts.title,
       author: opts.author ?? "",
       date: opts.date ?? new Date().toLocaleDateString(undefined, { year: "numeric", month: "long", day: "numeric" }),
-      lang: opts.lang ?? "en-US",
+      // The document's own language when it says one. (Never the device's
+      // guess: words hyphenate by it, and two people's pages must agree.)
+      lang: opts.lang ?? (s.lang || "en-US"),
+      subject: s.subject,
+      keywords: s.keywords,
     },
     families: [...families],
     fallbacks,
     chains,
     substitutions: [...substitutions.values()],
     notes,
+    ...(struct ? { struct } : {}),
   };
 }
 

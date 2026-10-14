@@ -67,6 +67,36 @@ OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 SUCH DAMAGE.
 ```
 
+## The PDF engine (editing PDFs)
+
+`pdf-engine/` is a modified copy of ten crates of **PdfCraft 0.7.1**
+(https://github.com/storytold/pdfcraft), Copyright (c) 2026 ArtCraft Team
+and the PdfCraft contributors, used under the MIT License or the Apache
+License, Version 2.0, at your option. Both licences are in that folder in
+full (`LICENSE-MIT`, `LICENSE-APACHE`), and `pdf-engine/NOTICE.md` says what
+was taken and what was changed. It is built to WebAssembly and shipped as
+`apps/desktop/src/pdf/engine/pkg/`.
+
+This project is not PdfCraft and is not affiliated with or endorsed by its
+authors. The PdfCraft and ArtCraft names and logos are their owners'
+trademarks and are not used here. None of its fonts or artwork is included.
+
+## pdf.js data files (reading PDFs)
+
+`apps/desktop/public/pdfjs/` holds data files copied unchanged from the
+`pdfjs-dist` package (Mozilla, Apache License 2.0, in `LICENSE` there), which
+pdf.js loads when a PDF needs them:
+
+- `cmaps/`: Adobe character maps (BSD 3-Clause, `cmaps/LICENSE`).
+- `standard_fonts/`: the Foxit fonts (BSD 3-Clause, `LICENSE_FOXIT`) and the
+  Liberation fonts (SIL Open Font License 1.1, `LICENSE_LIBERATION`), used to
+  draw PDFs that name a standard font without carrying it.
+- `wasm/`: the OpenJPEG, JBIG2 and qcms decoders, each with its licence
+  beside it.
+- `iccs/`: one colour profile (CC0, `iccs/LICENSE`).
+
+The part of that package that runs a PDF's own scripts is left out.
+
 ## Fonts
 
 The bundled fonts are under the SIL Open Font License 1.1. Each family's

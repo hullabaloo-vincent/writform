@@ -46,6 +46,36 @@ export interface DLText {
   src?: number;
   /** Text colour, `#rrggbb` (absent: black). */
   color?: string;
+  /** Tagged documents: which element of `DisplayList.struct` these words
+   *  are. -1: a running head. -2: a running foot. -3: decoration set in
+   *  type (the dots that lead to a page number). Absent: decoration. */
+  s?: number;
+  /** A list item's marker (its bullet or number), not its words. */
+  lbl?: boolean;
+}
+
+/**
+ * One element of a document's structure: what a tagged PDF says a stretch
+ * of the page IS (a heading, a paragraph, a list item, a table's cell, a
+ * picture and what it shows), for screen readers and for text that
+ * reflows. The elements are a tree, kept flat: each names its parent.
+ */
+export interface StructNode {
+  /** A PDF structure type: Document, P, H1 to H6, L, LI, Lbl, LBody,
+   *  BlockQuote, Table, TR, TH, TD, Figure, Caption, Note, TOC, TOCI, Link. */
+  role: string;
+  /** Its parent's index (-1: the top). */
+  parent: number;
+  /** What a picture shows, in words. */
+  alt?: string;
+  /** A table's cell: the columns and rows it covers, and (a header) what
+   *  it is the header of. */
+  colspan?: number;
+  rowspan?: number;
+  scope?: "Column";
+  /** Made by the layout as it went (a link, a line of the contents): it
+   *  takes its place in the tree where it is first drawn. */
+  late?: boolean;
 }
 
 export interface DLRule {
@@ -81,6 +111,8 @@ export interface DLLink {
   h: number;
   url?: string;
   to?: string;
+  /** Tagged documents: its Link element. */
+  s?: number;
 }
 
 /** A named place on a page that links and the outline can point at. */
@@ -102,6 +134,8 @@ export interface DLImage {
   round?: number;
   /** Documents: a line round it, inside its own size (`#rrggbb`, points). */
   border?: { w: number; color: string };
+  /** Tagged documents: its Figure element. */
+  s?: number;
 }
 
 export type DLItem = DLText | DLRule | DLImage | DLRect | DLLink | DLAnchor;
@@ -159,7 +193,7 @@ export interface DisplayList {
   faces: FaceRef[];
   pages: DLPage[];
   sections: DLSection[];
-  meta: { title: string; author: string; subject: string; lang: string };
+  meta: { title: string; author: string; subject: string; lang: string; /** Words to find it by, as typed. */ keywords?: string };
   warnings: Warning[];
   /** Inside margin used (inches), for the inspector. */
   insideMargin: number;
@@ -168,4 +202,6 @@ export interface DisplayList {
    *  over, a table row cut in two), and how tall its text area is, pt. */
   starts?: (PageStart | null)[];
   bodyH?: number[];
+  /** Documents, when asked for: the structure the items' `s` point into. */
+  struct?: StructNode[];
 }

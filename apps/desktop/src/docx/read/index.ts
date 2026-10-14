@@ -284,6 +284,14 @@ export async function readDocx(buffer: ArrayBuffer | Uint8Array, opts: DocxReadO
     const creator = child(core ?? undefined, "dc:creator")?.text.trim();
     if (title) meta.title = title;
     if (creator) meta.author = creator;
+    // What it is about, the words to find it by and its language are the
+    // document's own settings here.
+    const subject = child(core ?? undefined, "dc:subject")?.text.trim();
+    const keywords = child(core ?? undefined, "cp:keywords")?.text.trim();
+    const language = child(core ?? undefined, "dc:language")?.text.trim();
+    if (subject) settings.subject = subject;
+    if (keywords) settings.keywords = keywords;
+    if (language) settings.lang = language;
   }
 
   // Pictures: the kinds a browser shows; the rest are skipped.

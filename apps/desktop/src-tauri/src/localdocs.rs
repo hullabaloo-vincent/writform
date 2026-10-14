@@ -281,7 +281,7 @@ pub fn localdoc_list(app: tauri::AppHandle) -> Result<Vec<LocalDocMeta>, CmdErro
                 .to_string(),
         });
     }
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     Ok(out)
 }
 
@@ -487,7 +487,7 @@ pub(crate) fn search_in(dir: &std::path::Path, query: &str) -> std::io::Result<L
         }
         docs.push((mtime_millis(&path).unwrap_or(0), id));
     }
-    docs.sort_by(|a, b| b.0.cmp(&a.0));
+    docs.sort_by_key(|a| std::cmp::Reverse(a.0));
     for (updated_at, id) in docs {
         let path = text_file(dir, &id);
         // Written with the document, so never meaningfully older than it.
@@ -695,7 +695,7 @@ pub(crate) fn trash_list_in(
                 .to_string(),
         });
     }
-    out.sort_by(|a, b| b.deleted_at.cmp(&a.deleted_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.deleted_at));
     Ok(out)
 }
 

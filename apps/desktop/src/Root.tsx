@@ -1,3 +1,4 @@
+import { PdfImportHost } from "./apps/documents/import/PdfImportDialog";
 import { ConnectScreen } from "./connect/ConnectScreen";
 import {
   AppShell,
@@ -27,6 +28,7 @@ export function Root() {
     <>
       {phase === "disconnected" ? <ConnectScreen /> : <AppShell />}
       <ConfirmHost />
+      <PdfImportHost />
       <ProfileCardHost />
       <LightboxHost />
       <ToastHost />

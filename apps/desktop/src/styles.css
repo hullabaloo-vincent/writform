@@ -3726,6 +3726,548 @@ textarea.wf-el-edit {
   margin-top: 14px;
 }
 
+.wf-import-password {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* --- PDF editor (src/pdf) --- */
+
+.wf-pdf-header {
+  align-items: center;
+}
+
+.wf-pdf-name {
+  max-width: 34ch;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wf-pdf-count,
+.wf-pdf-zoom,
+.wf-pdf-found {
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  white-space: nowrap;
+}
+
+.wf-pdf-zoom {
+  min-width: 42px;
+  text-align: center;
+}
+
+.wf-pdf-spacer {
+  flex: 1;
+}
+
+.wf-pdf-search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 40px;
+  padding: 0 10px;
+  color: var(--wf-text-dim);
+  background: var(--wf-bg);
+  border: 1px solid var(--wf-border);
+  border-radius: 10px;
+}
+
+.wf-pdf-search input {
+  width: 170px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  outline: none;
+}
+
+.wf-doc-header button.wf-pdf-save {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: auto;
+  padding: 0 14px;
+}
+
+.wf-pdf-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.wf-pdf-rail {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  width: 152px;
+  background: var(--wf-bg-raised);
+  border-right: 1px solid var(--wf-border);
+}
+
+.wf-pdf-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-pdf-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.wf-pdf-note {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  white-space: normal;
+}
+
+.wf-pdf-thumbs {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  align-items: center;
+  min-height: 0;
+  padding: 10px 0 24px;
+  overflow-y: auto;
+}
+
+.wf-pdf-thumb {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 4px;
+  align-items: center;
+  padding: 5px;
+  cursor: pointer;
+  user-select: none;
+  border: 2px solid transparent;
+  border-radius: 8px;
+  touch-action: pan-y;
+}
+
+.wf-pdf-thumb canvas {
+  display: block;
+  pointer-events: none;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.wf-pdf-thumb span {
+  font-size: 11px;
+  color: var(--wf-text-dim);
+}
+
+.wf-pdf-thumb.current {
+  border-color: var(--wf-border);
+}
+
+.wf-pdf-thumb.selected {
+  background: rgba(127, 127, 127, 0.16);
+  border-color: var(--wf-accent);
+}
+
+.wf-pdf-thumb.drop-before::before,
+.wf-pdf-thumb.drop-after::after {
+  position: absolute;
+  right: 0;
+  left: 0;
+  height: 3px;
+  content: "";
+  background: var(--wf-accent);
+  border-radius: 2px;
+}
+
+.wf-pdf-thumb.drop-before::before {
+  top: -8px;
+}
+
+.wf-pdf-thumb.drop-after::after {
+  bottom: -8px;
+}
+
+.wf-pdf-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+  min-width: 0;
+  padding: 20px 28px 60px;
+  overflow: auto;
+  background: var(--wf-bg);
+}
+
+.wf-pdf-slot {
+  flex-shrink: 0;
+}
+
+.wf-pdf-page {
+  position: relative;
+  background: #fff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+}
+
+.wf-pdf-page > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* The page's words, laid over it unseen so they can be selected. These are
+   pdf.js's own rules for its text layer, written flat (its file nests them,
+   which Safari 15 cannot read). */
+.wf-pdf-text {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  line-height: 1;
+  text-align: initial;
+  letter-spacing: normal;
+  word-spacing: normal;
+  -webkit-text-size-adjust: none;
+  text-size-adjust: none;
+  transform-origin: 0 0;
+  color-scheme: only light;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+
+.wf-pdf-text span,
+.wf-pdf-text br {
+  position: absolute;
+  color: transparent;
+  white-space: pre;
+  cursor: text;
+  -webkit-user-select: text;
+  user-select: text;
+  transform-origin: 0% 0%;
+}
+
+.wf-pdf-text > :not(.markedContent),
+.wf-pdf-text .markedContent span:not(.markedContent) {
+  z-index: 1;
+  --font-height: 0;
+  --scale-x: 1;
+  --rotate: 0deg;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+
+.wf-pdf-text .markedContent {
+  display: contents;
+}
+
+.wf-pdf-text ::selection {
+  background: rgba(0, 100, 255, 0.28);
+}
+
+.wf-pdf-hits {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.wf-pdf-hits span {
+  position: absolute;
+  background: rgba(255, 213, 0, 0.42);
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
+.wf-pdf-hits span.current {
+  background: rgba(255, 140, 0, 0.6);
+}
+
+.wf-pdf-waiting {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--wf-text-dim);
+  text-align: center;
+  white-space: normal;
+}
+
+.wf-pdf-card {
+  position: relative;
+}
+
+.wf-pdf-card-off {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  opacity: 0;
+}
+
+.wf-pdf-card:hover .wf-pdf-card-off,
+.wf-pdf-card-off:focus-visible {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .wf-pdf-card-off {
+    opacity: 1;
+  }
+}
+
+.wf-pdf-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  padding: 6px 12px;
+  background: var(--wf-bg-raised);
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-pdf-toolbar button {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  border-radius: 8px;
+}
+
+.wf-pdf-toolbar button.active {
+  color: var(--wf-bg);
+  background: var(--wf-accent);
+  border-color: var(--wf-accent);
+}
+
+.wf-pdf-toolbar button em {
+  padding: 1px 5px;
+  font-size: 10px;
+  font-style: normal;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  opacity: 0.8;
+}
+
+.wf-pdf-rule {
+  width: 1px;
+  height: 20px;
+  margin: 0 4px;
+  background: var(--wf-border);
+}
+
+.wf-pdf-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  white-space: normal;
+}
+
+/* What lies over a page: nothing of it stops the page's words being
+   selected, except what is there to be used. */
+.wf-pdf-over {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.wf-pdf-over.making {
+  pointer-events: auto;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.wf-pdf-over > * {
+  pointer-events: auto;
+}
+
+.wf-pdf-field {
+  position: absolute;
+  box-sizing: border-box;
+  min-height: 0;
+  margin: 0;
+  padding: 0 3px;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.2;
+  color: #000;
+  resize: none;
+  background: rgba(205, 225, 255, 0.72);
+  border: 1px solid rgba(60, 110, 200, 0.5);
+  border-radius: 0;
+}
+
+.wf-pdf-field:focus {
+  background: #fff;
+  outline: 2px solid var(--wf-accent);
+}
+
+.wf-pdf-field:disabled {
+  background: transparent;
+  border-color: transparent;
+}
+
+.wf-pdf-mark {
+  position: absolute;
+  cursor: move;
+  border: 1px dashed transparent;
+  border-radius: 2px;
+}
+
+.wf-pdf-mark:hover,
+.wf-pdf-mark.picked {
+  border-color: var(--wf-accent);
+}
+
+.wf-pdf-markbar {
+  position: absolute;
+  z-index: 3;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  white-space: nowrap;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.wf-pdf-markbar button {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  border-radius: 6px;
+}
+
+.wf-pdf-block {
+  position: absolute;
+  padding: 0;
+  cursor: text;
+  background: transparent;
+  border: 1px dashed rgba(60, 110, 200, 0.75);
+  border-radius: 2px;
+}
+
+.wf-pdf-block:hover {
+  background: rgba(60, 110, 200, 0.12);
+}
+
+.wf-pdf-trail {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.wf-pdf-trail path,
+.wf-pdf-trail rect {
+  fill: none;
+  stroke: var(--wf-accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.wf-pdf-typing {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 2px 4px;
+  font-family: Helvetica, Arial, sans-serif;
+  line-height: 1.25;
+  color: #000;
+  resize: both;
+  background: #fffbe0;
+  border: 1px solid var(--wf-accent);
+  border-radius: 2px;
+}
+
+.wf-pdf-typing.block {
+  background: #fff;
+}
+
+.wf-pdf-sign {
+  max-width: 520px;
+}
+
+.wf-pdf-signpad {
+  display: block;
+  width: 100%;
+  cursor: crosshair;
+  background: #fff;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  touch-action: none;
+}
+
+.wf-pdf-signpad path {
+  fill: none;
+  stroke: #10203a;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2.4;
+}
+
+/* A phone: the page tools along the foot, no list of pages beside. */
+@media (max-width: 760px) {
+  .wf-pdf-body {
+    flex-direction: column-reverse;
+  }
+
+  .wf-pdf-rail {
+    flex-direction: row;
+    width: auto;
+    border-top: 1px solid var(--wf-border);
+    border-right: 0;
+  }
+
+  .wf-pdf-tools {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    border-bottom: 0;
+  }
+
+  .wf-pdf-tools button {
+    flex-shrink: 0;
+    width: 40px;
+    height: 40px;
+  }
+
+  .wf-pdf-thumbs {
+    display: none;
+  }
+
+  .wf-pdf-search input {
+    width: 110px;
+  }
+
+  .wf-pdf-pane {
+    padding: 12px 8px 60px;
+  }
+}
+
 /* --- sketch pad --- */
 
 .wf-sketch-modal {
@@ -9084,6 +9626,32 @@ body {
   font-size: 12.5px;
 }
 
+/* A document's details (subject, keywords, language): a name over each
+   field, the field the panel's width. Also in the export dialog. */
+.wf-doc-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wf-doc-details label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+}
+
+.wf-doc-details label > span {
+  color: var(--wf-text-dim);
+}
+
+.wf-doc-details input,
+.wf-doc-details select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 .wf-inspector-row select {
   width: 140px;
   flex-shrink: 0;
@@ -9600,6 +10168,13 @@ body {
   flex-direction: column;
   gap: 6px;
   margin: 8px 0;
+}
+
+/* What a press may ask of a paperback's interior. */
+.wf-export-press {
+  margin: 6px 0 4px;
+  border-top: 1px solid var(--wf-border);
+  padding-top: 4px;
 }
 
 .wf-export-cover > button {
@@ -10562,6 +11137,94 @@ body {
 
 .wf-print-modal {
   width: min(440px, calc(100vw - 32px));
+}
+
+/* ---- Export PDF (apps/documents/ExportPdfDialog) ---- */
+.wf-export-pdf-modal {
+  width: min(460px, calc(100vw - 32px));
+}
+
+/* A part that is there when asked for: the details, and later the rarer
+   choices. */
+.wf-export-pdf-fold {
+  margin: 4px 0 10px;
+  border-top: 1px solid var(--wf-border);
+  border-bottom: 1px solid var(--wf-border);
+}
+
+.wf-export-pdf-fold > summary {
+  padding: 9px 0;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.wf-export-pdf-fold[open] {
+  padding-bottom: 10px;
+}
+
+.wf-export-pdf-fold .wf-inspector-dim {
+  margin: 8px 0 0;
+}
+
+.wf-export-pdf-modal .wf-connect-row {
+  flex-wrap: wrap;
+}
+
+/* How pictures go in: three choices side by side, and what the chosen one
+   means under them. */
+.wf-export-pdf-pictures {
+  margin: 0 0 6px;
+  padding: 0;
+  border: 0;
+  min-width: 0;
+}
+
+.wf-export-pdf-pictures legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.wf-export-pdf-pictures > div {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.wf-export-pdf-pictures label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 7px 6px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-sm);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.wf-export-pdf-pictures label.on {
+  border-color: var(--wf-accent);
+  background: color-mix(in srgb, var(--wf-accent) 9%, transparent);
+}
+
+.wf-export-pdf-pictures input {
+  flex: none;
+  margin: 0;
+}
+
+.wf-export-pdf-pictures small {
+  display: block;
+  margin-top: 6px;
+  color: var(--wf-text-dim, #9aa0a6);
+  line-height: 1.35;
+}
+
+.wf-export-pdf-pictures:disabled label {
+  cursor: default;
+  opacity: 0.6;
 }
 .wf-print-summary {
   margin: 4px 0 12px;

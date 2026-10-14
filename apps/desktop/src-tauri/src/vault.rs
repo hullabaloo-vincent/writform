@@ -78,7 +78,7 @@ pub fn vault_list(app: tauri::AppHandle) -> Result<Vec<NoteMeta>, CmdError> {
             }
         }
     }
-    notes.sort_by(|a, b| b.modified_at.cmp(&a.modified_at));
+    notes.sort_by_key(|a| std::cmp::Reverse(a.modified_at));
     Ok(notes)
 }
 

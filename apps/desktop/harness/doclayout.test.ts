@@ -287,6 +287,18 @@ const allText = (dl: DisplayList) => dl.pages.flatMap((pg) => lines(pg, dl).map(
   check("the outline nests", outline?.length === 1 && outline[0].title === "Chapter One" && outline[0].items.length === 1 && outline[0].items[0].title === "A Section");
   const meta = await pdf.getMetadata();
   check("title and author are set", (meta.info as { Title?: string; Author?: string }).Title === "Read Back" && (meta.info as { Author?: string }).Author === "A. Writer");
+  check("with nothing said, the language is the one pages have always been set in", dl.meta.lang === "en-US" && dl.meta.subject === "" && dl.meta.keywords === undefined);
+  // A document's own details: what it is about, the words to find it by,
+  // its language (which is also the one its words hyphenate by).
+  const detailed = await layout({ type: "doc", content }, { subject: "Reading a PDF back", keywords: "pdf, metadata", lang: "fr" }, "Détails");
+  check("a document's subject, keywords and language go to its pages", detailed.dl.meta.subject === "Reading a PDF back" && detailed.dl.meta.keywords === "pdf, metadata" && detailed.dl.meta.lang === "fr" && detailed.req.doc.meta.lang === "fr");
+  const detailedPdf = await getDocument({ data: new Uint8Array((await session.pdf(detailed.req)).bytes), useSystemFonts: false, isEvalSupported: false }).promise;
+  const said = (await detailedPdf.getMetadata()).info as Record<string, unknown>;
+  check("…and into the PDF", said.Subject === "Reading a PDF back" && said.Keywords === "pdf, metadata" && said.Language === "fr" && said.Title === "Détails", JSON.stringify(said));
+  check("pages numbered 1, 2, 3 need no labels of their own", (await pdf.getPageLabels()) === null);
+  const roman = await layout({ type: "doc", content }, { pnFormat: "i", pnStart: 3 }, "Roman");
+  const romanPdf = await getDocument({ data: new Uint8Array((await session.pdf(roman.req)).bytes), useSystemFonts: false, isEvalSupported: false }).promise;
+  check("pages numbered iii, iv, v are labelled so", ((await romanPdf.getPageLabels()) ?? []).slice(0, 3).join(",") === "iii,iv,v", String(await romanPdf.getPageLabels()));
   await page1.getOperatorList();
   const fontNames = new Set<string>();
   for (const it of textContent.items) if ("fontName" in it) fontNames.add(it.fontName);

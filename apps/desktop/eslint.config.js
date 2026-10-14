@@ -6,7 +6,8 @@ import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist/", "src-tauri/", "src/bindings/"] },
+  // (src/pdf/engine/pkg is the PDF engine's build: made by a tool, not written.)
+  { ignores: ["dist/", "src-tauri/", "src/bindings/", "src/pdf/engine/pkg/"] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {

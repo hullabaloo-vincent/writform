@@ -50,7 +50,7 @@ for (const c of cases) {
   const bytes = Buffer.from(pdf.bytes)
     .toString("latin1")
     .replace(/\(D:\d{14}Z?\)/g, "(D)")
-    .replace(/<xmp:CreateDate>[^<]*<\/xmp:CreateDate>/g, "")
+    .replace(/<xmp:(CreateDate|ModifyDate|MetadataDate)>[^<]*<\/xmp:\1>/g, "")
     .replace(/\/ID \[[^\]]*\]/g, "");
   results[c.name] = { pages: dl.pages.length, layout: sha(JSON.stringify(dl)), pdf: sha(bytes) };
 }

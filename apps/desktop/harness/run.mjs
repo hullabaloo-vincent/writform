@@ -41,6 +41,13 @@ const assets = {
       contents: `export default ${JSON.stringify(`file://${args.path}`)};`,
       loader: "js",
     }));
+    // A `?worker` import is a worker Vite builds. Nothing here starts one
+    // (a harness that reads PDFs loads pdf.js itself), so it is a name only.
+    b.onResolve({ filter: /\?worker$/ }, (args) => ({ path: args.path, namespace: "no-worker" }));
+    b.onLoad({ filter: /.*/, namespace: "no-worker" }, (args) => ({
+      contents: `export default class { constructor() { throw new Error(${JSON.stringify(`no worker in a harness: ${args.path}`)}); } };`,
+      loader: "js",
+    }));
     b.onResolve({ filter: /^brotli(\/.*)?$/ }, () => ({
       path: path.join(here, "../src/book/engine/brotliStub.ts"),
     }));

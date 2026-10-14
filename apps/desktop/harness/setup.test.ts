@@ -10,7 +10,8 @@ import { createRoot } from "react-dom/client";
 import * as Y from "yjs";
 
 import { DocSettingsPanel, InchStepper } from "../src/apps/documents/DocSettingsPanel";
-import { bodyLook, DEFAULT_SETTINGS, MARGIN_MAX, readDocSettings, type SetupSection } from "../src/apps/documents/docSettings";
+import { bodyLook, DEFAULT_SETTINGS, MARGIN_MAX, readDocSettings, settingsFrom, type SetupSection } from "../src/apps/documents/docSettings";
+import { cleanLanguage, languageChoices } from "../src/lib/languages";
 import { resolveStyles } from "../src/editor/styles/sheet";
 
 const g = globalThis as unknown as Record<string, unknown>;
@@ -140,6 +141,42 @@ const key = (el: Element, k: string) => el.dispatchEvent(new window.KeyboardEven
   await act(async () => second.render(createElement(DocSettingsPanel, { editor: null, ydoc, settings: readDocSettings(ydoc), readonly: false, format, at: { section: "margins", n: 1 } })));
   check("opened by the request itself, it never shows the wrong tab first", (fresh.querySelector(".wf-inspector-tabs button.active") as HTMLElement | null)?.textContent?.trim() === "Document");
   await act(async () => second.unmount());
+}
+
+// ------------------------------------------------------- a document's details
+
+{
+  const from = (values: Record<string, unknown>) => settingsFrom((k) => values[k]);
+  check("with nothing said there is no subject, no keywords and no language", DEFAULT_SETTINGS.subject === "" && DEFAULT_SETTINGS.keywords === "" && DEFAULT_SETTINGS.lang === "");
+  const said = from({ subject: "A study\nof cats", keywords: "cats, dogs", lang: "EN-gb" });
+  check("the details are read back clean: one line each, the language as tags are written", said.subject === "A studyof cats" && said.keywords === "cats, dogs" && said.lang === "en-GB", JSON.stringify([said.subject, said.keywords, said.lang]));
+  const hostile = from({ subject: 7, keywords: "k".repeat(2000), lang: "not a language" });
+  check("what is not a detail is not kept, and a long one is cut", hostile.subject === "" && hostile.keywords.length === 500 && hostile.lang === "");
+  check("language tags: small letters, a region in capitals, anything else refused", cleanLanguage("fr") === "fr" && cleanLanguage("pt-br") === "pt-BR" && cleanLanguage("zh-Hant-TW") === "zh-Hant-TW" && cleanLanguage("") === "" && cleanLanguage("e") === "" && cleanLanguage(null) === "");
+  check("a language from elsewhere is offered under its own tag", languageChoices("sv")[0][0] === "sv" && languageChoices("fr").length === languageChoices("").length && languageChoices("sv").length === languageChoices("").length + 1);
+
+  const ydoc = new Y.Doc();
+  const host = mountPoint();
+  const root = createRoot(host);
+  const format = { styles: resolveStyles(bodyLook(DEFAULT_SETTINGS), {}), level: 2 };
+  const draw = (readonly = false) => act(async () => root.render(createElement(DocSettingsPanel, { editor: null, ydoc, settings: readDocSettings(ydoc), readonly, format, at: { section: "details" as SetupSection, n: 1 } })));
+  await draw();
+  await act(async () => void (await wait(60)));
+  const part = host.querySelector('[data-setup="details"]') as HTMLElement | null;
+  const fields = [...(part?.querySelectorAll<HTMLInputElement>('input[type="text"]') ?? [])];
+  check("the Document tab has the details: subject, keywords and language", !!part && fields.length === 2 && !!part.querySelector("select") && [...part.querySelectorAll("label > span")].map((n) => n.textContent).join() === "Subject,Keywords,Language");
+  await act(async () => type(fields[0], "A study of cats"));
+  await act(async () => type(fields[1], "cats, dogs"));
+  const select = part!.querySelector("select") as HTMLSelectElement;
+  await act(async () => {
+    select.value = "en-GB";
+    select.dispatchEvent(new window.Event("change", { bubbles: true }));
+  });
+  const kept = readDocSettings(ydoc);
+  check("what is typed there is kept with the document", kept.subject === "A study of cats" && kept.keywords === "cats, dogs" && kept.lang === "en-GB", JSON.stringify([kept.subject, kept.keywords, kept.lang]));
+  await draw(true);
+  check("someone who can only read sees them and cannot change them", [...host.querySelectorAll<HTMLInputElement>('[data-setup="details"] input, [data-setup="details"] select')].every((el) => el.disabled));
+  await act(async () => root.unmount());
 }
 
 finish();

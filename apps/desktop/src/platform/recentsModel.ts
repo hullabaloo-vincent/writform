@@ -5,7 +5,7 @@
  * come from each app's own list, so there's no second record to keep true.
  */
 
-export type RecentKind = "document" | "board" | "note";
+export type RecentKind = "document" | "board" | "note" | "pdf";
 
 export interface Recent {
   kind: RecentKind;

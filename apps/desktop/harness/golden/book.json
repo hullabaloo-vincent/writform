@@ -2,41 +2,41 @@
   "paperback classic": {
     "pages": 74,
     "layout": "1349211d7a448f6b4e3220c8",
-    "pdf": "e94926d05a69b8c056e40625"
+    "pdf": "83cab7bab8bf69443b1d3143"
   },
   "paperback literary": {
     "pages": 78,
     "layout": "af8ef7affd1f0a8c399b71d9",
-    "pdf": "624657124b0baea67ae3be5f"
+    "pdf": "0e59def02841fdec0a8270ab"
   },
   "paperback fantasy": {
     "pages": 74,
     "layout": "936d04a7b6362ca1d957e330",
-    "pdf": "2b2ff9723e46c6c9427b0987"
+    "pdf": "8e1c23a0f579539449727a22"
   },
   "paperback romance": {
     "pages": 90,
     "layout": "81ad8528968b3446f876b020",
-    "pdf": "9296a16d2b8c609de8413484"
+    "pdf": "bcd5d4eeb500661219c25c10"
   },
   "paperback modern": {
     "pages": 82,
     "layout": "39d03f2463d24227688f697a",
-    "pdf": "1e552d9362f3930693fe2171"
+    "pdf": "87351b93246f5e91af058f5d"
   },
   "booklet classic": {
     "pages": 74,
     "layout": "1349211d7a448f6b4e3220c8",
-    "pdf": "2004c5da9b46bca3cab51c7d"
+    "pdf": "de0623f9056444cf35c5a004"
   },
   "submission times": {
     "pages": 63,
     "layout": "1b0e7e17bf9a7587e76f9056",
-    "pdf": "64063b36caa1b05162f93da9"
+    "pdf": "05de19eca8a056231fbd2c03"
   },
   "submission courier": {
     "pages": 76,
     "layout": "15fac10a586e1737daf71527",
-    "pdf": "ebcc33965da4d59c18554f71"
+    "pdf": "d8069111567df8ec6501cf8f"
   }
 }

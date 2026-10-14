@@ -18,23 +18,30 @@ import type { DocModel } from "../../doclayout/model";
 import { trimSize } from "../model/bookMap";
 import { estimatePages, geometryFor, kdpMinInside } from "../model/trims";
 import type { BookModel, Warning } from "../model/types";
-import { renderPdf } from "../render/pdf";
+import type { PdfOptions } from "../render/options";
+import { renderPdf, type PdfAttachment } from "../render/pdf";
 import { FaceSet, type FaceBytes } from "./faces";
 import { loadHyphenator, type Hyphenator } from "./hyphenate";
 import { designFor, layoutBook, SectionCache, smfGeometry } from "./layout";
+import type { PdfPicture, PictureWant } from "./pictures";
 import type { DisplayList, PageStart } from "./types";
 
 export type PrintKind = "paperback" | "submission-pdf" | "booklet";
 
 export interface JobImage {
   url: string;
-  /** JPEG (or PNG) bytes, already scaled for print (absent for layout-only
-   *  jobs, which need just the size). */
+  /** The picture itself, a JPEG or a PNG. Usually absent: a layout needs
+   *  only the size, and a PDF asks for its pictures once it knows how large
+   *  each is printed (see `PictureSource`). */
   bytes?: Uint8Array;
-  /** Pixel size. */
+  /** Pixel size, as shown. */
   w: number;
   h: number;
 }
+
+/** Where a PDF's pictures come from: given which, and the largest each is
+ *  printed, they come back ready for the file (those that can be had). */
+export type PictureSource = (want: PictureWant[]) => Promise<Map<string, PdfPicture>>;
 
 export interface LayoutRequest {
   kind: PrintKind;
@@ -46,7 +53,21 @@ export interface LayoutRequest {
   now: number;
   /** A catalog family's other scripts, when the book needs them. */
   chains?: Record<string, string[]>;
+  /** A paperback's interior, as a press asks for it. */
+  press?: PressOptions;
 }
+
+/** What a press may ask of a book's interior. */
+export interface PressOptions {
+  /** PDF/X-1a:2001: black ink and greys only. */
+  x1a?: boolean;
+  /** Each sheet larger than its page by the bleed (an eighth of an inch
+   *  at the top, the foot and the outside edge). */
+  bleed?: boolean;
+}
+
+/** The bleed printers ask for, in points (0.125 in). */
+export const BLEED_PT = 9;
 
 /** A document (as opposed to a book): its own model and layout. */
 export interface DocRequest {
@@ -54,6 +75,10 @@ export interface DocRequest {
   doc: DocModel;
   families: string[];
   images: JobImage[];
+  /** What was chosen for the PDF (absent: the usual). */
+  pdf?: PdfOptions;
+  /** A file to carry inside the PDF (the document it was made from). */
+  attach?: PdfAttachment;
 }
 
 /** A document's pages without their contents: how many, where each begins
@@ -204,12 +229,23 @@ export class TypesetSession {
     }
   }
 
-  async pdf(req: AnyRequest, progress: (message: string) => void = () => {}): Promise<PrintResult> {
+  async pdf(req: AnyRequest, progress: (message: string) => void = () => {}, pictures?: PictureSource): Promise<PrintResult> {
     const { dl, faces } = await this.layout(req, progress);
     const booklet = req.kind === "booklet" || req.kind === "document-booklet";
     progress(`Writing ${dl.pages.length} pages…`);
-    const images = new Map<string, Uint8Array>();
+    const images = new Map<string, PdfPicture>();
     for (const i of req.images) if (i.bytes) images.set(i.url, i.bytes);
+    // The largest each picture is printed: how many of its pixels are worth
+    // keeping is a matter of that, and known only now.
+    const placed = new Map<string, { w: number; h: number }>();
+    for (const page of dl.pages) {
+      for (const it of page.items) {
+        if (it.t !== "image") continue;
+        const was = placed.get(it.ref);
+        placed.set(it.ref, { w: Math.max(was?.w ?? 0, it.w), h: Math.max(was?.h ?? 0, it.h) });
+      }
+    }
+    const feed = pictures ? (refs: string[]) => pictures(refs.map((url) => ({ url, ...(placed.get(url) ?? { w: 0, h: 0 }) }))) : undefined;
     const fonts = dl.faces.map((_, i) => faces.font(i));
     const bytes = await renderPdf(
       dl,
@@ -218,7 +254,20 @@ export class TypesetSession {
       (done, total) => progress(`Writing page ${done} of ${total}…`),
       // A document keeps its colours and its links; a book is black ink for
       // a press, and a booklet's imposed pages have nowhere for a link to go.
-      isDoc(req) ? { booklet, color: "rgb", links: !booklet } : { booklet },
+      // (And its structure, when it was asked for and worked out.)
+      isDoc(req)
+        ? {
+            booklet,
+            color: "rgb",
+            links: !booklet,
+            tagged: !booklet && !!dl.struct && req.pdf?.tagged !== false,
+            feed,
+            ...(req.attach && !booklet ? { attach: req.attach } : {}),
+            // (An archive copy that carries a file is the part of the
+            // standard that lets it.)
+            ...(req.pdf?.archive && !booklet ? { archive: req.attach ? ("3b" as const) : ("2b" as const) } : {}),
+          }
+        : { booklet, feed, ...(req.kind === "paperback" && req.press?.x1a ? { x1a: true } : {}), ...(req.kind === "paperback" && req.press?.bleed ? { bleed: BLEED_PT } : {}) },
     );
     const trim =
       isDoc(req) || req.kind === "submission-pdf" ? { w: dl.trim.w / 72, h: dl.trim.h / 72 } : trimSize(req.model.book.print);

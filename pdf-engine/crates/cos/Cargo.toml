@@ -1,0 +1,19 @@
+[package]
+name = "wfpdf-cos"
+description = "PDF object layer: lazy tolerant parsing, copy-on-write edits, incremental and full saving"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+wfpdf-crypt = { workspace = true }
+wfpdf-filters = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = { workspace = true }
+hayro-syntax = { workspace = true }

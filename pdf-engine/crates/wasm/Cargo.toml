@@ -1,0 +1,23 @@
+[package]
+name = "wfpdf-wasm"
+description = "The PDF engine as the app calls it: one open document, its changes, its undo, its bytes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# For the web (cdylib), and for this crate's own tests (rlib).
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+wfpdf-cos = { workspace = true }
+wfpdf-model = { workspace = true }
+wfpdf-organize = { workspace = true }
+wfpdf-annot = { workspace = true }
+wfpdf-forms = { workspace = true }
+wfpdf-edit = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+# (The same version as the wasm-bindgen tool that makes the JavaScript side: the two must agree
+# exactly. See apps/desktop/tools/build-pdf-engine.mjs.)
+wasm-bindgen = "=0.2.129"

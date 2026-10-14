@@ -1053,6 +1053,15 @@ export function devPreviewBackend(): Backend {
     // Browser preview: a plain download.
     saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
     printPdf: async () => "frame",
+    ocrStatus: async () => false,
+    // (A browser has nowhere of the app's own to keep a file.)
+    localpdfList: async () => [],
+    localpdfWrite: async () => Promise.reject({ code: "desktop_only", message: "PDFs are kept on a device by the desktop and phone apps." }),
+    localpdfRead: async () => Promise.reject({ code: "not_found", message: "That PDF is not here." }),
+    localpdfRename: async () => {},
+    localpdfTrash: async () => {},
+    localpdfRestore: async () => {},
+    ocrPage: async () => ({ lines: [] }),
     async fontFetch() {
       throw { code: "font_unavailable", message: "no font library in the preview" };
     },

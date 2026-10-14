@@ -10,6 +10,8 @@ import { bodyLook, type DocSettings } from "../apps/documents/docSettings";
 import { typesetter } from "../book/engine/client";
 import type { PageMap } from "../book/engine/run";
 import type { DisplayList } from "../book/engine/types";
+import type { PdfOptions } from "../book/render/options";
+import type { PdfAttachment } from "../book/render/pdf";
 import { finalJson } from "../editor/review/final";
 import { resolveStyles, styleFonts, type StyleOverrides } from "../editor/styles/sheet";
 import { resolveDocFonts, showFamilies } from "../fonts/store";
@@ -36,6 +38,11 @@ export interface DocSource {
   raw?: boolean;
   /** Blocks at the start that were put in for print (see scripted.ts). */
   virtual?: number;
+  /** The language, when the settings laid out are not the document's own
+   *  (a script on its format's sheet). */
+  lang?: string;
+  /** Work out the document's structure too (a tagged PDF). */
+  struct?: boolean;
 }
 
 /** The document as the layout sees it — once every font it names has been
@@ -46,12 +53,14 @@ export async function docModel(source: DocSource): Promise<DocModel> {
   const doc = source.raw ? source.doc : finalJson(source.doc);
   const fonts = await resolveDocFonts(doc, source.settings.bodyFont, named);
   return buildDocModel(doc, {
+    ...(source.struct ? { struct: true } : {}),
     title: source.title,
     author: source.author,
     settings: source.settings,
     fonts,
     styles: source.styles,
     ...(source.virtual ? { virtual: source.virtual } : {}),
+    ...(source.lang ? { lang: source.lang } : {}),
   });
 }
 
@@ -68,10 +77,20 @@ export async function docPageMap(source: DocSource, channel?: string, timing?: {
 
 export async function buildDocPdf(
   source: DocSource,
-  opts: { booklet?: boolean; onProgress?: (message: string) => void } = {},
+  opts: { booklet?: boolean; onProgress?: (message: string) => void; pdf?: PdfOptions; /** A file to carry inside. */ attach?: PdfAttachment } = {},
 ): Promise<DocPdf> {
-  const { result, failed } = await typesetter().docPdf(await docModel(source), !!opts.booklet, opts.onProgress);
+  // Tags are for a file that will be read: asked for, and not a booklet's
+  // imposed sheets (nor what is only sent to a printer).
+  const model = await docModel({ ...source, struct: !!opts.pdf?.tagged && !opts.booklet });
+  const { result, failed } = await typesetter().docPdf(model, !!opts.booklet, opts.onProgress, opts.pdf, opts.attach);
   const notes = result.warnings.map((w) => w.message);
+  // A picture nobody has described is a blank to someone who cannot see it.
+  const undescribed = (model.struct ?? []).filter((node) => node.role === "Figure" && !node.alt).length;
+  if (undescribed) {
+    notes.push(
+      `${undescribed === 1 ? "A picture has" : `${undescribed} pictures have`} no description for someone who cannot see ${undescribed === 1 ? "it" : "them"}. Select a picture and add one under Picture ▸ Description.`,
+    );
+  }
   if (failed) {
     notes.push(`${failed} picture${failed === 1 ? "" : "s"} couldn’t be loaded and ${failed === 1 ? "was" : "were"} left out.`);
   }

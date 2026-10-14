@@ -1,5 +1,8 @@
 # Rust
 /target
+# (The PDF engine is a workspace of its own, with a build folder of its own.
+# What is built from it for the app is kept: apps/desktop/src/pdf/engine/pkg.)
+/pdf-engine/target
 **/*.rs.bk
 
 # Node

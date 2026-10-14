@@ -25,7 +25,7 @@ import {
 import { Composer, type RichRun, type SetPara, type TextStyle } from "../book/engine/compose";
 import type { FaceSet } from "../book/engine/faces";
 import type { Hyphenator } from "../book/engine/hyphenate";
-import type { DisplayList, DLItem, DLPage, DLSection, PageStart } from "../book/engine/types";
+import type { DisplayList, DLItem, DLPage, DLSection, PageStart, StructNode } from "../book/engine/types";
 import type { Warning } from "../book/model/types";
 import { BORDER_PAD_X, BORDER_PAD_Y, type SectionProps } from "../editor/schema/sanitize";
 import { CODE_FONT, CODE_SIZE, LIST_HANG, SINGLE } from "../editor/styles/sheet";
@@ -259,6 +259,42 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
   const warnings: Warning[] = [];
   const overfull = new Set<number>();
 
+  // ---- a tagged PDF: whose each item on a page is
+  // The model's structure, with what only the layout can add (a link is as
+  // many pieces as the lines it runs over. The contents has a line for
+  // each heading that made it in).
+  const struct: StructNode[] | undefined = model.struct ? [...model.struct] : undefined;
+  /**
+   * Say whose these items are: `tag`, an element of the structure (and
+   * `lblTag` for a list item's marker). Words under a link become that
+   * link's. Rules and bars stay nobody's: decoration. What already has an
+   * owner keeps it (a table's cells are stamped as they are set).
+   *
+   * The items must be copies of the caller's own (`place` makes them): a
+   * paragraph's rows are kept and shared between paragraphs set alike, so
+   * an owner can never be written on those.
+   */
+  const stamp = (items: DLItem[], tag: number | undefined, lblTag?: number): DLItem[] => {
+    if (!struct || tag === undefined) return items;
+    for (const it of items) {
+      if (it.t !== "link" || it.s !== undefined) continue;
+      struct.push({ role: "Link", parent: tag, late: true });
+      const link = struct.length - 1;
+      it.s = link;
+      for (const other of items) {
+        if (other.t !== "text" || other.s !== undefined || other.lbl) continue;
+        if (other.x >= it.x - 0.05 && other.x < it.x + it.w - 0.05 && other.y >= it.y - it.h && other.y <= it.y + it.h * 2) other.s = link;
+      }
+    }
+    for (const it of items) {
+      if (it.t === "text" && it.s === undefined) it.s = it.lbl && lblTag !== undefined ? lblTag : tag;
+      else if (it.t === "image" && it.s === undefined) it.s = tag;
+    }
+    return items;
+  };
+  /** A block's rows as its own, where the rows are someone else's to keep. */
+  const owned = (items: DLItem[], b: DocBlock): DLItem[] => (struct && b.tag !== undefined ? stamp(place(items, 0, 0), b.tag, b.kind === "para" ? b.lblTag : undefined) : items);
+
   // ---- characters a block's own face lacks are set in a face that has them
   const tryFamilies = (family: string) => [
     family,
@@ -331,10 +367,12 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     const width = Math.max(b.size * 4, avail - b.left - b.right);
     // (Where it came from and where it sits in the editor don't change
     // how it is set: an edit above it must find it here again.)
-    const { src: _src, sect: _sect, pos: _pos, ...shape } = b;
+    const { src: _src, sect: _sect, pos: _pos, tag: _tag, lblTag: _lblTag, ...shape } = b;
     void _src;
     void _sect;
     void _pos;
+    void _tag;
+    void _lblTag;
     const key = JSON.stringify([shape, Math.round(width * 100)]);
     let rows = cache.get(key);
     const dropLines = b.dropCap ? 3 : 0;
@@ -388,7 +426,9 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         const base = head.baseline ?? 0;
         if (b.marker) {
           const marker = composer.setLine(b.marker, { ...style, ...(b.color ? { color: b.color } : {}) });
-          rows[0] = { ...head, items: [...place(marker.items, b.left - hung - marker.width, base), ...head.items] };
+          // (Marked as the item's label, which a tagged PDF tells from its words.)
+          const label = place(marker.items, b.left - hung - marker.width, base).map((it): DLItem => (it.t === "text" ? { ...it, lbl: true } : it));
+          rows[0] = { ...head, items: [...label, ...head.items] };
         } else {
           rows[0] = { ...head, items: [...signItems(b.sign!, b.left - hung, base, b.size), ...head.items] };
         }
@@ -411,7 +451,8 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       return { block: b, rows: [], before: 0, after: 0, splittable: false, keepFirst: 0 };
     }
     if (!h) h = natural ? (w * natural.h) / natural.w : w * 0.75;
-    const caption = b.caption ? paraRows(b.caption, availW).rows : [];
+    const captionOf = b.caption;
+    const caption = captionOf ? paraRows(captionOf, availW).rows.map((r) => ({ ...r, items: owned(r.items, captionOf) })) : [];
     const captionH = caption.reduce((n, r) => n + r.h, 0);
     const scale = Math.min(1, avail / w, Math.max(24, colH - captionH) / h);
     w *= scale;
@@ -443,7 +484,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       if (gap) rows.push({ h: gap, items: [], gap: true });
       u.rows.forEach((row, i) => {
         const start = u.block.pos === undefined ? undefined : startOf(u, i);
-        rows.push({ h: row.h, items: row.items, ...(row.notes ? { notes: row.notes } : {}), ...(start ? { start } : {}) });
+        rows.push({ h: row.h, items: owned(row.items, u.block), ...(row.notes ? { notes: row.notes } : {}), ...(start ? { start } : {}) });
       });
       prevAfter = u.after;
     }
@@ -748,6 +789,20 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
   /** The page each heading landed on, once a first layout has said. */
   let folios: Map<string, string> | null = null;
 
+  /** A tagged PDF: the element each line of a contents is (made once, though
+   *  the document may be flowed twice). */
+  const tocItems = new Map<string, number>();
+  const tocItem = (toc: number, id: string): number => {
+    const key = `${toc}:${id}`;
+    let item = tocItems.get(key);
+    if (item === undefined) {
+      struct!.push({ role: "TOCI", parent: toc, late: true });
+      item = struct!.length - 1;
+      tocItems.set(key, item);
+    }
+    return item;
+  };
+
   const tocUnit = (b: DocToc, availW: number): Unit => {
     const width = Math.max(72, availW - b.left - b.right);
     const style: TextStyle = { family: b.family, size: b.size };
@@ -757,7 +812,9 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     const numberW = composer.setLine("000", style).width;
     const dotLine = composer.setLine(".", style);
     const dot = dotLine.width || b.size * 0.25;
-    const dotItems = dotLine.items.map((it) => ({ ...it, color: "#808080" }));
+    // (To a reader of a tagged PDF the dots are decoration, said so here:
+    // otherwise they would be read out as the contents' own words.)
+    const dotItems = dotLine.items.map((it): DLItem => ({ ...it, color: "#808080", ...(struct && it.t === "text" ? { s: -3 } : {}) }));
     const pitch = dot * 2.2;
     const rows: Row[] = [];
     for (const entry of outline) {
@@ -770,8 +827,17 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
         align: "left",
         firstFit: true,
       });
+      // A tagged PDF: the entry, and on each of its lines a link holding
+      // the words and the page number. (The dots are decoration.)
+      const entryTag = struct && b.tag !== undefined ? tocItem(b.tag, entry.id) : undefined;
       set.lines.forEach((line, i) => {
-        const items: DLItem[] = place(line.items, b.left + indent, baseline);
+        let link: number | undefined;
+        if (struct && entryTag !== undefined) {
+          struct.push({ role: "Link", parent: entryTag, late: true });
+          link = struct.length - 1;
+        }
+        const mine = (these: DLItem[]): DLItem[] => (link === undefined ? these : these.map((it): DLItem => (it.t === "text" ? { ...it, s: link } : it)));
+        const items: DLItem[] = mine(place(line.items, b.left + indent, baseline));
         if (i === set.lines.length - 1) {
           const folio = folios?.get(entry.id) ?? "";
           const right = b.left + width;
@@ -782,10 +848,10 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
           for (let x = from; x + dot <= to; x += pitch) items.push(...place(dotItems, x, baseline));
           if (folio) {
             const number = composer.setLine(folio, style);
-            items.push(...place(number.items, right - number.width, baseline));
+            items.push(...mine(place(number.items, right - number.width, baseline)));
           }
         }
-        items.push({ t: "link", x: b.left, y: 0, w: width, h: b.leading, to: entry.id });
+        items.push({ t: "link", x: b.left, y: 0, w: width, h: b.leading, to: entry.id, ...(link !== undefined ? { s: link } : {}) });
         rows.push({ h: b.leading, baseline, items });
       });
     }
@@ -872,7 +938,7 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     let rows = noteRows.get(key);
     if (!rows) {
       const note = model.notes[index];
-      rows = note ? paraRows(note.para, colW).rows.map((r) => ({ h: r.h, items: r.items })) : [];
+      rows = note ? paraRows(note.para, colW).rows.map((r) => ({ h: r.h, items: owned(r.items, note.para) })) : [];
       // The first line is where the reference points.
       if (rows[0]) rows[0] = { ...rows[0], items: [{ t: "anchor", name: noteAnchor(index), y: 0 }, ...rows[0].items] };
       if (rows.length && note) rows[rows.length - 1] = { ...rows[rows.length - 1], h: rows[rows.length - 1].h + note.para.after };
@@ -1113,13 +1179,15 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
             }
           }
           if (head) {
-            build.items.push(...place(head.items, x0, top, b.src));
+            // (Said once, where the table begins: set again at the top of a
+            // page it is there for the eye, and belongs to nothing.)
+            build.items.push(...place(head.items, x0, top, b.src).map((it): DLItem => (struct && (it.t === "text" || it.t === "image" || it.t === "link") ? { ...it, s: undefined } : it)));
             top += head.h;
           }
           const cited: number[] = [];
           for (let i = start; i < start + fit; i += 1) {
             const row = u.rows[i];
-            build.items.push(...place(row.items, x0, top, b.src));
+            build.items.push(...stamp(place(row.items, x0, top, b.src), b.tag, b.kind === "para" ? b.lblTag : undefined));
             if (row.baseline !== undefined) build.lines.push({ col, y: top + row.baseline });
             for (const id of row.notes ?? []) if (!placed.has(id) && !cited.includes(id)) cited.push(id);
             top += row.h;
@@ -1183,19 +1251,20 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
       format: gs.pnFormat,
     };
     const slots = slotsForPage(gs, index, n);
-    const band = (texts: [string, string, string], baseline: number): DLItem[] => {
+    const band = (texts: [string, string, string], baseline: number, which: -1 | -2): DLItem[] => {
       const set: DLItem[] = [];
       texts.forEach((raw, side) => {
         const text = fillSlot(raw, fields).trim();
         if (!text) return;
         const line = composer.setLine(text, hfStyle);
         const x = side === 0 ? x0 : side === 1 ? x0 + (geo.textW - line.width) / 2 : x0 + geo.textW - line.width;
-        set.push(...place(line.items, x, baseline));
+        // (A tagged PDF: a running head or foot, said to be one.)
+        set.push(...place(line.items, x, baseline).map((it): DLItem => (struct && it.t === "text" ? { ...it, s: which } : it)));
       });
       return set;
     };
-    const header = band(slots.header, gs.hd * 72 + faces.ascent(hfFace) * hfStyle.size);
-    const footer = band(slots.footer, geo.h - gs.fd * 72 - faces.descent(hfFace) * hfStyle.size);
+    const header = band(slots.header, gs.hd * 72 + faces.ascent(hfFace) * hfStyle.size, -1);
+    const footer = band(slots.footer, geo.h - gs.fd * 72 - faces.descent(hfFace) * hfStyle.size, -2);
     const numbers: DLItem[] = [];
     if (gs.lineNumbers) {
       build.lines.forEach((line, i) => {
@@ -1245,10 +1314,11 @@ export function layoutDoc(input: DocLayoutInput): DisplayList {
     faces: faces.faces,
     pages: out,
     sections,
-    meta: { title: model.meta.title, author: model.meta.author, subject: "", lang: model.meta.lang },
+    meta: { title: model.meta.title, author: model.meta.author, subject: model.meta.subject, lang: model.meta.lang, ...(model.meta.keywords ? { keywords: model.meta.keywords } : {}) },
     warnings,
     insideMargin: s.gutter,
     starts: pages.map((build) => build.start ?? null),
     bodyH: pages.map((build) => build.geo.colH),
+    ...(struct ? { struct } : {}),
   };
 }

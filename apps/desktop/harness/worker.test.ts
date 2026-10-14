@@ -30,7 +30,8 @@ if (!isMainThread) {
   await import("./dom");
   const Y = await import("yjs");
   const { DEFAULT_SETTINGS } = await import("../src/apps/documents/docSettings");
-  const { familiesFor, setWorkerPatience, Typesetter } = await import("../src/book/engine/client");
+  const { familiesFor, setPictureSource, setWorkerPatience, Typesetter } = await import("../src/book/engine/client");
+  const { png } = await import("./pix");
   const { loadFontFiles } = await import("../src/book/fonts/files");
   const { choosePreset, readBook, updateBook } = await import("../src/book/model/bookMap");
   const { buildModel } = await import("../src/book/model/buildModel");
@@ -55,6 +56,9 @@ if (!isMainThread) {
   const images = [{ url: "pier.png", w: 400, h: 200 }];
   const docReq = { kind: "document", doc: model, families: model.families, images };
   const plain = buildDocModel({ type: "doc", content: [content[0], content[2], content[4]] } as never, { title: "Plain", settings: DEFAULT_SETTINGS });
+  /** The pier: a small drawing in two colours. */
+  const PIER = png(40, 20, (x: number, y: number) => (y < 12 ? [120, 170, 220] : x % 9 < 6 ? [90, 60, 30] : [40, 80, 120]));
+  const picturesIn = (bytes: Uint8Array) => Buffer.from(bytes).toString("latin1").split("/Subtype /Image").length - 1;
   const textOf = (dl: Msg): string =>
     (dl.pages as Msg[]).flatMap((p) => (p.items as Msg[]).filter((it) => it.t === "text").map((it) => it.text as string)).join(" ");
 
@@ -107,6 +111,24 @@ if (!isMainThread) {
     thread.postMessage({ id: 3, type: "pdf", req: { kind: "document", doc: plain, families: plain.families, images: [] } });
     const pdf = await answer(3);
     check("it writes a PDF", pdf?.type === "done" && Buffer.from(pdf.result.bytes.slice(0, 5)).toString("latin1") === "%PDF-", pdf?.message ?? pdf?.type);
+
+    // A PDF's pictures: asked for once the pages are set (only then is it
+    // known how large each prints), and the job waits for the answer.
+    thread.postMessage({ id: 5, type: "pdf", req: docReq });
+    const asks = await answer(5);
+    const want = (asks?.want as Msg[] | undefined) ?? [];
+    check("writing a PDF with a picture in it, it asks for the picture and says how large it prints", asks?.type === "images" && want.length === 1 && want[0].url === "pier.png" && want[0].w > 100 && Math.abs(want[0].w / want[0].h - 2) < 0.01, JSON.stringify(asks?.want ?? asks?.type));
+    thread.postMessage({ id: 5, type: "images", pictures: new Map([["pier.png", PIER]]) });
+    const withPicture = await answer(5);
+    check("…and writes it in once it has it", withPicture?.type === "done" && picturesIn(withPicture.result.bytes) === 1, withPicture?.message ?? withPicture?.type);
+    thread.postMessage({ id: 6, type: "pdf", req: docReq });
+    const again = await answer(6);
+    thread.postMessage({ id: 6, type: "images", pictures: new Map() });
+    const without = await answer(6);
+    check("told there is none to be had, it writes the rest", again?.type === "images" && without?.type === "done" && picturesIn(without.result.bytes) === 0, without?.message ?? without?.type);
+    thread.postMessage({ id: 7, type: "pdf", req: { ...docReq, images: [{ ...images[0], bytes: PIER }] } });
+    const handed = await answer(7);
+    check("a picture handed over with the job is not asked for", handed?.type === "done" && picturesIn(handed.result.bytes) === 1, handed?.type);
 
     // A book — and fonts it hasn't been sent are asked for, not guessed at.
     const ydoc = new Y.Doc();
@@ -161,6 +183,36 @@ if (!isMainThread) {
     const before = posted;
     const map = await live.docPages(plain as never);
     check("…and its page map, from the same worker", !!map && map.pages === dl?.pages.length && made.live === 1 && posted > before);
+
+    // Pictures: their sizes from the files (each fetched once for that), the
+    // pictures themselves only when a PDF asks.
+    const fetched: string[] = [];
+    const drawn: number[][] = [];
+    const flat = {
+      async draw(_bytes: Uint8Array, _type: string, w: number, h: number) {
+        drawn.push([w, h]);
+        return { pixels: () => new Uint8ClampedArray(w * h * 4).fill(200), jpeg: async () => new Uint8Array(9), free() {} };
+      },
+    };
+    setPictureSource(async (url: string) => {
+      fetched.push(url);
+      return url === "pier.png" ? PIER : null;
+    }, flat as never);
+    const shown = await live.docLayout(model as never);
+    const placed = (shown?.pages as Msg[] | undefined)?.flatMap((p) => (p.items as Msg[]).filter((it) => it.t === "image")) ?? [];
+    check("a layout needs only a picture's size, read from its file", placed.length === 1 && Math.abs(placed[0].w / placed[0].h - 2) < 0.01 && fetched.join() === "pier.png" && drawn.length === 0, `${fetched.join()} ${JSON.stringify(placed)}`);
+    await live.docPages(model as never);
+    check("…which is remembered", fetched.length === 1);
+    const out = await live.docPdf(model as never, false);
+    check("a PDF gets the picture itself from the app, when the worker asks", picturesIn(out.result.bytes) === 1 && out.failed === 0 && fetched.length === 2 && drawn.length === 1, `${picturesIn(out.result.bytes)} pictures, ${out.failed} failed, ${fetched.length} fetched`);
+    const twice = await live.docPdf(model as never, false);
+    check("…and made again, the picture made ready before is used", picturesIn(twice.result.bytes) === 1 && fetched.length === 2 && drawn.length === 1);
+    const original = await live.docPdf(model as never, false, () => {}, { pictures: "original", tagged: false, archive: false, source: false });
+    check("…as it is, where that is what was asked (it is not even drawn)", picturesIn(original.result.bytes) === 1 && drawn.length === 1 && fetched.length === 3);
+
+    const lost = buildDocModel({ type: "doc", content: [content[0], { type: "image", attrs: { src: "gone.png", width: 200, height: 100 } }, { type: "image", attrs: { src: "pier.png" } }] } as never, { title: "Lost", settings: DEFAULT_SETTINGS });
+    const partial = await live.docPdf(lost as never, false);
+    check("a picture that cannot be had is counted and left out, and the rest is written", partial.failed === 1 && picturesIn(partial.result.bytes) === 1, `${partial.failed} failed, ${picturesIn(partial.result.bytes)} pictures`);
   }
 
   /** A worker whose script stopped while loading, in a webview that doesn't
@@ -188,6 +240,8 @@ if (!isMainThread) {
     check("…and from then on without trying a worker again", !!second && second.pages >= 1 && made.dead === 1 && Date.now() - again < 5_000);
     const pdf = await stuck.docPdf(plain as never, false);
     check("…exports included", Buffer.from(pdf.result.bytes.slice(0, 5)).toString("latin1") === "%PDF-");
+    const pictured = await stuck.docPdf(model as never, false);
+    check("…with their pictures", picturesIn(pictured.result.bytes) === 1 && pictured.failed === 0);
   }
 
   /** One whose script fails and the webview says so (an error event). */

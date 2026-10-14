@@ -34,18 +34,21 @@ import {
   CUSTOM_PAGE,
   DOC_INDENTS,
   DOC_PARA_DEFAULTS,
+  KEYWORDS_MAX,
   MARGIN_MAX,
   MARGIN_MIN,
   PAGE_NUMBER_FORMATS,
   PAGE_SIZES,
   PAPER_MAX,
   PAPER_MIN,
+  SUBJECT_MAX,
   pageDims,
   updateDocSettings,
   type DocSettings,
   type PageNumberFormat,
   type SetupSection,
 } from "./docSettings";
+import { languageChoices } from "../../lib/languages";
 import { HeaderFooterForm } from "./HeaderFooterForm";
 
 /**
@@ -705,9 +708,45 @@ function DocumentTab({
         </p>
       </section>
 
+      <section data-setup="details">
+        <h4>Details</h4>
+        <DocDetails settings={settings} disabled={disabled} onPatch={onPatch} />
+        <p className="wf-inspector-dim">Written into the PDF and Word files you export, where search and screen readers look for them.</p>
+      </section>
+
       <p className="wf-inspector-dim wf-inspector-foot">
         Saved with the document, so everyone who opens it sees the same layout.
       </p>
+    </div>
+  );
+}
+
+/**
+ * What a file says about itself: what it is about, the words to find it
+ * by, the language it is written in. Also shown when a PDF is exported.
+ */
+export function DocDetails({ settings, disabled, onPatch }: { settings: DocSettings; disabled: boolean; onPatch: (patch: Partial<DocSettings>) => void }) {
+  return (
+    <div className="wf-doc-details">
+      <label>
+        <span>Subject</span>
+        <input type="text" disabled={disabled} value={settings.subject} maxLength={SUBJECT_MAX} placeholder="What it is about" onChange={(e) => onPatch({ subject: e.target.value })} />
+      </label>
+      <label>
+        <span>Keywords</span>
+        <input type="text" disabled={disabled} value={settings.keywords} maxLength={KEYWORDS_MAX} placeholder="Words to find it by, with commas between" onChange={(e) => onPatch({ keywords: e.target.value })} />
+      </label>
+      <label>
+        <span>Language</span>
+        <select disabled={disabled} value={settings.lang} onChange={(e) => onPatch({ lang: e.target.value })}>
+          <option value="">Not said</option>
+          {languageChoices(settings.lang).map(([tag, name]) => (
+            <option key={tag} value={tag}>
+              {name}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }

@@ -4,8 +4,10 @@ pub mod fonts;
 pub mod host;
 pub mod localboards;
 pub mod localdocs;
+pub mod localpdfs;
 mod media;
 pub mod net;
+pub mod ocr;
 pub mod plugins;
 mod print;
 pub mod profile;
@@ -121,6 +123,14 @@ pub fn run() {
             commands::api::save_file,
             commands::api::read_dropped_file,
             print::print_pdf,
+            ocr::ocr_status,
+            ocr::ocr_page,
+            localpdfs::localpdf_list,
+            localpdfs::localpdf_write,
+            localpdfs::localpdf_read,
+            localpdfs::localpdf_rename,
+            localpdfs::localpdf_trash,
+            localpdfs::localpdf_restore,
             fonts::font_fetch,
             fonts::font_cache_info,
             fonts::font_cache_clear,

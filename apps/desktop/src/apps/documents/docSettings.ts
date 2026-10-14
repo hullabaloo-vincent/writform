@@ -5,6 +5,7 @@ import type { SectionProps } from "../../editor/schema/sanitize";
 import { BODY_AFTER, BODY_LINE, BODY_SIZE, lineCss, type BodyLook } from "../../editor/styles/sheet";
 import { fontCssFamily } from "../../fonts/css";
 import { isFontId } from "../../fonts/ids";
+import { cleanLanguage } from "../../lib/languages";
 
 /**
  * Per-document settings (paper, margins, headers and footers, body-text
@@ -107,6 +108,13 @@ export interface DocSettings extends Record<SlotKey, string> {
   pnFormat: PageNumberFormat;
   /** The number the first page carries. */
   pnStart: number;
+  /** The file's properties, as a PDF or a Word file carries them: what it
+   *  is about, words to find it by (commas between), and the language it
+   *  is written in ("en-GB", or "" when that has not been said). The
+   *  language also chooses how words are hyphenated. */
+  subject: string;
+  keywords: string;
+  lang: string;
 }
 
 const EMPTY_SLOTS = Object.fromEntries(SLOT_KEYS.map((k) => [k, ""])) as Record<SlotKey, string>;
@@ -141,7 +149,13 @@ export const DEFAULT_SETTINGS: DocSettings = {
   fd: 0.5,
   pnFormat: "1",
   pnStart: 1,
+  subject: "",
+  keywords: "",
+  lang: "",
 };
+
+export const SUBJECT_MAX = 300;
+export const KEYWORDS_MAX = 500;
 
 export const MARGIN_MIN = 0;
 export const MARGIN_MAX = 3;
@@ -181,16 +195,19 @@ const numOrNull = (v: unknown, min: number, max: number): number | null =>
 
 const bool = (v: unknown, fallback: boolean): boolean => (typeof v === "boolean" ? v : fallback);
 
-/** A header/footer line: one line, bounded, no control characters. */
-export function cleanSlot(v: unknown): string | null {
+/** One line of text, bounded, with no control characters. */
+function cleanLine(v: unknown, max: number): string | null {
   if (typeof v !== "string") return null;
   let out = "";
   for (const ch of v) {
     const c = ch.codePointAt(0) ?? 0;
     if (c >= 0x20 && c !== 0x7f) out += ch;
   }
-  return out.slice(0, SLOT_MAX);
+  return out.slice(0, max);
 }
+
+/** A header/footer line. */
+export const cleanSlot = (v: unknown): string | null => cleanLine(v, SLOT_MAX);
 
 function settingsMap(doc: Y.Doc): Y.Map<unknown> {
   return doc.getMap("settings");
@@ -232,6 +249,9 @@ export function settingsFrom(get: (key: string) => unknown): DocSettings {
     fd: num(get("fd"), 0.1, 2, d.fd),
     pnFormat: PAGE_NUMBER_FORMATS.includes(pn as PageNumberFormat) ? (pn as PageNumberFormat) : d.pnFormat,
     pnStart: Math.round(num(get("pnStart"), 0, 99999, d.pnStart)),
+    subject: cleanLine(get("subject"), SUBJECT_MAX) ?? "",
+    keywords: cleanLine(get("keywords"), KEYWORDS_MAX) ?? "",
+    lang: cleanLanguage(get("lang")),
   };
 }
 
@@ -394,4 +414,4 @@ export function bodyLook(s: Pick<DocSettings, "bodyFont" | "bodySize" | "bodyLin
 
 /** The parts of the inspector (DocSettingsPanel) something else can ask for
  *  by name: "Custom margins…" in the ribbon opens it at Margins. */
-export type SetupSection = "paper" | "margins" | "header" | "body" | "indents";
+export type SetupSection = "paper" | "margins" | "header" | "body" | "indents" | "details";

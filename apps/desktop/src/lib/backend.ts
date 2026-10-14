@@ -145,6 +145,15 @@ export interface LocalTrashListing {
   excerpt: string;
 }
 
+/** A PDF kept on this device. */
+export interface LocalPdfMeta {
+  id: string;
+  name: string;
+  bytes: number;
+  /** Milliseconds since 1970. */
+  modified_at: number;
+}
+
 export type SaveKind = "pdf" | "epub" | "docx" | "zip" | "wfboard" | "wfstyle";
 
 export type SaveResult =
@@ -331,6 +340,20 @@ export interface Backend {
    *  sheet is up), `opened` (in the system's viewer), or `frame` (print it
    *  in this webview — see lib/printFile.ts). */
   printPdf(title: string, bytes: Uint8Array): Promise<string>;
+  /** PDFs kept on this device, newest first (none in the browser client). */
+  localpdfList(): Promise<LocalPdfMeta[]>;
+  /** Keep a PDF on this device (a new one, or the one under `id` again). */
+  localpdfWrite(id: string, name: string, bytes: Uint8Array): Promise<LocalPdfMeta>;
+  localpdfRead(id: string): Promise<Uint8Array>;
+  localpdfRename(id: string, name: string): Promise<void>;
+  /** Take one off the shelf (it can be put back for thirty days). */
+  localpdfTrash(id: string): Promise<void>;
+  localpdfRestore(id: string): Promise<void>;
+  /** Whether this device can read the text out of a picture of a page. */
+  ocrStatus(): Promise<boolean>;
+  /** The lines of text in a picture (PNG or JPEG), each with its box as
+   *  parts of the picture from its top left. Read on this device. */
+  ocrPage(bytes: Uint8Array, lang: string): Promise<{ lines: { text: string; x: number; y: number; w: number; h: number; confidence: number }[] }>;
   /** Read a natively drag-dropped file so the importer can parse its bytes. */
   readDroppedFile(path: string): Promise<{ name: string; data_base64: string }>;
   /** Microphone authorization: not_determined | restricted | denied | authorized. */
@@ -506,6 +529,20 @@ function tauriBackend(): Backend {
     printPdf: async (title, bytes) => {
       const { invoke: raw } = await import("@tauri-apps/api/core");
       return raw<string>("print_pdf", bytes, { headers: { "x-file-name": encodeURIComponent(title) } });
+    },
+    localpdfList: () => invoke<LocalPdfMeta[]>("localpdf_list"),
+    localpdfWrite: async (id, name, bytes) => {
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      return raw<LocalPdfMeta>("localpdf_write", bytes, { headers: { "x-id": id, "x-name": encodeURIComponent(name) } });
+    },
+    localpdfRead: async (id) => new Uint8Array(await invoke<ArrayBuffer>("localpdf_read", { id })),
+    localpdfRename: (id, name) => invoke("localpdf_rename", { id, name }),
+    localpdfTrash: (id) => invoke("localpdf_trash", { id }),
+    localpdfRestore: (id) => invoke("localpdf_restore", { id }),
+    ocrStatus: () => invoke<boolean>("ocr_status").catch(() => false),
+    ocrPage: async (bytes, lang) => {
+      const { invoke: raw } = await import("@tauri-apps/api/core");
+      return raw("ocr_page", bytes, { headers: { "x-lang": encodeURIComponent(lang) } });
     },
     readDroppedFile: (path) => invoke("read_dropped_file", { path }),
     microphoneStatus: () => invoke("microphone_status"),

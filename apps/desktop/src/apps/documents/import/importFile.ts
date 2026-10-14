@@ -16,8 +16,9 @@ import { documentsApi } from "../api";
 import { b64encode } from "../collab";
 import { applyDocMaps, docMapsUpdate, type DocMapsSnapshot } from "../docMaps";
 import { useLocalDocs } from "../local";
+import { chooseDialog } from "../../../platform/confirm";
 import { toast } from "../../../platform/toast";
-import { pdfToDocument, type ImportedPdfParagraph } from "./pdf";
+import { FORMAT_LABELS } from "../formats/elements";
 import { rtfToText } from "./rtf";
 
 import { mapImages, type DocxMedia } from "../../../docx/read";
@@ -56,8 +57,57 @@ function importNote(file: Pick<ConvertedFile, "summary" | "warnings">): string |
   return `${file.summary ?? "Imported"} (${file.warnings.join(", ")})`;
 }
 
-/** Client-side conversion shared by server import and import-to-device. */
-async function convertFile(file: File): Promise<ConvertedFile> {
+/** What an import ends with when the person thought better of it: nothing
+ *  is made, and nothing need be said. */
+export const IMPORT_CANCELLED = "import_cancelled";
+export const importCancelled = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { code?: unknown }).code === IMPORT_CANCELLED;
+
+/**
+ * A PDF made here with its document kept inside: ask whether to open that
+ * document or read the pages. The document as a converted file, or null to
+ * go on and read the pages (it has none inside, the pages were chosen, or
+ * what is inside cannot be used, which `warnings` then says).
+ */
+async function documentInside(data: ArrayBuffer, stem: string, warnings: string[]): Promise<ConvertedFile | null> {
+  let found: Awaited<ReturnType<typeof import("./pdfSource").readPdfSource>>;
+  try {
+    const { readPdfSource } = await import("./pdfSource");
+    found = await readPdfSource(data);
+    // Its text has to be a document this app can hold, node for node.
+    if (found) PmNode.fromJSON(getSchema(EXTENSIONS), found.copy.content).check();
+  } catch (e) {
+    const newer = (e as { code?: unknown } | null)?.code === "source_newer";
+    warnings.push(newer ? "the document kept inside was made by a newer version of subScribe, so the pages were read" : "the document kept inside could not be read, so the pages were");
+    return null;
+  }
+  if (!found) return null;
+  const { copy, changed } = found;
+  const picked = await chooseDialog(
+    `You can open that document and go on writing it with its styles and pictures. Or you can read the pages of the PDF as text.${changed ? " This PDF was changed after it was made. Its pages may differ from the document inside." : ""}`,
+    [
+      { id: "open", label: "Open the document" },
+      { id: "pages", label: "Read the pages" },
+    ],
+    { title: "This PDF holds the document it was made from" },
+  );
+  if (picked === null) throw { code: IMPORT_CANCELLED, message: "Nothing was imported." };
+  if (picked === "pages") return null;
+  const lost = copy.left ? [`${copy.left} picture${copy.left === 1 ? " was" : "s were"} not kept inside`] : [];
+  return {
+    stem: copy.title.trim() || stem,
+    content: copy.content,
+    suggestedFormat: copy.format in FORMAT_LABELS ? copy.format : "none",
+    maps: copy.maps,
+    media: copy.media,
+    summary: "Opened the document kept inside the PDF",
+    warnings: lost,
+  };
+}
+
+/** Client-side conversion shared by server import and import-to-device.
+ *  (Exported for tests.) */
+export async function convertFile(file: File): Promise<ConvertedFile> {
   const name = file.name;
   const stem = name.replace(/\.[^.]+$/, "") || "Imported document";
   const ext = (name.split(".").pop() ?? "").toLowerCase();
@@ -96,9 +146,18 @@ async function convertFile(file: File): Promise<ConvertedFile> {
       content = paragraphsToDoc(splitPlainText(rtfToText(await file.text())));
       break;
     case "pdf": {
-      const imported = await pdfToDocument(await file.arrayBuffer());
-      content = importedParagraphsToDoc(imported.paragraphs);
+      const data = await file.arrayBuffer();
+      const inside = await documentInside(data, stem, warnings);
+      if (inside) return inside;
+      const { readPdfPages } = await import("./pdfPages");
+      const imported = await readPdfPages(data, name);
+      content = imported.content;
       suggestedFormat = imported.suggestedFormat;
+      fileMeta = imported.meta;
+      fileSettings = imported.settings;
+      fileFonts = imported.fonts;
+      media = imported.media;
+      warnings.push(...imported.warnings);
       break;
     }
     case "pages": {
@@ -123,9 +182,14 @@ async function convertFile(file: File): Promise<ConvertedFile> {
             : "This .pages file has no embedded preview to import. In Pages, choose File → Export To → Word (or PDF) and import that instead.",
         };
       }
-      const imported = await pdfToDocument(await preview.async("arraybuffer"));
-      content = importedParagraphsToDoc(imported.paragraphs);
+      const { readPdfPages } = await import("./pdfPages");
+      const imported = await readPdfPages(await preview.async("arraybuffer"), name);
+      content = imported.content;
       suggestedFormat = imported.suggestedFormat;
+      fileSettings = imported.settings;
+      fileFonts = imported.fonts;
+      media = imported.media;
+      warnings.push(...imported.warnings);
       break;
     }
     default:
@@ -459,49 +523,5 @@ function paragraphsToDoc(paragraphs: string[]): JSONContent {
     content: paragraphs.map((text) =>
       text ? { type: "paragraph", content: [{ type: "text", text }] } : { type: "paragraph" },
     ),
-  };
-}
-
-function importedParagraphsToDoc(paragraphs: ImportedPdfParagraph[]): JSONContent {
-  return {
-    type: "doc",
-    content: paragraphs.map((p) => {
-      // Styled runs (bold/italic are StarterKit marks; alignment is a
-      // TextFormat attribute) when the importer recovered them; the plain
-      // text path still serves the screenplay importer.
-      const inline: JSONContent[] = (
-        p.runs?.length
-          ? p.runs.map((r) => {
-              const marks = [
-                ...(r.bold ? [{ type: "bold" }] : []),
-                ...(r.italic ? [{ type: "italic" }] : []),
-              ];
-              return {
-                type: "text",
-                text: r.text,
-                ...(marks.length ? { marks } : {}),
-              } satisfies JSONContent;
-            })
-          : p.text
-            ? [{ type: "text", text: p.text }]
-            : []
-      ).filter((n) => (n.text ?? "").length > 0);
-
-      if (p.kind === "heading") {
-        return {
-          type: "heading",
-          attrs: { level: p.level ?? 1, ...(p.align ? { align: p.align } : {}) },
-          content: inline.length ? inline : undefined,
-        } satisfies JSONContent;
-      }
-      const attrs: Record<string, unknown> = {};
-      if (p.element) attrs.element = p.element;
-      if (p.align) attrs.align = p.align;
-      return {
-        type: "paragraph",
-        attrs: Object.keys(attrs).length ? attrs : undefined,
-        content: inline.length ? inline : undefined,
-      } satisfies JSONContent;
-    }),
   };
 }

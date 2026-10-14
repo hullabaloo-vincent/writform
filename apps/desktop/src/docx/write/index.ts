@@ -1285,6 +1285,8 @@ export async function writeDocx(doc: JSONContent, opts: DocxWriteOptions): Promi
     "docProps/core.xml",
     `${XML_HEAD}<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">` +
       `<dc:title>${xmlEscape(opts.title)}</dc:title>${opts.author ? `<dc:creator>${xmlEscape(opts.author)}</dc:creator>` : ""}` +
+      `${opts.settings?.subject ? `<dc:subject>${xmlEscape(opts.settings.subject)}</dc:subject>` : ""}${opts.settings?.keywords ? `<cp:keywords>${xmlEscape(opts.settings.keywords)}</cp:keywords>` : ""}` +
+      `${opts.settings?.lang ? `<dc:language>${xmlEscape(opts.settings.lang)}</dc:language>` : ""}` +
       `<dcterms:created xsi:type="dcterms:W3CDTF">${now}</dcterms:created><dcterms:modified xsi:type="dcterms:W3CDTF">${now}</dcterms:modified></cp:coreProperties>`,
   );
   zip.file("word/document.xml", `${XML_HEAD}<w:document ${NS}><w:body>${body}${sectPr}</w:body></w:document>`);

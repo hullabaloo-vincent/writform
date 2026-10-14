@@ -6,6 +6,7 @@ import type * as Y from "yjs";
 import type { SaveKind } from "../../lib/backend";
 import { saveExport } from "../../lib/saveFile";
 import { Modal } from "../../platform";
+import type { PressOptions } from "../engine/run";
 import { updateBook, type Book } from "../model/bookMap";
 import { buildModel } from "../model/buildModel";
 import type { BookModel, Warning } from "../model/types";
@@ -20,6 +21,24 @@ export interface BuiltFile {
   warnings: Warning[];
   /** One-line description of what was made ("312 pages, 5.5 × 8.5 in"). */
   summary: string;
+}
+
+/** What a press was asked for last time, on this device. */
+const PRESS_KEY = "wf-book-press";
+function loadPress(): Required<PressOptions> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(PRESS_KEY) ?? "{}") as Record<string, unknown>;
+    return { x1a: raw.x1a === true, bleed: raw.bleed === true };
+  } catch {
+    return { x1a: false, bleed: false };
+  }
+}
+function savePress(press: Required<PressOptions>): void {
+  try {
+    localStorage.setItem(PRESS_KEY, JSON.stringify(press));
+  } catch {
+    // (Not remembered, then.)
+  }
 }
 
 const TITLES: Record<BookExportKind, string> = {
@@ -61,6 +80,7 @@ export function ExportBookDialog({
   // (A front cover: its picture, or one made in the cover editor.)
   const savedCover = !!book.cover.front || !!book.cover.wrap || book.cover.texts.some((t) => t.panel === "front" && t.text.trim() !== "");
   const [useSaved, setUseSaved] = useState(true);
+  const [press, setPress] = useState(loadPress);
   const [phase, setPhase] = useState<"preflight" | "building" | "ready" | "error">("preflight");
   const [progress, setProgress] = useState("");
   const [built, setBuilt] = useState<BuiltFile | null>(null);
@@ -119,7 +139,8 @@ export function ExportBookDialog({
         };
       } else {
         const { buildPrintFile } = await import("../exportBook");
-        result = await buildPrintFile(kind, model, (p) => setProgress(p));
+        if (kind === "paperback") savePress(press);
+        result = await buildPrintFile(kind, model, (p) => setProgress(p), kind === "paperback" ? press : undefined);
       }
       setBuilt(result);
       setPhase("ready");
@@ -206,6 +227,25 @@ export function ExportBookDialog({
             Optional. For Kindle (KDP), leave it out because the cover you upload on KDP is used. Apple
             Books and Kobo use the one inside the file. To keep a cover with the book, add it under Book ▸ Cover.
           </small>
+        </div>
+      )}
+
+      {kind === "paperback" && phase !== "ready" && (
+        <div className="wf-export-press">
+          <label className="wf-print-option">
+            <input type="checkbox" checked={press.x1a} disabled={phase === "building"} onChange={(e) => setPress({ ...press, x1a: e.target.checked })} />
+            <span>
+              PDF/X-1a for a printer
+              <small>The form IngramSpark and many printers ask for. It is for black ink only, so pictures are made grey.</small>
+            </span>
+          </label>
+          <label className="wf-print-option">
+            <input type="checkbox" checked={press.bleed} disabled={phase === "building"} onChange={(e) => setPress({ ...press, bleed: e.target.checked })} />
+            <span>
+              With bleed
+              <small>Each page is made 0.125 in larger at the top, the bottom and the outside edge. Choose it when the printer asks for a file with bleed.</small>
+            </span>
+          </label>
         </div>
       )}
 

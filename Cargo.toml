@@ -8,7 +8,9 @@ members = [
 ]
 # Vendored, not a member: workspace-wide clippy/fmt must not police
 # upstream code. See [patch.crates-io] at the bottom for why it exists.
-exclude = ["vendor/swift-rs"]
+# The PDF engine is a workspace of its own (pdf-engine/Cargo.toml): built to
+# WebAssembly apart from the app, its result committed.
+exclude = ["vendor/swift-rs", "pdf-engine"]
 
 [workspace.package]
 version = "1.1.2"

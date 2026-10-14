@@ -16,9 +16,19 @@ export interface ConfirmOptions {
   danger?: boolean;
 }
 
+/** One way forward, where there is more than one. */
+export interface Choice {
+  id: string;
+  label: string;
+}
+
 interface PendingConfirm extends ConfirmOptions {
   message: string;
   resolve: (ok: boolean) => void;
+  /** Asked as a choice: the ways forward (the first is the usual one), and
+   *  where the one picked goes. */
+  choices?: Choice[];
+  pick?: (id: string | null) => void;
 }
 
 const useConfirmStore = create<{ pending: PendingConfirm | null }>(() => ({
@@ -34,10 +44,22 @@ export function confirmDialog(message: string, options: ConfirmOptions = {}): Pr
   });
 }
 
-function answer(ok: boolean) {
+/**
+ * Ask which of several ways to go on. Resolves to the id of the one picked,
+ * or null on cancel, escape or a click outside: nothing is done then.
+ */
+export function chooseDialog(message: string, choices: Choice[], options: { title?: string } = {}): Promise<string | null> {
+  return new Promise((resolve) => {
+    useConfirmStore.getState().pending?.resolve(false);
+    useConfirmStore.setState({ pending: { message, ...options, choices, pick: resolve, resolve: (ok) => (ok ? undefined : resolve(null)) } });
+  });
+}
+
+function answer(ok: boolean, choice?: string) {
   const { pending } = useConfirmStore.getState();
   if (!pending) return;
-  pending.resolve(ok);
+  if (choice !== undefined) pending.pick?.(choice);
+  else pending.resolve(ok);
   useConfirmStore.setState({ pending: null });
 }
 
@@ -56,13 +78,22 @@ export function ConfirmHost() {
         <button autoFocus={pending.danger} onClick={() => answer(false)}>
           Cancel
         </button>
-        <button
-          className={pending.danger ? "wf-danger-solid" : "wf-primary"}
-          autoFocus={!pending.danger}
-          onClick={() => answer(true)}
-        >
-          {pending.confirmLabel ?? "Confirm"}
-        </button>
+        {pending.choices ? (
+          // (Last in the row is the usual one, as the confirming button is.)
+          [...pending.choices].reverse().map((choice, i, all) => (
+            <button key={choice.id} className={i === all.length - 1 ? "wf-primary" : ""} autoFocus={i === all.length - 1} onClick={() => answer(true, choice.id)}>
+              {choice.label}
+            </button>
+          ))
+        ) : (
+          <button
+            className={pending.danger ? "wf-danger-solid" : "wf-primary"}
+            autoFocus={!pending.danger}
+            onClick={() => answer(true)}
+          >
+            {pending.confirmLabel ?? "Confirm"}
+          </button>
+        )}
       </div>
     </Modal>
   );

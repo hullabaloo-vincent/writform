@@ -1,0 +1,16 @@
+{
+  "source": "e82105983b735e5949678b2d71eefd0472e7375820eba1f33e10adb764a182a5",
+  "bytes": 2359637,
+  "rustc": "1.99.0",
+  "wasmBindgen": "0.2.129",
+  "wasmOpt": "133",
+  "features": [
+    "mutable-globals",
+    "sign-ext",
+    "multivalue",
+    "bulk-memory",
+    "bulk-memory-opt",
+    "nontrapping-float-to-int",
+    "reference-types"
+  ]
+}

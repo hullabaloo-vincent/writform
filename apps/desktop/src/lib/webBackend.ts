@@ -352,6 +352,15 @@ export function webBackend(): Backend {
     // Browser "save" is a download.
     saveFile: async (fileName, kind, bytes) => browserDownload(fileName, kind, bytes),
     printPdf: async () => "frame",
+    ocrStatus: async () => false,
+    // (A browser has nowhere of the app's own to keep a file.)
+    localpdfList: async () => [],
+    localpdfWrite: async () => Promise.reject({ code: "desktop_only", message: "PDFs are kept on a device by the desktop and phone apps." }),
+    localpdfRead: async () => Promise.reject({ code: "not_found", message: "That PDF is not here." }),
+    localpdfRename: async () => {},
+    localpdfTrash: async () => {},
+    localpdfRestore: async () => {},
+    ocrPage: async () => ({ lines: [] }),
     // The browser only ever asks its own server for fonts (which fetches
     // and keeps them): never a third party, whatever `online` says.
     fontFetch: async (id, file) => {

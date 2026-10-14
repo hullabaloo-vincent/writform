@@ -117,7 +117,7 @@ pub fn localboard_list(app: tauri::AppHandle) -> Result<Vec<LocalBoardMeta>, Cmd
             updated_at,
         });
     }
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     Ok(out)
 }
 
@@ -286,7 +286,7 @@ pub fn list_board_trash(
                 .unwrap_or(0),
         });
     }
-    out.sort_by(|a, b| b.updated_at.cmp(&a.updated_at));
+    out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));
     out
 }
 

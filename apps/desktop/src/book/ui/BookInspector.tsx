@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { languageChoices } from "../../lib/languages";
 import type * as Y from "yjs";
 
 import { InchStepper } from "../../apps/documents/DocSettingsPanel";
@@ -20,17 +21,6 @@ const TABS: [Tab, string][] = [
   ["ebook", "Ebook"],
   ["cover", "Cover"],
 ];
-
-const LANGUAGES = [
-  ["en-US", "English (US)"],
-  ["en-GB", "English (UK)"],
-  ["fr", "French"],
-  ["de", "German"],
-  ["es", "Spanish"],
-  ["it", "Italian"],
-  ["nl", "Dutch"],
-  ["pt", "Portuguese"],
-] as const;
 
 /**
  * The book inspector (Manuscript format): the book's details, its design,
@@ -260,7 +250,7 @@ function BookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pat
         <Select
           label="Language"
           value={m.language}
-          options={LANGUAGES.some(([v]) => v === m.language) ? LANGUAGES : [[m.language, m.language], ...LANGUAGES]}
+          options={languageChoices(m.language)}
           onChange={(v) => patch({ "meta.language": v })}
           disabled={disabled}
         />

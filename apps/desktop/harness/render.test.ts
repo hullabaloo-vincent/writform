@@ -12,7 +12,9 @@ import { getDocument, OPS } from "pdfjs-dist/legacy/build/pdf.mjs";
 import { FaceSet } from "../src/book/engine/faces";
 import type { DisplayList, DLItem, DLPage } from "../src/book/engine/types";
 import { loadFontFiles } from "../src/book/fonts/files";
+import { pageLabels, plainLabels } from "../src/book/render/labels";
 import { renderPdf } from "../src/book/render/pdf";
+import { keywordList, xmpPacket } from "../src/book/render/xmp";
 
 const faces = new FaceSet(await loadFontFiles(["garamond", "cinzel"]));
 const regular = faces.face("garamond", "regular");
@@ -135,6 +137,79 @@ const read = async (bytes: Uint8Array) => {
   const doc = await read(bytes);
   check("without `links` there are no annotations or named places (print-on-demand)", doc.pages.every((p) => p.annotations.length === 0) && (await doc.place("appendix")) === null);
   check("the default ink is still CMYK black", /\/DeviceCMYK cs\n0 0 0 1 scn/.test(operators(bytes)));
+}
+
+// ------------------------------------------------- what the file says of itself
+
+{
+  // A title with the two characters XML cannot hold as they are. (PDFKit's
+  // own metadata left them in, and no reader could then make sense of any
+  // of it.)
+  const titled: DisplayList = { ...dl, meta: { title: "Cats & Dogs <a study>", author: "Zoë Ångström", subject: "Pets, and why", lang: "en-GB", keywords: "cats, dogs, living together" } };
+  const bytes = await renderPdf(titled, fonts, new Map(), undefined, { color: "rgb", links: true });
+  const pdf = await getDocument({ data: bytes.slice(), useSystemFonts: false, isEvalSupported: false }).promise;
+  const meta = await pdf.getMetadata();
+  const info = meta.info as Record<string, unknown>;
+  check("the file's own record has the title, author, subject and keywords", info.Title === "Cats & Dogs <a study>" && info.Author === "Zoë Ångström" && info.Subject === "Pets, and why" && info.Keywords === "cats, dogs, living together", JSON.stringify(info));
+  check("…and says when it was made and last changed (the same moment: it is new)", typeof info.CreationDate === "string" && info.CreationDate === info.ModDate, `${String(info.CreationDate)} ${String(info.ModDate)}`);
+  const xmp = meta.metadata;
+  check("the same is said again as XMP, which a reader can make sense of", !!xmp && xmp.get("dc:title") === "Cats & Dogs <a study>" && String(xmp.get("dc:creator")) === "Zoë Ångström" && xmp.get("dc:description") === "Pets, and why", JSON.stringify(xmp?.getAll?.() ?? null));
+  check("…with the keywords as a line and as a list, and the two dates", !!xmp && xmp.get("pdf:keywords") === "cats, dogs, living together" && String(xmp.get("dc:subject")) === "cats,dogs,living together" && xmp.get("xmp:createdate") === xmp.get("xmp:modifydate") && /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/.test(String(xmp.get("xmp:createdate"))), JSON.stringify(xmp?.getAll?.() ?? null));
+  const raw = Buffer.from(bytes).toString("latin1");
+  check("the language is the document's", /\/Lang \(en-GB\)/.test(raw) && String(xmp?.get("dc:language")) === "en-GB");
+  check("the metadata's length is counted in bytes (the author's name is not all ASCII)", (() => {
+    const at = raw.indexOf("<?xpacket begin");
+    const end = raw.indexOf('<?xpacket end="w"?>') + '<?xpacket end="w"?>'.length;
+    const said = /\/Length (\d+)[^>]*>>\s*stream\s*$/.exec(raw.slice(Math.max(0, at - 200), at));
+    return !!said && Number(said[1]) === end - at;
+  })());
+
+  // Nothing is said where there is nothing to say.
+  const bare = await renderPdf(dl, fonts, new Map());
+  const bareInfo = (await (await getDocument({ data: bare.slice(), useSystemFonts: false, isEvalSupported: false }).promise).getMetadata()).info as Record<string, unknown>;
+  check("a document with no subject or keywords has neither", !("Subject" in bareInfo) && !("Keywords" in bareInfo), JSON.stringify(bareInfo));
+}
+
+{
+  const p = xmpPacket({ title: "A & B", author: "", subject: "", keywords: "", lang: "", created: new Date(Date.UTC(2026, 0, 2, 3, 4, 5)), modified: new Date(Date.UTC(2026, 0, 2, 3, 4, 6)), creator: "subScribe", producer: "subScribe", extra: ["<rdf:Description rdf:about=\"\" xmlns:x1=\"urn:x\"><x1:claim>1</x1:claim></rdf:Description>"] });
+  check("the packet opens with its mark and is closed", p.charCodeAt(p.indexOf('begin="') + 7) === 0xfeff && p.trim().endsWith('<?xpacket end="w"?>'));
+  check("what cannot stand in XML is written the way XML writes it", p.includes("A &amp; B") && !/A & B/.test(p));
+  check("dates are to the second, in UTC", p.includes("<xmp:CreateDate>2026-01-02T03:04:05Z</xmp:CreateDate>") && p.includes("<xmp:ModifyDate>2026-01-02T03:04:06Z</xmp:ModifyDate>"));
+  check("empty fields are left out, and a standard's own claim can be put in", !p.includes("dc:creator") && !p.includes("dc:description") && !p.includes("pdf:Keywords") && p.includes("<x1:claim>1</x1:claim>"));
+  check("keywords split on commas and lines", keywordList(" cats ,dogs\n birds,, ").join("|") === "cats|dogs|birds");
+}
+
+// ------------------------------------------------------------- page labels
+
+{
+  const said = (folios: (string | null)[]) =>
+    pageLabels(folios)
+      .map((r) => (r.text !== undefined ? `${r.at}:"${r.text}"` : `${r.at}:${r.style}${r.start ?? ""}`))
+      .join(" ");
+  check("1, 2, 3 from the first page is what a reader shows anyway", plainLabels(pageLabels(["1", "2", "3"])) && said(["1", "2", "3"]) === "0:D");
+  check("a book: roman front matter, then arabic from 1", said(["i", "ii", "iii", "iv", "1", "2", "3"]) === "0:r 4:D");
+  check("pages that show no number take the one they would have had", said([null, null, "iii", "iv", null, "1", "2", null, "4"]) === "0:r 5:D", said([null, null, "iii", "iv", null, "1", "2", null, "4"]));
+  check("unnumbered pages before page 1 are the front matter", said([null, null, "1", "2"]) === "0:r 2:D", said([null, null, "1", "2"]));
+  check("a first page that hides its number still counts", said([null, "2", "3"]) === "0:D", said([null, "2", "3"]));
+  check("a count that starts elsewhere says where", said(["5", "6", "7"]) === "0:D5");
+  check("a count that starts again starts a new run", said(["1", "2", "1", "2"]) === "0:D 2:D");
+  check("capitals stay capitals", said(["I", "II", "III"]) === "0:R");
+  check("letters: a b c, and the i that follows h is a letter", said(["a", "b", "c"]) === "0:a" && said(["g", "h", "i", "j"]) === "0:a7", said(["g", "h", "i", "j"]));
+  check("…but an i on its own is one", said(["i", "ii"]) === "0:r");
+  check("a number in no style a PDF knows keeps its own words", said(["A-1", "A-2", "1"]) === '0:"A-1" 1:"A-2" 2:D', said(["A-1", "A-2", "1"]));
+  check("no pages, no labels", pageLabels([]).length === 0 && plainLabels([]));
+
+  const book: DisplayList = {
+    ...dl,
+    sections: [],
+    pages: [null, "ii", "iii", "1", "2"].map((folio, i) => ({ n: i + 1, folio, side: i % 2 ? "verso" : "recto", role: "body", section: -1, items: [text(`Page ${i + 1}`, 72, 100)] }) as DLPage),
+  };
+  const labelled = await getDocument({ data: (await renderPdf(book, fonts, new Map())).slice(), useSystemFonts: false, isEvalSupported: false }).promise;
+  check("a reader's page box shows the numbers printed on the pages", ((await labelled.getPageLabels()) ?? []).join(",") === "i,ii,iii,1,2", String(await labelled.getPageLabels()));
+  const plain = await getDocument({ data: (await renderPdf(dl, fonts, new Map())).slice(), useSystemFonts: false, isEvalSupported: false }).promise;
+  check("plain 1, 2, 3 is not written at all", (await plain.getPageLabels()) === null);
+  const folded = await getDocument({ data: (await renderPdf(book, fonts, new Map(), undefined, { booklet: true })).slice(), useSystemFonts: false, isEvalSupported: false }).promise;
+  check("a booklet's sheets are not labelled as the book's pages", (await folded.getPageLabels()) === null);
 }
 
 finish();

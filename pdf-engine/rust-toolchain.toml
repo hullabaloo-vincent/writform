@@ -1,0 +1,5 @@
+# The same compiler as the app (../rust-toolchain.toml), with what building for the web needs.
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+targets = ["wasm32-unknown-unknown"]

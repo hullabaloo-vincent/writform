@@ -1,4 +1,4 @@
-import { FileText, FileUp, Globe, HardDrive, NotebookPen, Presentation, RefreshCw } from "lucide-react";
+import { FileText, FileType, FileUp, Globe, HardDrive, NotebookPen, Presentation, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { backend, isCmdError, isMobileApp, isWeb, type HostStatus, type SavedServer } from "../../lib/backend";
@@ -11,7 +11,9 @@ import { isLocalBoard, useLocalBoards } from "../canvas/local";
 import { useCanvas } from "../canvas/store";
 import { FORMAT_LABELS } from "../documents/formats/elements";
 import { useLocalDocs } from "../documents/local";
-import { openLocalDoc, openServerDoc } from "../documents/navigation";
+import { openKeptPdf, openLocalDoc, openPdfFile, openServerDoc } from "../documents/navigation";
+import { looksLikePdf, pdfIntent } from "../../pdf/desk";
+import { canKeepPdfs, sizeLabel, usePdfShelf } from "../../pdf/shelf";
 import { NewDocumentDialog } from "../documents/NewDocumentDialog";
 import { useDocuments } from "../documents/store";
 import { useNotesPending } from "../notes/pending";
@@ -20,6 +22,7 @@ const ICONS = {
   document: <FileText size={18} />,
   board: <Presentation size={18} />,
   note: <NotebookPen size={18} />,
+  pdf: <FileType size={18} />,
 };
 
 /**
@@ -36,6 +39,7 @@ export function HomeView() {
   const profileLoaded = useLocalProfile((s) => s.loaded);
   const localDocs = useLocalDocs((s) => s.items);
   const localBoards = useLocalBoards((s) => s.items);
+  const pdfs = usePdfShelf((s) => s.items);
   const serverDocs = useDocuments((s) => s.items);
   const [notes, setNotes] = useState<{ name: string; modified_at: number }[]>([]);
   const [servers, setServers] = useState<SavedServer[]>([]);
@@ -50,6 +54,7 @@ export function HomeView() {
     if (!isWeb) {
       if (!useLocalDocs.getState().loaded) void useLocalDocs.getState().load().catch(() => {});
       if (!useLocalBoards.getState().loaded) void useLocalBoards.getState().load().catch(() => {});
+      if (canKeepPdfs() && !usePdfShelf.getState().loaded) void usePdfShelf.getState().load().catch(() => {});
       void backend.vaultList().then(setNotes).catch(() => {});
     }
     const tick = setInterval(() => setNow(Date.now()), 60_000);
@@ -92,6 +97,14 @@ export function HomeView() {
         at: n.modified_at,
         place: "device" as const,
       })),
+      pdfs.map((f) => ({
+        kind: "pdf" as const,
+        key: `pdf:${f.id}`,
+        title: f.name.replace(/\.pdf$/i, ""),
+        detail: `PDF · ${sizeLabel(f.bytes)} · on this device`,
+        at: f.modified_at,
+        place: "device" as const,
+      })),
       connected
         ? serverDocs.map(({ document: d }) => ({
             kind: "document" as const,
@@ -104,12 +117,13 @@ export function HomeView() {
         : [],
     ];
     return mergeRecents(lists, 8);
-  }, [localDocs, localBoards, notes, serverDocs, connected, session?.addr]);
+  }, [localDocs, localBoards, notes, pdfs, serverDocs, connected, session?.addr]);
 
   const open = (item: Recent) => {
     const [where, id] = [item.key.slice(0, item.key.indexOf(":")), item.key.slice(item.key.indexOf(":") + 1)];
     const fail = (e: unknown) => toastError(isCmdError(e) ? e.message : String(e));
     if (where === "localdoc") void openLocalDoc(id).catch(fail);
+    else if (where === "pdf") void openKeptPdf(id).catch(fail);
     else if (where === "doc") void openServerDoc(Number(id)).catch(fail);
     else if (where === "localboard") {
       usePlatform.getState().setActiveApp("writform.canvas");
@@ -133,8 +147,17 @@ export function HomeView() {
   const importFiles = async (files: FileList | null) => {
     const file = files?.[0];
     if (!file) return;
+    // A PDF can be edited as the PDF it is, or made a document of.
+    if (looksLikePdf(file)) {
+      const how = await pdfIntent();
+      if (how === null) return;
+      if (how === "edit") {
+        await openPdfFile(file).catch((e) => toastError(e instanceof Error ? e.message : String(e)));
+        return;
+      }
+    }
+    const mod = await import("../documents/import/importFile");
     try {
-      const mod = await import("../documents/import/importFile");
       // Into the place you're working: the server when connected, else here.
       if (connected) {
         const doc = await mod.importFile(file);
@@ -144,6 +167,8 @@ export function HomeView() {
         await openLocalDoc(id);
       }
     } catch (e) {
+      // (Thought better of: nothing to report.)
+      if (mod.importCancelled(e)) return;
       toastError(isCmdError(e) ? e.message : e instanceof Error ? e.message : String(e));
     }
   };

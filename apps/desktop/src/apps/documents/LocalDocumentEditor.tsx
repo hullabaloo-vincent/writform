@@ -87,6 +87,7 @@ import {
 import { onLocalFeedbackChange, readLocalFeedback, type LocalThread } from "./feedbackLocal";
 import { LocalFeedbackPanel } from "./LocalFeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
+import { ExportPdfDialog } from "./ExportPdfDialog";
 import { PrintDialog } from "./PrintDialog";
 import { FindBar } from "./FindBar";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
@@ -272,7 +273,8 @@ function LocalEditorInner({
   const [feedbackTab, setFeedbackTab] = useState<FeedbackTab>("comments");
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
-  const lang = (meta.format === "manuscript" && book.meta.language) || (typeof navigator !== "undefined" && navigator.language) || "en";
+  // The language of the text: a book's own, else the document's when it says one, else this device's.
+  const lang = (meta.format === "manuscript" && book.meta.language) || docSettings.lang || (typeof navigator !== "undefined" && navigator.language) || "en";
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
@@ -326,6 +328,7 @@ function LocalEditorInner({
   };
 
   const [printOpen, setPrintOpen] = useState(false);
+  const [pdfExport, setPdfExport] = useState(false);
   const [showMarks, setShowMarks] = useState(() => localStorage.getItem("wf-doc-marks") === "on");
   const toggleMarks = () => {
     const next = !showMarks;
@@ -355,7 +358,7 @@ function LocalEditorInner({
         ? []
         : [
             { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
-            { label: "Export PDF", run: run("pdf") },
+            { label: "Export PDF…", title: "Choose what goes into the file, then save it", run: async () => setPdfExport(true) },
             {
               label: "Export booklet PDF",
               title: "Pages imposed for saddle stitch: print two-sided (flip on the short edge), then fold in half",
@@ -934,8 +937,19 @@ function LocalEditorInner({
           onExport={() => {
             setPreviewOpen(false);
             if (meta.format === "manuscript") setBookExport("paperback");
-            else void exportItems.find((item) => item.label === "Export PDF")?.run();
+            else setPdfExport(true);
           }}
+        />
+      )}
+      {pdfExport && editor && canPrint && (
+        <ExportPdfDialog
+          title={meta.title}
+          details={meta.format === "none" ? { settings: docSettings, readonly: false, onPatch: (patch) => updateDocSettings(provider.doc, patch) } : null}
+          build={async (options, onProgress) => {
+            const [{ buildExportPdf }, { snapshotDocMaps }] = await Promise.all([import("./export"), import("./docMaps")]);
+            return buildExportPdf(editor.getJSON(), meta.title, meta.format, meta.format === "none" ? docSettings : undefined, docStyles.overrides, () => snapshotDocMaps(provider.doc), options, onProgress);
+          }}
+          onClose={() => setPdfExport(false)}
         />
       )}
       {printOpen && editor && canPrint && (

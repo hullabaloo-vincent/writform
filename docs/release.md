@@ -76,6 +76,29 @@ book` fails if a book's pages or PDF bytes changed. If the change was
 meant, run it with `UPDATE_GOLDEN=1` and say so in the release notes —
 existing books will repaginate.
 
+## The PDF engine
+
+`pdf-engine/` (the engine PDFs are edited with) is built to WebAssembly by
+hand, and the result is committed in `apps/desktop/src/pdf/engine/pkg/`. An
+ordinary build never compiles it. After any change under `pdf-engine/`:
+
+```sh
+cd pdf-engine && cargo test
+cd ../apps/desktop && node tools/build-pdf-engine.mjs
+npm run harness -- pdfengine pdfview
+```
+
+The build tool needs `wasm-bindgen` at the exact version it names and
+`wasm-opt` (binaryen). It refuses a build over 4 MB, or one that needs a
+WebAssembly feature Safari 15 lacks. `pdfengine` fails while the committed
+build is not the build of the source as it stands. The Rust version is
+pinned twice, in `rust-toolchain.toml` and `pdf-engine/rust-toolchain.toml`:
+move them together.
+
+After an update of `pdfjs-dist`, copy its `cmaps`, `standard_fonts`, `wasm`
+and `iccs` folders over `apps/desktop/public/pdfjs/` again (leaving out
+`quickjs-eval.*`). `pdfview` fails until they match.
+
 ## 4. By hand
 
 The harnesses can't open the app. Before a release that touches them:
@@ -83,6 +106,20 @@ The harnesses can't open the app. Before a release that touches them:
 - A Word file exported by the app opens in Word with no repair prompt;
   tracked changes can be accepted and rejected there.
 - Print from macOS, Windows and an iPhone.
+- PDF import is held by `npm run harness -- pdfimport`, mostly on PDFs this
+  app made itself. Before a release that changes it, import a few from
+  elsewhere: a Word export, a two-column paper, a statement with tables, a
+  scan. Reading a scan's text is the system's own recogniser (Mac, iPhone,
+  iPad): `cargo test -p writform-desktop --test ocr` runs it on a real
+  picture, on a Mac only.
+- Edit a real PDF (a contract, a form): move pages, mark it up, fill it in,
+  sign it, save a copy, and open the copy in Preview and in Acrobat. The
+  harnesses cannot draw a page, so how the editor looks and how a mark sits
+  under the pointer are only ever seen here.
+- PDF standards rest on a checklist in the harness, not on a validator.
+  Before a release that changes the PDF writer, run veraPDF on an
+  **Archive copy** (it should report PDF/A-2b, or PDF/A-3b with the copy
+  inside) and a printer's preflight on a **PDF/X-1a** paperback.
 - Page view, Suggesting mode and the ribbon on a phone, with the on-screen
   keyboard.
 - An older build of the app against a document that uses the newest

@@ -4,18 +4,28 @@
  * the print exports share. Font files and images are gathered here, where
  * fetch and canvas are available, and handed over. When a worker can't
  * start, the same session runs on the main thread.
+ *
+ * Pictures: a layout needs only their sizes, read from each file's first
+ * bytes and remembered. A PDF asks for the pictures themselves once it
+ * knows how large each is printed, a page's worth at a time, and they are
+ * made ready here for that size (pictures.ts says how).
  */
 
 import { modelImages, type DocModel } from "../../doclayout/model";
-import { bookFileName, collectImages } from "../exportBook";
+import { bookFileName } from "../exportBook";
 import { loadFaces, resolveFont, scriptFamilies } from "../../fonts/store";
 import { isCatalogBookFont } from "../fonts/registry";
 import type { BookModel, Warning } from "../model/types";
+import type { PdfOptions, PictureQuality } from "../render/options";
+import type { PdfAttachment } from "../render/pdf";
 import { smfNames } from "../smf/names";
 import type { BuiltFile } from "../ui/ExportBookDialog";
 import type { FaceBytes } from "./faces";
 import { designFor, ornamentFor, smfFamily } from "./layout";
-import type { AnyRequest, DocRequest, JobImage, LayoutRequest, PageMap, PrintKind, PrintResult, TypesetSession } from "./run";
+import { geometryFor } from "../model/trims";
+import { canvasPixels, canvasTools } from "./pictureCanvas";
+import { makePicture, sniff, type PdfPicture, type PictureInfo, type PictureTools, type PictureWant } from "./pictures";
+import type { AnyRequest, DocRequest, JobImage, LayoutRequest, PageMap, PictureSource, PressOptions, PrintKind, PrintResult, TypesetSession } from "./run";
 import type { DisplayList } from "./types";
 
 /** The families a job draws with: body, headings, and whichever family
@@ -91,56 +101,116 @@ export async function bookFonts(kind: PrintKind, model: BookModel): Promise<Book
 
 // ---------------------------------------------------------------- images
 
-const prepared = new Map<string, JobImage | null>();
-
 const bookImages = (model: BookModel) => [
   ...new Set(model.sections.flatMap((s) => s.blocks.flatMap((b) => (b.kind === "image" ? [b.url] : [])))),
 ];
 
-/** Images for print, scaled to at most ~300 pixels per inch of the widest
- *  they can print and flattened onto white (print PDFs shouldn't carry
- *  transparency). Cached by URL for the session. */
-async function prepareImages(urls: string[]): Promise<{ images: JobImage[]; failed: number }> {
-  const fresh = urls.filter((u) => !prepared.has(u));
-  if (fresh.length) {
-    const { images: fetched } = await collectImages(fresh);
-    const maxPx = 1800;
-    for (const url of fresh) {
-      const img = fetched.get(url);
-      if (!img) {
-        prepared.set(url, null);
-        continue;
-      }
-      try {
-        const bitmap = await createImageBitmap(new Blob([img.bytes as BlobPart], { type: img.type }));
-        const scale = Math.min(1, maxPx / bitmap.width);
-        const w = Math.max(1, Math.round(bitmap.width * scale));
-        const h = Math.max(1, Math.round(bitmap.height * scale));
-        const canvas = document.createElement("canvas");
-        canvas.width = w;
-        canvas.height = h;
-        const ctx = canvas.getContext("2d");
-        if (!ctx) throw new Error("no canvas");
-        ctx.fillStyle = "#fff";
-        ctx.fillRect(0, 0, w, h);
-        ctx.drawImage(bitmap, 0, 0, w, h);
-        bitmap.close();
-        const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.9));
-        if (!blob) throw new Error("encode failed");
-        prepared.set(url, { url, bytes: new Uint8Array(await blob.arrayBuffer()), w, h });
-      } catch {
-        prepared.set(url, null);
-      }
+/** What is known of a picture from its file (null: it couldn't be had, as
+ *  of `at`). The files themselves are not kept. */
+const facts = new Map<string, { info: PictureInfo | null; at: number }>();
+/** A picture that couldn't be had is asked for again after this long. */
+const RETRY_MS = 30_000;
+
+let fetchPicture = async (url: string): Promise<Uint8Array | null> => {
+  try {
+    const { normalizeAttachmentSrc } = await import("../../lib/backend");
+    const res = await fetch(normalizeAttachmentSrc(url));
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+};
+let tools: PictureTools = canvasTools;
+
+/** For tests: where pictures come from and what draws them. */
+export function setPictureSource(fetcher: typeof fetchPicture, drawer: PictureTools = canvasTools): void {
+  fetchPicture = fetcher;
+  tools = drawer;
+  facts.clear();
+  ready.clear();
+  readyBytes = 0;
+}
+
+/** The sizes of a job's pictures, for its layout (a few fetched at a time,
+ *  each once), and which couldn't be had. */
+async function pictureSizes(urls: string[]): Promise<{ images: JobImage[]; missing: string[] }> {
+  const now = Date.now();
+  const fresh = [...new Set(urls)].filter((url) => {
+    const known = facts.get(url);
+    return !known || (!known.info && now - known.at > RETRY_MS);
+  });
+  let next = 0;
+  const worker = async () => {
+    while (next < fresh.length) {
+      const url = fresh[next];
+      next += 1;
+      const bytes = await fetchPicture(url);
+      facts.set(url, { info: bytes ? sniff(bytes) : null, at: Date.now() });
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(4, fresh.length) }, worker));
   const images: JobImage[] = [];
-  let failed = 0;
+  const missing: string[] = [];
   for (const url of urls) {
-    const img = prepared.get(url);
-    if (img) images.push(img);
-    else failed += 1;
+    const info = facts.get(url)?.info;
+    if (info) images.push({ url, w: info.w, h: info.h });
+    else missing.push(url);
   }
-  return { images, failed };
+  return { images, missing };
+}
+
+/** Pictures made ready lately, the small ones (a photograph is, a page of
+ *  plain pixels is not): making the same PDF again, with another choice
+ *  ticked, need not make them again. */
+const ready = new Map<string, PdfPicture>();
+let readyBytes = 0;
+const READY_ONE = 2_000_000;
+const READY_ALL = 48_000_000;
+const sizeOf = (p: PdfPicture) => (p instanceof Uint8Array ? p.length : p.bytes.length + (p.alpha?.length ?? 0) + (p.icc?.length ?? 0) + (p.file?.length ?? 0));
+
+/**
+ * A PDF's pictures, made ready as it asks for them. `flatten`: on white,
+ * with nothing see-through (a press). `gray`: in greys alone (a press
+ * printing in black). Those that can't be had or read are named in
+ * `failed`.
+ */
+function pictureSource(quality: PictureQuality, flatten: boolean, failed: Set<string>, gray = false): PictureSource {
+  const maxPixels = canvasPixels();
+  const one = async (want: PictureWant): Promise<PdfPicture | null> => {
+    const key = `${quality}|${flatten ? 1 : 0}${gray ? "g" : ""}|${quality === "original" ? "" : `${Math.round(want.w)}x${Math.round(want.h)}`}|${want.url}`;
+    const known = ready.get(key);
+    if (known) return known;
+    const bytes = await fetchPicture(want.url);
+    const info = bytes ? sniff(bytes) : null;
+    if (!bytes || !info) return null;
+    try {
+      const made = await makePicture(bytes, info, want, quality, { flatten, maxPixels, gray }, tools);
+      const size = sizeOf(made);
+      if (size <= READY_ONE) {
+        ready.set(key, made);
+        readyBytes += size;
+        // (The oldest go first.)
+        for (const [old, picture] of ready) {
+          if (readyBytes <= READY_ALL) break;
+          ready.delete(old);
+          readyBytes -= sizeOf(picture);
+        }
+      }
+      return made;
+    } catch {
+      return null;
+    }
+  };
+  return async (want) => {
+    const made = new Map<string, PdfPicture>();
+    for (const w of want) {
+      const picture = await one(w);
+      if (picture) made.set(w.url, picture);
+      else failed.add(w.url);
+    }
+    return made;
+  };
 }
 
 // ---------------------------------------------------------------- worker
@@ -154,7 +224,9 @@ type Reply =
   | { id: number; type: "pages"; map: PageMap }
   | { id: number; type: "cancelled" }
   | { id: number; type: "error"; message: string }
-  | { id: number; type: "fonts"; families: string[] };
+  | { id: number; type: "fonts"; families: string[] }
+  /** A PDF under way wants these pictures, each this large at most. */
+  | { id: number; type: "images"; want: PictureWant[] };
 
 interface Pending {
   resolve: (value: unknown) => void;
@@ -164,6 +236,8 @@ interface Pending {
   type: "layout" | "pdf" | "pages";
   req: AnyRequest;
   channel?: string;
+  /** A PDF's pictures, when it asks. */
+  pictures?: PictureSource;
 }
 
 class WorkerUnavailable extends Error {}
@@ -239,6 +313,10 @@ export class Typesetter {
         void this.refill(worker, msg.id, msg.families);
         return;
       }
+      if (msg.type === "images") {
+        void this.supply(worker, msg.id, msg.want);
+        return;
+      }
       this.pending.delete(msg.id);
       if (msg.type === "laidout") p.resolve(msg.dl);
       else if (msg.type === "done") p.resolve(msg.result);
@@ -309,11 +387,31 @@ export class Typesetter {
     }
   }
 
+  /** A PDF under way asked for pictures: make them ready and hand them
+   *  over. It is always answered (with fewer, where some can't be had):
+   *  the job is waiting. */
+  private async supply(worker: Worker, id: number, want: PictureWant[]) {
+    let pictures = new Map<string, PdfPicture>();
+    try {
+      pictures = (await this.pending.get(id)?.pictures?.(want)) ?? pictures;
+    } catch {
+      // None, then.
+    }
+    // Let go meanwhile, which settled the request.
+    if (!this.pending.has(id) || worker !== this.worker) return;
+    try {
+      worker.postMessage({ id, type: "images", pictures });
+    } catch {
+      worker.postMessage({ id, type: "images", pictures: new Map() });
+    }
+  }
+
   private async send(
     type: "layout" | "pdf" | "pages",
     req: AnyRequest,
     onProgress: (message: string) => void,
     channel?: string,
+    pictures?: PictureSource,
   ): Promise<unknown> {
     this.active += 1;
     if (this.idle) clearTimeout(this.idle);
@@ -327,7 +425,7 @@ export class Typesetter {
         try {
           return await new Promise((resolve, reject) => {
             const id = this.nextId++;
-            const p: Pending = { resolve, reject, progress: onProgress, type, req, channel };
+            const p: Pending = { resolve, reject, progress: onProgress, type, req, channel, pictures };
             this.pending.set(id, p);
             try {
               this.post(worker, id, p, fonts);
@@ -345,7 +443,7 @@ export class Typesetter {
       const missing = session.missingFamilies(req.families);
       if (missing.length) session.addFonts(await loadFaces(missing));
       if (type === "pages") return await session.pageMap(req);
-      return type === "layout" ? (await session.layout(req, onProgress)).dl : await session.pdf(req, onProgress);
+      return type === "layout" ? (await session.layout(req, onProgress)).dl : await session.pdf(req, onProgress, pictures);
     } finally {
       this.active -= 1;
       this.armIdle();
@@ -356,24 +454,7 @@ export class Typesetter {
    *  channel overtook this one. */
   async layout(kind: PrintKind, source: BookModel, onProgress: (message: string) => void = () => {}, channel = "preview") {
     const fonts = await bookFonts(kind, source);
-    const { images } = await prepareImages(bookImages(fonts.model));
-    const req: LayoutRequest = {
-      kind,
-      model: fonts.model,
-      families: fonts.families,
-      images: images.map(({ url, w, h }) => ({ url, w, h })),
-      now: Date.now(),
-      ...(Object.keys(fonts.chains).length ? { chains: fonts.chains } : {}),
-    };
-    const dl = (await this.send("layout", req, onProgress, channel)) as DisplayList | null;
-    if (dl && fonts.warnings.length) dl.warnings.push(...fonts.warnings);
-    return dl;
-  }
-
-  async pdf(kind: PrintKind, source: BookModel, onProgress: (message: string) => void) {
-    onProgress("Loading fonts and images…");
-    const fonts = await bookFonts(kind, source);
-    const { images, failed } = await prepareImages(bookImages(fonts.model));
+    const { images } = await pictureSizes(bookImages(fonts.model));
     const req: LayoutRequest = {
       kind,
       model: fonts.model,
@@ -382,43 +463,56 @@ export class Typesetter {
       now: Date.now(),
       ...(Object.keys(fonts.chains).length ? { chains: fonts.chains } : {}),
     };
-    const result = (await this.send("pdf", req, onProgress)) as PrintResult;
+    const dl = (await this.send("layout", req, onProgress, channel)) as DisplayList | null;
+    if (dl && fonts.warnings.length) dl.warnings.push(...fonts.warnings);
+    return dl;
+  }
+
+  async pdf(kind: PrintKind, source: BookModel, onProgress: (message: string) => void, press?: PressOptions) {
+    onProgress("Loading fonts and images…");
+    const fonts = await bookFonts(kind, source);
+    const { images, missing } = await pictureSizes(bookImages(fonts.model));
+    const req: LayoutRequest = {
+      kind,
+      model: fonts.model,
+      families: fonts.families,
+      images,
+      now: Date.now(),
+      ...(Object.keys(fonts.chains).length ? { chains: fonts.chains } : {}),
+      ...(kind === "paperback" && (press?.x1a || press?.bleed) ? { press } : {}),
+    };
+    // A book is for a press: pictures sharp on paper, on white, with
+    // nothing see-through left in them (and in greys, for one that prints
+    // in black alone).
+    const failed = new Set(missing);
+    const result = (await this.send("pdf", req, onProgress, undefined, pictureSource("print", true, failed, kind === "paperback" && !!press?.x1a))) as PrintResult;
     if (fonts.warnings.length) result.warnings.push(...fonts.warnings);
-    return { result, failed };
+    return { result, failed: failed.size };
   }
 
   /** Lay a document out (its preview). Null when a newer layout on the
    *  same channel overtook this one. */
   async docLayout(doc: DocModel, channel = "doc-preview") {
-    const { images } = await prepareImages(modelImages(doc));
-    const req: DocRequest = {
-      kind: "document",
-      doc,
-      families: doc.families,
-      images: images.map(({ url, w, h }) => ({ url, w, h })),
-    };
+    const { images } = await pictureSizes(modelImages(doc));
+    const req: DocRequest = { kind: "document", doc, families: doc.families, images };
     return (await this.send("layout", req, () => {}, channel)) as DisplayList | null;
   }
 
   /** Where a document's pages fall (the editor's page view). Null when a
    *  newer request on the same channel overtook this one. */
   async docPages(doc: DocModel, channel = "doc-pages") {
-    const { images } = await prepareImages(modelImages(doc));
-    const req: DocRequest = {
-      kind: "document",
-      doc,
-      families: doc.families,
-      images: images.map(({ url, w, h }) => ({ url, w, h })),
-    };
+    const { images } = await pictureSizes(modelImages(doc));
+    const req: DocRequest = { kind: "document", doc, families: doc.families, images };
     return (await this.send("pages", req, () => {}, channel)) as PageMap | null;
   }
 
   /** A document as a PDF: straight, or imposed as a booklet. */
-  async docPdf(doc: DocModel, booklet: boolean, onProgress: (message: string) => void = () => {}) {
-    const { images, failed } = await prepareImages(modelImages(doc));
-    const req: DocRequest = { kind: booklet ? "document-booklet" : "document", doc, families: doc.families, images };
-    const result = (await this.send("pdf", req, onProgress)) as PrintResult;
-    return { result, failed };
+  async docPdf(doc: DocModel, booklet: boolean, onProgress: (message: string) => void = () => {}, pdf?: PdfOptions, attach?: PdfAttachment) {
+    const { images, missing } = await pictureSizes(modelImages(doc));
+    const req: DocRequest = { kind: booklet ? "document-booklet" : "document", doc, families: doc.families, images, ...(pdf ? { pdf } : {}), ...(attach && !booklet ? { attach } : {}) };
+    const failed = new Set(missing);
+    const result = (await this.send("pdf", req, onProgress, undefined, pictureSource(pdf?.pictures ?? "print", false, failed))) as PrintResult;
+    return { result, failed: failed.size };
   }
 }
 
@@ -430,9 +524,19 @@ export function typesetter(): Typesetter {
   return shared;
 }
 
-export async function typesetToPdf(kind: PrintKind, model: BookModel, onProgress: (message: string) => void): Promise<BuiltFile> {
-  const { result, failed } = await typesetter().pdf(kind, model, onProgress);
+/** The margin KDP asks for at the top, the foot and the outside edge of a
+ *  page that has bleed (inches). */
+const BLEED_MARGIN = 0.375;
+
+export async function typesetToPdf(kind: PrintKind, model: BookModel, onProgress: (message: string) => void, press?: PressOptions): Promise<BuiltFile> {
+  const { result, failed } = await typesetter().pdf(kind, model, onProgress, press);
   const warnings = [...result.warnings];
+  if (kind === "paperback" && press?.bleed) {
+    const g = geometryFor(model.book.print, result.pages);
+    if (Math.min(g.top, g.bottom, g.outside) < BLEED_MARGIN) {
+      warnings.push({ kind: "page-count", message: `With bleed, KDP asks for at least ${BLEED_MARGIN} in at the top, the bottom and the outside edge. One of this book’s margins is smaller.` });
+    }
+  }
   if (failed) {
     warnings.push({
       kind: "image",
@@ -446,7 +550,7 @@ export async function typesetToPdf(kind: PrintKind, model: BookModel, onProgress
       fileName: `${bookFileName(model.book)} (paperback interior).pdf`,
       saveKind: "pdf",
       warnings,
-      summary: `${result.pages} pages · ${trim} · inside margin ${fmt(result.insideMargin)} in`,
+      summary: `${result.pages} pages · ${trim} · inside margin ${fmt(result.insideMargin)} in${press?.bleed ? " · with bleed" : ""}${press?.x1a ? " · PDF/X-1a" : ""}`,
     };
   }
   if (kind === "booklet") {

@@ -26,6 +26,36 @@
 4. **⌘P** (Ctrl+P) prints. **Export** saves the same pages as a PDF, or the
    document as Word.
 
+## Export a PDF
+
+**Export ▸ Export PDF…** opens the choices. They are remembered on this
+device.
+
+1. **Pictures.** *Screen* keeps the file small enough to send. *Print*
+   keeps pictures sharp on paper. *Original* puts each picture in as the
+   file it is, which can make a large PDF.
+2. **Tags for screen readers** writes headings, lists, tables and picture
+   descriptions into the file, so it can be read aloud. Give each picture
+   a description first (select it, then **Picture ▸ Description**). The
+   export says how many have none.
+3. **Archive copy (PDF/A)** makes a file meant to open the same way in
+   many years. Choose it for a file you will keep or hand to an archive.
+4. **Keep an editable copy inside** puts the document itself into the PDF.
+   Import that PDF later and you get the document back with its styles
+   and pictures. Anyone you send the PDF to can do the same, so leave it
+   off for a file that is only meant to be read.
+5. **Details** holds the subject, the keywords and the language. They are
+   kept with the document.
+6. **Create PDF**, then **Save…**.
+
+To get a document back out of its PDF, use Documents → **Import** and pick
+the PDF. If it holds its document you are asked whether to open the
+document or to read the pages as text.
+
+For a book, **Export ▸ Paperback PDF (print-ready)…** has two choices of
+its own for a printer that asks for them: **PDF/X-1a for a printer** and
+**With bleed**.
+
 ## Format a document
 
 1. Select words: a small menu appears above them with bold, italic,
@@ -287,6 +317,65 @@ boxes, equations, drawn shapes). A table laid out wider than its page is
 made to fit, and a cell's own borders and a picture's outline and rounded
 corners are kept. A file that looks like a book comes in as a Manuscript
 with its chapters found.
+
+## Bring in a PDF
+
+Documents → **Import**, pick the PDF. What comes back is a document you can
+edit, not a picture of the pages.
+
+- **Text** comes back as paragraphs, headings, lists and tables, with
+  links, footnotes and pictures where they stood. Two columns are read
+  down one and then down the other.
+- **The page** comes with it: paper, margins, columns, the font and size
+  of the text, and the running head and page numbers as the document's
+  header and footer.
+- **A password** is asked for if the file has one.
+- **A scan** holds pictures of pages and no text. You are asked whether to
+  **Read the text** or **Keep as pictures**. Reading is done on this
+  device by the system's own recogniser (Mac, iPhone and iPad), a page at
+  a time, and is worth a read through afterwards.
+- **A long file** shows how far it is. **Cancel** stops it and nothing is
+  made.
+
+A note after the import says what was left out. A PDF made by a layout
+program for print will come back less tidy than one made from a word
+processor, and a PDF with tags (Word and Google Docs write them when asked
+to) comes back best of all.
+
+## Edit a PDF
+
+Documents → **Import**, pick the PDF, and choose **Edit this PDF**. (The
+other choice, **Convert to a document**, makes a document of what it says.
+See above.)
+
+- **Read and find.** Scroll the pages, zoom with the two magnifier buttons,
+  and type in **Find in this PDF**. Enter goes to the next match.
+- **Pages.** The list on the left is the pages. Click one to pick it. Shift
+  and Ctrl or ⌘ pick several. Drag to move them, or use the buttons above
+  the list to turn, move, copy, add and take out pages. *Save these pages
+  as a PDF of their own* splits them out.
+- **Mark up.** Select text on a page and press **Highlight**, or the
+  underline or strike through buttons beside it. **Note**, **Draw**,
+  **Box**, **Arrow** and **Type** each make their mark where you click or
+  drag. Back in **Read**, click a mark to move it, change its words or take
+  it off.
+- **Fill a form.** Its fields are shaded on the page. Type in them and tick
+  them there.
+- **Sign.** Press **Sign**, draw your signature (or use a picture of it),
+  then click the page where it goes. *Make part of the page* fixes
+  signatures and typed words in place so they can no longer be moved.
+- **Change text (Beta).** Click a piece of the page's own text and retype
+  it. A PDF holds only the letters it uses, so a letter it lacks is set in
+  a standard font and you are told. Check the result.
+- **Undo** and **Redo** are in the header, and ⌘Z works.
+- **Save.** *Save a copy* writes the PDF as it now is to a file you
+  choose. Your original is not touched. In the apps, *Keep on this device*
+  puts it in Documents so you can come back to it, and **Save** then saves
+  it in place.
+
+A PDF with a password asks for it. If whoever made it does not allow
+changes, the tools for those changes are off. If it is signed with a
+certificate you are warned first, since any change breaks that signature.
 
 ## Keep what's on this device in order
 

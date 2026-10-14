@@ -1,5 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 
+import type { PdfOptions } from "../../book/render/options";
 import type { DocxImage, DocxWritten } from "../../docx/write";
 import type { StyleOverrides } from "../../editor/styles/sheet";
 import type { SaveResult } from "../../lib/backend";
@@ -7,6 +8,7 @@ import { saveExport } from "../../lib/saveFile";
 import { toast } from "../../platform/toast";
 import { authorName } from "../../stores/localProfile";
 import { useSession } from "../../stores/session";
+import type { DocMapsSnapshot } from "./docMaps";
 import { DEFAULT_SETTINGS, type DocSettings } from "./docSettings";
 import { finalJson } from "../../editor/review/final";
 import { isScripted, scriptedAsDocument } from "../../doclayout/scripted";
@@ -68,6 +70,39 @@ export function pagesSource(
   const author = currentAuthor();
   if (isScripted(format)) return { ...scriptedAsDocument(finalJson(doc), format, title), title, author };
   return { doc, title, author, settings: settings ?? DEFAULT_SETTINGS, ...(format === "none" ? { styles } : {}) };
+}
+
+/**
+ * The document as a PDF for the Export dialog, made the way chosen there.
+ * Where it was asked for, the document itself goes inside (sourceCopy.ts):
+ * the text as it is in the editor (not as a script's pages set it), its own
+ * settings, and its pictures.
+ */
+export async function buildExportPdf(
+  source: JSONContent,
+  title: string,
+  format: string,
+  settings: DocSettings | undefined,
+  styles: StyleOverrides | undefined,
+  /** The document's own maps, read when they are wanted. */
+  maps: () => DocMapsSnapshot,
+  options: PdfOptions,
+  onProgress: (message: string) => void,
+): Promise<{ bytes: Uint8Array; pages: number; notes: string[] }> {
+  const { buildDocPdf } = await import("../../doclayout/exportDoc");
+  const notes: string[] = [];
+  let attach: { name: string; type: string; description: string; bytes: Uint8Array } | undefined;
+  if (options.source) {
+    onProgress("Putting the document inside…");
+    const [{ packSource, SOURCE_DESCRIPTION, SOURCE_NAME, SOURCE_TYPE }, { collectImages }] = await Promise.all([import("./sourceCopy"), import("../../book/exportBook")]);
+    const packed = await packSource({ title, format, content: finalJson(source), maps: maps() }, async (src) => (await collectImages([src])).images.get(src)?.bytes ?? null);
+    attach = { name: SOURCE_NAME, type: SOURCE_TYPE, description: SOURCE_DESCRIPTION, bytes: packed.bytes };
+    if (packed.left) {
+      notes.push(`${packed.left === 1 ? "A picture" : `${packed.left} pictures`} couldn’t be read and ${packed.left === 1 ? "is" : "are"} not in the copy kept inside.`);
+    }
+  }
+  const built = await buildDocPdf(pagesSource(source, title, format, settings, styles), { pdf: options, onProgress, ...(attach ? { attach } : {}) });
+  return { bytes: built.bytes, pages: built.pages, notes: [...built.notes, ...notes] };
 }
 
 /** The document as a PDF for the Print dialog. */

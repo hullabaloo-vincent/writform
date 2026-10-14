@@ -2,7 +2,7 @@
 # Build:  docker build -t writform-server .
 # Run:    docker run -p 7311:7311 -v writform:/data ghcr.io/hullabaloo-vincent/writform-server
 
-FROM rust:1.90-bookworm AS build
+FROM rust:1.99-bookworm AS build
 WORKDIR /src
 COPY Cargo.toml rust-toolchain.toml ./
 COPY crates ./crates

@@ -96,6 +96,7 @@ import {
 import { useFocusMode, useTypewriterScroll } from "./focus";
 import { useAutoRevisions } from "./history";
 import { FindBar } from "./FindBar";
+import { ExportPdfDialog } from "./ExportPdfDialog";
 import { PrintDialog } from "./PrintDialog";
 import { useLocalDocs } from "./local";
 import { OutlinePanel } from "./OutlinePanel";
@@ -333,7 +334,8 @@ function EditorInner({
   const [feedbackTab, setFeedbackTab] = useState<FeedbackTab>("comments");
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
-  const lang = (format === "manuscript" && book.meta.language) || (typeof navigator !== "undefined" && navigator.language) || "en";
+  // The language of the text: a book's own, else the document's when it says one, else this device's.
+  const lang = (format === "manuscript" && book.meta.language) || docSettings.lang || (typeof navigator !== "undefined" && navigator.language) || "en";
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
@@ -456,6 +458,7 @@ function EditorInner({
   };
 
   const [printOpen, setPrintOpen] = useState(false);
+  const [pdfExport, setPdfExport] = useState(false);
   const [showMarks, setShowMarks] = useState(() => localStorage.getItem("wf-doc-marks") === "on");
   const toggleMarks = () => {
     const next = !showMarks;
@@ -485,7 +488,7 @@ function EditorInner({
         ? []
         : [
             { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
-            { label: "Export PDF", run: run("pdf") },
+            { label: "Export PDF…", title: "Choose what goes into the file, then save it", run: async () => setPdfExport(true) },
             {
               label: "Export booklet PDF",
               title: "Pages imposed for saddle stitch: print two-sided (flip on the short edge), then fold in half",
@@ -1041,8 +1044,19 @@ function EditorInner({
           onExport={() => {
             setPreviewOpen(false);
             if (format === "manuscript") setBookExport("paperback");
-            else void exportItems.find((item) => item.label === "Export PDF")?.run();
+            else setPdfExport(true);
           }}
+        />
+      )}
+      {pdfExport && editor && canPrint && (
+        <ExportPdfDialog
+          title={meta.title}
+          details={format === "none" ? { settings: docSettings, readonly: readonly, onPatch: (patch) => updateDocSettings(provider.doc, patch) } : null}
+          build={async (options, onProgress) => {
+            const [{ buildExportPdf }, { snapshotDocMaps }] = await Promise.all([import("./export"), import("./docMaps")]);
+            return buildExportPdf(editor.getJSON(), meta.title, format, format === "none" ? docSettings : undefined, docStyles.overrides, () => snapshotDocMaps(provider.doc), options, onProgress);
+          }}
+          onClose={() => setPdfExport(false)}
         />
       )}
       {printOpen && editor && canPrint && (

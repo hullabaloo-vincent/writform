@@ -110,6 +110,11 @@ submission manuscript.
   with optimal line breaking, hyphenation, no widows or orphans, real small
   caps, drop caps, running heads and roman/arabic page numbers. Fonts are
   embedded, the trim box is set, and it is ready for KDP and IngramSpark.
+  For a printer that asks for it, the paperback's dialog can make the file
+  as **PDF/X-1a** (black ink only, so pictures are made grey) and **with
+  bleed** (each page 0.125 in larger at the top, the bottom and the outside
+  edge, with the page itself marked as the trim). The pages are set the
+  same either way.
   The **Booklet PDF** is for printing and folding at home. The
   **Ebook (EPUB)** is for Kindle, Apple Books, Kobo and Google Play. With
   *Embed the book's fonts* on, the body and heading fonts' files go inside
@@ -346,6 +351,32 @@ submission manuscript.
   with no line left alone at the top or foot of a page and headings kept
   with their text. Every font prints as itself where it can (see
   **Fonts**). Where it can't, the export says what stood in.
+- **Export PDF** (Export ▸ Export PDF…, every format but Manuscript): a
+  small dialog with the choices for the file, remembered on the device.
+  **Pictures** go in for a *Screen* (150 pixels an inch, a file small
+  enough to send), for *Print* (300) or as the *Original* files. A picture
+  is sized by how large it prints, so one shown small costs little. A JPEG
+  that is already good enough goes in untouched and is never encoded a
+  second time. A photograph taken on its side stays the right way up, a
+  see-through picture stays see-through, and a screenshot stays sharp.
+  What a camera wrote beside a photograph (where and when it was taken) is
+  not copied into the PDF.
+  **Tags for screen readers** writes the document's structure into the
+  file: headings, paragraphs, lists, tables with their header cells, notes,
+  links and each picture's description, in reading order. Running heads
+  and page numbers are marked as decoration. The export says how many
+  pictures have no description yet.
+  **Archive copy (PDF/A)** makes a PDF/A-2b file, meant to open the same
+  way in many years: every font is inside it, and it says what its colours
+  mean.
+  **Keep an editable copy inside** puts the document itself into the PDF
+  beside its pages (see **Import**).
+  **Details** are the subject, keywords and language. They are kept with
+  the document, travel in a Word export too, and are what search and
+  screen readers look at.
+- **What every PDF says of itself**: its title, author, subject, keywords
+  and language, when it was made, and its page labels, so a reader's
+  "page iv" or "page 12" is the page that prints that number.
 - **Fonts** (Document format): the font button opens one list of everything
   you can set a paragraph (or the whole body) in, each drawn in itself and
   searched together. The list has the fonts **in this document**, your
@@ -609,9 +640,42 @@ submission manuscript.
   passage to open its thread. The highlighter button in the panel header
   shows or hides the anchor highlights. On-device documents have the same
   panel as **Notes**: comments to your future editing self.
+- **Edit a PDF** (pick a PDF with Import and choose **Edit this PDF**): the
+  PDF opens as the PDF it is, to read, search and change. **Pages**: move
+  them by dragging in the list, turn them, copy them, take them out, add an
+  empty page or the pages of another PDF, and save some pages as a PDF of
+  their own. **Mark up**: highlight, underline or strike through selected
+  text, add notes, draw, put a box or an arrow, and type words on the page.
+  **Forms** are filled in on the page. **Sign** by drawing your signature
+  or using a picture of it. That is a signature as ink on paper is. It is
+  not a certificate. **Change text** (Beta) lets you click a piece of the
+  page's own text and retype it. Every step can be undone. Your file is
+  never written over: **Save a copy** writes the result where you say, and
+  the apps can also **keep** a PDF on the device to come back to, listed
+  in Documents and in Home. A PDF with a password asks for it. One whose
+  owner does not allow changes says so and keeps those tools off.
 - **Import**: PDF, DOCX, RTF, Pages, TXT, and Markdown files convert into
   new documents. Several can be imported at once, and they go into the
-  folder you have open. PDF import recovers structure as well as text. Word
+  folder you have open. PDF import reads the pages back into a document:
+  paragraphs (a word broken at a line's end is put together again),
+  headings, lists, tables, links, footnotes, and pictures with what is
+  said under them, in the order the page is read even where it is set in
+  columns. The paper, the margins, the columns, the font and size of the
+  text, its colours, and what was printed at the head and foot of every
+  page become the document's own page setup, header and footer. A tagged
+  PDF (from Word, Google Docs, InDesign or this app) is read by its tags
+  and not guessed at. A PDF with a password asks for it. A scanned PDF
+  asks whether to **read the text** out of its pages or **keep them as
+  pictures**. Reading uses the system's own text recogniser on a Mac, an
+  iPhone or an iPad. It runs on the device and sends nothing anywhere.
+  Other devices keep a scan's pages as pictures. A long import shows how
+  far it is and can be cancelled. A note afterwards says what was left
+  out, such as drawings and text set at an angle. A
+  PDF exported from here with *Keep an editable copy inside* holds the
+  whole document, with its styles, page setup and pictures. Importing it
+  asks whether to **open the document** or **read the pages**. Suggested
+  changes were saved as accepted, and comments and history are not in it.
+  Anyone who has such a PDF can open the document the same way. Word
   import keeps headings, lists, links, pictures, fonts, spacing and the
   page setup (see above), and says what it couldn't keep yet: text boxes
   arrive as their text, and a section break that doesn't start a page is

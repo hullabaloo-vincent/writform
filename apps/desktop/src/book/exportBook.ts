@@ -58,7 +58,9 @@ export async function buildPrintFile(
   kind: "paperback" | "submission-pdf" | "booklet",
   model: import("./model/types").BookModel,
   onProgress: (message: string) => void,
+  /** A paperback's interior, as a press asks for it. */
+  press?: import("./engine/run").PressOptions,
 ): Promise<import("./ui/ExportBookDialog").BuiltFile> {
   const { typesetToPdf } = await import("./engine/client");
-  return typesetToPdf(kind, model, onProgress);
+  return typesetToPdf(kind, model, onProgress, press);
 }
