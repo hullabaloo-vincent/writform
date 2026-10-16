@@ -23,7 +23,7 @@
 import { bookFont, ornamentFamily } from "../fonts/registry";
 import { toRoman } from "../model/chapters";
 import { contentsLabel, copyrightParagraphs, wantsContents } from "../model/frontmatter";
-import { SMF_DESIGN, type BookDesign } from "../model/presets";
+import { headingMarkOf, SMF_DESIGN, type BookDesign } from "../model/presets";
 import type { PageGeometry } from "../model/trims";
 import type { BookModel, EpigraphBlock, Run, Section, Warning } from "../model/types";
 import { roundedWordCount, smfNames } from "../smf/names";
@@ -197,6 +197,8 @@ class Layout {
   private readonly body: TextStyle;
   private readonly sceneOrnament: { text: string; family: string };
   private readonly headingOrnament: { text: string; family: string } | null;
+  /** Under each chapter's title, the scene break's own picture. */
+  private readonly headingPicture: boolean;
   private readonly warnings: Warning[] = [];
   /** Chapter art already warned of: unread, or too few pixels for print. */
   private artUnread = false;
@@ -255,7 +257,11 @@ class Layout {
     if (!this.smf && d.sceneBreak === "picture" && !this.sceneArt()) {
       this.warnings.push({ kind: "image", message: "The scene break picture couldn’t be read, so the typed ornament prints instead." });
     }
-    this.headingOrnament = !this.smf && d.headingOrnament ? this.ornament(d.headingOrnament) : null;
+    // Under a chapter's title: its own ornament, or whatever the scene
+    // breaks draw (their ornament, their characters or their picture).
+    const mark = this.smf ? { kind: "none" as const } : headingMarkOf(d, !!this.sceneArt());
+    this.headingOrnament = mark.kind === "text" ? this.ornament(mark.text) : null;
+    this.headingPicture = mark.kind === "picture";
     const { meta, smf, art } = o.model.book;
     // (The book's own pictures, and their sizes, shape the pages too.)
     const artKey = d.sceneBreak === "picture" && art.ornament ? [art.ornament.src, o.images?.get(art.ornament.src) ?? null] : null;
@@ -422,6 +428,14 @@ class Layout {
       const r = this.display(this.headingOrnament.text, style, (last ?? y0) + S * 2.3, S, { align });
       items.push(...r.items);
       last = r.last;
+    }
+    const picture = this.headingPicture && section.kind === "chapter" ? this.sceneArt() : null;
+    const image = picture?.items[0];
+    if (image && image.t === "image") {
+      // The scene break's picture, its own size, under the title.
+      const top = (last ?? y0) + S * 1.1;
+      items.push({ ...image, x: align === "left" ? 0 : image.x, y: top });
+      last = top + image.h;
     }
     if (section.epigraph) {
       const r = this.epigraphBlock(section.epigraph, (last ?? y0) + S * 2.8);

@@ -9,6 +9,7 @@
 
 import { xmlEscape as esc } from "../../apps/documents/ooxml";
 import type { Book } from "../model/bookMap";
+import { headingMarkOf } from "../model/presets";
 import { contentsLabel, copyrightParagraphs } from "../model/frontmatter";
 import type { Block, BookModel, Run, Section } from "../model/types";
 import { viewKey } from "../../editor/schema/sanitize";
@@ -141,7 +142,7 @@ h1 .title { display: block; font-size: 1.35em; ${titleStyle} }
 .ornament { text-align: center; margin: -0.8em 0 1.6em; text-indent: 0; }
 h2.subhead { font-size: 1em; font-weight: normal; font-variant: small-caps; letter-spacing: 0.06em; text-align: center; margin: 1.6em 0 0.6em; }
 .scene-break { text-align: center; margin: 1em 0; letter-spacing: 0.3em; }${d.sceneBreak === "picture" ? `
-.scene-break img { height: ${Math.round((d.ornamentSize / d.bodySize) * 100) / 100}em; width: auto; max-width: 100%; vertical-align: middle; }` : ""}
+.scene-break img, .ornament img { height: ${Math.round((d.ornamentSize / d.bodySize) * 100) / 100}em; width: auto; max-width: 100%; vertical-align: middle; }` : ""}
 .page-break { page-break-before: always; break-before: page; }
 blockquote { margin: 1em 2em;${d.blockquote === "indent-italic" ? " font-style: italic;" : d.blockquote === "smaller" ? " font-size: 0.92em;" : ""} }
 .verse { margin: 1em 2em; }
@@ -448,7 +449,12 @@ function sectionXhtml(
   parts.push(`<section epub:type="${type}"${role} id="${section.id}"${section.kind === "part" ? ' class="part"' : ""}>`);
   if (head) parts.push(`<h1>${head}</h1>`);
   if (section.subtitle) parts.push(`<p class="subtitle">${esc(section.subtitle)}</p>`);
-  if (design.headingOrnament && section.kind === "chapter") parts.push(`<p class="ornament">${esc(design.headingOrnament)}</p>`);
+  if (section.kind === "chapter") {
+    const art = book.design.sceneBreak === "picture" && book.art?.ornament ? imageFor(book.art.ornament.src) : null;
+    const mark = headingMarkOf(design, !!art);
+    if (mark.kind === "picture" && art) parts.push(`<p class="ornament"><img src="../${art}" alt=""/></p>`);
+    else if (mark.kind === "text") parts.push(`<p class="ornament">${esc(mark.text)}</p>`);
+  }
   if (section.epigraph) parts.push(epigraphXhtml(section.epigraph.paras, section.epigraph.attribution));
   let breakNext = false;
   for (const block of section.blocks) {

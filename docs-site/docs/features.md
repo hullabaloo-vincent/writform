@@ -150,10 +150,16 @@ submission manuscript.
   or a blank line. The picture is drawn in the manuscript, the preview,
   the paperback and the ebook. Your own characters print when the book's
   fonts have them, and asterisks print otherwise.
+- **Under each chapter's title** (Book ▸ Design ▸ Chapter openings ▸
+  Under the title): nothing, one of the typed ornaments, characters of
+  your own, or the same as the scene breaks (their ornament, characters
+  or picture, following any change to them).
 - **Chapter art** (Book ▸ Design ▸ Chapter art): a picture behind each
   chapter's first page with the chapter's words printed over it, and a
   picture on the left-hand page facing it. Choose them once for every
-  chapter, and under them give any chapter its own or none. **Words on a
+  chapter, and under them give any chapter its own or none. Only the
+  chapters that differ are listed, so a book of hundreds of chapters takes
+  no more room than one of three. **Words on a
   picture** sets the words over the art dark or light. A chapter with a
   facing picture opens on a right-hand page, with a blank page before it
   where needed. The art reaches the paper's edge when the paperback is
@@ -239,10 +245,11 @@ submission manuscript.
   space, a bent arrow where a line is broken by hand and a hook at an
   optional hyphen, beside the mark at each paragraph's end. They are
   drawn over the text and are never part of it.
-- **Dark paper** (the zoom menu, or Settings ▸ Writing): the page dark
-  with light text, for the screen only. Coloured text is made lighter
-  where it could not otherwise be read. Print, PDF and Word files are
-  unchanged.
+- **Dark paper** (the zoom menu, Settings ▸ Writing, or the moon on a
+  writing session's page): the page dark with light text, for the screen
+  only, in documents and writing sessions alike. Coloured text is made
+  lighter where it could not otherwise be read. Print, PDF and Word files
+  are unchanged.
 - **Formatting here** (the top of the sliders panel's Text tab, or ⌘K
   "formatting here"): the style of the text at the caret, what its
   paragraph was given on top of that, and what the words themselves were

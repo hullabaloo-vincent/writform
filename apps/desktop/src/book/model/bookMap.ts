@@ -210,6 +210,9 @@ const DESIGN: Record<keyof BookDesign, Validator> = {
   headingAlign: oneOf("center", "left"),
   sink: num(0, 0.6),
   headingOrnament: str(12),
+  // (An app older than this draws `headingOrnament`, which a choice of the
+  // scene breaks' sets to their characters.)
+  headingMark: oneOf("own", "scene"),
   dropCap: oneOf(0, 2, 3, 4),
   leadIn: oneOf("none", "first-line", "first-words"),
   indent: num(0, 4),

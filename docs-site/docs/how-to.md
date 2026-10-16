@@ -347,9 +347,14 @@ Open a manuscript, press the book button and choose **Design**.
   for dark art.
 - **A picture facing each chapter.** Choose one for **Facing the first
   page**. It fills the left-hand page and the chapter opens on the right.
-- **One chapter different.** The list under the pictures has every
-  chapter. Set a chapter's **Behind** or **Facing** to its own picture or
-  to none.
+- **One chapter different.** Under the pictures, **Give a chapter its
+  own** and pick the chapter. Set its **Behind** or **Facing** to its own
+  picture or to none. Only the chapters that differ are listed. The ×
+  beside one gives it the book's pictures again.
+- **What goes under each chapter's title.** Under **Chapter openings**,
+  **Under the title** takes a typed ornament, **Your own…** characters, or
+  **Same as the scene breaks**, which follows the scene breaks' ornament
+  or picture as you change it.
 
 A whole page wants a picture of 300 pixels an inch: for a 6 × 9 in book,
 2,775 pixels tall. When you export the paperback for a printer, tick

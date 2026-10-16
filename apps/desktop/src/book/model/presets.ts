@@ -27,6 +27,9 @@ export interface BookDesign {
   sink: number;
   /** Ornament under chapter headings ("" = none). */
   headingOrnament: string;
+  /** Whether that is its own (`headingOrnament`) or whatever the scene
+   *  breaks draw: their ornament, their characters or their picture. */
+  headingMark: "own" | "scene";
   /** Drop cap height in lines (0 = none). */
   dropCap: number;
   leadIn: "none" | "first-line" | "first-words";
@@ -66,6 +69,7 @@ const BASE: BookDesign = {
   headingAlign: "center",
   sink: 0.28,
   headingOrnament: "",
+  headingMark: "own",
   dropCap: 3,
   leadIn: "first-line",
   indent: 1.2,
@@ -213,4 +217,14 @@ export const SMF_DESIGN: BookDesign = {
 
 export function presetDesign(id: string): BookDesign {
   return PRESETS.find((p) => p.id === id)?.design ?? BASE;
+}
+
+/** What a chapter's title has under it: nothing, characters, or the scene
+ *  break's picture (`hasPicture`: the book has one that can be drawn). */
+export type HeadingMark = { kind: "none" } | { kind: "text"; text: string } | { kind: "picture" };
+export function headingMarkOf(d: BookDesign, hasPicture: boolean): HeadingMark {
+  if (d.headingMark !== "scene") return d.headingOrnament ? { kind: "text", text: d.headingOrnament } : { kind: "none" };
+  if (d.sceneBreak === "blank") return { kind: "none" };
+  if (d.sceneBreak === "picture" && hasPicture) return { kind: "picture" };
+  return { kind: "text", text: d.ornament || "* * *" };
 }

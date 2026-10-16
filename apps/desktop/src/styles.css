@@ -2117,6 +2117,39 @@ body {
     0 1px 4px rgba(0, 0, 0, 0.18);
 }
 
+/* Dark paper (editor/ui/darkPaper.ts): the document editor's, here too. */
+.wf-paper.dark {
+  color: #dcdce2;
+  color-scheme: dark;
+  background: #1d1d22;
+  border-color: rgba(255, 255, 255, 0.1);
+}
+.wf-paper.dark .wf-rich .tiptap {
+  caret-color: #f2f2f5;
+}
+.wf-paper.dark .wf-rich .tiptap p.is-editor-empty:first-child::before {
+  color: #7d7c86;
+}
+.wf-paper.dark .wf-rich .tiptap blockquote {
+  color: rgba(220, 220, 226, 0.82);
+  border-left-color: rgba(220, 220, 226, 0.22);
+}
+.wf-paper.dark .wf-rich .tiptap hr {
+  border-top-color: rgba(220, 220, 226, 0.3);
+}
+.wf-paper.dark .wf-rich .tiptap a {
+  color: #a99cff;
+}
+.wf-paper.dark .wf-rich .tiptap code {
+  background: rgba(220, 220, 226, 0.1);
+}
+.wf-paper.dark ::selection {
+  background: rgba(124, 108, 240, 0.45);
+}
+.wf-desk-paper.active {
+  color: var(--wf-accent);
+}
+
 /* The margins are the text's own, so a click anywhere on the paper lands
    in it. They keep the lines to a comfortable 36em on a wide page. */
 .wf-paper .wf-rich .tiptap {
@@ -10886,7 +10919,7 @@ body {
 }
 .wf-chapter-art-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 88px 88px;
+  grid-template-columns: minmax(0, 1fr) 84px 84px 24px;
   align-items: center;
   gap: 4px;
   font-size: 12.5px;

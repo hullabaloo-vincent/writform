@@ -99,6 +99,32 @@ const art = (dl: DisplayList) => dl.pages.flatMap((p) => p.items.filter((it): it
   check("and asterisks, with a warning, when no font has them", none.warnings.some((w) => w.kind === "missing-glyphs"));
 }
 
+// ------------------------------------------------------------ under each chapter's title
+
+{
+  const sized: JobImage[] = [{ url: ART, w: 600, h: 200 }];
+  const chapters = buildModel(doc as never, "manuscript", bookWith({}).book).sections.filter((x) => x.kind === "chapter").length;
+  const openers = (dl: DisplayList) => dl.pages.filter((p) => p.role === "opener");
+  const typed = (dl: DisplayList, mark: string) => openers(dl).filter((p) => p.items.some((x) => x.t === "text" && (x as DLText).text === mark)).length;
+
+  const plain = await pages({}, []);
+  check("nothing under a title unless the design says so", typed(plain, "†") === 0);
+  const own = await pages({ "design.headingOrnament": "†" }, []);
+  check("characters of its own under each title", typed(own, "†") === chapters, `${typed(own, "†")} of ${chapters}`);
+  const scene = await pages({ "design.headingMark": "scene", "design.ornament": "†" }, []);
+  check("the same as the scene breaks: their characters", typed(scene, "†") === chapters);
+  const pictured = await pages({ "design.headingMark": "scene", "design.sceneBreak": "picture", "art.ornament": `600x200 ${ART}` }, sized);
+  const under = openers(pictured).filter((p) => p.items.some((x) => x.t === "image" && (x as DLImage).ref === ART && (x as DLImage).y < 300)).length;
+  check("…their picture, under each title", under === chapters, `${under} of ${chapters}`);
+  const blank = await pages({ "design.headingMark": "scene", "design.sceneBreak": "blank", "design.headingOrnament": "†" }, []);
+  check("…and nothing when the scene breaks are blank lines", typed(blank, "†") === 0);
+  check("an app older than this reads the characters", bookWith({ "design.headingMark": "sparkle" }).book.design.headingMark === "own");
+  const { book } = bookWith({ "design.headingMark": "scene", "design.sceneBreak": "picture", "art.ornament": `600x200 ${ART}` });
+  const epub = await buildEpub(buildModel(doc as never, "manuscript", book), { uuid: "00000000-0000-4000-8000-000000000000", images: new Map([[ART, { bytes: png(60, 20, () => [120, 0, 0, 255]), type: "image/png" }]]), now: new Date(Date.UTC(2026, 9, 14)) });
+  const text = Object.values(unzipSync(epub)).map((f) => strFromU8(f, true)).join("\n");
+  check("the ebook's chapters have it too", /<p class="ornament"><img src="\.\.\/images\/img-1\.png" alt=""\/><\/p>/.test(text));
+}
+
 // ------------------------------------------------------------ the ebook, the screen
 
 {
@@ -109,7 +135,7 @@ const art = (dl: DisplayList) => dl.pages.flatMap((p) => p.items.filter((it): it
   const all = (bytes: Uint8Array) => Object.values(unzipSync(bytes)).map((f) => strFromU8(f, true)).join("\n");
   const text = all(epub);
   check("the ebook's scene breaks are the picture", /<p class="scene-break" role="separator" aria-label="Scene break"><img src="\.\.\/images\/img-1\.png" alt=""\/><\/p>/.test(text));
-  check("with its height beside the text", /\.scene-break img \{ height: 1\.64em;/.test(text));
+  check("with its height beside the text", /\.scene-break img, \.ornament img \{ height: 1\.64em;/.test(text));
   const typed = await buildEpub(buildModel(doc as never, "manuscript", bookWith({}).book), { uuid: "00000000-0000-4000-8000-000000000000", now: new Date(Date.UTC(2026, 9, 14)) });
   check("a book without one writes no rule for it", !all(typed).includes(".scene-break img"));
 
@@ -232,8 +258,20 @@ const art = (dl: DisplayList) => dl.pages.flatMap((p) => p.items.filter((it): it
   const host = mountPoint();
   const root = createRoot(host);
   await act(async () => root.render(createElement(ChapterArtSection, { book, disabled: false, patch: () => {}, pictures: { upload: async () => "", limit: 1 }, chapters: again })));
-  check("Book ▸ Design shows the book's two pictures and each chapter's choice", host.querySelectorAll(".wf-cover-slot").length === 2 && host.querySelectorAll(".wf-chapter-art-row:not(.head)").length === 3);
-  check("each chapter says what it has", [...host.querySelectorAll(".wf-chapter-art-pick")].map((b) => b.textContent).join("|").startsWith("The book’s|The book’s|None|The book’s|The book’s|Its own"), [...host.querySelectorAll(".wf-chapter-art-pick")].map((b) => b.textContent).join("|"));
+  check("Book ▸ Design shows the book's two pictures and only the chapters that differ", host.querySelectorAll(".wf-cover-slot").length === 2 && host.querySelectorAll(".wf-chapter-art-row:not(.head)").length === 2 && (host.textContent ?? "").includes("2 of 3 chapters have a choice of their own"));
+  check("each listed chapter says what it has", [...host.querySelectorAll(".wf-chapter-art-pick")].map((b) => b.textContent).join("|") === "None|The book’s|The book’s|Its own", [...host.querySelectorAll(".wf-chapter-art-pick")].map((b) => b.textContent).join("|"));
+  // The others are a choice away, in one picker however many there are.
+  const picker = host.querySelector(".wf-chapter-art-list select") as HTMLSelectElement;
+  check("the rest wait in a picker", !!picker && picker.options.length === 2 && picker.options[1].textContent === again.rows[0].name);
+  await act(async () => {
+    picker.value = String(again.rows[0].pos);
+    picker.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  check("a chapter picked joins the list, the book's for now", host.querySelectorAll(".wf-chapter-art-row:not(.head)").length === 3 && !host.querySelector(".wf-chapter-art-list select"));
+  // A hundred chapters, none different: a line and a picker, no rows.
+  const many = { ...again, rows: Array.from({ length: 100 }, (_, i) => ({ pos: i * 10, name: `Chapter ${i + 1}`, art: null, facing: null })) };
+  await act(async () => root.render(createElement(ChapterArtSection, { book, disabled: false, patch: () => {}, chapters: many })));
+  check("a hundred chapters take no room until one differs", host.querySelectorAll(".wf-chapter-art-row").length === 0 && (host.querySelector(".wf-chapter-art-list select") as HTMLSelectElement).options.length === 101 && (host.textContent ?? "").includes("Every chapter uses the pictures above"));
   await act(async () => root.render(createElement(ChapterArtSection, { book, disabled: false, patch: () => {}, chapters: { ...again, level: 3 } })));
   check("a server that can't keep a chapter's own art: no list, and a line saying why", !host.querySelector(".wf-chapter-art-list") && (host.textContent ?? "").includes("needs this server updated"));
   await act(async () => root.unmount());

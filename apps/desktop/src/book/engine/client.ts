@@ -16,6 +16,7 @@ import { bookFileName } from "../exportBook";
 import { loadFaces, resolveFont, scriptFamilies } from "../../fonts/store";
 import { isCatalogBookFont } from "../fonts/registry";
 import { modelPictureUrls } from "../model/pictures";
+import { headingMarkOf } from "../model/presets";
 import type { BookModel, Warning } from "../model/types";
 import type { PdfOptions, PictureQuality } from "../render/options";
 import type { PdfAttachment } from "../render/pdf";
@@ -36,7 +37,8 @@ export function familiesFor(kind: PrintKind, model: BookModel): string[] {
   if (kind === "submission-pdf") return [smfFamily(model.book.smf.font)];
   const d = designFor(model, "paperback");
   const families = [d.bodyFont, d.headingFont, ornamentFor(d.ornament || "* * *", d).family];
-  if (d.headingOrnament) families.push(ornamentFor(d.headingOrnament, d).family);
+  const mark = headingMarkOf(d, false);
+  if (mark.kind === "text") families.push(ornamentFor(mark.text, d).family);
   return [...new Set(families)];
 }
 

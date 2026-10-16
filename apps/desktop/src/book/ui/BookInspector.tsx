@@ -8,7 +8,7 @@ import { bookFont, ORNAMENTS } from "../fonts/registry";
 import { choosePreset, TRIMS, updateBook, type Book } from "../model/bookMap";
 import { validIsbn } from "../model/buildModel";
 import { numberLabel, type NumberStyle } from "../model/chapters";
-import { PRESETS, type BookDesign } from "../model/presets";
+import { headingMarkOf, PRESETS, type BookDesign } from "../model/presets";
 import { autoMargins, estimatePages, kdpMinInside, spineWidth } from "../model/trims";
 import { trimSize } from "../model/bookMap";
 import { ArtPicker, sharpness, useArtStore } from "./ArtPicker";
@@ -449,6 +449,7 @@ function BookFontRow({ label, value, used, onPick, disabled }: { label: string; 
 
 /** A preset's look, drawn in its own fonts. */
 function Specimen({ design }: { design: BookDesign }) {
+  const mark = headingMarkOf(design, false);
   const label = numberLabel(1, design.chapterNumber === "as-written" ? "word" : design.chapterNumber, design.chapterLabel);
   return (
     <span
@@ -481,7 +482,7 @@ function Specimen({ design }: { design: BookDesign }) {
       >
         The Long Road
       </span>
-      {design.headingOrnament && <span className="wf-book-specimen-orn">{design.headingOrnament}</span>}
+      {mark.kind === "text" && <span className="wf-book-specimen-orn">{mark.text}</span>}
       <span className="wf-book-specimen-text" style={{ textAlign: design.justify ? "justify" : "left" }}>
         {design.dropCap ? <span className="wf-book-specimen-cap">T</span> : "T"}
         <span style={{ fontVariant: design.leadIn !== "none" ? "small-caps" : undefined }}>he rain</span>{" "}
@@ -513,6 +514,10 @@ function DesignTab({
   // and whenever the ornament is not one of the list's).
   const [ownOrnament, setOwnOrnament] = useState(false);
   const own = ownOrnament || !(ORNAMENTS as readonly string[]).includes(d.ornament);
+  // The same for what goes under a chapter's title.
+  const [ownHeading, setOwnHeading] = useState(false);
+  const heading =
+    d.headingMark === "scene" ? "scene" : ownHeading ? "own" : !d.headingOrnament ? "" : (ORNAMENTS as readonly string[]).includes(d.headingOrnament) ? d.headingOrnament : "own";
   const set = <K extends keyof BookDesign>(key: K, value: BookDesign[K]) => patch({ [`design.${key}`]: value });
   const customized = book.overridden.length > 0;
   return (
@@ -620,12 +625,35 @@ function DesignTab({
           disabled={disabled}
         />
         <Select
-          label="Ornament"
-          value={d.headingOrnament}
-          options={[["", "None"], ...ORNAMENTS.map((o) => [o, o] as const)]}
-          onChange={(v) => set("headingOrnament", v)}
+          label="Under the title"
+          value={heading}
+          options={[["", "None"], ...ORNAMENTS.map((o) => [o, o] as const), ["own", "Your own…"], ["scene", "Same as the scene breaks"]]}
+          onChange={(v) => {
+            setOwnHeading(v === "own");
+            if (v === "scene") {
+              // (An older app draws the characters: the scene breaks' own.)
+              patch({ "design.headingMark": "scene", "design.headingOrnament": d.sceneBreak === "ornament" ? d.ornament : d.headingOrnament || d.ornament });
+            } else if (v === "own") patch({ "design.headingMark": "own" });
+            else patch({ "design.headingMark": "own", "design.headingOrnament": v });
+          }}
           disabled={disabled}
         />
+        {heading === "own" && (
+          <TextField
+            label="Your own"
+            value={(ORNAMENTS as readonly string[]).includes(d.headingOrnament) ? "" : d.headingOrnament}
+            field="design.headingOrnament"
+            patch={patch}
+            disabled={disabled}
+            placeholder="❧"
+            hint="Up to 12 characters, drawn under each chapter’s title."
+          />
+        )}
+        {heading === "scene" && (
+          <p className="wf-inspector-dim">
+            {d.sceneBreak === "picture" ? "The scene break picture, at its height." : d.sceneBreak === "blank" ? "The scene breaks are blank lines, so nothing goes under the title." : "The scene breaks’ ornament."} Change it under Scene breaks below.
+          </p>
+        )}
         <label className="wf-inspector-row">
           <span>Space above</span>
           <input

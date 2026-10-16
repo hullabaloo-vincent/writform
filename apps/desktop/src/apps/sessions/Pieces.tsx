@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import { RichDoc } from "../../editor/RichEditor";
+import { useDarkPaper } from "../../editor/ui/darkPaper";
 import { isCmdError } from "../../lib/backend";
 import { countWordsInDocJson } from "../../lib/wordCount";
 import { confirmDialog } from "../../platform/confirm";
@@ -137,6 +138,7 @@ export function Pieces({ prompt, index, sessionTitle }: { prompt: SessionPrompt;
 
 function Piece({ name, doc, mine = false, title = "" }: { name: string; doc: JSONContent | null; mine?: boolean; title?: string }) {
   const words = useMemo(() => countWordsInDocJson(doc), [doc]);
+  const dark = useDarkPaper((s) => s.dark);
   return (
     <article className={`wf-piece${mine ? " mine" : ""}`}>
       <header>
@@ -152,7 +154,7 @@ function Piece({ name, doc, mine = false, title = "" }: { name: string; doc: JSO
           </button>
         )}
       </header>
-      <div className="wf-paper wf-rich-wrap">
+      <div className={`wf-paper wf-rich-wrap${dark ? " dark" : ""}`}>
         <RichDoc doc={doc} />
       </div>
     </article>

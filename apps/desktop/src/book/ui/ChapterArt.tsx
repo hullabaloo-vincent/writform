@@ -1,4 +1,5 @@
-import { useRef } from "react";
+import { X } from "lucide-react";
+import { useRef, useState } from "react";
 
 import { Flyout, FlyoutItem } from "../../editor/ui/Flyout";
 import type { CmdError } from "../../lib/backend";
@@ -82,9 +83,24 @@ export function ChapterArtSection({ book, disabled, patch, pictures, chapters }:
 
 const messageOf = (e: unknown, fallback: string): string => (e as Partial<CmdError> | null)?.message || fallback;
 
-/** Each chapter's own choice: the book's picture, none, or its own. */
+/**
+ * The chapters that differ from the book: each one's choice (the book's
+ * picture, none, or its own), and a picker to give another chapter a choice
+ * of its own. Only those that differ are listed, so a book of hundreds of
+ * chapters is as short here as one of three.
+ */
 function ChapterList({ chapters, pictures, disabled }: { chapters: ChapterArtSource; pictures?: CoverPictures; disabled: boolean }) {
   const input = useRef<HTMLInputElement>(null);
+  /** Chapters picked to be given a choice, not yet given one. */
+  const [added, setAdded] = useState<number[]>([]);
+  const differs = (row: ChapterArtRow) => row.art !== null || row.facing !== null;
+  const shown = chapters.rows.filter((row) => differs(row) || added.includes(row.pos));
+  const others = chapters.rows.filter((row) => !shown.includes(row));
+  const reset = (row: ChapterArtRow) => {
+    if (row.art !== null) chapters.set(row.pos, "art", null);
+    if (row.facing !== null) chapters.set(row.pos, "artFacing", null);
+    setAdded((list) => list.filter((pos) => pos !== row.pos));
+  };
   const choosing = useRef<{ pos: number; which: "art" | "artFacing" } | null>(null);
   const pick = (pos: number, which: "art" | "artFacing") => {
     choosing.current = { pos, which };
@@ -134,20 +150,51 @@ function ChapterList({ chapters, pictures, disabled }: { chapters: ChapterArtSou
           })();
         }}
       />
-      <div className="wf-chapter-art-row head" aria-hidden>
-        <span />
-        <span>Behind</span>
-        <span>Facing</span>
-      </div>
-      {chapters.rows.map((row) => (
+      <p className="wf-inspector-dim">
+        {shown.length === 0
+          ? `Every chapter uses the pictures above.`
+          : `${shown.length} of ${chapters.rows.length} ${chapters.rows.length === 1 ? "chapter has" : "chapters have"} a choice of their own.`}
+      </p>
+      {shown.length > 0 && (
+        <div className="wf-chapter-art-row head" aria-hidden>
+          <span />
+          <span>Behind</span>
+          <span>Facing</span>
+          <span />
+        </div>
+      )}
+      {shown.map((row) => (
         <div key={row.pos} className="wf-chapter-art-row">
           <span className="wf-chapter-art-name" title={row.name}>
             {row.name}
           </span>
           {menu(row, "art", `Behind the first page of ${row.name}`)}
           {menu(row, "artFacing", `Facing the first page of ${row.name}`)}
+          <button type="button" className="wf-icon" title={`${row.name}: the book’s pictures again`} aria-label={`${row.name}: the book’s pictures again`} disabled={disabled} onClick={() => reset(row)}>
+            <X size={13} />
+          </button>
         </div>
       ))}
+      {others.length > 0 && (
+        <label className="wf-inspector-row">
+          <span>Give a chapter its own</span>
+          <select
+            value=""
+            disabled={disabled}
+            onChange={(e) => {
+              const pos = Number(e.target.value);
+              if (Number.isFinite(pos) && e.target.value !== "") setAdded((list) => [...list, pos]);
+            }}
+          >
+            <option value="">Choose a chapter…</option>
+            {others.map((row) => (
+              <option key={row.pos} value={row.pos}>
+                {row.name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
 }

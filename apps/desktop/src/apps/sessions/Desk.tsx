@@ -1,12 +1,13 @@
 import Placeholder from "@tiptap/extension-placeholder";
 import { EditorContent, useEditor, type Editor, type JSONContent } from "@tiptap/react";
-import { Bold, Ellipsis, Italic, List, ListOrdered, Maximize2, Minimize2, Minus, Quote, Redo2, Underline, Undo2 } from "lucide-react";
+import { Bold, Ellipsis, Italic, List, ListOrdered, Maximize2, Minimize2, Minus, Moon, Quote, Redo2, Underline, Undo2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 import type { SessionPrompt } from "../../bindings/proto/SessionPrompt";
 import { RichDoc } from "../../editor/RichEditor";
 import { quoteStyleFor, SmartPunctuation } from "../../editor/SmartPunctuation";
 import { LEVEL1_EXTENSIONS } from "../../editor/schema/level1";
+import { useDarkPaper } from "../../editor/ui/darkPaper";
 import { Flyout, FlyoutItem } from "../../editor/ui/Flyout";
 import { KeyboardDock } from "../../editor/ui/KeyboardDock";
 import { uploadToServer } from "../../lib/upload";
@@ -79,6 +80,9 @@ export function WritingDesk({ prompt, clock }: { prompt: SessionPrompt; clock?: 
   const [words, setWords] = useState(() => countWordsInDocJson(first.doc));
   const [save, setSave] = useState<SaveState>("clean");
   const [focus, setFocus] = useState(false);
+  // The same paper as the document editor's (Dark paper, on this device).
+  const dark = useDarkPaper((s) => s.dark);
+  const setDark = useDarkPaper((s) => s.set);
   const [showPrompt, setShowPrompt] = useState(true);
 
   const endsAt = useRef(prompt.ends_at);
@@ -159,6 +163,17 @@ export function WritingDesk({ prompt, clock }: { prompt: SessionPrompt; clock?: 
           <span className={`wf-desk-save ${save}`} aria-live={save === "retrying" ? "polite" : "off"}>
             {SAVE_LABELS[save]}
           </span>
+          <button
+            type="button"
+            className={`wf-icon wf-desk-paper${dark ? " active" : ""}`}
+            title={dark ? "Light paper" : "Dark paper"}
+            aria-label="Dark paper"
+            aria-pressed={dark}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setDark(!dark)}
+          >
+            <Moon size={15} />
+          </button>
           {focus && (
             <button type="button" className={`wf-desk-toggle${showPrompt ? " active" : ""}`} aria-pressed={showPrompt} onMouseDown={(e) => e.preventDefault()} onClick={() => setShowPrompt((v) => !v)}>
               Prompt
@@ -192,7 +207,7 @@ export function WritingDesk({ prompt, clock }: { prompt: SessionPrompt; clock?: 
           </div>
         )}
         {first.restored && save !== "saved" && <p className="wf-desk-note">Words from this device that had not been saved were put back.</p>}
-        <div className="wf-paper wf-rich-wrap">
+        <div className={`wf-paper wf-rich-wrap${dark ? " dark" : ""}`}>
           <EditorContent className="wf-rich editable" editor={editor} />
         </div>
         {others && <p className="wf-desk-others">{others}</p>}
