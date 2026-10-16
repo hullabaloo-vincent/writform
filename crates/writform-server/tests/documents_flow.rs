@@ -550,6 +550,9 @@ async fn group_share_card_and_access() {
         serde_json::from_str(card["content"].as_str().unwrap()).unwrap();
     assert_eq!(content["document_id"].as_i64().unwrap(), doc.id);
     assert_eq!(content["access"], "write");
+    assert_eq!(content["format"], "none");
+    assert_eq!(content["synopsis"], "");
+    assert!(content["cover"].is_null());
 }
 
 #[tokio::test]
@@ -1886,4 +1889,138 @@ async fn a_stock_server_reports_this_builds_level() {
         writform_proto::documents::MAX_DOC_SCHEMA_LEVEL
     );
     assert!(caps.max_schema_level >= 2);
+}
+
+async fn upload_picture(server: &TestServer, token: &str) -> i64 {
+    let form = reqwest::multipart::Form::new().part(
+        "file",
+        reqwest::multipart::Part::bytes(vec![0x89, b'P', b'N', b'G', 13, 10, 26, 10, 0, 0])
+            .file_name("cover.png"),
+    );
+    let att: serde_json::Value = server
+        .client
+        .post(format!("{}/attachments", server.base))
+        .bearer_auth(token)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    att["id"].as_i64().unwrap()
+}
+
+#[tokio::test]
+async fn cards_show_in_lists_and_their_pictures_are_shared() {
+    let server = boot().await;
+    let alice = server.register("alice").await;
+    let bob = server.register("bob").await;
+    server.befriend(&alice, &bob).await;
+    let doc = create_doc(&server, &alice.token, "Forever in His Veins").await;
+    let cover = upload_picture(&server, &alice.token).await;
+    let ornament = upload_picture(&server, &alice.token).await;
+    let get = |token: String, id: i64| {
+        let server = &server;
+        async move {
+            server
+                .req(
+                    reqwest::Method::GET,
+                    &token,
+                    &format!("/attachments/{id}"),
+                    None,
+                )
+                .await
+                .status()
+                .as_u16()
+        }
+    };
+    assert_eq!(get(bob.token.clone(), cover).await, 403);
+
+    // A cover that isn't one of this server's pictures is refused.
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/card", doc.id),
+            Some(json!({"card": {"synopsis": "", "cover": "front 600x960 https://example.com/x.png", "tags": []}})),
+        )
+        .await;
+    assert_eq!(error_code(res).await, (400, "bad_cover".to_string()));
+
+    // Too long and too many are cut, not refused. Tags are kept once.
+    let mut tags: Vec<String> = (0..15).map(|i| format!("tag {i}")).collect();
+    tags.insert(0, "Dark romance".into());
+    tags.insert(1, "dark ROMANCE".into());
+    tags.insert(2, "  ".into());
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/card", doc.id),
+            Some(json!({
+                "card": {
+                    "synopsis": "When rogue vampires attack. ".repeat(40),
+                    "cover": format!("front 600x960 writform-att://attachment/{cover}"),
+                    "tags": tags,
+                },
+                "media": [format!("writform-att://attachment/{ornament}"), "https://elsewhere/x.png"],
+            })),
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+
+    // Shared with bob: the card is in his list, and the pictures the
+    // document's settings name are his to read.
+    let mut ws = ws_connect(&server, &bob.token, &[format!("user:{}", bob.user.id.0)]).await;
+    sync_subs(&mut ws).await;
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/shares", doc.id),
+            Some(json!({"subject_kind": "user", "subject_id": bob.user.id.0, "access": "read"})),
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let items = list(&server, &bob.token, "/documents").await;
+    let card = &items[0].card;
+    assert_eq!(card.synopsis.chars().count(), 600);
+    assert_eq!(
+        card.cover.as_deref(),
+        Some(format!("front 600x960 writform-att://attachment/{cover}").as_str())
+    );
+    assert_eq!(card.tags.len(), 12);
+    assert_eq!(card.tags[0], "Dark romance");
+    assert_eq!(card.tags[1], "tag 0");
+    assert_eq!(get(bob.token.clone(), cover).await, 200);
+    assert_eq!(get(bob.token.clone(), ornament).await, 200);
+
+    // Read access may not change the card.
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &bob.token,
+            &format!("/documents/{}/card", doc.id),
+            Some(json!({"card": {"synopsis": "mine now", "tags": []}})),
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+
+    // A change reaches the people it is shared with. Taking the picture off
+    // the card takes away their way to it.
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &alice.token,
+            &format!("/documents/{}/card", doc.id),
+            Some(json!({"card": {"synopsis": "A shorter one.", "cover": null, "tags": ["vampires"]}})),
+        )
+        .await;
+    assert_eq!(res.status(), 200);
+    let event = wait_for_event(&mut ws, "document.card").await;
+    assert_eq!(event["document_id"].as_i64().unwrap(), doc.id);
+    assert_eq!(event["card"]["synopsis"], "A shorter one.");
+    assert_eq!(get(bob.token.clone(), cover).await, 403);
+    assert_eq!(get(bob.token.clone(), ornament).await, 403);
 }

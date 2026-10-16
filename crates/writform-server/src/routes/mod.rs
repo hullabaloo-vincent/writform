@@ -230,6 +230,14 @@ pub fn router(state: AppState) -> Router {
             put(sessions::save_submission),
         )
         .route(
+            "/api/v1/prompts/{id}/vote",
+            put(sessions::cast_vote).delete(sessions::withdraw_vote),
+        )
+        .route(
+            "/api/v1/prompts/{id}/voting/close",
+            post(sessions::close_voting),
+        )
+        .route(
             "/api/v1/groups/{id}/voice",
             get(voice::list_channels).post(voice::create_channel),
         )
@@ -319,6 +327,7 @@ pub fn router(state: AppState) -> Router {
             post(documents::awareness),
         )
         .route("/api/v1/documents/{id}/snapshot", post(documents::snapshot))
+        .route("/api/v1/documents/{id}/card", put(documents::set_card))
         .route(
             "/api/v1/documents/{id}/versions",
             get(documents::list_versions),

@@ -151,6 +151,7 @@ export function AppShell() {
   const connected = useSession((s) => s.link === "connected");
   const scope = useSession((s) => (s.link === "connected" && s.session ? `${s.session.addr}|${s.session.user.id}` : "local"));
   const immersive = usePlatform((s) => s.immersive);
+  const fillsPhone = usePlatform((s) => s.fillsPhone);
   const phone = useIsPhone();
   const [allOpen, setAllOpen] = useState(false);
 
@@ -219,7 +220,7 @@ export function AppShell() {
   };
 
   return (
-    <div className={`wf-shell ${immersive ? "immersive" : ""}`}>
+    <div className={`wf-shell${immersive ? " immersive" : ""}${fillsPhone ? " detail" : ""}`}>
       {connected && <ReconnectBanner />}
       <div className="wf-body">
         <nav className="wf-rail">

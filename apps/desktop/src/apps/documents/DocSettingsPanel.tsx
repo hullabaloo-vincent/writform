@@ -749,7 +749,8 @@ function DocumentTab({
 
 /**
  * What a file says about itself: what it is about, the words to find it
- * by, the language it is written in. Also shown when a PDF is exported.
+ * by, the language it is written in. Also shown when a PDF is exported,
+ * and the first two on the document's card (card.ts).
  */
 export function DocDetails({ settings, disabled, onPatch }: { settings: DocSettings; disabled: boolean; onPatch: (patch: Partial<DocSettings>) => void }) {
   return (
@@ -773,6 +774,7 @@ export function DocDetails({ settings, disabled, onPatch }: { settings: DocSetti
           ))}
         </select>
       </label>
+      <p className="wf-doc-details-note">The subject and keywords also show on the document's card in Documents.</p>
     </div>
   );
 }

@@ -33,4 +33,9 @@ export const sessionApi = {
   deletePrompt: (promptId: number) => api<null>("DELETE", `/api/v1/prompts/${promptId}`),
   saveSubmission: (promptId: number, doc: unknown) =>
     api<null>("PUT", `/api/v1/prompts/${promptId}/submission`, { doc }),
+  /** Vote for a piece of an ended prompt (voting again moves the vote). */
+  vote: (promptId: number, submissionId: number) =>
+    api<null>("PUT", `/api/v1/prompts/${promptId}/vote`, { submission_id: submissionId }),
+  withdrawVote: (promptId: number) => api<null>("DELETE", `/api/v1/prompts/${promptId}/vote`),
+  closeVoting: (promptId: number) => api<null>("POST", `/api/v1/prompts/${promptId}/voting/close`),
 };

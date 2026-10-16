@@ -31,6 +31,8 @@ export interface BookMeta {
   /** BCP-47 language tag: hyphenation, quotes, EPUB metadata. */
   language: string;
   description: string;
+  /** Words to find the book by, with commas between: its card's tags. */
+  tags: string;
   copyrightYear: number | null;
   copyrightHolder: string;
   copyrightNotice: "standard" | "fiction" | "custom";
@@ -176,6 +178,7 @@ const META: Record<keyof BookMeta, [Validator, unknown]> = {
   isbnEbook: [str(20), ""],
   language: [(v) => (typeof v === "string" && /^[a-zA-Z]{2,3}(-[a-zA-Z0-9]{2,8})*$/.test(v) ? v : undefined), "en-US"],
   description: [str(4000), ""],
+  tags: [str(500), ""],
   copyrightYear: [int(1000, 9999), null],
   copyrightHolder: [str(200), ""],
   copyrightNotice: [oneOf("standard", "fiction", "custom"), "standard"],

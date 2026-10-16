@@ -95,6 +95,7 @@ import { FindBar } from "./FindBar";
 import { FORMAT_LABELS, FORMAT_SPECS } from "./formats/elements";
 import { formatKeymap } from "./formats/FormatKeymap";
 import { useAutoRevisions, saveLocalVersion } from "./history";
+import { useDocCard } from "./useDocCard";
 import { useSwipe } from "../../lib/useSwipe";
 import { activeLocalProvider, useLocalDocs, type LocalSaveState } from "./local";
 import { LocalHistoryPanel } from "./LocalHistoryPanel";
@@ -114,6 +115,8 @@ import { ChapterFocus } from "../../editor/ChapterFocus";
 import { ChapterBar, useChapterFocus } from "./ChapterBar";
 import { Ruler, useRulerShown } from "../../editor/ui/Ruler";
 import { useIsPhone } from "../../editor/ui/Flyout";
+import { HeaderTools } from "./shell/HeaderTools";
+import { useFillsPhone } from "../../platform/registry";
 import { FormatMarks, refreshFormatMarks } from "../../editor/FormatMarks";
 import { useDarkPaper, useDarkPaperCss } from "../../editor/ui/darkPaper";
 import { ListStarts } from "../../editor/format/listStarts";
@@ -463,6 +466,8 @@ function LocalEditorInner({
   }, [editor, meta.title, meta.format, docSettings, docStyles.overrides, bookRef, tracked]);
 
   useAutoRevisions(editor, (json) => saveLocalVersion(meta.id, json));
+  useDocCard({ doc: provider!.doc, format, canWrite: true, upload: imageUploader, send: null });
+  const phone = useIsPhone();
 
   // Notes-to-self: sidecar threads + the same anchored highlights server
   // docs get. Highlights stay visible outside the panel unless toggled off.
@@ -518,6 +523,8 @@ function LocalEditorInner({
   const scrollRef = useRef<HTMLDivElement>(null);
   useReopenPosition(editor, `l:${meta.id}`, scrollRef);
   const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
+  // On a phone the document has the whole screen.
+  useFillsPhone();
   useTypewriterScroll(editor, focus && typewriter);
   const toggleFocus = () => {
     if (!focus) {
@@ -612,6 +619,27 @@ function LocalEditorInner({
   const rulerPhone = useIsPhone();
 
   if (!provider) return null;
+  const formatSelect = (
+    <select
+      className="wf-doc-format"
+      title="Writing format"
+      value={meta.format}
+      onChange={(e) => {
+        if (meta.format === "none" && e.target.value === "manuscript" && editor) {
+          setConverting("convert");
+          return;
+        }
+        void setFormat(meta.id, e.target.value);
+      }}
+    >
+      {Object.entries(FORMAT_LABELS).map(([key, label]) => (
+        <option key={key} value={key}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
       <header className="wf-session-room-header wf-doc-header">
@@ -623,24 +651,7 @@ function LocalEditorInner({
           canEdit
           onRename={(title) => void rename(meta.id, title)}
         />
-        <select
-          className="wf-doc-format"
-          title="Writing format"
-          value={meta.format}
-          onChange={(e) => {
-            if (meta.format === "none" && e.target.value === "manuscript" && editor) {
-              setConverting("convert");
-              return;
-            }
-            void setFormat(meta.id, e.target.value);
-          }}
-        >
-          {Object.entries(FORMAT_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
+        {!phone && formatSelect}
         <span className="wf-doc-local-chip" title="Stored on this device only">
           <HardDrive size={13} /> on this device
         </span>
@@ -660,152 +671,165 @@ function LocalEditorInner({
           ]}
         />
         <span className="wf-statusbar-spacer" />
-        <button
-          title="Notes to self"
-          className={panel === "feedback" ? "active" : ""}
-          onClick={() => {
-            // With only suggestions waiting, that is the list to open on.
-            if (panel !== "feedback" && !openThreads && review.items.length) setFeedbackTab("changes");
-            setPanel(panel === "feedback" ? "none" : "feedback");
-          }}
+        <HeaderTools
+          lead={
+            phone ? (
+              <label className="wf-head-format">
+                <span>Format</span>
+                {formatSelect}
+              </label>
+            ) : null
+          }
         >
-          <MessageSquare size={16} />
-          {pending > 0 && (
-            <span className="wf-doc-badge" title={`${openThreads} open ${openThreads === 1 ? "note" : "notes"}, ${review.items.length} suggested ${review.items.length === 1 ? "change" : "changes"}`}>
-              {pending}
-            </span>
-          )}
-        </button>
-        <button
-          title="Document history"
-          className={panel === "history" ? "active" : ""}
-          onClick={() => setPanel(panel === "history" ? "none" : "history")}
-        >
-          <History size={16} />
-        </button>
-        <button
-          title="Find and replace (⌘F)"
-          className={find ? "active" : ""}
-          disabled={!editor}
-          onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
-        >
-          <Search size={16} />
-        </button>
-        <button
-          title="Outline"
-          className={panel === "outline" ? "active" : ""}
-          onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
-        >
-          <ListTree size={16} />
-        </button>
-        <button
-          title="Check the text for slips and for things written two ways (F7)"
-          className={panel === "check" ? "active" : ""}
-          disabled={!editor}
-          onClick={() => setPanel(panel === "check" ? "none" : "check")}
-        >
-          <SpellCheck size={16} />
-        </button>
-        {/* (A Document has this on its Review tab.) */}
-        {speaks && meta.format !== "none" && (
-          <button title="Read aloud from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
-            <Volume2 size={16} />
-          </button>
-        )}
-        {hasPreview && (
           <button
-            title={
-              meta.format === "manuscript"
-                ? "Preview every page of the book as it will print"
-                : "Preview every page as it will print"
-            }
-            className={panel === "preview" || previewOpen ? "active" : ""}
+            title="Notes to self" data-label="Notes to self"
+            className={panel === "feedback" ? "active" : ""}
+            onClick={() => {
+              // With only suggestions waiting, that is the list to open on.
+              if (panel !== "feedback" && !openThreads && review.items.length) setFeedbackTab("changes");
+              setPanel(panel === "feedback" ? "none" : "feedback");
+            }}
+          >
+            <MessageSquare size={16} />
+            {pending > 0 && (
+              <span className="wf-doc-badge" title={`${openThreads} open ${openThreads === 1 ? "note" : "notes"}, ${review.items.length} suggested ${review.items.length === 1 ? "change" : "changes"}`}>
+                {pending}
+              </span>
+            )}
+          </button>
+          <button
+            title="Document history" data-label="History"
+            className={panel === "history" ? "active" : ""}
+            onClick={() => setPanel(panel === "history" ? "none" : "history")}
+          >
+            <History size={16} />
+          </button>
+          <button
+            title="Find and replace (⌘F)" data-label="Find and replace"
+            className={find ? "active" : ""}
             disabled={!editor}
+            onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
+          >
+            <Search size={16} />
+          </button>
+          <button
+            title="Outline" data-label="Outline"
+            className={panel === "outline" ? "active" : ""}
+            onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
+          >
+            <ListTree size={16} />
+          </button>
+          <button
+            title="Check the text for slips and for things written two ways (F7)" data-label="Check"
+            className={panel === "check" ? "active" : ""}
+            disabled={!editor}
+            onClick={() => setPanel(panel === "check" ? "none" : "check")}
+          >
+            <SpellCheck size={16} />
+          </button>
+          {/* (A Document has this on its Review tab.) */}
+          {speaks && meta.format !== "none" && (
+            <button title="Read aloud from the caret" data-label="Read aloud" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
+              <Volume2 size={16} />
+            </button>
+          )}
+          {hasPreview && (
+            <button
+              title={
+                meta.format === "manuscript"
+                  ? "Preview every page of the book as it will print"
+                  : "Preview every page as it will print"
+              }
+              className={panel === "preview" || previewOpen ? "active" : ""}
+              data-label="Preview"
+              disabled={!editor}
+              onClick={() => {
+                if (canDockPreview()) setPanel(panel === "preview" ? "none" : "preview");
+                else setPreviewOpen(true);
+              }}
+            >
+              <Eye size={16} />
+            </button>
+          )}
+          {meta.format !== "manuscript" && (
+            <button
+              title="Page view: paginate the sheet into real pages" data-label="Page view"
+              className={pageGuides ? "active" : ""}
+              onClick={() => {
+                const next = !pageViewOn;
+                setPageGuides(next);
+                localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+              }}
+            >
+              <SquareSplitVertical size={16} />
+            </button>
+          )}
+          {meta.format === "manuscript" && (
+            <button
+              title="Book: details, design, print and ebook settings" data-label="Book"
+              className={panel === "book" ? "active" : ""}
+              onClick={() => setPanel(panel === "book" ? "none" : "book")}
+            >
+              <BookOpen size={16} />
+            </button>
+          )}
+          {meta.format === "none" && (
+            <button
+              title="Document settings: paper, margins, text" data-label="Document settings"
+              className={panel === "settings" ? "active" : ""}
+              onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+          )}
+          <button
+            title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
+              data-label={focus ? "Leave focus mode" : "Focus mode"}
+            className={focus ? "active" : ""}
+            onClick={toggleFocus}
+          >
+            <FocusIcon size={16} />
+          </button>
+          {focus && (
+            <button
+              title="Typewriter scrolling: keep the line you're writing centred" data-label="Typewriter scrolling"
+              className={typewriter ? "active" : ""}
+              onClick={() => setTypewriter(!typewriter)}
+            >
+              <MoveVertical size={16} />
+            </button>
+          )}
+          <ExportMenu items={exportItems} onError={(e) => setError(String(e))} />
+          <button title="Publish to a server…" data-label="Publish to a server" onClick={() => publish(null)}>
+            <Share2 size={16} />
+          </button>
+          <button
+            title="Delete (to Recently Deleted)" data-label="Delete"
+            className="wf-danger"
             onClick={() => {
-              if (canDockPreview()) setPanel(panel === "preview" ? "none" : "preview");
-              else setPreviewOpen(true);
+              // To Recently Deleted on this device, with Undo.
+              const { id, title } = meta;
+              void remove(id)
+                .then(() =>
+                  toast(`Moved “${title}” to Recently Deleted.`, "info", {
+                    durationMs: 8000,
+                    action: {
+                      label: "Undo",
+                      run: () =>
+                        void useLocalDocs
+                          .getState()
+                          .restore(id)
+                          .then(() => openLocalDoc(id))
+                          .catch(() => {}),
+                    },
+                  }),
+                )
+                .catch((e) => setError(String(e)));
             }}
           >
-            <Eye size={16} />
+            <Trash2 size={16} />
           </button>
-        )}
-        {meta.format !== "manuscript" && (
-          <button
-            title="Page view: paginate the sheet into real pages"
-            className={pageGuides ? "active" : ""}
-            onClick={() => {
-              const next = !pageViewOn;
-              setPageGuides(next);
-              localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
-            }}
-          >
-            <SquareSplitVertical size={16} />
-          </button>
-        )}
-        {meta.format === "manuscript" && (
-          <button
-            title="Book: details, design, print and ebook settings"
-            className={panel === "book" ? "active" : ""}
-            onClick={() => setPanel(panel === "book" ? "none" : "book")}
-          >
-            <BookOpen size={16} />
-          </button>
-        )}
-        {meta.format === "none" && (
-          <button
-            title="Document settings: paper, margins, text"
-            className={panel === "settings" ? "active" : ""}
-            onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
-          >
-            <SlidersHorizontal size={16} />
-          </button>
-        )}
-        <button
-          title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
-          className={focus ? "active" : ""}
-          onClick={toggleFocus}
-        >
-          <FocusIcon size={16} />
-        </button>
-        {focus && (
-          <button
-            title="Typewriter scrolling: keep the line you're writing centred"
-            className={typewriter ? "active" : ""}
-            onClick={() => setTypewriter(!typewriter)}
-          >
-            <MoveVertical size={16} />
-          </button>
-        )}
-        <ExportMenu items={exportItems} onError={(e) => setError(String(e))} />
-        <button title="Publish to a server…" onClick={() => publish(null)}>
-          <Share2 size={16} />
-        </button>
-        <button
-          title="Delete (to Recently Deleted)"
-          className="wf-danger"
-          onClick={() => {
-            // To Recently Deleted on this device, with Undo.
-            const { id, title } = meta;
-            void remove(id)
-              .then(() =>
-                toast(`Moved “${title}” to Recently Deleted.`, "info", {
-                  durationMs: 8000,
-                  action: {
-                    label: "Undo",
-                    run: () =>
-                      void useLocalDocs
-                        .getState()
-                        .restore(id)
-                        .then(() => openLocalDoc(id))
-                        .catch(() => {}),
-                  },
-                }),
-              )
-              .catch((e) => setError(String(e)));
-          }}
-        >
-          <Trash2 size={16} />
-        </button>
+        </HeaderTools>
       </header>
 
       {error && (

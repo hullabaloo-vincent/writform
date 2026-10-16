@@ -18,6 +18,8 @@ export interface Recent {
   at: number;
   /** Where it lives. */
   place: "device" | "server";
+  /** A book's cover, as its card has it (organizer card.ts). */
+  cover?: string | null;
 }
 
 /** Newest first, one entry per thing, at most `limit`. */

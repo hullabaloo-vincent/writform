@@ -33,6 +33,13 @@ the group can create a session. Each prompt can be started, timed
 - **Copy** takes any piece as plain text. **Save as a document** turns your
   own piece into a Document of yours (on this device in the apps, on the
   server in a browser), where everything else in the app works on it.
+- **Vote on the pieces.** When two or more people wrote for a prompt,
+  everyone in the session can vote for the piece they liked best. It can't
+  be their own. A vote can be moved to another piece or taken back while
+  the voting is open. The session shows how many have voted but never who
+  voted for which piece. Whoever started the prompt, the session's creator
+  or a group admin closes the voting, and then each piece shows its votes
+  with the most voted first. Ending the session leaves the voting open.
 - The prompt editor has the full formatting toolbar (headings, lists,
   quotes, inline code, pictures) and a choice of timer lengths.
 - A **join card** is posted to the channel when a session is created, so
@@ -548,7 +555,12 @@ submission manuscript.
   puts them back.
 - **Organizer**: cards show each document's opening words (or, when
   searching, the passage that matched) and "Manuscript · 98,412 words ·
-  Oct 3". Sort by modified, created or name (in natural order: Chapter 2
+  Oct 3". A book's card also shows its **cover**, its **description** in
+  place of the opening words and its **tags**. A Document's card shows its
+  subject and keywords the same way. The card is the same for everyone the
+  document is shared with, in the share card in chat and in Home's recent
+  list too. The cover on the card is a small picture the app draws of the
+  front as designed, with its words on it. Sort by modified, created or name (in natural order: Chapter 2
   before Chapter 10). The sort is remembered on this device. Every ⋯ menu
   works from the keyboard (Shift+F10 too): Rename, Duplicate, Move, Share,
   Version history, Delete.
@@ -1072,6 +1084,14 @@ native app adds what a browser can't:
 - The keyboard pushes the composer up instead of covering it, the app
   never rubber-bands off its edges, and launch fades straight into the
   app's own dark background.
+- **An open document has the whole screen on a phone.** The tab bar and
+  the status strip step aside while you write, and the editor's header
+  keeps to one row: the way back, the title, whether your words are saved
+  and **More**. More holds the format and every tool with its name beside
+  it. The page's margins are a phone's, so the words get the width.
+- **Saved to an iPad's home screen**, the app stays clear of the clock and
+  the status bar at the top and of the home indicator at the bottom, at
+  any width. A phone held sideways keeps clear of its corners.
 
 Building it needs a Mac with Xcode: `npm run tauri ios dev` from
 `apps/desktop` (the repo README's iOS section covers signing).

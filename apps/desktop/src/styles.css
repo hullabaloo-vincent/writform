@@ -236,10 +236,16 @@ body {
 
 /* ---- shell layout ---- */
 
+/* The screen's own edges: the clock and the camera at the top (an iPad's
+   home-screen app draws under its status bar), the corners of a phone
+   held sideways. 0 on a desktop. */
 .wf-shell {
   display: flex;
   flex-direction: column;
   height: 100%;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
 }
 
 .wf-body {
@@ -322,11 +328,12 @@ body {
 }
 
 .wf-statusbar {
-  height: 24px;
+  /* (The bottom edge is the home indicator's on an iPad.) */
+  height: calc(24px + env(safe-area-inset-bottom, 0px));
   display: flex;
   align-items: center;
   gap: 16px;
-  padding: 0 12px;
+  padding: 0 12px env(safe-area-inset-bottom, 0px);
   font-size: 12px;
   color: var(--wf-text-dim);
   background: var(--wf-bg-raised);
@@ -2284,6 +2291,59 @@ button.wf-piece-act {
 
 button.wf-piece-act:hover {
   color: var(--wf-text);
+}
+
+/* Voting on the pieces: what is asked, how many have voted, and (for
+   whoever runs the prompt) the way to close it. */
+.wf-vote-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  padding: 10px 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+}
+
+.wf-vote-bar p {
+  flex: 1 1 260px;
+  margin: 0;
+}
+
+.wf-vote-bar.closed {
+  border-color: rgba(224, 176, 80, 0.55);
+}
+
+button.wf-piece-vote {
+  min-height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+  color: var(--wf-text);
+  background: transparent;
+  border: 1px solid var(--wf-border);
+  border-radius: 999px;
+}
+
+button.wf-piece-vote.active {
+  color: #fff;
+  background: var(--wf-accent);
+  border-color: var(--wf-accent);
+}
+
+.wf-piece-votes {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+
+.wf-piece-votes.most {
+  color: #e0b050;
+  font-weight: 600;
 }
 
 /* Words the server never got: said plainly, with the ways to keep them. */
@@ -4869,7 +4929,7 @@ textarea.wf-el-shape-text {
 
 .wf-documents-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 10px;
 }
 
@@ -7663,6 +7723,29 @@ textarea.wf-el-shape-text {
   flex-shrink: 0;
 }
 
+/* A shared book with a cover: the cover beside its title and synopsis. */
+.wf-doc-share.has-cover {
+  align-items: flex-start;
+  max-width: 460px;
+}
+
+.wf-doc-card-cover.share {
+  width: 52px;
+  height: 78px;
+  border-radius: 4px;
+  border: 1px solid var(--wf-border);
+}
+
+.wf-doc-share-synopsis {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--wf-text-dim);
+}
+
 /* ---- chat markdown ---- */
 
 .wf-msg-content {
@@ -8771,7 +8854,6 @@ input[type="checkbox"] {
      so the tab bar and composer stay glued to the keyboard's top edge. */
   .wf-shell {
     height: 100dvh;
-    padding-top: env(safe-area-inset-top);
   }
 
   /* iOS Safari auto-zooms any focused field with a font under 16px; the
@@ -8891,8 +8973,26 @@ input[type="checkbox"] {
   .wf-editor-toolbar {
     flex-wrap: wrap;
   }
+  /* The editor's header is one row: back, the title, the save state and
+     More (HeaderTools.tsx), where the format and the tools are. */
   .wf-doc-header {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    gap: 6px;
+    min-height: 0;
+    padding: 6px 8px;
+  }
+  .wf-doc-header .wf-doc-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    max-width: none;
+  }
+  .wf-doc-header .wf-statusbar-spacer {
+    display: none;
+  }
+  .wf-doc-local-chip,
+  .wf-doc-peer:nth-child(n + 3),
+  .wf-doc-peer-more {
+    display: none;
   }
   .wf-doc-body {
     position: relative;
@@ -8907,8 +9007,17 @@ input[type="checkbox"] {
     background: var(--wf-bg-raised);
     border-left: 1px solid var(--wf-border);
   }
+  /* The page keeps its edges and shadow, but its margins are a phone's,
+     not a printed page's: the words get the width. */
   .wf-page {
-    padding: 18px 14px;
+    padding: 0;
+  }
+  .wf-doc-scroll {
+    padding-left: 6px;
+    padding-right: 6px;
+  }
+  .wf-doc-content .ProseMirror {
+    padding: 24px 18px 40px;
   }
 
   /* Settings: tabs become a horizontal scroller above the body. */
@@ -9477,6 +9586,19 @@ input[type="checkbox"] {
 .wf-shell.immersive .wf-panel-right,
 .wf-shell.immersive .wf-reconnect-banner {
   display: none;
+}
+
+/* A view that fills a phone's screen (an open document): the tab bar and
+   the status strip step aside while it is open, and nothing need be kept
+   clear for them but the home indicator. */
+@media (max-width: 767px) {
+  .wf-shell.detail .wf-rail,
+  .wf-shell.detail .wf-statusbar {
+    display: none;
+  }
+  .wf-shell.detail {
+    --wf-bc: max(0px, calc(env(safe-area-inset-bottom, 0px) - var(--wf-kb-inset, 0px)));
+  }
 }
 
 /* In focus mode the document's own header/toolbar fade until hovered, so
@@ -10318,6 +10440,86 @@ body {
   width: 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+/* ---- the editor's tools in one sheet on a phone (HeaderTools.tsx) ---- */
+
+.wf-head-format {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 12px;
+  font-size: 14px;
+  color: var(--wf-text-dim);
+}
+
+.wf-head-format select {
+  flex: 0 1 60%;
+  min-width: 0;
+}
+
+.wf-head-tools {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.wf-head-tools > button {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 0 12px;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.25;
+}
+
+/* Its name beside its icon: what the header's title said on hover. */
+.wf-head-tools > button::after {
+  content: attr(data-label);
+  font-size: 14px;
+}
+
+.wf-head-tools > button .wf-doc-badge {
+  position: static;
+  order: 2;
+  margin-left: auto;
+}
+
+.wf-head-export {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.wf-head-export button {
+  justify-content: flex-start;
+  min-height: 40px;
+  padding: 0 12px;
+  text-align: left;
+  white-space: normal;
+}
+
+.wf-head-group {
+  padding: 4px 2px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wf-text-dim);
+}
+
+.wf-doc-details-note {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
 }
 
 .wf-inspector-row select {
@@ -11527,7 +11729,7 @@ body {
     width: 100vw;
     height: 100vh;
     max-height: none;
-    padding: 12px;
+    padding: max(12px, env(safe-area-inset-top, 0px)) max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
     border: 0;
     border-radius: 0;
   }
@@ -11884,6 +12086,98 @@ body {
 .wf-doc-card-extra {
   font-size: 12px;
   color: #e0a03c;
+}
+
+/* Everything but a book's cover: a column, as the card always was. */
+.wf-doc-card-body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.wf-doc-card-body > * {
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* A book with a cover: the cover down the left, as tall as the card. */
+.wf-doc-card.has-cover .wf-doc-card-open {
+  flex-direction: row;
+  align-items: stretch;
+  gap: 0;
+  padding: 0 34px 0 0;
+}
+
+.wf-doc-card.has-cover .wf-doc-card-body {
+  flex: 1;
+  padding: 12px 0 12px 14px;
+}
+
+.wf-doc-card-cover {
+  position: relative;
+  flex: 0 0 auto;
+  display: block;
+  overflow: hidden;
+  background: var(--wf-bg);
+}
+
+.wf-doc-card-cover.card {
+  width: 86px;
+  min-height: 128px;
+  border-right: 1px solid var(--wf-border);
+}
+
+.wf-doc-card-cover.small {
+  width: 30px;
+  height: 45px;
+  border-radius: 3px;
+  border: 1px solid var(--wf-border);
+}
+
+.wf-doc-card-cover img {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A whole cover (back, spine, front): its front is on the right. */
+.wf-doc-card-cover.wrap img {
+  object-position: 100% 50%;
+}
+
+.wf-doc-card-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.wf-doc-card-tag,
+.wf-doc-card-more {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 1px 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--wf-text-dim);
+  border: 1px solid var(--wf-border);
+  border-radius: 999px;
+}
+
+.wf-doc-card-tag::before {
+  content: "#";
+  opacity: 0.6;
+}
+
+.wf-doc-card-more {
+  border-style: dashed;
 }
 
 .wf-doc-card-kebab {
@@ -13222,6 +13516,13 @@ body {
   width: 22px;
   flex-shrink: 0;
   color: var(--wf-text-dim);
+}
+/* A book's cover in place of its icon: a little taller than the row's
+   icons, so the row grows by nothing. */
+.wf-home-recents .wf-doc-card-cover.small {
+  width: 22px;
+  height: 33px;
+  border-radius: 2px;
 }
 .wf-home-recent-text {
   flex: 1;

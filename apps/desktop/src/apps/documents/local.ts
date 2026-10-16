@@ -23,6 +23,8 @@ import { onFlush } from "../../platform/lifecycle";
 import { DOC_SCHEMA_LEVEL, levels, UNKNOWN_LEVEL } from "../../editor/schema/levels";
 import { STYLES_MAP, styleLevel } from "../../editor/styles/docStyles";
 import { b64decode, b64encode } from "./collab";
+import type { DocumentCard } from "../../bindings/proto/DocumentCard";
+import { cardKey, cardOf, cleanCard, EMPTY_CARD } from "./card";
 import { stateDigest, ydocDigest } from "./docText";
 
 const SAVE_MS = 800;
@@ -52,6 +54,8 @@ export interface LocalDocMeta {
   updated_at: number;
   words?: number;
   excerpt?: string;
+  /** Synopsis, cover and tags (card.ts), checked as read. */
+  card?: DocumentCard;
 }
 
 /** A folder of documents on this device. */
@@ -72,8 +76,9 @@ interface FoldersFile {
 const FOLDER_NAME_MAX = 80;
 
 /** The list metadata saved beside a document. */
-function metaJson(m: { title: string; format: string; words?: number; excerpt?: string }): string {
-  return JSON.stringify({ title: m.title, format: m.format, words: m.words ?? 0, excerpt: m.excerpt ?? "" });
+function metaJson(m: { title: string; format: string; words?: number; excerpt?: string; card?: DocumentCard }): string {
+  const card = m.card && cardKey(m.card) !== cardKey(EMPTY_CARD) ? { card: m.card } : {};
+  return JSON.stringify({ title: m.title, format: m.format, words: m.words ?? 0, excerpt: m.excerpt ?? "", ...card });
 }
 
 export type LocalSaveState =
@@ -94,7 +99,7 @@ export class LocalDocProvider {
   private status: LocalSaveState = { kind: "synced" };
   private listeners = new Set<(s: LocalSaveState) => void>();
   private onUnload = () => void this.flush();
-  private stats: { words: number; excerpt: string; at: number } | null = null;
+  private stats: { words: number; excerpt: string; card: DocumentCard; at: number } | null = null;
   private closing = false;
   private schema = 1;
 
@@ -207,7 +212,7 @@ export class LocalDocProvider {
       if (!this.stats || this.closing || Date.now() - this.stats.at > STATS_MS) {
         // The text a search reads is brought up to date with them.
         const digest = ydocDigest(this.doc);
-        this.stats = { words: digest.words, excerpt: digest.excerpt, at: Date.now() };
+        this.stats = { words: digest.words, excerpt: digest.excerpt, card: cardOf(this.doc, file.format), at: Date.now() };
         text = digest.text;
       }
     } catch {
@@ -383,7 +388,8 @@ export const useLocalDocs = create<LocalDocsState>((set, get) => ({
   pendingPanel: null,
 
   load: async () => {
-    const [items] = await Promise.all([backend.localdocList(), get().loadFolders().catch(() => {})]);
+    const [listed] = await Promise.all([backend.localdocList(), get().loadFolders().catch(() => {})]);
+    const items: LocalDocMeta[] = listed.map(({ card, ...rest }) => (card ? { ...rest, card: cleanCard(card) } : rest));
     set({ items, loaded: true });
   },
 
@@ -440,7 +446,8 @@ export const useLocalDocs = create<LocalDocsState>((set, get) => ({
       ...(schema > 1 ? { schema } : {}),
     };
     const digest = state_b64 ? stateDigest(b64decode(state_b64)) : { words: 0, excerpt: "", text: "" };
-    await backend.localdocWrite(id, JSON.stringify(file), metaJson({ ...file, ...digest }), digest.text);
+    const card = state_b64 ? stateCard(b64decode(state_b64), format) : EMPTY_CARD;
+    await backend.localdocWrite(id, JSON.stringify(file), metaJson({ ...file, ...digest, card }), digest.text);
     await get().load();
     return id;
   },
@@ -563,6 +570,19 @@ async function persistMeta(id: string): Promise<void> {
   // it for out of date.
   const text = file.state_b64 ? stateDigest(b64decode(file.state_b64)).text : "";
   await backend.localdocWrite(id, JSON.stringify(file), metaJson(meta), text);
+}
+
+/** The card of a document being made from an encoded state (a copy). */
+function stateCard(state: Uint8Array, format: string): DocumentCard {
+  const doc = new Y.Doc();
+  try {
+    if (state.length) Y.applyUpdate(doc, state);
+    return cardOf(doc, format);
+  } catch {
+    return EMPTY_CARD;
+  } finally {
+    doc.destroy();
+  }
 }
 
 /** Documents deleted for good no longer have a place in a folder. */

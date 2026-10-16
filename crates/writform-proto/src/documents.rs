@@ -116,6 +116,48 @@ pub struct DocumentListItem {
     #[serde(default)]
     #[ts(type = "number | null")]
     pub deleted_at: Option<UnixMillis>,
+    /// Synopsis, cover and tags (empty from servers that predate them).
+    #[serde(default)]
+    pub card: DocumentCard,
+}
+
+/// What a document's card shows beside its title and words. An editor of
+/// the document writes it from the document's own settings (the book's
+/// description and cover, a document's subject and keywords).
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DocumentCard {
+    /// The book's description, cut to 600 characters.
+    #[serde(default)]
+    pub synopsis: String,
+    /// `front <w>x<h> <address>`, or `wrap <w>x<h> <address>` for a whole
+    /// cover of which the card shows the right-hand part.
+    #[serde(default)]
+    pub cover: Option<String>,
+    /// Up to 12 tags of up to 40 characters.
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+/// `PUT /documents/{id}/card` (write access). `media` lists every server
+/// picture the document's settings name (`writform-att://attachment/N`), so
+/// the people it is shared with may read them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct SetDocumentCardRequest {
+    pub card: DocumentCard,
+    #[serde(default)]
+    pub media: Vec<String>,
+}
+
+/// `document.card`: a document's card changed (to its owner and everyone it
+/// is shared with).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct DocumentCardChanged {
+    #[ts(type = "number")]
+    pub document_id: i64,
+    pub card: DocumentCard,
 }
 
 /// Detail for opening: compacted Yjs state (update v1, base64) current

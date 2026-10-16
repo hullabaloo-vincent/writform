@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 import type { Document } from "../../bindings/proto/Document";
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
+import type { DocumentCardChanged } from "../../bindings/proto/DocumentCardChanged";
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
 import type { DocumentShare } from "../../bindings/proto/DocumentShare";
@@ -14,6 +15,7 @@ import { toast } from "../../platform/toast";
 import { onFlush } from "../../platform/lifecycle";
 import { onBeforeLogout, useSession } from "../../stores/session";
 import { documentsApi } from "./api";
+import { cleanCard } from "./card";
 import { DocProvider } from "./collab";
 import { scopeOf } from "./sync/scope";
 
@@ -233,6 +235,11 @@ export function installDocumentsWsHandler(): () => void {
       if (state.activeDocId === doc_id) state.closeDocument();
       useDocuments.setState((s) => ({
         items: s.items.filter((i) => i.document.id !== doc_id),
+      }));
+    } else if (kind === "document.card") {
+      const { document_id, card } = data as DocumentCardChanged;
+      useDocuments.setState((s) => ({
+        items: s.items.map((i) => (i.document.id === document_id ? { ...i, card: cleanCard(card) } : i)),
       }));
     } else if (kind === "document.listchanged") {
       if (state.loaded) void state.load().catch(() => {});

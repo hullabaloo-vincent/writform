@@ -39,6 +39,8 @@ The rule is "REST is truth, WS is invalidation."
 | POST | `/sessions/{id}/end` · DELETE `/sessions/{id}` (creator/admin) |
 | POST | `/sessions/{id}/prompts` · `/prompts/{id}/start` · `/prompts/{id}/stop` |
 | PUT | `/prompts/{id}/submission` (autosave while running) |
+| PUT/DELETE | `/prompts/{id}/vote` (vote for a piece of an ended prompt, not one's own, or take the vote back) |
+| POST | `/prompts/{id}/voting/close` (the prompt's starter, the session's creator or an admin. The detail then has each piece's votes) |
 
 ## Documents
 
@@ -53,6 +55,7 @@ The rule is "REST is truth, WS is invalidation."
 | GET/POST | `/documents/{id}/updates` | Yjs update log with `?since=` catch-up (`truncated` past 16 MiB: reload the state). One update may be up to 4 MiB, and a larger one is 413 `update_too_large` |
 | POST | `/documents/{id}/awareness` | ephemeral cursor/selection presence |
 | POST | `/documents/{id}/snapshot` | version-history snapshot (auto, named or draft). Also refreshes the list's text, word count and excerpt |
+| PUT | `/documents/{id}/card` | what the list's card shows (synopsis, cover, tags) and the pictures the document's settings name, which the people it is shared with may then read. Write access. Sends `document.card` |
 | GET | `/documents/{id}/versions` · `/documents/{id}/versions/{vid}` | version history |
 | GET/PUT/DELETE | `/documents/{id}/shares` · `/documents/{id}/shares/{kind}/{id}` | read/write grants (friends or groups) |
 | POST | `/documents/{id}/move` | move into/out of a folder |

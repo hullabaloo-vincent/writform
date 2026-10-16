@@ -455,3 +455,198 @@ async fn session_share_card_and_delete() {
         .await;
     assert_eq!(res.status(), 404, "side-chat channel should be gone");
 }
+
+async fn error_code(res: reqwest::Response) -> (u16, String) {
+    let status = res.status().as_u16();
+    let body: serde_json::Value = res.json().await.unwrap_or_default();
+    (
+        status,
+        body["code"].as_str().unwrap_or_default().to_string(),
+    )
+}
+
+#[tokio::test]
+async fn voting_on_a_prompts_pieces() {
+    let server = boot().await;
+    let (alice, bob, channel) = setup_group(&server).await;
+    // Carol is in the group and didn't write. Dave isn't in it.
+    let carol = server.register("carol").await;
+    let dave = server.register("dave").await;
+    let groups: Vec<Group> = server.get(&alice.token, "/groups").await;
+    let invite: writform_proto::chat::Invite = server
+        .post(
+            &alice.token,
+            &format!("/groups/{}/invites", groups[0].id.0),
+            json!({"expires_in_seconds": null, "max_uses": null}),
+        )
+        .await;
+    let _: Group = server
+        .post(
+            &carol.token,
+            "/invites/redeem",
+            json!({"code": invite.code}),
+        )
+        .await;
+
+    let session: WritingSession = server
+        .post(
+            &bob.token,
+            "/sessions",
+            json!({"channel_id": channel, "title": "Sprint battle"}),
+        )
+        .await;
+    let prompt: SessionPrompt = server
+        .post(
+            &bob.token,
+            &format!("/sessions/{}/prompts", session.id.0),
+            json!({"prompt_doc": doc("A door opens."), "timer_seconds": null}),
+        )
+        .await;
+    let path = |end: &str| format!("/prompts/{}/{end}", prompt.id);
+    let res = server
+        .req(reqwest::Method::POST, &bob.token, &path("start"), None)
+        .await;
+    assert_eq!(res.status(), 204);
+    for (who, words) in [(&alice, "alice's door"), (&bob, "bob's door")] {
+        let res = server
+            .req(
+                reqwest::Method::PUT,
+                &who.token,
+                &path("submission"),
+                Some(json!({"doc": doc(words)})),
+            )
+            .await;
+        assert_eq!(res.status(), 204);
+    }
+    let detail: SessionDetail = server
+        .get(&bob.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    let bobs = detail.submissions[0].id;
+
+    // No voting while the prompt runs.
+    let res = server
+        .req(
+            reqwest::Method::PUT,
+            &carol.token,
+            &path("vote"),
+            Some(json!({"submission_id": bobs})),
+        )
+        .await;
+    assert_eq!(error_code(res).await, (400, "not_ended".into()));
+    for _ in 0..2 {
+        server
+            .req(reqwest::Method::POST, &bob.token, &path("stop"), None)
+            .await;
+    }
+
+    let detail: SessionDetail = server
+        .get(&carol.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    assert_eq!(detail.votes.len(), 1);
+    assert_eq!(detail.votes[0].votes_cast, 0);
+    assert!(detail.votes[0].closed_at.is_none());
+    let piece = |name: &str| {
+        detail
+            .submissions
+            .iter()
+            .find(|s| s.author.username == name)
+            .unwrap()
+            .id
+    };
+    let (alices, bobs) = (piece("alice"), piece("bob"));
+
+    let vote = |token: String, submission: i64| {
+        let server = &server;
+        let path = path("vote");
+        async move {
+            server
+                .req(
+                    reqwest::Method::PUT,
+                    &token,
+                    &path,
+                    Some(json!({"submission_id": submission})),
+                )
+                .await
+        }
+    };
+    assert_eq!(
+        error_code(vote(bob.token.clone(), bobs).await).await,
+        (400, "own_piece".into())
+    );
+    assert_eq!(
+        error_code(vote(carol.token.clone(), 999_999).await).await,
+        (404, "no_such_piece".into())
+    );
+    assert!(vote(dave.token.clone(), alices)
+        .await
+        .status()
+        .is_client_error());
+    assert_eq!(vote(bob.token.clone(), alices).await.status(), 204);
+    assert_eq!(vote(alice.token.clone(), bobs).await.status(), 204);
+    assert_eq!(vote(carol.token.clone(), bobs).await.status(), 204);
+    // Voting again moves the vote.
+    assert_eq!(vote(carol.token.clone(), alices).await.status(), 204);
+
+    let detail: SessionDetail = server
+        .get(&carol.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    let votes = &detail.votes[0];
+    assert_eq!(votes.votes_cast, 3);
+    assert_eq!(votes.my_vote, Some(alices));
+    assert!(votes.tally.is_empty(), "no counts while voting is open");
+
+    // Taking a vote back, and only the prompt's starter, the session's
+    // creator or an admin may close the voting.
+    let res = server
+        .req(reqwest::Method::DELETE, &carol.token, &path("vote"), None)
+        .await;
+    assert_eq!(res.status(), 204);
+    let detail: SessionDetail = server
+        .get(&carol.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    assert_eq!(detail.votes[0].votes_cast, 2);
+    assert_eq!(detail.votes[0].my_vote, None);
+    assert_eq!(vote(carol.token.clone(), alices).await.status(), 204);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &carol.token,
+            &path("voting/close"),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 403);
+    let res = server
+        .req(
+            reqwest::Method::POST,
+            &bob.token,
+            &path("voting/close"),
+            None,
+        )
+        .await;
+    assert_eq!(res.status(), 204);
+
+    // Closed: everyone sees the counts, and nothing changes them.
+    let detail: SessionDetail = server
+        .get(&alice.token, &format!("/sessions/{}", session.id.0))
+        .await;
+    let votes = &detail.votes[0];
+    assert!(votes.closed_at.is_some());
+    let count = |id: i64| {
+        votes
+            .tally
+            .iter()
+            .find(|t| t.submission_id == id)
+            .map_or(0, |t| t.votes)
+    };
+    assert_eq!((count(alices), count(bobs)), (2, 1));
+    assert_eq!(votes.my_vote, Some(bobs));
+    assert_eq!(
+        error_code(vote(carol.token.clone(), bobs).await).await,
+        (400, "voting_closed".into())
+    );
+    let res = server
+        .req(reqwest::Method::DELETE, &carol.token, &path("vote"), None)
+        .await;
+    assert_eq!(error_code(res).await, (400, "voting_closed".into()));
+}

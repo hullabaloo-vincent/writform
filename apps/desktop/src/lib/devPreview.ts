@@ -184,6 +184,8 @@ export function devPreviewBackend(): Backend {
     },
     Ideas: { content: "# Ideas\n\n- a story about rain\n\nBack to [[Welcome]].\n", mtime: Date.now() },
   };
+  /** This device's vote and when voting closed, by prompt. */
+  const promptVotes: Record<number, { mine: number | null; closed: number | null }> = {};
   const submissions: {
     id: number;
     prompt_id: number;
@@ -508,8 +510,31 @@ export function devPreviewBackend(): Backend {
               return p?.session_id === sid && (p?.state === "ended" || sub.author.id === me.id);
             })
             .map((s) => ({ ...s })),
+          votes: prompts
+            .filter((p) => p.session_id === sid && p.state === "ended")
+            .map((p) => {
+              const v = (promptVotes[p.id] ??= { mine: null, closed: null });
+              return {
+                prompt_id: p.id,
+                votes_cast: v.mine === null ? 0 : 1,
+                my_vote: v.mine,
+                closed_at: v.closed,
+                tally: v.closed !== null && v.mine !== null ? [{ submission_id: v.mine, votes: 1 }] : [],
+              };
+            }),
         },
       };
+    }
+    if ((match = m(/^\/api\/v1\/prompts\/(\d+)\/vote$/)) && (method === "PUT" || method === "DELETE")) {
+      const pid = Number(match[1]);
+      const v = (promptVotes[pid] ??= { mine: null, closed: null });
+      v.mine = method === "PUT" ? (body as { submission_id: number }).submission_id : null;
+      return { status: 204, body: null };
+    }
+    if ((match = m(/^\/api\/v1\/prompts\/(\d+)\/voting\/close$/)) && method === "POST") {
+      const pid = Number(match[1]);
+      (promptVotes[pid] ??= { mine: null, closed: null }).closed = Date.now();
+      return { status: 204, body: null };
     }
     if ((match = m(/^\/api\/v1\/sessions\/(\d+)\/prompts$/)) && method === "POST") {
       const sid = Number(match[1]);
@@ -854,6 +879,9 @@ export function devPreviewBackend(): Backend {
     }
     if (m(/^\/api\/v1\/documents\/(\d+)\/awareness$/)) {
       return { status: 204, body: null };
+    }
+    if (m(/^\/api\/v1\/documents\/(\d+)\/card$/) && method === "PUT") {
+      return { status: 200, body: (body as { card: unknown }).card };
     }
     if ((match = m(/^\/api\/v1\/documents\/(\d+)\/snapshot(?:\?.*)?$/)) && method === "POST") {
       const did = Number(match[1]);

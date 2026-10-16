@@ -2,8 +2,9 @@ use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::Json;
 use writform_proto::sessions::{
-    CreatePromptRequest, CreateSessionRequest, PromptState, SaveSubmissionRequest, SessionDetail,
-    SessionPrompt, SessionState, Submission, WritingSession,
+    CastVoteRequest, CreatePromptRequest, CreateSessionRequest, PieceVotes, PromptState,
+    PromptVoted, PromptVotes, SaveSubmissionRequest, SessionDetail, SessionPrompt, SessionState,
+    Submission, WritingSession,
 };
 use writform_proto::{ChannelId, UserId, WritingSessionId};
 
@@ -334,11 +335,73 @@ pub async fn session_detail(
         )
         .collect();
 
+    let votes = prompt_votes(&state, session_id, auth.user_id, &prompts).await?;
     Ok(Json(SessionDetail {
         session,
         prompts,
         submissions,
+        votes,
     }))
+}
+
+/// Voting on each ended prompt of a session, as `user` may see it.
+async fn prompt_votes(
+    state: &AppState,
+    session_id: i64,
+    user: UserId,
+    prompts: &[SessionPrompt],
+) -> Result<Vec<PromptVotes>, AppError> {
+    let closed: Vec<(i64, Option<i64>)> = sqlx::query_as(
+        "SELECT id, voting_closed_at FROM session_prompts WHERE session_id = ? AND state = 'ended'",
+    )
+    .bind(session_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let tallies: Vec<(i64, i64, i64)> = sqlx::query_as(
+        "SELECT v.prompt_id, v.submission_id, COUNT(*) FROM prompt_votes v
+         JOIN session_prompts p ON p.id = v.prompt_id
+         WHERE p.session_id = ? GROUP BY v.prompt_id, v.submission_id",
+    )
+    .bind(session_id)
+    .fetch_all(&state.pool)
+    .await?;
+    let mine: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT v.prompt_id, v.submission_id FROM prompt_votes v
+         JOIN session_prompts p ON p.id = v.prompt_id
+         WHERE p.session_id = ? AND v.voter_id = ?",
+    )
+    .bind(session_id)
+    .bind(user.0)
+    .fetch_all(&state.pool)
+    .await?;
+    let mut out = Vec::new();
+    for prompt in prompts.iter().filter(|p| p.state == PromptState::Ended) {
+        let closed_at = closed
+            .iter()
+            .find(|(id, _)| *id == prompt.id)
+            .and_then(|(_, at)| *at);
+        let counts: Vec<&(i64, i64, i64)> =
+            tallies.iter().filter(|(p, _, _)| *p == prompt.id).collect();
+        out.push(PromptVotes {
+            prompt_id: prompt.id,
+            votes_cast: counts.iter().map(|(_, _, n)| *n as u32).sum(),
+            my_vote: mine.iter().find(|(p, _)| *p == prompt.id).map(|(_, s)| *s),
+            closed_at,
+            // The count for each piece only once voting has closed.
+            tally: if closed_at.is_some() {
+                counts
+                    .iter()
+                    .map(|(_, submission_id, n)| PieceVotes {
+                        submission_id: *submission_id,
+                        votes: *n as u32,
+                    })
+                    .collect()
+            } else {
+                Vec::new()
+            },
+        });
+    }
+    Ok(out)
 }
 
 /// Permanently delete a session: its prompts, submissions, snapshots (FK
@@ -665,6 +728,155 @@ pub async fn end_prompt_inner(
         serde_json::json!({ "session_id": session_id, "prompt_id": prompt_id, "reason": reason }),
     );
     Ok(())
+}
+
+// ------------------------------------------------------------ voting
+
+/// The prompt's session (checked for access), refused unless the prompt
+/// has ended and its voting is open.
+async fn open_voting(
+    state: &AppState,
+    prompt_id: i64,
+    user: UserId,
+) -> Result<WritingSession, AppError> {
+    let (session_id, prompt_state, _) = prompt_session(state, prompt_id).await?;
+    let session = require_session_access(state, session_id, user).await?;
+    if prompt_state != "ended" {
+        return Err(AppError::bad_request(
+            "not_ended",
+            "voting opens when the prompt ends",
+        ));
+    }
+    let (closed_at,): (Option<i64>,) =
+        sqlx::query_as("SELECT voting_closed_at FROM session_prompts WHERE id = ?")
+            .bind(prompt_id)
+            .fetch_one(&state.pool)
+            .await?;
+    if closed_at.is_some() {
+        return Err(AppError::bad_request(
+            "voting_closed",
+            "voting on this prompt has closed",
+        ));
+    }
+    Ok(session)
+}
+
+/// Tell the session how many have voted (never who, or for which piece).
+async fn tell_votes(
+    state: &AppState,
+    session: &WritingSession,
+    prompt_id: i64,
+) -> Result<(), AppError> {
+    let (count,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM prompt_votes WHERE prompt_id = ?")
+        .bind(prompt_id)
+        .fetch_one(&state.pool)
+        .await?;
+    state.ws.broadcast(
+        &format!("session:{}", session.id.0),
+        "prompt.voted",
+        serde_json::to_value(PromptVoted {
+            session_id: session.id,
+            prompt_id,
+            votes_cast: count as u32,
+        })
+        .expect("serializable"),
+    );
+    Ok(())
+}
+
+/// `PUT /prompts/{id}/vote`: one vote per person per prompt, for a piece
+/// of that prompt that isn't their own. Voting again moves the vote.
+pub async fn cast_vote(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(prompt_id): Path<i64>,
+    Json(req): Json<CastVoteRequest>,
+) -> Result<StatusCode, AppError> {
+    let session = open_voting(&state, prompt_id, auth.user_id).await?;
+    let author: Option<(i64,)> =
+        sqlx::query_as("SELECT user_id FROM session_submissions WHERE id = ? AND prompt_id = ?")
+            .bind(req.submission_id)
+            .bind(prompt_id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let Some((author_id,)) = author else {
+        return Err(AppError::new(
+            StatusCode::NOT_FOUND,
+            "no_such_piece",
+            "that piece isn't one of this prompt's",
+        ));
+    };
+    if author_id == auth.user_id.0 {
+        return Err(AppError::bad_request(
+            "own_piece",
+            "you can't vote for your own piece",
+        ));
+    }
+    sqlx::query(
+        "INSERT INTO prompt_votes (prompt_id, voter_id, submission_id, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (prompt_id, voter_id)
+         DO UPDATE SET submission_id = excluded.submission_id, created_at = excluded.created_at",
+    )
+    .bind(prompt_id)
+    .bind(auth.user_id.0)
+    .bind(req.submission_id)
+    .bind(now_millis())
+    .execute(&state.pool)
+    .await?;
+    tell_votes(&state, &session, prompt_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `DELETE /prompts/{id}/vote`: take one's vote back while voting is open.
+pub async fn withdraw_vote(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(prompt_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let session = open_voting(&state, prompt_id, auth.user_id).await?;
+    sqlx::query("DELETE FROM prompt_votes WHERE prompt_id = ? AND voter_id = ?")
+        .bind(prompt_id)
+        .bind(auth.user_id.0)
+        .execute(&state.pool)
+        .await?;
+    tell_votes(&state, &session, prompt_id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// `POST /prompts/{id}/voting/close`: the prompt's starter, the session's
+/// creator or a group admin ends the voting, and the counts are shown.
+pub async fn close_voting(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(prompt_id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    let (session_id, prompt_state, creator_id) = prompt_session(&state, prompt_id).await?;
+    let session = require_session_access(&state, session_id, auth.user_id).await?;
+    if creator_id != auth.user_id.0 {
+        require_creator_or_admin(&state, &session, auth.user_id).await?;
+    }
+    if prompt_state != "ended" {
+        return Err(AppError::bad_request(
+            "not_ended",
+            "voting opens when the prompt ends",
+        ));
+    }
+    let closed = sqlx::query(
+        "UPDATE session_prompts SET voting_closed_at = ? WHERE id = ? AND voting_closed_at IS NULL",
+    )
+    .bind(now_millis())
+    .bind(prompt_id)
+    .execute(&state.pool)
+    .await?;
+    if closed.rows_affected() > 0 {
+        state.ws.broadcast(
+            &format!("session:{session_id}"),
+            "prompt.voting_closed",
+            serde_json::json!({ "session_id": session_id, "prompt_id": prompt_id }),
+        );
+    }
+    Ok(StatusCode::NO_CONTENT)
 }
 
 /// Server-authoritative timer: sleeps until the deadline, then ends the

@@ -59,6 +59,9 @@ pub struct LocalDocMeta {
     /// document is saved by a version that writes it).
     pub words: i64,
     pub excerpt: String,
+    /// What its card shows (synopsis, cover, tags), as the webview wrote it
+    /// in the metadata. The webview checks it on reading.
+    pub card: Option<serde_json::Value>,
 }
 
 /// One document a search found: the words around the first match.
@@ -279,6 +282,10 @@ pub fn localdoc_list(app: tauri::AppHandle) -> Result<Vec<LocalDocMeta>, CmdErro
                 .and_then(|m| m["excerpt"].as_str())
                 .unwrap_or("")
                 .to_string(),
+            card: meta
+                .as_ref()
+                .map(|m| m["card"].clone())
+                .filter(|c| c.is_object()),
         });
     }
     out.sort_by_key(|a| std::cmp::Reverse(a.updated_at));

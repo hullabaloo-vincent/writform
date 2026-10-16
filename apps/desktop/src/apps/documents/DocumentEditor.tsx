@@ -101,6 +101,7 @@ import {
 } from "./FeedbackPanel";
 import { useFocusMode, useTypewriterScroll } from "./focus";
 import { useAutoRevisions } from "./history";
+import { useDocCard } from "./useDocCard";
 import { FindBar } from "./FindBar";
 import { ExportPdfDialog } from "./ExportPdfDialog";
 import { PrintDialog } from "./PrintDialog";
@@ -120,6 +121,8 @@ import { ChapterFocus } from "../../editor/ChapterFocus";
 import { ChapterBar, useChapterFocus } from "./ChapterBar";
 import { Ruler, useRulerShown } from "../../editor/ui/Ruler";
 import { useIsPhone } from "../../editor/ui/Flyout";
+import { HeaderTools } from "./shell/HeaderTools";
+import { useFillsPhone } from "../../platform/registry";
 import { FormatMarks, refreshFormatMarks } from "../../editor/FormatMarks";
 import { useDarkPaper, useDarkPaperCss } from "../../editor/ui/darkPaper";
 import { ListStarts } from "../../editor/format/listStarts";
@@ -450,6 +453,14 @@ function EditorInner({
   ];
 
   useAutoRevisions(editor, (json) => documentsApi.snapshot(meta.id, json), !readonly);
+  useDocCard({
+    doc: provider.doc,
+    format,
+    canWrite: !readonly,
+    upload: uploadToServer,
+    send: (card, media) => documentsApi.setCard(meta.id, card, media),
+  });
+  const phone = useIsPhone();
   // Gated on the toggle alone: the panel-open OR made the highlighter
   // button a no-op in the only place it exists (the open panel).
   useFeedbackDecorations(editor, provider, state.threads, highlightsOn);
@@ -635,6 +646,8 @@ function EditorInner({
   };
 
   const { focus, setFocus, typewriter, setTypewriter } = useFocusMode();
+  // On a phone the document has the whole screen.
+  useFillsPhone();
   useTypewriterScroll(editor, focus && typewriter);
   // Reopen where you left off.
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -729,6 +742,30 @@ function EditorInner({
   const rulerOn = useRulerShown((st) => st.on);
   const rulerPhone = useIsPhone();
 
+  const formatSelect = (
+    <select
+      className="wf-doc-format"
+      title="Writing format"
+      value={format}
+      disabled={readonly}
+      onChange={(e) => {
+        // Document → Manuscript offers to turn the text's structure into
+        // book elements first.
+        if (format === "none" && e.target.value === "manuscript" && editor) {
+          setConverting("convert");
+          return;
+        }
+        void switchFormat(e.target.value);
+      }}
+    >
+      {Object.entries(FORMAT_LABELS).map(([key, label]) => (
+        <option key={key} value={key}>
+          {label}
+        </option>
+      ))}
+    </select>
+  );
+
   return (
     <div className={`wf-doc-room ${focus ? "focusing" : ""}`}>
       <header className="wf-session-room-header wf-doc-header">
@@ -744,169 +781,162 @@ function EditorInner({
               .catch((e) => state.setError(isCmdError(e) ? e.message : String(e)))
           }
         />
-        <select
-          className="wf-doc-format"
-          title="Writing format"
-          value={format}
-          disabled={readonly}
-          onChange={(e) => {
-            // Document → Manuscript offers to turn the text's structure into
-            // book elements first.
-            if (format === "none" && e.target.value === "manuscript" && editor) {
-              setConverting("convert");
-              return;
-            }
-            void switchFormat(e.target.value);
-          }}
-        >
-          {Object.entries(FORMAT_LABELS).map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
+        {!phone && formatSelect}
         {!readonly && <SyncStatus state={sync} where="server" actions={syncActions} />}
         <span className="wf-statusbar-spacer" />
         <Peers provider={provider} />
-        <button
-          title="Feedback"
-          className={panel === "feedback" ? "active" : ""}
-          onClick={() => {
-            const next = panel === "feedback" ? "none" : "feedback";
-            // With only suggestions waiting, that is the list to open on.
-            if (next === "feedback" && !openThreads && review.items.length) setFeedbackTab("changes");
-            setPanel(next);
-            localStorage.setItem("wf-doc-feedback", next === "feedback" ? "on" : "off");
-          }}
+        <HeaderTools
+          lead={
+            phone ? (
+              <label className="wf-head-format">
+                <span>Format</span>
+                {formatSelect}
+              </label>
+            ) : null
+          }
         >
-          <MessageSquare size={16} />
-          {pending > 0 && (
-            <span className="wf-doc-badge" title={`${openThreads} open ${openThreads === 1 ? "comment" : "comments"}, ${review.items.length} suggested ${review.items.length === 1 ? "change" : "changes"}`}>
-              {pending}
-            </span>
-          )}
-        </button>
-        <button
-          title="Document history"
-          className={panel === "history" ? "active" : ""}
-          onClick={() => setPanel(panel === "history" ? "none" : "history")}
-        >
-          <History size={16} />
-        </button>
-        <button
-          title="Find and replace (⌘F)"
-          className={find ? "active" : ""}
-          disabled={!editor}
-          onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
-        >
-          <Search size={16} />
-        </button>
-        <button
-          title="Outline"
-          className={panel === "outline" ? "active" : ""}
-          onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
-        >
-          <ListTree size={16} />
-        </button>
-        <button
-          title="Check the text for slips and for things written two ways (F7)"
-          className={panel === "check" ? "active" : ""}
-          disabled={!editor}
-          onClick={() => setPanel(panel === "check" ? "none" : "check")}
-        >
-          <SpellCheck size={16} />
-        </button>
-        {/* (A Document has this on its Review tab.) */}
-        {speaks && format !== "none" && (
-          <button title="Read aloud from the caret" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
-            <Volume2 size={16} />
-          </button>
-        )}
-        {hasPreview && (
           <button
-            title={
-              format === "manuscript"
-                ? "Preview every page of the book as it will print"
-                : "Preview every page as it will print"
-            }
-            className={panel === "preview" || previewOpen ? "active" : ""}
+            title="Feedback" data-label="Feedback"
+            className={panel === "feedback" ? "active" : ""}
+            onClick={() => {
+              const next = panel === "feedback" ? "none" : "feedback";
+              // With only suggestions waiting, that is the list to open on.
+              if (next === "feedback" && !openThreads && review.items.length) setFeedbackTab("changes");
+              setPanel(next);
+              localStorage.setItem("wf-doc-feedback", next === "feedback" ? "on" : "off");
+            }}
+          >
+            <MessageSquare size={16} />
+            {pending > 0 && (
+              <span className="wf-doc-badge" title={`${openThreads} open ${openThreads === 1 ? "comment" : "comments"}, ${review.items.length} suggested ${review.items.length === 1 ? "change" : "changes"}`}>
+                {pending}
+              </span>
+            )}
+          </button>
+          <button
+            title="Document history" data-label="History"
+            className={panel === "history" ? "active" : ""}
+            onClick={() => setPanel(panel === "history" ? "none" : "history")}
+          >
+            <History size={16} />
+          </button>
+          <button
+            title="Find and replace (⌘F)" data-label="Find and replace"
+            className={find ? "active" : ""}
             disabled={!editor}
-            onClick={() => {
-              if (canDockPreview()) setPanel(panel === "preview" ? "none" : "preview");
-              else setPreviewOpen(true);
-            }}
+            onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
           >
-            <Eye size={16} />
+            <Search size={16} />
           </button>
-        )}
-        {format !== "manuscript" && (
           <button
-            title="Page view: paginate the sheet into real pages"
-            className={pageGuides ? "active" : ""}
-            onClick={() => {
-              const next = !pageViewOn;
-              setPageGuides(next);
-              localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
-            }}
+            title="Outline" data-label="Outline"
+            className={panel === "outline" ? "active" : ""}
+            onClick={() => setPanel(panel === "outline" ? "none" : "outline")}
           >
-            <SquareSplitVertical size={16} />
+            <ListTree size={16} />
           </button>
-        )}
-        {format === "manuscript" && (
           <button
-            title="Book: details, design, print and ebook settings"
-            className={panel === "book" ? "active" : ""}
-            onClick={() => setPanel(panel === "book" ? "none" : "book")}
+            title="Check the text for slips and for things written two ways (F7)" data-label="Check"
+            className={panel === "check" ? "active" : ""}
+            disabled={!editor}
+            onClick={() => setPanel(panel === "check" ? "none" : "check")}
           >
-            <BookOpen size={16} />
+            <SpellCheck size={16} />
           </button>
-        )}
-        {format === "none" && (
+          {/* (A Document has this on its Review tab.) */}
+          {speaks && format !== "none" && (
+            <button title="Read aloud from the caret" data-label="Read aloud" className={reading ? "active" : ""} disabled={!editor} onClick={() => setReading(!reading)}>
+              <Volume2 size={16} />
+            </button>
+          )}
+          {hasPreview && (
+            <button
+              title={
+                format === "manuscript"
+                  ? "Preview every page of the book as it will print"
+                  : "Preview every page as it will print"
+              }
+              className={panel === "preview" || previewOpen ? "active" : ""}
+              data-label="Preview"
+              disabled={!editor}
+              onClick={() => {
+                if (canDockPreview()) setPanel(panel === "preview" ? "none" : "preview");
+                else setPreviewOpen(true);
+              }}
+            >
+              <Eye size={16} />
+            </button>
+          )}
+          {format !== "manuscript" && (
+            <button
+              title="Page view: paginate the sheet into real pages" data-label="Page view"
+              className={pageGuides ? "active" : ""}
+              onClick={() => {
+                const next = !pageViewOn;
+                setPageGuides(next);
+                localStorage.setItem("wf-doc-pageguides", next ? "on" : "off");
+              }}
+            >
+              <SquareSplitVertical size={16} />
+            </button>
+          )}
+          {format === "manuscript" && (
+            <button
+              title="Book: details, design, print and ebook settings" data-label="Book"
+              className={panel === "book" ? "active" : ""}
+              onClick={() => setPanel(panel === "book" ? "none" : "book")}
+            >
+              <BookOpen size={16} />
+            </button>
+          )}
+          {format === "none" && (
+            <button
+              title="Document settings: paper, margins, text" data-label="Document settings"
+              className={panel === "settings" ? "active" : ""}
+              onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+            >
+              <SlidersHorizontal size={16} />
+            </button>
+          )}
           <button
-            title="Document settings: paper, margins, text"
-            className={panel === "settings" ? "active" : ""}
-            onClick={() => setPanel(panel === "settings" ? "none" : "settings")}
+            title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
+              data-label={focus ? "Leave focus mode" : "Focus mode"}
+            className={focus ? "active" : ""}
+            onClick={toggleFocus}
           >
-            <SlidersHorizontal size={16} />
+            <FocusIcon size={16} />
           </button>
-        )}
-        <button
-          title={focus ? "Leave focus mode (Esc)" : "Focus mode: just you and the page"}
-          className={focus ? "active" : ""}
-          onClick={toggleFocus}
-        >
-          <FocusIcon size={16} />
-        </button>
-        {focus && (
-          <button
-            title="Typewriter scrolling: keep the line you're writing centred"
-            className={typewriter ? "active" : ""}
-            onClick={() => setTypewriter(!typewriter)}
-          >
-            <MoveVertical size={16} />
+          {focus && (
+            <button
+              title="Typewriter scrolling: keep the line you're writing centred" data-label="Typewriter scrolling"
+              className={typewriter ? "active" : ""}
+              onClick={() => setTypewriter(!typewriter)}
+            >
+              <MoveVertical size={16} />
+            </button>
+          )}
+          <ExportMenu
+            items={exportItems}
+            onError={(e) => state.setError(isCmdError(e) ? e.message : String(e))}
+          />
+          <button title="Send to canvas" data-label="Send to canvas" onClick={() => state.setCanvasOpen(true)}>
+            <Presentation size={16} />
           </button>
-        )}
-        <ExportMenu
-          items={exportItems}
-          onError={(e) => state.setError(isCmdError(e) ? e.message : String(e))}
-        />
-        <button title="Send to canvas" onClick={() => state.setCanvasOpen(true)}>
-          <Presentation size={16} />
-        </button>
-        {myAccess === "owner" && (
-          <button title="Share" onClick={() => state.setShareOpen(true)}>
-            <Share2 size={16} />
-          </button>
-        )}
-        {myAccess === "owner" && (
-          <button
-            title="Delete document"
-            className="wf-danger"
-            onClick={() => void deleteThis()}
-          >
-            <Trash2 size={16} />
-          </button>
-        )}
+          {myAccess === "owner" && (
+            <button title="Share" data-label="Share" onClick={() => state.setShareOpen(true)}>
+              <Share2 size={16} />
+            </button>
+          )}
+          {myAccess === "owner" && (
+            <button
+              title="Delete document" data-label="Delete"
+              className="wf-danger"
+              onClick={() => void deleteThis()}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
+        </HeaderTools>
       </header>
 
       {state.error && (

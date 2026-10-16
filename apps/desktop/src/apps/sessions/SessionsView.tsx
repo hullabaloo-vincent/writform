@@ -304,11 +304,15 @@ function PromptCard({
 }) {
   const me = useSession((s) => s.session?.user);
   const sessionTitle = useSessions((s) => s.detail?.session.title ?? "");
+  const sessionCreator = useSessions((s) => s.detail?.session.creator.id ?? null);
+  const sessionChannel = useSessions((s) => s.detail?.session.channel_id ?? null);
   const written = useSessions((s) => (s.detail?.submissions ?? []).some((sub) => sub.prompt_id === prompt.id));
-  const groups = useChat((s) => s.groups);
-  const group = groups.find((g) => g.id === (useChat.getState().activeGroupId ?? -1));
-  const canControl =
-    me && (prompt.creator_id === me.id || group?.my_role === "admin");
+  // The session's own group (its channel's), else the group open in chat.
+  const groupId = useChat((s) => s.channels.find((c) => c.id === sessionChannel)?.group_id ?? s.activeGroupId ?? -1);
+  const group = useChat((s) => s.groups.find((g) => g.id === groupId));
+  // As the server has it: the prompt's starter, the session's creator or a
+  // group admin.
+  const canControl = !!me && (prompt.creator_id === me.id || sessionCreator === me.id || group?.my_role === "admin");
 
   return (
     <section className={`wf-prompt wf-prompt-${prompt.state}`}>
@@ -397,7 +401,7 @@ function PromptCard({
         />
       )}
 
-      {prompt.state === "ended" && <Pieces prompt={prompt} index={index} sessionTitle={sessionTitle} />}
+      {prompt.state === "ended" && <Pieces prompt={prompt} index={index} sessionTitle={sessionTitle} canClose={canControl} />}
     </section>
   );
 }
