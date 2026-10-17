@@ -1,11 +1,16 @@
 import { Check, HardDrive, MoreHorizontal } from "lucide-react";
 
+import { useState } from "react";
+
+import { normalizeAttachmentSrc } from "../../../lib/backend";
 import { Avatar } from "../../../platform/Avatar";
+import { parseCardCover } from "../card";
 import { metaLine, type OrgItem } from "./model";
 
 /**
- * A document in the organizer: title, its opening words (or the search
- * match), and "Manuscript · 98,412 words · Oct 3". Opening and the options
+ * A document in the organizer: its cover when it is a book that has one,
+ * the title, its synopsis or opening words (or the search match),
+ * "Manuscript · 98,412 words · Oct 3" and its tags. Opening and the options
  * menu are separate buttons, so both work from the keyboard; Shift+F10 or
  * the context-menu key on the card opens its menu. While selecting, a
  * click (or ⌘/Ctrl/Shift-click any time) selects instead of opening.
@@ -28,10 +33,11 @@ export function DocCard({
   onMenu: (x: number, y: number) => void;
   onSelect?: (e: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void;
 }) {
-  const text = item.snippet ?? item.excerpt;
+  const text = item.snippet ?? (item.synopsis || item.excerpt);
+  const cover = parseCardCover(item.cover);
   return (
     <div
-      className={`wf-doc-card${selected ? " selected" : ""}`}
+      className={`wf-doc-card${selected ? " selected" : ""}${cover ? " has-cover" : ""}`}
       onContextMenu={(e) => {
         e.preventDefault();
         onMenu(e.clientX, e.clientY);
@@ -52,29 +58,33 @@ export function DocCard({
           }
         }}
       >
-        <span className="wf-doc-card-title">
-          {item.kind === "local" && <HardDrive size={14} />}
-          {item.title || "Untitled"}
-        </span>
-        {text && <span className="wf-doc-card-excerpt">{text}</span>}
-        <span className="wf-doc-card-meta">
-          <span>{metaLine(item)}</span>
-          {item.access !== "owner" && (
-            <span className="wf-doc-card-access">{item.access === "write" ? "can edit" : "read only"}</span>
+        {cover && <CardCover kind={cover.kind} src={cover.art.src} />}
+        <span className="wf-doc-card-body">
+          <span className="wf-doc-card-title">
+            {item.kind === "local" && <HardDrive size={14} />}
+            {item.title || "Untitled"}
+          </span>
+          {text && <span className="wf-doc-card-excerpt">{text}</span>}
+          <span className="wf-doc-card-meta">
+            <span>{metaLine(item)}</span>
+            {item.access !== "owner" && (
+              <span className="wf-doc-card-access">{item.access === "write" ? "can edit" : "read only"}</span>
+            )}
+          </span>
+          {item.tags.length > 0 && <CardTags tags={item.tags} />}
+          {extra && <span className="wf-doc-card-extra">{extra}</span>}
+          {item.owner && (
+            <span className="wf-doc-card-owner">
+              <Avatar
+                name={item.owner.display_name ?? item.owner.username}
+                attachmentId={item.owner.avatar_attachment_id}
+                accentColor={item.owner.accent_color}
+                size={16}
+              />
+              {item.owner.display_name ?? item.owner.username}
+            </span>
           )}
         </span>
-        {extra && <span className="wf-doc-card-extra">{extra}</span>}
-        {item.owner && (
-          <span className="wf-doc-card-owner">
-            <Avatar
-              name={item.owner.display_name ?? item.owner.username}
-              attachmentId={item.owner.avatar_attachment_id}
-              accentColor={item.owner.accent_color}
-              size={16}
-            />
-            {item.owner.display_name ?? item.owner.username}
-          </span>
-        )}
       </button>
       {selecting ? (
         <span className="wf-doc-card-check" aria-hidden>
@@ -94,5 +104,31 @@ export function DocCard({
         </button>
       )}
     </div>
+  );
+}
+
+/** A book's cover on its card. A whole cover shows its right-hand part
+ *  (the front). A picture that can't be had leaves the space plain. */
+export function CardCover({ kind, src, size = "card" }: { kind: "front" | "wrap"; src: string; size?: "card" | "small" }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <span className={`wf-doc-card-cover ${size}${kind === "wrap" ? " wrap" : ""}`} aria-hidden>
+      {!failed && <img src={normalizeAttachmentSrc(src)} alt="" loading="lazy" decoding="async" draggable={false} onError={() => setFailed(true)} />}
+    </span>
+  );
+}
+
+/** Up to four tags, and how many more there are. */
+export function CardTags({ tags }: { tags: string[] }) {
+  const shown = tags.slice(0, 4);
+  return (
+    <span className="wf-doc-card-tags">
+      {shown.map((tag) => (
+        <span key={tag} className="wf-doc-card-tag">
+          {tag}
+        </span>
+      ))}
+      {tags.length > shown.length && <span className="wf-doc-card-more">+{tags.length - shown.length}</span>}
+    </span>
   );
 }

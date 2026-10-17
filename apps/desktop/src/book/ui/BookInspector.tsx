@@ -337,7 +337,16 @@ function BookTab({ book, disabled, patch }: { book: Book; disabled: boolean; pat
           disabled={disabled}
           area
           rows={3}
-          hint="Used in the ebook's details."
+          hint="Used in the ebook's details and on the book's card in Documents."
+        />
+        <TextField
+          label="Tags"
+          value={m.tags}
+          field="meta.tags"
+          patch={patch}
+          disabled={disabled}
+          placeholder="Vampires, Dark romance"
+          hint="Shown on the book's card, with commas between. Up to 12."
         />
       </section>
 

@@ -1,5 +1,7 @@
 import { create } from "zustand";
 
+import type { PromptVoted } from "../../bindings/proto/PromptVoted";
+import type { PromptVotes } from "../../bindings/proto/PromptVotes";
 import type { SessionDetail } from "../../bindings/proto/SessionDetail";
 import type { WritingSession } from "../../bindings/proto/WritingSession";
 import { backend, isCmdError } from "../../lib/backend";
@@ -79,6 +81,15 @@ export const useSessions = create<SessionsState>((set, get) => ({
   },
 }));
 
+/** Change what the open session knows of one prompt's voting. */
+export function patchVotes(promptId: number, change: (votes: PromptVotes) => PromptVotes): void {
+  useSessions.setState((s) => {
+    const detail = s.detail;
+    if (!detail?.votes?.some((v) => v.prompt_id === promptId)) return {};
+    return { detail: { ...detail, votes: detail.votes.map((v) => (v.prompt_id === promptId ? change(v) : v)) } };
+  });
+}
+
 /** Apply session WS events. Installed once by the sessions app. */
 export function installSessionsWsHandler(): () => void {
   return backend.onWsEvent((event) => {
@@ -116,6 +127,13 @@ export function installSessionsWsHandler(): () => void {
         }));
         toast("Prompt stopping in 10 seconds. Finish your sentence.");
       }
+    } else if (kind === "prompt.voted") {
+      // How many have voted (never who, or for which piece).
+      const { session_id, prompt_id, votes_cast } = data as PromptVoted;
+      if (session_id === state.activeSessionId) patchVotes(prompt_id, (v) => ({ ...v, votes_cast }));
+    } else if (kind === "prompt.voting_closed") {
+      const { session_id } = data as { session_id: number };
+      if (session_id === state.activeSessionId) void state.refreshDetail();
     } else if (kind === "session.ended") {
       const { session_id } = data as { session_id: number };
       if (session_id === state.activeSessionId) void state.refreshDetail();

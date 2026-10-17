@@ -5,6 +5,7 @@
 
 import type { DocumentListItem } from "../../../bindings/proto/DocumentListItem";
 import type { UserRef } from "../../../bindings/proto/UserRef";
+import { cleanCard } from "../card";
 import { FORMAT_LABELS } from "../formats/elements";
 import type { LocalDocMeta } from "../local";
 
@@ -28,6 +29,10 @@ export interface OrgItem {
   access: "owner" | "write" | "read";
   /** Shared documents show whose they are. */
   owner: UserRef | null;
+  /** What its card shows beside the words (card.ts). */
+  synopsis: string;
+  cover: string | null;
+  tags: string[];
 }
 
 export function serverItem(i: DocumentListItem): OrgItem {
@@ -45,7 +50,13 @@ export function serverItem(i: DocumentListItem): OrgItem {
     folderId: i.document.folder_id,
     access: i.my_access === "write" || i.my_access === "read" ? i.my_access : "owner",
     owner: i.my_access === "owner" ? null : i.document.owner,
+    ...cardFields(i.card),
   };
+}
+
+function cardFields(value: unknown): Pick<OrgItem, "synopsis" | "cover" | "tags"> {
+  const card = cleanCard(value);
+  return { synopsis: card.synopsis, cover: card.cover, tags: card.tags };
 }
 
 export function localItem(d: LocalDocMeta, folderId: string | null = null, snippet: string | null = null): OrgItem {
@@ -63,6 +74,7 @@ export function localItem(d: LocalDocMeta, folderId: string | null = null, snipp
     folderId,
     access: "owner",
     owner: null,
+    ...cardFields(d.card),
   };
 }
 

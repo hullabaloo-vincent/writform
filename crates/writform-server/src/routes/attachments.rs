@@ -262,14 +262,18 @@ pub async fn download(
         }
     }
     if !allowed {
-        // Images embedded in a document's latest snapshot: readable by
-        // anyone the document is shared with.
+        // Images in a document's latest snapshot or named by its settings:
+        // readable by anyone the document is shared with.
         let pattern = format!("%writform-att://attachment/{attachment_id}\"%");
-        let docs: Vec<(i64,)> =
-            sqlx::query_as("SELECT id FROM documents WHERE content_json LIKE ?")
-                .bind(&pattern)
-                .fetch_all(&state.pool)
-                .await?;
+        // The pictures its settings name (cover, scene break, chapter art)
+        // are listed in `map_media` in the same form.
+        let docs: Vec<(i64,)> = sqlx::query_as(
+            "SELECT id FROM documents WHERE content_json LIKE ? OR map_media LIKE ?",
+        )
+        .bind(&pattern)
+        .bind(&pattern)
+        .fetch_all(&state.pool)
+        .await?;
         for (doc_id,) in docs {
             if crate::routes::documents::can_read(&state, doc_id, auth.user_id).await? {
                 allowed = true;

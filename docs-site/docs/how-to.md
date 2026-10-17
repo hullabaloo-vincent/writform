@@ -332,6 +332,22 @@ check their template.
 Every font the editor offers is open-licensed and free to use on a book
 you sell.
 
+## Show a book's cover and blurb in your lists
+
+A book's card in Documents shows its cover, its description and its tags
+to you and to everyone it is shared with.
+
+1. Open the manuscript, press the book button and choose **Book**.
+2. Write the **Description**. It is the blurb on the card and in the
+   ebook's details.
+3. Add **Tags** with commas between them, such as *Vampires, Dark
+   romance*. Up to twelve show on the card.
+4. Give the book a front cover on the **Cover** tab. The card shows the
+   front as you designed it a moment after you change it.
+
+A Document's card shows its subject and keywords, set under **Details**
+in its settings.
+
 ## Give a book's chapters their look
 
 Open a manuscript, press the book button and choose **Design**.
@@ -476,6 +492,10 @@ certificate you are warned first, since any change breaks that signature.
    writing is then shown. Add more prompts or **End session**.
 6. To keep what you wrote, press **Save as a document** on your piece. It
    becomes a Document of your own. **Copy** takes any piece as plain text.
+7. To pick a winner, everyone presses **Vote** on the piece they liked
+   best. Press it again to take the vote back. When everyone has voted,
+   whoever started the prompt presses **Close voting**, and each piece
+   shows how many votes it got.
 
 ## Invite people to a group
 

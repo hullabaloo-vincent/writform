@@ -133,21 +133,38 @@ export async function ebookCover(book: Book, g: CoverGeometry): Promise<{ bytes:
   const { frontIsMade } = await import("./scene");
   if (frontIsMade(cover)) {
     const drawn = await drawFront(book, g).catch(() => null);
-    if (drawn) return { bytes: drawn, type: "image/jpeg" };
+    if (drawn) return { bytes: drawn.bytes, type: "image/jpeg" };
   }
   return cover.front ? artBytes(cover.front) : null;
 }
 
+/** How tall the picture on a book's card is drawn, pixels. */
+export const THUMB_TALL = 600;
+
+/**
+ * A small picture of the front as designed, for the book's card in the
+ * lists: the words and colours on it, and of a whole cover only its front.
+ * Null when there is no front or it can't be drawn.
+ */
+export async function coverThumb(book: Book): Promise<{ file: File; w: number; h: number } | null> {
+  if (!book.cover.front && !book.cover.wrap) return null;
+  const { coverGeometry } = await import("./geometry");
+  const g = coverGeometry(book.print, book.cover.pages || 200);
+  const drawn = await drawFront(book, g, THUMB_TALL, 0.85).catch(() => null);
+  if (!drawn) return null;
+  return { file: new File([drawn.bytes as BlobPart], "cover.jpg", { type: "image/jpeg" }), w: drawn.w, h: drawn.h };
+}
+
 /** The front cover as designed, as a JPEG (drawn on a canvas, in the fonts
  *  the page has loaded). */
-async function drawFront(book: Book, g: CoverGeometry): Promise<Uint8Array | null> {
+async function drawFront(book: Book, g: CoverGeometry, tall = 2560, quality = 0.92): Promise<{ bytes: Uint8Array; w: number; h: number } | null> {
   const [{ buildScene, coverFaces }, { showFamilies }] = await Promise.all([import("./scene"), import("../../fonts/store")]);
   const faces = await coverFaces(book.cover.texts);
   await showFamilies(faces.families);
   const scene = buildScene(book.cover, g, faces);
   const trim = panelTrim(g, "front");
   const view = { x: trim.x * 72, y: trim.y * 72, w: trim.w * 72, h: trim.h * 72 };
-  const scale = Math.min(2560 / view.h, Math.sqrt(CANVAS_PIXELS / (view.w * view.h)));
+  const scale = Math.min(tall / view.h, Math.sqrt(CANVAS_PIXELS / (view.w * view.h)));
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(view.w * scale);
   canvas.height = Math.round(view.h * scale);
@@ -208,8 +225,8 @@ async function drawFront(book: Book, g: CoverGeometry): Promise<Uint8Array | nul
     }
     ctx.restore();
   }
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.92));
-  return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", quality));
+  return blob ? { bytes: new Uint8Array(await blob.arrayBuffer()), w: canvas.width, h: canvas.height } : null;
 }
 
 /** The template for the artwork: the sheet at its exact size, with guides. */

@@ -30,6 +30,7 @@ import { attachmentRef, backend, localDocMediaId, localDocMediaUrl, type CmdErro
 import { SERVER_PICTURE_BYTES, uploadBlob } from "../../../lib/upload";
 import { COVER_SLOTS, encodeArt, parseArt } from "../../../book/cover/art";
 import { ART_SLOTS } from "../../../book/model/bookMap";
+import { THUMB_KEY } from "../card";
 import { fitUnder } from "../../../book/cover/files";
 import { featureLevel } from "../sync/caps";
 
@@ -398,7 +399,7 @@ export async function uploadDeviceCover(maps: DocMapsSnapshot): Promise<DocMapsS
   const book = maps.book;
   if (!book) return maps;
   let next: Record<string, unknown> | null = null;
-  for (const key of [...COVER_SLOTS.map((slot) => `cover.${slot}`), ...ART_SLOTS.map((slot) => `art.${slot}`)]) {
+  for (const key of [...COVER_SLOTS.map((slot) => `cover.${slot}`), THUMB_KEY, ...ART_SLOTS.map((slot) => `art.${slot}`)]) {
     const art = parseArt(book[key]);
     if (!art || !localDocMediaId(art.src)) continue;
     next ??= { ...book };

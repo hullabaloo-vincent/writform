@@ -28,7 +28,7 @@ import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { LinkPreview } from "../../bindings/proto/LinkPreview";
 import type { Message } from "../../bindings/proto/Message";
 import type { SearchHit } from "../../bindings/proto/SearchHit";
-import { attachmentUrl, isCmdError } from "../../lib/backend";
+import { attachmentUrl, isCmdError, normalizeAttachmentSrc } from "../../lib/backend";
 import { haptic } from "../../lib/haptics";
 import { fetchLinkPreview, firstUrl } from "../../lib/linkPreview";
 import { uploadBlob, uploadPath, type UploadedAttachment } from "../../lib/upload";
@@ -1662,19 +1662,33 @@ function SessionJoinCard({ content }: { content: string }) {
 }
 
 /** Card for a document shared with the group. */
+/** "front 600x960 <address>" (or "wrap …"): the picture on a book's card,
+ *  as the server put it in the share card. */
+const SHARED_COVER = /^(front|wrap) \d{1,5}x\d{1,5} (writform-att:\/\/attachment\/\d{1,12})$/;
+
 function DocumentShareCard({ content }: { content: string }) {
   const [error, setError] = useState<string | null>(null);
-  let card: { document_id?: number; title?: string; access?: string } = {};
+  const [coverFailed, setCoverFailed] = useState(false);
+  let card: { document_id?: number; title?: string; access?: string; synopsis?: unknown; cover?: unknown } = {};
   try {
     card = JSON.parse(content) as typeof card;
   } catch {
     // malformed card — render the shell
   }
+  const cover = typeof card.cover === "string" ? SHARED_COVER.exec(card.cover) : null;
+  const synopsis = typeof card.synopsis === "string" ? card.synopsis.trim() : "";
   return (
-    <div className="wf-session-join">
-      <FileText size={16} />
+    <div className={`wf-session-join wf-doc-share${cover ? " has-cover" : ""}`}>
+      {cover && !coverFailed ? (
+        <span className={`wf-doc-card-cover share${cover[1] === "wrap" ? " wrap" : ""}`} aria-hidden>
+          <img src={normalizeAttachmentSrc(cover[2])} alt="" loading="lazy" decoding="async" onError={() => setCoverFailed(true)} />
+        </span>
+      ) : (
+        <FileText size={16} />
+      )}
       <div className="wf-plugin-info">
         <strong>{card.title ?? "Shared document"}</strong>
+        {synopsis && <span className="wf-doc-share-synopsis">{synopsis}</span>}
         <span className="wf-session-meta">
           {error ??
             (card.access === "write"

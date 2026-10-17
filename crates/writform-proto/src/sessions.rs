@@ -87,6 +87,56 @@ pub struct SessionDetail {
     /// All submissions for ended prompts; only the caller's own for
     /// running/draft prompts (no peeking mid-write).
     pub submissions: Vec<Submission>,
+    /// Voting on each ended prompt's pieces (absent from older servers).
+    #[serde(default)]
+    pub votes: Vec<PromptVotes>,
+}
+
+/// Voting on an ended prompt's pieces. Who voted for which piece is never
+/// told: each person sees their own vote, everyone sees how many have
+/// voted, and each piece's count once voting has closed.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PromptVotes {
+    #[ts(type = "number")]
+    pub prompt_id: i64,
+    pub votes_cast: u32,
+    /// The piece (submission id) the caller voted for.
+    #[ts(type = "number | null")]
+    pub my_vote: Option<i64>,
+    /// When voting was closed. Open while null.
+    #[ts(type = "number | null")]
+    pub closed_at: Option<UnixMillis>,
+    /// Each piece's votes, once voting has closed (empty before).
+    pub tally: Vec<PieceVotes>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PieceVotes {
+    #[ts(type = "number")]
+    pub submission_id: i64,
+    pub votes: u32,
+}
+
+/// `PUT /prompts/{id}/vote`: vote for one piece of an ended prompt (not
+/// one's own). Voting again moves the vote.
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct CastVoteRequest {
+    #[ts(type = "number")]
+    pub submission_id: i64,
+}
+
+/// `prompt.voted`: someone voted, moved or took back a vote (never who, or
+/// for which piece).
+#[derive(Debug, Clone, Serialize, Deserialize, TS)]
+#[ts(export)]
+pub struct PromptVoted {
+    pub session_id: WritingSessionId,
+    #[ts(type = "number")]
+    pub prompt_id: i64,
+    pub votes_cast: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]

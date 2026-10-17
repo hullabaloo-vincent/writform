@@ -46,6 +46,9 @@ export function TrashView({ onError }: { onError: (e: unknown) => void }) {
       folderId: i.document.folder_id,
       access: "owner" as const,
       owner: null,
+      synopsis: "",
+      cover: null,
+      tags: [],
       deletedAt: i.deleted_at ?? 0,
     })),
     ...localTrash.map((t) => ({
@@ -62,6 +65,9 @@ export function TrashView({ onError }: { onError: (e: unknown) => void }) {
       folderId: null,
       access: "owner" as const,
       owner: null,
+      synopsis: "",
+      cover: null,
+      tags: [],
       deletedAt: t.deleted_at,
     })),
   ].sort((a, b) => b.deletedAt - a.deletedAt);

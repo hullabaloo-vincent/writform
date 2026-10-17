@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { create } from "zustand";
 
 import type {
@@ -29,10 +30,14 @@ interface PlatformState {
   shortcutsOpen: boolean;
   /** Focus mode: the shell chrome (rail, statusbar, panels) is hidden. */
   immersive: boolean;
+  /** A view that fills a phone's screen is open (a document): the tab bar
+   *  and status strip step aside there. Nothing changes on a desktop. */
+  fillsPhone: boolean;
   setActiveApp: (appId: string) => void;
   setAppBadge: (appId: string, count: number) => void;
   setShortcutsOpen: (open: boolean) => void;
   setImmersive: (on: boolean) => void;
+  setFillsPhone: (on: boolean) => void;
 }
 
 export const usePlatform = create<PlatformState>((set) => ({
@@ -47,6 +52,7 @@ export const usePlatform = create<PlatformState>((set) => ({
   badges: {},
   shortcutsOpen: false,
   immersive: false,
+  fillsPhone: false,
   // Switching apps always leaves focus mode — immersive chrome belongs to
   // the view that asked for it.
   setActiveApp: (appId) => set({ activeAppId: appId, immersive: false }),
@@ -56,7 +62,17 @@ export const usePlatform = create<PlatformState>((set) => ({
     ),
   setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
   setImmersive: (on) => set({ immersive: on }),
+  setFillsPhone: (on) => set({ fillsPhone: on }),
 }));
+
+/** While the calling view is mounted, it fills a phone's screen (see
+ *  `fillsPhone`). */
+export function useFillsPhone(): void {
+  useEffect(() => {
+    usePlatform.getState().setFillsPhone(true);
+    return () => usePlatform.getState().setFillsPhone(false);
+  }, []);
+}
 
 function addSlotContribution(slot: SlotName, contribution: SlotContribution): () => void {
   usePlatform.setState((s) => ({

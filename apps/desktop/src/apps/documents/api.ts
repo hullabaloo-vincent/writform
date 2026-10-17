@@ -3,6 +3,7 @@ import type { CreateThreadRequest } from "../../bindings/proto/CreateThreadReque
 import type { Document } from "../../bindings/proto/Document";
 import type { DocumentCapabilities } from "../../bindings/proto/DocumentCapabilities";
 import type { DocumentActivity } from "../../bindings/proto/DocumentActivity";
+import type { DocumentCard } from "../../bindings/proto/DocumentCard";
 import type { DocumentDetail } from "../../bindings/proto/DocumentDetail";
 import type { DocumentFolder } from "../../bindings/proto/DocumentFolder";
 import type { DocumentListItem } from "../../bindings/proto/DocumentListItem";
@@ -12,6 +13,7 @@ import type { DocumentThreadMessage } from "../../bindings/proto/DocumentThreadM
 import type { DocumentUpdateBatch } from "../../bindings/proto/DocumentUpdateBatch";
 import type { DocumentVersion } from "../../bindings/proto/DocumentVersion";
 import type { DocumentVersionMeta } from "../../bindings/proto/DocumentVersionMeta";
+import type { SetDocumentCardRequest } from "../../bindings/proto/SetDocumentCardRequest";
 import type { SetShareRequest } from "../../bindings/proto/SetShareRequest";
 import type { UpdateDocumentRequest } from "../../bindings/proto/UpdateDocumentRequest";
 import { DOC_SCHEMA_LEVEL } from "../../editor/schema/levels";
@@ -100,6 +102,9 @@ export const documentsApi = {
       name: name ?? null,
       kind: kind ?? null,
     }),
+  /** What the document's card shows (write access; see card.ts). */
+  setCard: (id: number, card: DocumentCard, media: string[]) =>
+    api<DocumentCard>("PUT", `/api/v1/documents/${id}/card`, { card, media } satisfies SetDocumentCardRequest),
   versions: (id: number) => api<DocumentVersionMeta[]>("GET", `/api/v1/documents/${id}/versions`),
   version: (id: number, versionId: number) =>
     api<DocumentVersion>("GET", `/api/v1/documents/${id}/versions/${versionId}`),

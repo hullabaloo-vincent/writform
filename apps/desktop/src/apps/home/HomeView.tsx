@@ -9,7 +9,9 @@ import { useLocalProfile } from "../../stores/localProfile";
 import { useSession } from "../../stores/session";
 import { isLocalBoard, useLocalBoards } from "../canvas/local";
 import { useCanvas } from "../canvas/store";
+import { cleanCard, parseCardCover } from "../documents/card";
 import { FORMAT_LABELS } from "../documents/formats/elements";
+import { CardCover } from "../documents/organizer/DocCard";
 import { useLocalDocs } from "../documents/local";
 import { openKeptPdf, openLocalDoc, openPdfFile, openServerDoc } from "../documents/navigation";
 import { looksLikePdf, pdfIntent } from "../../pdf/desk";
@@ -80,6 +82,7 @@ export function HomeView() {
         detail: `${FORMAT_LABELS[d.format] ?? "Document"} · on this device`,
         at: d.updated_at,
         place: "device" as const,
+        cover: d.card?.cover ?? null,
       })),
       localBoards.map((b) => ({
         kind: "board" as const,
@@ -106,13 +109,14 @@ export function HomeView() {
         place: "device" as const,
       })),
       connected
-        ? serverDocs.map(({ document: d }) => ({
+        ? serverDocs.map(({ document: d, card }) => ({
             kind: "document" as const,
             key: `doc:${d.id}`,
             title: d.title || "Untitled",
             detail: `${FORMAT_LABELS[d.format] ?? "Document"} · ${session?.addr ?? "server"}`,
             at: d.updated_at,
             place: "server" as const,
+            cover: cleanCard(card).cover,
           }))
         : [],
     ];
@@ -241,20 +245,27 @@ export function HomeView() {
             <p className="wf-home-empty">What you work on will be here with the newest first.</p>
           ) : (
             <ul className="wf-home-recents">
-              {recents.map((item) => (
-                <li key={item.key}>
-                  <button onClick={() => open(item)}>
-                    <span className="wf-home-recent-icon" aria-hidden>
-                      {ICONS[item.kind]}
-                    </span>
-                    <span className="wf-home-recent-text">
-                      <strong>{item.title}</strong>
-                      <small>{item.detail}</small>
-                    </span>
-                    <time dateTime={new Date(item.at).toISOString()}>{whenLabel(item.at, now)}</time>
-                  </button>
-                </li>
-              ))}
+              {recents.map((item) => {
+                const cover = parseCardCover(item.cover);
+                return (
+                  <li key={item.key}>
+                    <button onClick={() => open(item)}>
+                      {cover ? (
+                        <CardCover kind={cover.kind} src={cover.art.src} size="small" />
+                      ) : (
+                        <span className="wf-home-recent-icon" aria-hidden>
+                          {ICONS[item.kind]}
+                        </span>
+                      )}
+                      <span className="wf-home-recent-text">
+                        <strong>{item.title}</strong>
+                        <small>{item.detail}</small>
+                      </span>
+                      <time dateTime={new Date(item.at).toISOString()}>{whenLabel(item.at, now)}</time>
+                    </button>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>

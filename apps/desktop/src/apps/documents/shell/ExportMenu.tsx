@@ -1,5 +1,7 @@
 import { Download } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useContext, useEffect, useRef, useState } from "react";
+
+import { InHeaderSheet } from "./HeaderTools";
 
 /** The plain Word export's label (other code finds the item by it). */
 export const WORD_EXPORT = "Export Word (.docx)";
@@ -26,6 +28,7 @@ export function ExportMenu({
   items: ExportItem[];
   onError: (error: unknown) => void;
 }) {
+  const inSheet = useContext(InHeaderSheet);
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -59,6 +62,20 @@ export function ExportMenu({
     const next = e.key === "ArrowDown" ? (at + 1) % buttons.length : (at - 1 + buttons.length) % buttons.length;
     buttons[next].focus();
   };
+
+  // In a phone's sheet of header tools: the exports as rows of their own.
+  if (inSheet) {
+    return (
+      <div className="wf-head-export" role="group" aria-label="Export">
+        <span className="wf-head-group">Export</span>
+        {items.map((item) => (
+          <button key={item.label} type="button" disabled={item.disabled} onClick={() => void item.run().catch(onError)}>
+            {item.label}
+          </button>
+        ))}
+      </div>
+    );
+  }
 
   return (
     <div className="wf-doc-export-wrap" ref={wrapRef} onKeyDown={onKeyDown}>

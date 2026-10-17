@@ -134,6 +134,8 @@ export interface LocalDocListing {
   /** 0 / empty for documents not saved since list metadata existed. */
   words?: number;
   excerpt?: string;
+  /** What its card shows, as the metadata holds it (unchecked). */
+  card?: unknown;
 }
 
 /** An on-device document in Recently Deleted. */

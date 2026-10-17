@@ -18,10 +18,11 @@ use writform_proto::chat::UserRef;
 use writform_proto::documents::{
     AppendUpdateRequest, AppendUpdateResponse, AwarenessRequest, CreateDocumentRequest,
     CreateFolderRequest, CreateThreadRequest, Document, DocumentActivity, DocumentCapabilities,
-    DocumentDetail, DocumentFolder, DocumentListItem, DocumentShare, DocumentThread,
-    DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow, DocumentVersion,
-    DocumentVersionMeta, MoveDocumentRequest, ReplyThreadRequest, SetShareRequest, SnapshotRequest,
-    UpdateDocumentRequest, UpdateThreadRequest,
+    DocumentCard, DocumentCardChanged, DocumentDetail, DocumentFolder, DocumentListItem,
+    DocumentShare, DocumentThread, DocumentThreadMessage, DocumentUpdateBatch, DocumentUpdateRow,
+    DocumentVersion, DocumentVersionMeta, MoveDocumentRequest, ReplyThreadRequest,
+    SetDocumentCardRequest, SetShareRequest, SnapshotRequest, UpdateDocumentRequest,
+    UpdateThreadRequest,
 };
 use writform_proto::{GroupId, UserId};
 
@@ -532,6 +533,7 @@ pub async fn list_documents(
             excerpt: String::new(),
             snippet: None,
             deleted_at: None,
+            card: DocumentCard::default(),
         })
         .collect();
     items.sort_by_key(|i| std::cmp::Reverse(i.document.updated_at));
@@ -546,23 +548,31 @@ async fn attach_stats(
     items: &mut [DocumentListItem],
     query: Option<&str>,
 ) -> Result<(), AppError> {
-    let mut stats: HashMap<i64, (i64, String)> = HashMap::new();
+    type Stats = (i64, String, String, Option<String>, String);
+    let mut stats: HashMap<i64, Stats> = HashMap::new();
     for chunk in items.chunks(400) {
         let placeholders = vec!["?"; chunk.len()].join(", ");
-        let sql =
-            format!("SELECT id, word_count, excerpt FROM documents WHERE id IN ({placeholders})");
-        let mut q = sqlx::query_as::<_, (i64, i64, String)>(&sql);
+        let sql = format!(
+            "SELECT id, word_count, excerpt, card_synopsis, card_cover, card_tags
+             FROM documents WHERE id IN ({placeholders})"
+        );
+        let mut q = sqlx::query_as::<_, (i64, i64, String, String, Option<String>, String)>(&sql);
         for item in chunk {
             q = q.bind(item.document.id);
         }
-        for (id, words, excerpt) in q.fetch_all(&state.pool).await? {
-            stats.insert(id, (words, excerpt));
+        for (id, words, excerpt, synopsis, cover, tags) in q.fetch_all(&state.pool).await? {
+            stats.insert(id, (words, excerpt, synopsis, cover, tags));
         }
     }
     for item in items.iter_mut() {
-        if let Some((words, excerpt)) = stats.remove(&item.document.id) {
+        if let Some((words, excerpt, synopsis, cover, tags)) = stats.remove(&item.document.id) {
             item.word_count = words;
             item.excerpt = excerpt;
+            item.card = DocumentCard {
+                synopsis,
+                cover,
+                tags: serde_json::from_str(&tags).unwrap_or_default(),
+            };
         }
     }
     let Some(query) = query else {
@@ -752,6 +762,175 @@ fn list_changed(state: &AppState, owner: UserId) {
     );
 }
 
+// ------------------------------------------------------------ cards
+
+const CARD_SYNOPSIS_MAX: usize = 600;
+const CARD_TAGS_MAX: usize = 12;
+const CARD_TAG_MAX: usize = 40;
+const CARD_MEDIA_MAX: usize = 64;
+const ATTACHMENT_ADDRESS: &str = "writform-att://attachment/";
+
+/// `writform-att://attachment/N` gives N.
+fn attachment_number(address: &str) -> Option<i64> {
+    let n = address.strip_prefix(ATTACHMENT_ADDRESS)?;
+    if n.is_empty() || n.len() > 18 || !n.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    n.parse().ok()
+}
+
+/// `front <w>x<h> <address>` or `wrap …`, with the address one of this
+/// server's pictures.
+fn clean_cover(cover: &str) -> Option<String> {
+    let mut parts = cover.split(' ');
+    let (kind, size, address) = (parts.next()?, parts.next()?, parts.next()?);
+    if parts.next().is_some() || !matches!(kind, "front" | "wrap") {
+        return None;
+    }
+    let (w, h) = size.split_once('x')?;
+    let side = |v: &str| -> Option<u32> {
+        if v.is_empty() || v.len() > 5 || !v.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        v.parse().ok().filter(|n| *n > 0)
+    };
+    let (w, h) = (side(w)?, side(h)?);
+    let n = attachment_number(address)?;
+    Some(format!("{kind} {w}x{h} {ATTACHMENT_ADDRESS}{n}"))
+}
+
+fn cut_chars(s: &str, max: usize) -> String {
+    s.chars().take(max).collect()
+}
+
+/// A card as the server keeps it: the synopsis and tags cut to size, a
+/// cover refused unless it is one of this server's pictures.
+fn clean_card(card: DocumentCard) -> Result<DocumentCard, AppError> {
+    let synopsis = cut_chars(card.synopsis.trim(), CARD_SYNOPSIS_MAX)
+        .trim_end()
+        .to_string();
+    let cover = match card
+        .cover
+        .as_deref()
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+    {
+        None => None,
+        Some(c) => Some(clean_cover(c).ok_or_else(|| {
+            AppError::bad_request("bad_cover", "the cover must be a picture on this server")
+        })?),
+    };
+    let mut tags: Vec<String> = Vec::new();
+    for tag in card.tags {
+        let tag = cut_chars(tag.trim(), CARD_TAG_MAX).trim().to_string();
+        let lower = tag.to_lowercase();
+        if tag.is_empty() || tags.iter().any(|t| t.to_lowercase() == lower) {
+            continue;
+        }
+        tags.push(tag);
+        if tags.len() == CARD_TAGS_MAX {
+            break;
+        }
+    }
+    Ok(DocumentCard {
+        synopsis,
+        cover,
+        tags,
+    })
+}
+
+/// The server pictures a document's settings name, as the attachment check
+/// looks for them (`writform-att://attachment/N"`, the quote keeping 5 from
+/// matching 55).
+fn media_list<'a>(addresses: impl Iterator<Item = &'a str>) -> String {
+    let mut seen: Vec<i64> = Vec::new();
+    for address in addresses {
+        if let Some(n) = attachment_number(address.trim()) {
+            if !seen.contains(&n) {
+                seen.push(n);
+            }
+        }
+        if seen.len() == CARD_MEDIA_MAX {
+            break;
+        }
+    }
+    seen.iter()
+        .map(|n| format!("{ATTACHMENT_ADDRESS}{n}\""))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// `PUT /documents/{id}/card`: an editor of the document says what its card
+/// shows. Tells the owner and everyone it is shared with when that changed.
+pub async fn set_card(
+    State(state): State<AppState>,
+    auth: AuthUser,
+    Path(doc_id): Path<i64>,
+    Json(req): Json<SetDocumentCardRequest>,
+) -> Result<Json<DocumentCard>, AppError> {
+    let (doc, _) = require_access(&state, doc_id, auth.user_id, true).await?;
+    let card = clean_card(req.card)?;
+    let cover_address = card
+        .cover
+        .as_deref()
+        .and_then(|c| c.rsplit(' ').next())
+        .map(str::to_string);
+    let media = media_list(
+        cover_address
+            .iter()
+            .map(String::as_str)
+            .chain(req.media.iter().map(String::as_str)),
+    );
+    let tags = serde_json::to_string(&card.tags).map_err(AppError::internal)?;
+    let before: (String, Option<String>, String, String) = sqlx::query_as(
+        "SELECT card_synopsis, card_cover, card_tags, map_media FROM documents WHERE id = ?",
+    )
+    .bind(doc_id)
+    .fetch_one(&state.pool)
+    .await?;
+    let shown_changed = before.0 != card.synopsis || before.1 != card.cover || before.2 != tags;
+    if !shown_changed && before.3 == media {
+        return Ok(Json(card));
+    }
+    sqlx::query(
+        "UPDATE documents SET card_synopsis = ?, card_cover = ?, card_tags = ?, map_media = ?
+         WHERE id = ?",
+    )
+    .bind(&card.synopsis)
+    .bind(&card.cover)
+    .bind(&tags)
+    .bind(&media)
+    .bind(doc_id)
+    .execute(&state.pool)
+    .await?;
+    if shown_changed {
+        let event = serde_json::to_value(DocumentCardChanged {
+            document_id: doc_id,
+            card: card.clone(),
+        })
+        .expect("serializable");
+        state.ws.broadcast(
+            &format!("user:{}", doc.owner.id.0),
+            "document.card",
+            event.clone(),
+        );
+        let shares: Vec<(String, i64)> =
+            sqlx::query_as("SELECT subject_kind, subject_id FROM document_shares WHERE doc_id = ?")
+                .bind(doc_id)
+                .fetch_all(&state.pool)
+                .await?;
+        for (kind, id) in shares {
+            let room = if kind == "user" {
+                format!("user:{id}")
+            } else {
+                format!("group:{id}")
+            };
+            state.ws.broadcast(&room, "document.card", event.clone());
+        }
+    }
+    Ok(Json(card))
+}
+
 /// Tell the owner's other devices their folders changed.
 fn folders_changed(state: &AppState, owner: UserId) {
     state.ws.broadcast(
@@ -789,6 +968,7 @@ pub async fn list_trash(
             excerpt: String::new(),
             snippet: None,
             deleted_at: Some(deleted_at),
+            card: DocumentCard::default(),
         });
     }
     attach_stats(&state, &mut items, None).await?;
@@ -1947,10 +2127,20 @@ async fn post_share_card(
         return Ok(());
     };
     let now = now_millis();
+    let card: Option<(String, Option<String>, i64)> =
+        sqlx::query_as("SELECT card_synopsis, card_cover, word_count FROM documents WHERE id = ?")
+            .bind(doc.id)
+            .fetch_optional(&state.pool)
+            .await?;
+    let (synopsis, cover, words) = card.unwrap_or_default();
     let content = serde_json::json!({
         "document_id": doc.id,
         "title": doc.title,
         "access": access,
+        "format": doc.format,
+        "words": words,
+        "synopsis": cut_chars(&synopsis, 300),
+        "cover": cover,
     })
     .to_string();
     let message_id: i64 = sqlx::query_scalar(
