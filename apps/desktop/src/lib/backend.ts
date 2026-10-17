@@ -399,6 +399,19 @@ export interface Backend {
   vaultSearch(query: string): Promise<{ name: string; snippet: string; modified_at: number }[]>;
   /** Absolute path of the vault folder (for reveal-in-Finder). */
   vaultPath(): Promise<string>;
+  /** Every folder in the vault ("Book", "Book/Chapters"), empty ones too.
+   *  A note's name is its path: "Book/Chapters/One". */
+  vaultFolders(): Promise<string[]>;
+  /** Make a folder; resolves to its name (`name_taken` if it's there). */
+  vaultFolderCreate(path: string): Promise<string>;
+  /** Rename or move a folder (`newPath` is its whole new path). */
+  vaultFolderRename(path: string, newPath: string): Promise<string>;
+  /** A folder and what's in it go to the vault's trash (30 days). */
+  vaultFolderDelete(path: string): Promise<void>;
+  /** Undo a folder's delete; resolves to its name. */
+  vaultFolderRestore(path: string): Promise<string>;
+  /** Move a note into a folder ("" for the top); resolves to its new name. */
+  vaultMove(name: string, folder: string): Promise<string>;
 
   pluginsList(): Promise<
     { manifest: { id: string; name: string; version: string; icon: string; permissions: string[]; min_api_version: number }; enabled: boolean }[]
@@ -602,6 +615,12 @@ function tauriBackend(): Backend {
     vaultSearch: (query) => invoke("vault_search", { query }),
     vaultPath: () => invoke("vault_path"),
     vaultBacklinks: (name) => invoke("vault_backlinks", { name }),
+    vaultFolders: () => invoke("vault_folders"),
+    vaultFolderCreate: (path) => invoke("vault_folder_create", { path }),
+    vaultFolderRename: (path, newPath) => invoke("vault_folder_rename", { path, newPath }),
+    vaultFolderDelete: (path) => invoke("vault_folder_delete", { path }),
+    vaultFolderRestore: (path) => invoke("vault_folder_restore", { path }),
+    vaultMove: (name, folder) => invoke("vault_move", { name, folder }),
     pluginsList: () => invoke("plugins_list"),
     pluginReadEntry: (id) => invoke("plugin_read_entry", { id }),
     pluginSetEnabled: (id, enabled) => invoke("plugin_set_enabled", { id, enabled }),

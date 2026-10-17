@@ -128,6 +128,7 @@ import { ZoomFrame } from "./shell/ZoomFrame";
 import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveIndicator } from "./shell/SyncStatus";
+import { withKeys } from "../../editor/commands/catalog";
 
 /** Editor for a document stored on this device: same page, formats, outline,
  *  find, and export as server documents — no collaboration surfaces (history,
@@ -436,7 +437,7 @@ function LocalEditorInner({
       ...(meta.format === "manuscript"
         ? []
         : [
-            { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
+            { label: "Print…", title: withKeys("Print", "Mod-p"), run: async () => setPrintOpen(true) },
             { label: "Export PDF…", title: "Choose what goes into the file, then save it", run: async () => setPdfExport(true) },
             {
               label: "Export booklet PDF",
@@ -705,7 +706,7 @@ function LocalEditorInner({
             <History size={16} />
           </button>
           <button
-            title="Find and replace (⌘F)" data-label="Find and replace"
+            title={withKeys("Find and replace", "Mod-f")} data-label="Find and replace"
             className={find ? "active" : ""}
             disabled={!editor}
             onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}

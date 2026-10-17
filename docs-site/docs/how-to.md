@@ -1,5 +1,8 @@
 # How-to
 
+Keys are written as on Windows and Linux. On a Mac, press ⌘ where it
+says Ctrl and ⌥ where it says Alt.
+
 ## Write a document with others
 
 1. Open **Documents** → **New document**, name it, and pick a format (or
@@ -23,11 +26,11 @@
    **Add a field** for the page number, page count, title, author or date.
    Tick *Different first page* to leave a title page clean.
 3. Press the eye button to **preview** every page as it will print.
-4. **⌘P** (Ctrl+P) prints. **Export** saves the same pages as a PDF, or the
+4. **Ctrl+P** prints. **Export** saves the same pages as a PDF, or the
    document as Word.
 
 To make the page larger or smaller while you write, click the percentage
-beside the word count, or hold Ctrl (⌘ on a Mac) and turn the wheel.
+beside the word count, or hold Ctrl and turn the wheel.
 **Page width** and **Whole page** fit it to the window.
 
 A new Document starts on the paper of where you are (US Letter or A4).
@@ -70,9 +73,9 @@ its own for a printer that asks for them: **PDF/X-1a for a printer** and
 
 ## Format a document
 
-Anything the ribbon does can also be asked for by name. Press **⌘K**
+Anything the ribbon does can also be asked for by name. Press **Ctrl+K**
 (Ctrl+K), type a word or two of what you want ("checklist", "margins",
-"zoom page width") and press Enter. **⌘/** lists every key.
+"zoom page width") and press Enter. **Ctrl+/** lists every key.
 
 1. Select words: a small menu appears above them with bold, italic,
    underline, colour, highlight, link and comment. The ribbon's **Home**
@@ -93,7 +96,7 @@ Anything the ribbon does can also be asked for by name. Press **⌘K**
 4. To copy formatting from one place to another: put the caret in the
    text that has it, choose **⋯ ▸ Copy formatting to other text**, then
    select the text to give it to.
-5. ⌘⇧9 (or the checklist button) starts a **checklist**. Click a box to
+5. Ctrl+Shift+9 (or the checklist button) starts a **checklist**. Click a box to
    tick it.
 
 ## Let the app fix slips as you type
@@ -382,7 +385,7 @@ Click a picture to select it. The **Picture** tab opens.
 
 - **Move it.** Drag the handle on its top left corner to where it should
   go. A line shows the place between two blocks. *Up* and *Down* on the
-  tab, or ⌥↑ and ⌥↓, move it one block at a time.
+  tab, or Alt+↑ and Alt+↓, move it one block at a time.
 - **Set it left, centre or right** with the Position buttons.
 - **Frame it.** *Border* picks a colour, and the box beside it the
   thickness. *Corners* rounds them, all the way to a circle.
@@ -435,7 +438,7 @@ See above.)
 - **Read and find.** Scroll the pages, zoom with the two magnifier buttons,
   and type in **Find in this PDF**. Enter goes to the next match.
 - **Pages.** The list on the left is the pages. Click one to pick it. Shift
-  and Ctrl or ⌘ pick several. Drag to move them, or use the buttons above
+  and Ctrl pick several. Drag to move them, or use the buttons above
   the list to turn, move, copy, add and take out pages. *Save these pages
   as a PDF of their own* splits them out.
 - **Mark up.** Select text on a page and press **Highlight**, or the
@@ -451,7 +454,7 @@ See above.)
 - **Change text (Beta).** Click a piece of the page's own text and retype
   it. A PDF holds only the letters it uses, so a letter it lacks is set in
   a standard font and you are told. Check the result.
-- **Undo** and **Redo** are in the header, and ⌘Z works.
+- **Undo** and **Redo** are in the header, and Ctrl+Z works.
 - **Save.** *Save a copy* writes the PDF as it now is to a file you
   choose. Your original is not touched. In the apps, *Keep on this device*
   puts it in Documents so you can come back to it, and **Save** then saves
@@ -474,6 +477,9 @@ certificate you are warned first, since any change breaks that signature.
   puts a copy on the server you're connected to (a board asks which group).
   Not connected? It opens the connect sheet, and carries on once you are.
   The original stays on this device and the two don't sync afterwards.
+  To share the document with another group later, choose **Publish to a
+  server…** again: it opens on the copy already there and shares that one.
+  **Keep only the server copy** leaves just the one on the server.
 - **Your picture**: Settings → Profile → **Choose a picture**. With no
   server connected this is the profile on this device. When connected, use
   *Apply to this server* to copy it there.
@@ -520,6 +526,17 @@ While in a voice channel, use the camera button in the status-bar pill
 video appears. Drag it anywhere, resize from the corner, and it stays up
 while you work in other apps. The screen-share button appears on platforms
 that support capture (Windows/Linux). Everyone, including macOS, can watch.
+
+## Keep notes in folders
+
+1. In **Notes**, press the folder button beside **+** and name the folder.
+   Click a folder to open or close it.
+2. A folder's ⋯ menu makes a note or another folder inside it, renames it
+   or deletes it. New notes go in the folder you last picked.
+3. To move a note, open it and choose another folder beside its title.
+
+Links keep working when notes move. The folders are real folders in the
+vault, so Obsidian shows them too.
 
 ## Share a note
 

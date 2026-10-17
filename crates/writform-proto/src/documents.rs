@@ -119,6 +119,9 @@ pub struct DocumentListItem {
     /// Synopsis, cover and tags (empty from servers that predate them).
     #[serde(default)]
     pub card: DocumentCard,
+    /// For the owner: the groups and people it is shared with, by name.
+    #[serde(default)]
+    pub shared_with: Vec<String>,
 }
 
 /// What a document's card shows beside its title and words. An editor of

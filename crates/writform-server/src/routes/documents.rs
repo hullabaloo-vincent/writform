@@ -534,11 +534,54 @@ pub async fn list_documents(
             snippet: None,
             deleted_at: None,
             card: DocumentCard::default(),
+            shared_with: Vec::new(),
         })
         .collect();
     items.sort_by_key(|i| std::cmp::Reverse(i.document.updated_at));
     attach_stats(&state, &mut items, query).await?;
+    attach_share_names(&state, &mut items).await?;
     Ok(Json(items))
+}
+
+/// Who each of the caller's own documents is shared with, by name (a
+/// group's name, a person's display name), so one document shared with
+/// several groups says so on its card.
+async fn attach_share_names(
+    state: &AppState,
+    items: &mut [DocumentListItem],
+) -> Result<(), AppError> {
+    let owned: Vec<i64> = items
+        .iter()
+        .filter(|i| i.my_access == Access::Owner.as_str())
+        .map(|i| i.document.id)
+        .collect();
+    let mut names: HashMap<i64, Vec<String>> = HashMap::new();
+    for chunk in owned.chunks(400) {
+        let placeholders = vec!["?"; chunk.len()].join(", ");
+        let sql = format!(
+            "SELECT s.doc_id, COALESCE(g.name, u.display_name, u.username, '')
+             FROM document_shares s
+             LEFT JOIN groups g ON s.subject_kind = 'group' AND g.id = s.subject_id
+             LEFT JOIN users u ON s.subject_kind = 'user' AND u.id = s.subject_id
+             WHERE s.doc_id IN ({placeholders})
+             ORDER BY s.subject_kind, s.created_at"
+        );
+        let mut q = sqlx::query_as::<_, (i64, String)>(&sql);
+        for id in chunk {
+            q = q.bind(id);
+        }
+        for (id, name) in q.fetch_all(&state.pool).await? {
+            if !name.is_empty() {
+                names.entry(id).or_default().push(name);
+            }
+        }
+    }
+    for item in items.iter_mut() {
+        if let Some(list) = names.remove(&item.document.id) {
+            item.shared_with = list;
+        }
+    }
+    Ok(())
 }
 
 /// Fill in each item's word count and excerpt, and — for a search — a
@@ -969,6 +1012,7 @@ pub async fn list_trash(
             snippet: None,
             deleted_at: Some(deleted_at),
             card: DocumentCard::default(),
+            shared_with: Vec::new(),
         });
     }
     attach_stats(&state, &mut items, None).await?;

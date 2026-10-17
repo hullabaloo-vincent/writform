@@ -3,7 +3,7 @@
  *  bindings). The Documents sections are made from the editor's own command
  *  list, which a harness holds to the keys that really work. */
 
-import { EDITOR_COMMANDS, keyCaps, keysOf, type CommandGroup } from "../editor/commands/catalog";
+import { EDITOR_COMMANDS, isMacLike, keyCaps, keyLabel, keysOf, type CommandGroup } from "../editor/commands/catalog";
 
 export interface ShortcutRow {
   keys: string[];
@@ -15,7 +15,9 @@ export interface ShortcutSection {
   rows: ShortcutRow[];
 }
 
-const isMac = navigator.platform.toUpperCase().includes("MAC");
+// (An iPad with a keyboard has a Mac's keys. Windows and Linux have Ctrl,
+// never the Windows or Super key, which a tiling window manager keeps.)
+const isMac = isMacLike();
 const mod = isMac ? "⌘" : "Ctrl";
 const shift = isMac ? "⇧" : "Shift";
 
@@ -62,8 +64,8 @@ export function shortcutSections(): ShortcutSection[] {
         { keys: [mod, "F"], what: "Find and replace on the board" },
         { keys: [mod, "A"], what: "Select everything on the page" },
         { keys: [mod, "C"], what: "Copy (X cut, V paste, D duplicate)" },
-        { keys: [mod, "G"], what: `Group (${mod}${shift}G ungroups)` },
-        { keys: [mod, "Z"], what: `Undo (${mod}${shift}Z redoes)` },
+        { keys: [mod, "G"], what: `Group (${keyLabel("Mod-Shift-g", isMac)} ungroups)` },
+        { keys: [mod, "Z"], what: `Undo (${keyLabel("Mod-Shift-z", isMac)} redoes)` },
         { keys: [shift, "drag"], what: "Marquee-select / keep proportions" },
         { keys: ["Delete"], what: "Remove the selection" },
       ],

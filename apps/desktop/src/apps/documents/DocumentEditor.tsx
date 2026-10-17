@@ -138,6 +138,7 @@ import { openServerDoc } from "./navigation";
 import { activeProvider, useDocuments } from "./store";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import { ShareDialog } from "./ShareDialog";
+import { withKeys, keyLabel } from "../../editor/commands/catalog";
 
 const CARET_COLORS = [
   "#c96f4a",
@@ -578,7 +579,7 @@ function EditorInner({
       ...(format === "manuscript"
         ? []
         : [
-            { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
+            { label: "Print…", title: withKeys("Print", "Mod-p"), run: async () => setPrintOpen(true) },
             { label: "Export PDF…", title: "Choose what goes into the file, then save it", run: async () => setPdfExport(true) },
             {
               label: "Export booklet PDF",
@@ -821,7 +822,7 @@ function EditorInner({
             <History size={16} />
           </button>
           <button
-            title="Find and replace (⌘F)" data-label="Find and replace"
+            title={withKeys("Find and replace", "Mod-f")} data-label="Find and replace"
             className={find ? "active" : ""}
             disabled={!editor}
             onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
@@ -1026,7 +1027,7 @@ function EditorInner({
                     <ElementSelect editor={editor} format={format} />
                     {format === "screenplay" && (
                       <span className="wf-doc-shortcuts" title="Screenplay element shortcuts">
-                        Tab cycles · ⌘1–6 selects
+                        Tab cycles · {keyLabel("Mod-1")}–6 selects
                       </span>
                     )}
                   </>
@@ -1384,7 +1385,7 @@ export function ElementSelect({ editor, format }: { editor: Editor; format: stri
 const elementOption = (el: ElementSpec) => (
   <option key={el.id} value={el.id} title={el.hint}>
     {el.label}
-    {el.shortcut ? `  ${el.shortcut}` : ""}
+    {el.shortcut ? `  ${keyLabel(el.shortcut)}` : ""}
   </option>
 );
 

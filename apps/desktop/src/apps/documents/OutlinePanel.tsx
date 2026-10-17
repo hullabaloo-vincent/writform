@@ -16,6 +16,7 @@ import { focusEntry, showEverything } from "../../editor/ChapterFocus";
 import { showInText } from "../../editor/ui/reveal";
 import { useChapterFocus } from "./ChapterBar";
 import { confirmDialog } from "../../platform";
+import { keyLabel } from "../../editor/commands/catalog";
 
 /**
  * The document's outline — for a manuscript, its binder: parts, chapters
@@ -207,7 +208,7 @@ export function OutlinePanel({
       {entries.length === 0 ? (
         <p className="wf-session-meta" style={{ padding: "0 14px" }}>
           {format === "manuscript"
-            ? "Chapter, part and section headings appear here. Pick “Chapter Heading” from the element menu (⌘1)."
+            ? `Chapter, part and section headings appear here. Pick “Chapter Heading” from the element menu (${keyLabel("Mod-1")}).`
             : "Headings (and scene or chapter headings) will appear here."}
         </p>
       ) : (

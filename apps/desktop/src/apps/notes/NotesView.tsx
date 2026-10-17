@@ -3,11 +3,17 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import {
   Bold,
   Check,
+  ChevronDown,
+  ChevronRight,
   CircleQuestionMark,
   Code,
   Columns2,
+  ExternalLink,
   Eye,
+  Folder as FolderIcon,
   FolderOpen,
+  FolderPlus,
+  MoreHorizontal,
   Heading,
   Italic,
   Link2,
@@ -25,7 +31,9 @@ import { Modal } from "../../platform";
 import { toast, toastError } from "../../platform/toast";
 import { useSession } from "../../stores/session";
 import { friendsApi } from "../friends/FriendsView";
+import { Flyout, FlyoutItem } from "../../editor/ui/Flyout";
 import { renderMarkdown } from "./markdown";
+import { baseOf, buildTree, cleanName, foldersAbove, joinPath, newNoteFor, parentOf, resolveLink, type FolderNode } from "./paths";
 import { useNotesPending } from "./pending";
 
 interface NoteMeta {
@@ -59,25 +67,62 @@ interface SearchHit {
   modified_at: number;
 }
 
+const OPEN_KEY = "wf-notes-open";
+
+/** The folders shown open in the sidebar (remembered on this device). */
+function loadOpen(): Set<string> {
+  try {
+    const raw = JSON.parse(localStorage.getItem(OPEN_KEY) ?? "[]") as unknown;
+    return new Set(Array.isArray(raw) ? raw.filter((f): f is string => typeof f === "string") : []);
+  } catch {
+    return new Set();
+  }
+}
+
 export function NotesView() {
   const [notes, setNotes] = useState<NoteMeta[]>([]);
+  const [folders, setFolders] = useState<string[]>([]);
   const [active, setActive] = useState<string | null>(null);
+  const [openFolders, setOpenFolders] = useState<Set<string>>(loadOpen);
+  // Where a new note or folder goes: the folder last picked, or the open
+  // note's.
+  const [place, setPlace] = useState("");
+  // A folder being named (made in `parent`, or renamed).
+  const [naming, setNaming] = useState<{ kind: "new"; parent: string } | { kind: "rename"; path: string } | null>(null);
   const [filter, setFilter] = useState("");
   const [hits, setHits] = useState<SearchHit[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<ViewMode>(loadViewMode);
   const [helpOpen, setHelpOpen] = useState(false);
 
-  // The ⌘K palette can land here on a specific note.
+  const show = useCallback((name: string | null) => {
+    setActive(name);
+    if (name === null) return;
+    setPlace(parentOf(name));
+    // The folders it's in open, so it can be seen in the list.
+    setOpenFolders((prev) => {
+      const above = foldersAbove(name);
+      if (above.every((f) => prev.has(f))) return prev;
+      return new Set([...prev, ...above]);
+    });
+  }, []);
+
+  // The ⌘K palette and Home can land here on a specific note.
   const pendingName = useNotesPending((s) => s.name);
   useEffect(() => {
     if (pendingName === null) return;
-    setActive(pendingName);
+    show(pendingName);
     useNotesPending.getState().clear();
-  }, [pendingName]);
+  }, [pendingName, show]);
 
   const refresh = useCallback(
-    () => backend.vaultList().then(setNotes).catch(() => {}),
+    () =>
+      Promise.all([backend.vaultList(), backend.vaultFolders()])
+        .then(([list, dirs]) => {
+          setNotes(list);
+          setFolders(dirs);
+        })
+        .catch(() => {}),
     [],
   );
   useEffect(() => {
@@ -87,6 +132,13 @@ export function NotesView() {
   useEffect(() => {
     localStorage.setItem(VIEW_KEY, view);
   }, [view]);
+  useEffect(() => {
+    try {
+      localStorage.setItem(OPEN_KEY, JSON.stringify([...openFolders]));
+    } catch {
+      // Remembering which folders are open is a convenience.
+    }
+  }, [openFolders]);
 
   // Content search kicks in from 2 chars, debounced; the name filter below
   // stays instant either way.
@@ -105,25 +157,199 @@ export function NotesView() {
     return () => clearTimeout(timer);
   }, [filter]);
 
-  const createNote = async () => {
-    const base = "Untitled";
-    let name = base;
-    let n = 2;
+  const fail = (e: unknown) => setError(isCmdError(e) ? e.message : String(e));
+
+  const createNote = async (folder = place) => {
     const taken = new Set(notes.map((note) => note.name.toLowerCase()));
-    while (taken.has(name.toLowerCase())) name = `${base} ${n++}`;
-    await backend.vaultWrite(name, "");
-    await refresh();
-    setActive(name);
+    const base = joinPath(folder, "Untitled");
+    let name = base;
+    for (let n = 2; taken.has(name.toLowerCase()); n += 1) name = `${base} ${n}`;
+    try {
+      await backend.vaultWrite(name, "");
+      await refresh();
+      show(name);
+    } catch (e) {
+      fail(e);
+    }
   };
 
-  const visible = notes.filter((n) => n.name.toLowerCase().includes(filter.toLowerCase()));
+  const toggleFolder = (path: string) => {
+    setPlace(path);
+    setOpenFolders((prev) => {
+      const next = new Set(prev);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      return next;
+    });
+  };
+
+  const finishNaming = async (value: string) => {
+    const was = naming;
+    setNaming(null);
+    if (!was || !value.trim()) return;
+    if (value.includes("/")) {
+      setError("A folder's name can't have a slash in it.");
+      return;
+    }
+    try {
+      if (was.kind === "new") {
+        const path = cleanName(joinPath(was.parent, value));
+        if (!path) throw { code: "bad_name", message: "That name can't be a folder's." };
+        await backend.vaultFolderCreate(path);
+        setOpenFolders((prev) => new Set([...prev, ...foldersAbove(`${path}/x`)]));
+        setPlace(path);
+      } else {
+        const next = cleanName(joinPath(parentOf(was.path), value));
+        if (!next) throw { code: "bad_name", message: "That name can't be a folder's." };
+        if (next === was.path) return;
+        const used = await backend.vaultFolderRename(was.path, next);
+        const moved = (n: string) => (n === was.path || n.startsWith(`${was.path}/`) ? used + n.slice(was.path.length) : n);
+        setOpenFolders((prev) => new Set([...prev].map(moved)));
+        if (active) setActive(moved(active));
+        setPlace(moved(place));
+      }
+      setError(null);
+      await refresh();
+    } catch (e) {
+      fail(e);
+    }
+  };
+
+  const deleteFolder = async (path: string) => {
+    const count = notes.filter((n) => n.name.startsWith(`${path}/`)).length;
+    try {
+      await backend.vaultFolderDelete(path);
+      if (active?.startsWith(`${path}/`)) setActive(null);
+      if (place === path || place.startsWith(`${path}/`)) setPlace(parentOf(path));
+      await refresh();
+      toast(count ? `Deleted the folder “${baseOf(path)}” and its ${count === 1 ? "note" : `${count} notes`}.` : `Deleted the folder “${baseOf(path)}”.`, "info", {
+        durationMs: 10000,
+        action: {
+          label: "Undo",
+          run: () =>
+            void backend
+              .vaultFolderRestore(path)
+              .then(() => refresh())
+              .catch(() => toastError("That folder couldn't be restored.")),
+        },
+      });
+    } catch {
+      toastError("That folder couldn't be deleted.");
+    }
+  };
+
+  const tree = useMemo(() => buildTree(notes, folders), [notes, folders]);
   const noteNames = useMemo(() => notes.map((n) => n.name), [notes]);
 
-  // With ≥2 chars, server-side content search replaces the name filter.
-  const searchResults = hits !== null;
-  const listed: SearchHit[] = searchResults
-    ? hits
-    : visible.map((n) => ({ name: n.name, snippet: "", modified_at: n.modified_at }));
+  // With ≥2 chars, server-side content search replaces the name filter;
+  // while searching the list is flat, each note with its folder.
+  const searching = filter.trim().length > 0;
+  const listed: SearchHit[] =
+    hits !== null
+      ? hits
+      : notes.filter((n) => n.name.toLowerCase().includes(filter.toLowerCase())).map((n) => ({ name: n.name, snippet: "", modified_at: n.modified_at }));
+
+  const noteRow = (name: string, snippet = "", depth = 0) => (
+    <li key={name}>
+      <button
+        className={`wf-note-item ${name === active ? "active" : ""}`}
+        style={depth ? { paddingLeft: 10 + depth * 14 } : undefined}
+        title={name}
+        onClick={() => show(name)}
+      >
+        <span className="wf-note-name">{baseOf(name)}</span>
+        {searching && parentOf(name) && <span className="wf-note-folder">{parentOf(name)}</span>}
+        {snippet && <span className="wf-note-snippet">{snippet}</span>}
+      </button>
+    </li>
+  );
+
+  const nameInput = (depth: number, value: string) => (
+    <li key="naming" className="wf-note-folder-row" style={{ paddingLeft: 6 + depth * 14 }}>
+      <FolderIcon size={14} />
+      <input
+        className="wf-note-folder-input"
+        autoFocus
+        defaultValue={value}
+        aria-label="Folder name"
+        placeholder="Folder name"
+        onBlur={(e) => void finishNaming(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+          if (e.key === "Escape") setNaming(null);
+        }}
+      />
+    </li>
+  );
+
+  const folderRows = (node: FolderNode, depth: number): React.ReactNode[] => {
+    const rows: React.ReactNode[] = [];
+    if (naming?.kind === "new" && naming.parent === node.path) rows.push(nameInput(depth, ""));
+    for (const folder of node.folders) {
+      const isOpen = openFolders.has(folder.path);
+      if (naming?.kind === "rename" && naming.path === folder.path) {
+        rows.push(nameInput(depth, folder.name));
+      } else {
+        rows.push(
+          <li key={`folder:${folder.path}`} className={`wf-note-folder-row${place === folder.path ? " here" : ""}`}>
+            <button
+              className="wf-note-folder-toggle"
+              style={{ paddingLeft: 6 + depth * 14 }}
+              aria-expanded={isOpen}
+              title={folder.path}
+              onClick={() => toggleFolder(folder.path)}
+            >
+              {isOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+              {isOpen ? <FolderOpen size={14} /> : <FolderIcon size={14} />}
+              <span className="wf-note-name">{folder.name}</span>
+            </button>
+            <Flyout title={`More for “${folder.name}”`} icon={<MoreHorizontal size={14} />} caret={false} className="wf-note-folder-more">
+              {(close) => (
+                <>
+                  <FlyoutItem
+                    onPick={() => {
+                      close();
+                      void createNote(folder.path);
+                    }}
+                  >
+                    New note here
+                  </FlyoutItem>
+                  <FlyoutItem
+                    onPick={() => {
+                      close();
+                      setOpenFolders((prev) => new Set([...prev, folder.path]));
+                      setNaming({ kind: "new", parent: folder.path });
+                    }}
+                  >
+                    New folder inside
+                  </FlyoutItem>
+                  <FlyoutItem
+                    onPick={() => {
+                      close();
+                      setNaming({ kind: "rename", path: folder.path });
+                    }}
+                  >
+                    Rename
+                  </FlyoutItem>
+                  <FlyoutItem
+                    onPick={() => {
+                      close();
+                      void deleteFolder(folder.path);
+                    }}
+                  >
+                    Delete
+                  </FlyoutItem>
+                </>
+              )}
+            </Flyout>
+          </li>,
+        );
+      }
+      if (isOpen) rows.push(...folderRows(folder, depth + 1));
+    }
+    for (const note of node.notes) rows.push(noteRow(note.name, "", depth));
+    return rows;
+  };
 
   return (
     <div className="wf-notes">
@@ -134,50 +360,62 @@ export function NotesView() {
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
           />
-          <button className="wf-icon" title="New note" onClick={() => void createNote()}>
+          <button className="wf-icon" title={place ? `New note in “${baseOf(place)}”` : "New note"} onClick={() => void createNote()}>
             +
+          </button>
+          <button
+            className="wf-icon"
+            title={place ? `New folder in “${baseOf(place)}”` : "New folder"}
+            onClick={() => {
+              if (place) setOpenFolders((prev) => new Set([...prev, place]));
+              setNaming({ kind: "new", parent: place });
+            }}
+          >
+            <FolderPlus size={14} />
           </button>
           <button
             className="wf-icon"
             title="Show the vault folder in your file manager"
             onClick={() => void revealVault()}
           >
-            <FolderOpen size={14} />
+            <ExternalLink size={14} />
           </button>
         </div>
-        {error && <p className="wf-connect-error">{error}</p>}
+        {error && (
+          <p className="wf-connect-error" onClick={() => setError(null)}>
+            {error}
+          </p>
+        )}
         <ul>
-          {listed.map((n) => (
-            <li key={n.name}>
-              <button
-                className={`wf-note-item ${n.name === active ? "active" : ""}`}
-                onClick={() => setActive(n.name)}
-              >
-                {n.name}
-                {n.snippet && <span className="wf-note-snippet">{n.snippet}</span>}
-              </button>
-            </li>
-          ))}
-          {listed.length === 0 && (
-            <li className="wf-friend-dim">{filter ? "No matches." : "No notes."}</li>
-          )}
+          {searching ? listed.map((n) => noteRow(n.name, n.snippet)) : folderRows(tree, 0)}
+          {searching && listed.length === 0 && <li className="wf-friend-dim">No matches.</li>}
+          {!searching && notes.length === 0 && folders.length === 0 && !naming && <li className="wf-friend-dim">No notes.</li>}
         </ul>
+        {!searching && place && (
+          <p className="wf-notes-top">
+            New notes go in “{baseOf(place)}”.{" "}
+            <button className="wf-link-button" onClick={() => setPlace("")}>
+              Put them at the top
+            </button>
+          </p>
+        )}
       </aside>
       {active ? (
         <NoteEditor
           key={active}
           name={active}
           noteNames={noteNames}
+          folders={folders}
           view={view}
           onViewChange={setView}
           onHelp={() => setHelpOpen(true)}
           onRenamedOrDeleted={(next) => {
-            setActive(next);
+            show(next);
             void refresh();
           }}
           onError={setError}
           onOpenNote={(name) => {
-            setActive(name);
+            show(name);
             void refresh();
           }}
           onSaved={refresh}
@@ -187,7 +425,7 @@ export function NotesView() {
           <p>Select or create a note.</p>
           <p className="wf-notes-empty-hint">
             Notes are plain markdown files stored on this computer. They are private, work
-            offline and are never uploaded.
+            offline and are never uploaded. Folders here are folders in the vault, as Obsidian has them.
           </p>
           <div className="wf-notes-empty-actions">
             <button className="wf-primary" onClick={() => void createNote()}>
@@ -207,6 +445,7 @@ export function NotesView() {
 function NoteEditor({
   name,
   noteNames,
+  folders,
   view,
   onViewChange,
   onHelp,
@@ -217,6 +456,7 @@ function NoteEditor({
 }: {
   name: string;
   noteNames: string[];
+  folders: string[];
   view: ViewMode;
   onViewChange: (v: ViewMode) => void;
   onHelp: () => void;
@@ -262,8 +502,8 @@ function NoteEditor({
   }, [name, onSaved, onError]);
 
   const html = useMemo(
-    () => (view === "edit" ? "" : renderMarkdown(draft, noteNames)),
-    [draft, noteNames, view],
+    () => (view === "edit" ? "" : renderMarkdown(draft, noteNames, name)),
+    [draft, noteNames, view, name],
   );
 
   /** Wraps the selection, or inserts the marker pair at the cursor. */
@@ -308,8 +548,12 @@ function NoteEditor({
 
   const rename = async (next: string) => {
     setRenaming(false);
-    const trimmed = next.trim();
-    if (!trimmed || trimmed === name) return;
+    // The title is the note's own name: it stays in its folder.
+    const trimmed = cleanName(next.includes("/") ? next : joinPath(parentOf(name), next));
+    if (!trimmed || trimmed === name) {
+      if (!trimmed && next.trim()) onError("That name can't be a note's.");
+      return;
+    }
     try {
       // Flush first: the rename remounts this editor and would drop the
       // pending debounced write.
@@ -342,7 +586,7 @@ function NoteEditor({
           <input
             className="wf-notes-title-input"
             autoFocus
-            defaultValue={name}
+            defaultValue={baseOf(name)}
             onBlur={(e) => void rename(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Enter") e.currentTarget.blur();
@@ -357,10 +601,34 @@ function NoteEditor({
             title="Rename note"
             onClick={() => setRenaming(true)}
           >
-            {name}
+            {baseOf(name)}
             <Pencil size={13} />
           </button>
         )}
+        <label className="wf-notes-move" title="The folder this note is in. Choose another to move it there.">
+          <FolderIcon size={13} />
+          <select
+            aria-label="Folder"
+            value={parentOf(name)}
+            onChange={(e) => {
+              const folder = e.target.value;
+              if (saveTimer.current) clearTimeout(saveTimer.current);
+              saveTimer.current = null;
+              void backend
+                .vaultWrite(name, latest.current)
+                .then(() => backend.vaultMove(name, folder))
+                .then((moved) => onRenamedOrDeleted(moved))
+                .catch((err) => onError(isCmdError(err) ? err.message : String(err)));
+            }}
+          >
+            <option value="">Top of the vault</option>
+            {folders.map((f) => (
+              <option key={f} value={f}>
+                {f.split("/").join(" / ")}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="wf-session-meta">
           {status === "saving" ? "saving…" : status === "dirty" ? "unsaved" : "saved"}
         </span>
@@ -409,7 +677,7 @@ function NoteEditor({
                 .then(() => backend.vaultDelete(deleted))
                 .then(() => {
                   onRenamedOrDeleted(null);
-                  toast(`Deleted “${deleted}”.`, "info", {
+                  toast(`Deleted “${baseOf(deleted)}”.`, "info", {
                     durationMs: 10000,
                     action: {
                       label: "Undo",
@@ -485,7 +753,7 @@ function NoteEditor({
             onClick={(e) => {
               const link = (e.target as HTMLElement).closest<HTMLElement>("button.wf-wikilink");
               const target = link?.dataset.wfNote;
-              if (target) void openOrCreate(target, onOpenNote);
+              if (target) void openOrCreate(target, name, noteNames, onOpenNote, onError);
             }}
             dangerouslySetInnerHTML={{ __html: html }}
           />
@@ -497,7 +765,7 @@ function NoteEditor({
           <span>
             links:{" "}
             {links.map((l) => (
-              <button key={l} className="wf-note-link" onClick={() => void openOrCreate(l, onOpenNote)}>
+              <button key={l} className="wf-note-link" onClick={() => void openOrCreate(l, name, noteNames, onOpenNote, onError)}>
                 [[{l}]]
               </button>
             ))}
@@ -507,8 +775,8 @@ function NoteEditor({
           <span>
             backlinks:{" "}
             {backlinks.map((l) => (
-              <button key={l} className="wf-note-link" onClick={() => onOpenNote(l)}>
-                {l}
+              <button key={l} className="wf-note-link" title={l} onClick={() => onOpenNote(l)}>
+                {baseOf(l)}
               </button>
             ))}
           </span>
@@ -521,7 +789,7 @@ function NoteEditor({
             try {
               const res = await backend.apiFetch("POST", "/api/v1/notes/share", {
                 friend_id: friend.user.id,
-                title: name,
+                title: baseOf(name),
                 content_md: latest.current,
               });
               if (res.status >= 400) {
@@ -539,13 +807,25 @@ function NoteEditor({
   );
 }
 
-async function openOrCreate(name: string, open: (name: string) => void) {
-  try {
-    await backend.vaultRead(name);
-  } catch {
-    await backend.vaultWrite(name, "");
+/** Follow a `[[link]]` written in the note `from`: to the note it leads
+ *  to, or to a new one made for it (beside `from`, or at the path given). */
+async function openOrCreate(link: string, from: string, names: readonly string[], open: (name: string) => void, onError: (e: string | null) => void) {
+  const found = resolveLink(names, link, from);
+  if (found) {
+    open(found);
+    return;
   }
-  open(name);
+  const made = newNoteFor(link, from);
+  if (!made) {
+    onError(`“${link}” can't be a note's name.`);
+    return;
+  }
+  try {
+    await backend.vaultWrite(made, "");
+    open(made);
+  } catch (e) {
+    onError(isCmdError(e) ? e.message : String(e));
+  }
 }
 
 function extractLinks(content: string): string[] {

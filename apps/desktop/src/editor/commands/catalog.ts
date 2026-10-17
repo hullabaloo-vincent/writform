@@ -194,13 +194,25 @@ export function keyCaps(pmKey: string, mac = isMacLike()): string[] {
     const name = mac ? MAC_NAMES[mod] : mod === "Mod" ? "Ctrl" : mod;
     if (!caps.includes(name)) caps.push(name);
   }
-  caps.push(KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key));
+  caps.push(key === "Enter" ? (mac ? "↩" : "Enter") : (KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key)));
   return caps;
 }
 
 /** The same in one piece, for a menu: "⌘⇧L" or "Ctrl+Shift+L". */
 export function keyLabel(pmKey: string, mac = isMacLike()): string {
   return keyCaps(pmKey, mac).join(mac ? "" : "+");
+}
+
+/** A name with the keys that do it, for a button's title: "Bold (⌘B)" on
+ *  a Mac, "Bold (Ctrl+B)" on Windows and Linux. Never a symbol written out
+ *  by hand: a Linux user reads ⌘ as nothing at all. */
+export function withKeys(name: string, ...pmKeys: string[]): string {
+  return `${name} (${pmKeys.map((key) => keyLabel(key)).join(", ")})`;
+}
+
+/** The command key's name here: ⌘ on a Mac, Ctrl elsewhere ("Ctrl-click"). */
+export function modName(mac = isMacLike()): string {
+  return mac ? "⌘" : "Ctrl";
 }
 
 /** Does a document of this kind and level have this command? */

@@ -18,6 +18,7 @@ import { useChat } from "../chat/store";
 import { sessionApi } from "./api";
 import { DraftSaver, pace, readDraft, sameWords, writingLine, writingNow, type SaveState } from "./draft";
 import { useSessions } from "./store";
+import { withKeys } from "../../editor/commands/catalog";
 
 /**
  * Where a prompt is written to while it runs: a page of paper in the
@@ -261,17 +262,17 @@ function DeskTools({ editor }: { editor: Editor }) {
 
   return (
     <div className="wf-editor-toolbar wf-desk-tools">
-      {btn("Bold (⌘B)", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
-      {btn("Italic (⌘I)", <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic"))}
-      {btn("Underline (⌘U)", <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline"))}
+      {btn(withKeys("Bold", "Mod-b"), <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold"))}
+      {btn(withKeys("Italic", "Mod-i"), <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic"))}
+      {btn(withKeys("Underline", "Mod-u"), <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline"))}
       <span className="wf-toolbar-sep" />
       {btn("Quote", <Quote size={15} />, () => chain().toggleBlockquote().run(), editor.isActive("blockquote"))}
       {btn("Bullet list", <List size={15} />, () => chain().toggleBulletList().run(), editor.isActive("bulletList"))}
       {btn("Numbered list", <ListOrdered size={15} />, () => chain().toggleOrderedList().run(), editor.isActive("orderedList"))}
       {btn("Divider", <Minus size={15} />, () => chain().setHorizontalRule().run())}
       <span className="wf-toolbar-sep" />
-      {btn("Undo (⌘Z)", <Undo2 size={15} />, () => chain().undo().run(), false, !editor.can().undo())}
-      {btn("Redo (⇧⌘Z)", <Redo2 size={15} />, () => chain().redo().run(), false, !editor.can().redo())}
+      {btn(withKeys("Undo", "Mod-z"), <Undo2 size={15} />, () => chain().undo().run(), false, !editor.can().undo())}
+      {btn(withKeys("Redo", "Mod-Shift-z"), <Redo2 size={15} />, () => chain().redo().run(), false, !editor.can().redo())}
       <span className="wf-toolbar-sep" />
       <input
         ref={fileRef}

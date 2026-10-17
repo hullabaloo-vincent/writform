@@ -1,5 +1,9 @@
 # Features
 
+Keys are written as on Windows and Linux. On a Mac, press ⌘ where it
+says Ctrl and ⌥ where it says Alt. The app shows each key as your
+computer has it.
+
 ## Writing sessions
 
 A session lives in a group channel and holds **multiple prompts**. Anyone in
@@ -71,9 +75,9 @@ submission manuscript.
 - **Manuscript is the book format**: elements for Chapter Heading, Part
   Heading, Unnumbered Chapter (Prologue, Epilogue, Acknowledgments…),
   Chapter Subtitle, Subheading, Epigraph, Attribution, Verse and Body
-  (⌘1–9 set them). Chapters number themselves ("Chapter Three" labels show
+  (Ctrl+1 to Ctrl+9 set them). Chapters number themselves ("Chapter Three" labels show
   beside each heading). Scene breaks are `* * *` + Enter or the toolbar
-  button. A page break (⌘↩ / Ctrl+Enter, or the toolbar's page-break button)
+  button. A page break (Ctrl+Enter, or the toolbar's page-break button)
   starts what follows on a new page (a letter, a poem, an interlude on a
   page of its own) in the print PDF, the ebook and the submission manuscript
   alike. Chapters start on a new page by themselves. You write meaning
@@ -118,8 +122,8 @@ submission manuscript.
   that it continues joins that list.
 - **Spaces and hyphens that hold a line together**: a no-break space
   (Ctrl+Shift+Space, or Option+Space on a Mac) keeps two words on one
-  line, a no-break hyphen (Ctrl or ⌘ with Shift and the hyphen key) is
-  never broken at, and an optional hyphen (Ctrl or ⌘ with the hyphen key)
+  line, a no-break hyphen (Ctrl+Shift and the hyphen key) is
+  never broken at, and an optional hyphen (Ctrl and the hyphen key)
   shows only where the line breaks there. All three are also in **Insert
   ▸ Symbol**, by name. Find sees through them, Word files keep them, and
   print and PDF honour them.
@@ -231,21 +235,21 @@ submission manuscript.
   as changes against the revision before it) and restored. Restoring saves
   a "Before restoring" version first and keeps comments on untouched
   paragraphs.
-- **Find and replace** (⌘F, ⌥⌘F / Ctrl+H): finds phrases even across italics,
+- **Find and replace** (Ctrl+F, and Ctrl+H to replace, or ⌥⌘F on a Mac): finds phrases even across italics,
   curly and straight quotes match each other, and match case and whole words
-  are a click away. ⌘G / F3 step through matches. Replace keeps the
+  are a click away. Ctrl+G or F3 step through matches. Replace keeps the
   formatting and Replace All is a single undo. Opening it never moves your
   cursor until you step to a match. Footnotes and endnotes are
   searched too. A match inside a note marks the note's number, the count
   says "in a note", and Replace changes the note's words like any others.
-- **Go to** (click the page count, or ⌥⌘G / Ctrl+Alt+G): type a page
+- **Go to** (click the page count, or Ctrl+Alt+G): type a page
   number, `+2` or `-1` for pages from here, or some words of a heading.
   The pages are the printed ones. A book's manuscript goes by headings.
 - **Back to where you last wrote** (Shift+F5): the caret returns to the
   last place you changed the text. Press again for the place before, up
   to four. What other people change makes no place of yours.
 - **Select more** (F8, or ⌥⌘↑ on a Mac): the word at the caret, then its
-  sentence, then its paragraph, then everything. Shift+F8 (⌥⌘↓) goes back
+  sentence, then its paragraph, then everything. Shift+F8 (⌥⌘↓ on a Mac) goes back
   a step.
 - **Formatting marks** (Home ▸ More paragraph formatting ▸ Show ¶) now
   show a dot for each space, an arrow for a tab, a ring for a no-break
@@ -257,7 +261,7 @@ submission manuscript.
   only, in documents and writing sessions alike. Coloured text is made
   lighter where it could not otherwise be read. Print, PDF and Word files
   are unchanged.
-- **Formatting here** (the top of the sliders panel's Text tab, or ⌘K
+- **Formatting here** (the top of the sliders panel's Text tab, or Ctrl+K
   "formatting here"): the style of the text at the caret, what its
   paragraph was given on top of that, and what the words themselves were
   given, each with a **Clear** of its own.
@@ -266,7 +270,7 @@ submission manuscript.
   its neighbours, and takes it up or down a level with the headings
   beneath it. Drag a heading to do the same by hand.
 - **Show only this chapter** (the button at the end of a row in the
-  outline, or ⌘K): the page shows one chapter, from its heading to the
+  outline, or Ctrl+K): the page shows one chapter, from its heading to the
   next. It is the same document, with the rest hidden and not taken
   out, so co-writers and exports see the whole text. A bar over the page
   names the chapter and steps to the one before or after. The caret
@@ -283,7 +287,7 @@ submission manuscript.
   device that speaks English.
 - **Zoom** the page you are writing on, from 50% to 300%. The figure
   beside the word count opens the sizes, with **Page width** and **Whole
-  page** to fit the window. Ctrl or ⌘ with the wheel and a pinch on a
+  page** to fit the window. Ctrl with the wheel and a pinch on a
   trackpad change it too. The choice is this device's and holds for every
   document. Zooming moves no line of text: the page is laid out once and
   drawn larger or smaller. The print preview has a zoom of its own. Phones
@@ -298,20 +302,20 @@ submission manuscript.
   Progress rides under the count as a thin bar, per document, on this device.
 - **The ribbon** (Document format): four Word-style tabs of controls.
   **Home** has undo, the **format painter**, **styles** (below), and font
-  and size for the words you select (*Larger*/*Smaller*, ⌘⇧. and ⌘⇧, step
+  and size for the words you select (*Larger*/*Smaller*, Ctrl+Shift+. and Ctrl+Shift+, step
   Word's ladder, and the inspector takes any size). It has bold, italic,
-  underline, strikethrough, **subscript** and **superscript** (⌘= and ⌘⇧=),
+  underline, strikethrough, **subscript** and **superscript** (Ctrl+= and Ctrl+Shift+=),
   **text colour** and **highlight**, inline code, **change case** and
   **clear formatting**. It has bulleted lists with a choice of marker,
   numbered lists with a numbering style (1, a, A, i, I, or legal 1.1.1) and
-  *restart* or *continue*, **checklists** (⌘⇧9) with boxes you tick, and
+  *restart* or *continue*, **checklists** (Ctrl+Shift+9) with boxes you tick, and
   indent/outdent (of a list item, or of a paragraph, half an inch at a
-  time). It also has alignment (⌘⇧L/E/R/J), line and paragraph spacing,
+  time). It also has alignment (Ctrl+Shift with L, E, R or J), line and paragraph spacing,
   paragraph **shading** and **borders** (a box, a line above or below, or a
   bar at the left, where neighbours with the same border are one box),
   **sort A to Z**, and **show paragraph marks** (¶).
-  **Insert** has page break (⌘↩), column break and section break, and a
-  **table** (pick its size from a grid). It has **link** (⌘⇧K: an address,
+  **Insert** has page break (Ctrl+Enter), column break and section break, and a
+  **table** (pick its size from a grid). It has **link** (Ctrl+Shift+K: an address,
   and the words to show when nothing is selected), picture, quote, code
   block and divider. It also has **footnote**, **endnote** and a
   **table of contents**, a **symbol** palette, and today's date.
@@ -352,7 +356,7 @@ submission manuscript.
 - **Links**: put the caret on a link and a small panel beside it says
   where it goes, with **Open**, **Copy**, **Edit** (its address and its
   words) and **Remove**. A click in the text only places the caret, so a
-  link is never followed by accident. ⌘/Ctrl-click follows it, and in a
+  link is never followed by accident. Ctrl-click follows it, and in a
   document you can only read, any click does. Links open in your browser
   (or mail program) and never inside the app. Escape puts the panel away.
 - **Styles** (Document format): Normal, No Spacing, Title, Subtitle,
@@ -377,7 +381,7 @@ submission manuscript.
   and differing fonts and sizes back (and **Match this document** switches
   again). The choice stays until you type the next thing, and Escape or the
   × settles it sooner. Word's typed-out bullets become real lists. What you
-  copy inside the app pastes exactly as it was. ⌘⇧V still pastes plain text.
+  copy inside the app pastes exactly as it was. Ctrl+Shift+V still pastes plain text.
 - **Tables** (Document format): Insert ▸ Table, then type. Tab moves to the
   next cell and adds a row after the last. The Table tab adds and deletes
   rows and columns, merges and splits cells, marks a **header row** (set
@@ -427,7 +431,7 @@ submission manuscript.
   someone who can't see it. A picture is a block of its own between the
   other blocks, with no anchors or wrapping to go wrong. To **move** it,
   drag the handle on its corner to where it should go (a line shows the
-  place), or use *Up* and *Down* on the Picture tab or ⌥↑ and ⌥↓. Borders
+  place), or use *Up* and *Down* on the Picture tab or Alt+↑ and Alt+↓. Borders
   and corners come in from Word and go back out.
 - **Document inspector** (the sliders button, Document format): settings
   saved *in* the document, so collaborators see the same layout. Text tab:
@@ -454,7 +458,7 @@ submission manuscript.
   a stage play and a poem preview on their format's own page. Docked beside
   the text on a wide window, it follows your typing and shows
   *Page 3 of 12*. Click any line for **Edit here**.
-- **Print** (⌘P, or Export ▸ Print…): the document is typeset to a PDF and
+- **Print** (Ctrl+P, or Export ▸ Print…): the document is typeset to a PDF and
   handed to the system's print panel. On a Mac that is the native one, on an
   iPhone the system print sheet, and in a browser or on Windows the
   browser's own. Where that isn't possible it opens as a PDF you can print
@@ -567,7 +571,7 @@ submission manuscript.
 - **Recently Deleted**: deleting is undoable. The toast has **Undo**, and
   deleted documents (from the server and from this device) wait in Recently
   Deleted for 30 days, with their history, before they're gone for good.
-- **Combine into one manuscript**: select documents (⌘/Ctrl-click,
+- **Combine into one manuscript**: select documents (Ctrl-click,
   Shift-click, or Select on a phone) or use a folder's menu. Put them in
   order, name the book, and each becomes a chapter. The originals stay.
 - **Folders**: organize your documents. Move documents between folders, and
@@ -827,6 +831,14 @@ submission manuscript.
   live-sync to the published copy. If you aren't connected it opens the
   connect sheet first and carries on once you are. Without a server,
   **Import** creates documents here too.
+  **One document, not a copy for each group.** Publishing remembers the
+  server copy it made. Publish again, to share with another group, and the
+  dialog opens on that same document, says who has it and shares it with
+  more people. A document of the same name already on the server is
+  offered before another copy is made. **Keep only the server copy** moves
+  the one on this device to Recently Deleted, so the server copy is the
+  only one. A server document is on every device you sign in on. Your own
+  documents' cards say who they are shared with.
   The reverse works as well: any server document's menu → **Save a copy to
   this device**. Pictures work here as they do on a server: they're kept
   beside the document on this device, travel with it to Recently Deleted
@@ -919,9 +931,9 @@ elements offers a text color for all of them at once. Everything syncs live.
 appear. They are accent lines that show when edges or centers align, with a
 gentle snap (they outrank the dot grid on the axis they match). A
 multi-selection's toolbar has an **align & distribute** menu
-(left/center/right, top/middle/bottom, even out the gaps). **⌘G groups** a
+(left/center/right, top/middle/bottom, even out the gaps). **Ctrl+G groups** a
 selection so it selects and moves as one. Click again to pick a single
-element out of the group, ⌘⇧G ungroups, and copies of a group stay grouped
+element out of the group, Ctrl+Shift+G ungroups, and copies of a group stay grouped
 on their own.
 
 **Pages**: a board is a stack of pages, listed above the canvas. Add one with
@@ -946,8 +958,8 @@ cleanly, and work on a board with no server behind it. One person draws at a
 time: while someone has a sketch open, others trying to edit it are told
 who's in there instead of silently overwriting each other.
 
-**Copy and paste**: ⌘/Ctrl-C, X, V and D copy, cut, paste and duplicate the
-selection, and ⌘/Ctrl-A selects everything on the board. A connector with
+**Copy and paste**: Ctrl+C, X, V and D copy, cut, paste and duplicate the
+selection, and Ctrl+A selects everything on the board. A connector with
 both ends in the selection comes along and is re-pointed at the copies, so
 a pasted diagram stays wired the way you drew it. Copies go
 through the system clipboard, so they can be pasted into another board.
@@ -965,7 +977,7 @@ to square it up.
 centers on it and zooms to fit) or, with nothing selected, to fit the whole
 board on screen.
 
-**Find and replace**: ⌘/Ctrl-F (or the search button in the board header)
+**Find and replace**: Ctrl+F (or the search button in the board header)
 opens a bar that searches every note, text block, shape label and frame
 name. Enter and Shift-Enter step through the matches in reading order,
 selecting and centering each one, and you can replace the current match or
@@ -1013,9 +1025,24 @@ A local, Obsidian-compatible markdown vault with `[[wiki-links]]` and
 backlinks. Share a note snapshot to a friend over DM, and they can save it
 into their own vault.
 
+- **Folders**: the sidebar is a tree of folders, and they are real folders
+  in the vault, as Obsidian has them, so a vault you open in Obsidian has
+  the same folders. Make one with the folder button (inside the folder you
+  last picked), and use a folder's ⋯ menu for a new note or folder in it,
+  to rename it or to delete it. A deleted folder and everything in it wait
+  in the vault's trash for 30 days, and the toast puts them back. A new
+  note goes in the folder you last picked.
+- **Moving a note**: the folder beside a note's title is where it is.
+  Choose another to move it there.
+- **Links across folders**: `[[Name]]` finds the note of that name in the
+  same folder first, else the nearest one, as Obsidian does. `[[Folder/Name]]`
+  names one exactly. Renaming or moving a note or a folder keeps every link
+  to it working. A link to a note that isn't there makes it beside the note
+  you clicked it in.
+
 ## Getting around
 
-- **⌘K** (Ctrl+K) is the quick switcher: type a few letters and jump to any
+- **Ctrl+K** is the quick switcher: type a few letters and jump to any
   channel, group, document, board, note, or conversation, or run a command.
   While a document is open it also runs the editor's commands by name:
   type "table", "heading 2" or "page break" and press Enter. Each command
@@ -1023,7 +1050,7 @@ into their own vault.
   has the focus again afterwards. Only what can be done just then is
   offered, so someone who can only read a document is offered Find and
   Print and nothing that changes the text.
-- **⌘/** shows a keyboard-shortcut cheat sheet, with every key of the
+- **Ctrl+/** shows a keyboard-shortcut cheat sheet, with every key of the
   document editor listed by what it is for.
 - The desktop window remembers its size and position between launches, and
   unread counts appear on the app's dock icon (macOS/Linux). The installed

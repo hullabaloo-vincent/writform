@@ -508,6 +508,14 @@ async fn group_share_card_and_access() {
         .await
         .unwrap();
     assert_eq!(list.len(), 1);
+    assert!(list[0].shared_with.is_empty(), "only the owner is told");
+    let own: Vec<DocumentListItem> = server
+        .req(reqwest::Method::GET, &alice.token, "/documents", None)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(own[0].shared_with, vec!["Writers".to_string()]);
     let res = server
         .req(
             reqwest::Method::GET,

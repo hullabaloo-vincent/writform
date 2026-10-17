@@ -53,6 +53,7 @@ import { TrashView } from "./organizer/TrashView";
 import { ShareLocalDialog } from "./ShareLocalDialog";
 import { useDocuments } from "./store";
 import { UnsavedBanner } from "./UnsavedBanner";
+import { modName } from "../../editor/commands/catalog";
 
 type View = { kind: "all" } | { kind: "folder"; id: number } | { kind: "localFolder"; id: string } | { kind: "trash" };
 
@@ -604,7 +605,7 @@ export function DocumentsView() {
         <span className="wf-statusbar-spacer" />
         <button
           className={selecting ? "active" : ""}
-          title="Select documents (or ⌘/Ctrl-click, Shift-click)"
+          title={`Select documents (or ${modName()}-click, Shift-click)`}
           onClick={() => (selecting ? clearSelection() : setSelecting(true))}
         >
           <CheckSquare size={15} /> Select
