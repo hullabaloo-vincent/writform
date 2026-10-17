@@ -59,7 +59,7 @@ Capabilities appear on `writform` **only if declared** in the manifest:
 | `net` | `writform.net.fetch(method, path, body)` — **only** `/api/v1/` paths on the connected server, over the pinned TLS client |
 | `data` | `writform.data.get/put/list(scope, scopeId, key)` — server-side JSON storage scoped to `user` / `group` / `channel`, membership-checked server-side; updates fan out as `plugin_data.updated` WS events |
 | `events` | `writform.events.onWsEvent(handler)`, `writform.events.sub(rooms)` |
-| `vault:read` / `vault:write` | `writform.vaultRead.list/read`, `writform.vaultWrite.write` |
+| `vault:read` / `vault:write` | `writform.vaultRead.list/read`, `writform.vaultWrite.write`. A note is named by its path in the vault without `.md`, folders joined by `/` ("Book/Cast/Ana"). Writing to a folder that isn't there makes it |
 
 Helpers always present: `writform.apiVersion`, `writform.manifest`,
 `writform.__wrapDom(element)` (render plain DOM inside the React shell).

@@ -72,6 +72,7 @@ export function DocCard({
             )}
           </span>
           {item.tags.length > 0 && <CardTags tags={item.tags} />}
+          {item.sharedWith.length > 0 && <span className="wf-doc-card-shared">{sharedLine(item.sharedWith)}</span>}
           {extra && <span className="wf-doc-card-extra">{extra}</span>}
           {item.owner && (
             <span className="wf-doc-card-owner">
@@ -131,4 +132,12 @@ export function CardTags({ tags }: { tags: string[] }) {
       {tags.length > shown.length && <span className="wf-doc-card-more">+{tags.length - shown.length}</span>}
     </span>
   );
+}
+
+/** "Shared with Writers", "Shared with Writers, Beta readers and 2 more". */
+export function sharedLine(names: string[]): string {
+  const shown = names.slice(0, names.length > 3 ? 2 : 3);
+  const more = names.length - shown.length;
+  const list = more > 0 ? `${shown.join(", ")} and ${more} more` : shown.length > 1 ? `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}` : shown[0];
+  return `Shared with ${list}`;
 }

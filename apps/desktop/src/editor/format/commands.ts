@@ -93,8 +93,10 @@ export function clearFormatting(editor: Editor): boolean {
       for (const range of state.selection.ranges) {
         state.doc.nodesBetween(range.$from.pos, range.$to.pos, (node, pos) => {
           if (node.type.name !== "paragraph" && node.type.name !== "heading") return;
-          // Where it falls on the page isn't formatting: breaks stay.
+          // Where it falls on the page isn't formatting: breaks stay. Nor
+          // is a chapter's hidden id (the story plan's tie to it).
           const keep = {
+            ...(node.attrs.cid ? { cid: node.attrs.cid } : {}),
             ...(node.attrs.pageBreakBefore ? { pageBreakBefore: true } : {}),
             ...(node.attrs.sect ? { sect: node.attrs.sect } : {}),
             ...(node.attrs.colBreak ? { colBreak: true } : {}),

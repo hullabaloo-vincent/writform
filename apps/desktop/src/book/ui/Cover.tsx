@@ -122,7 +122,7 @@ export function CoverTab({
           </button>
         </div>
         <p className="wf-inspector-dim">
-          In the editor you add the title, the author and the back’s words, choose their fonts and colours, and place the pictures. It also saves a template at this exact size, and the finished cover as a PDF for the printer.
+          In the editor you add the title, the author and the back’s words, choose their fonts and colors, and place the pictures. It also saves a template at this exact size, and the finished cover as a PDF for the printer.
         </p>
       </section>
     </div>

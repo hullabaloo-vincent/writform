@@ -55,6 +55,8 @@ const ctxOf = (more: Partial<CommandCtx> = {}): CommandCtx => ({
     togglePageView: () => calls.push("pageview"),
     toggleFocus: () => calls.push("focus"),
     goTo: () => calls.push("goto"),
+    plan: (tab) => calls.push(`plan:${tab ?? ""}`),
+    planPanel: () => calls.push("planpanel"),
   },
   ...more,
 });

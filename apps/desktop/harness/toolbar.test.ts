@@ -18,6 +18,7 @@ import { Ribbon } from "../src/editor/ui/Ribbon";
 import { placeOver, placeUnder } from "../src/editor/ui/bubblePlace";
 import { SelectionBubble } from "../src/editor/ui/SelectionBubble";
 import { useSelectionMenu } from "../src/editor/ui/selectionMenu";
+import { withKeys } from "../src/editor/commands/catalog";
 
 const g = globalThis as unknown as Record<string, unknown>;
 g.IS_REACT_ACT_ENVIRONMENT = true;
@@ -96,7 +97,7 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
 
   const homeCount = row().length;
   check("Home is a short row: the everyday controls only", homeCount <= 20, `${homeCount} controls`);
-  check("…bold, italic, underline, colour, highlight, lists, alignment and spacing among them", ["Bold", "Italic", "Underline", "Text colour", "Highlight", "Bulleted list", "Numbered list", "Alignment", "Line and paragraph spacing", "Undo"].every((n) => !!named(n)), ["Bold", "Italic", "Underline", "Text colour", "Highlight", "Bulleted list", "Numbered list", "Alignment", "Line and paragraph spacing", "Undo"].filter((n) => !named(n)).join());
+  check("…bold, italic, underline, colour, highlight, lists, alignment and spacing among them", ["Bold", "Italic", "Underline", "Text color", "Highlight", "Bulleted list", "Numbered list", "Alignment", "Line and paragraph spacing", "Undo"].every((n) => !!named(n)), ["Bold", "Italic", "Underline", "Text color", "Highlight", "Bulleted list", "Numbered list", "Alignment", "Line and paragraph spacing", "Undo"].filter((n) => !named(n)).join());
   check("…and the occasional ones are not in the row", ["Strikethrough", "Subscript", "Superscript", "Inline code", "Change case", "Clear formatting", "Sort", "Show paragraph marks", "Shading", "Borders", "Format painter", "Larger", "Smaller", "Justify"].every((n) => !named(n)));
 
   // More text formatting: everything that left the row is here, and works.
@@ -121,8 +122,8 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
 
   // Alignment is one menu.
   await act(async () => void press(named("Alignment")!));
-  check("alignment is one menu with the four choices", ["Left", "Centre", "Right", "Justified"].every((n) => !!item(n)));
-  await act(async () => void press(item("Centre")!));
+  check("alignment is one menu with the four choices", ["Left", "Center", "Right", "Justified"].every((n) => !!item(n)));
+  await act(async () => void press(item("Center")!));
   check("…and choosing one sets it", editor.state.doc.firstChild?.attrs.align === "center" && panels().length === 0);
 
   // More paragraph formatting — with a menu that opens from inside it.
@@ -199,8 +200,8 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
   await move(4);
   check("a caret alone doesn't bring it up", bubble() === null);
   await move(8, 12);
-  check("selected words do: bold, italic, underline, colour, highlight, link, comment, clear", ["Bold", "Italic", "Underline", "Text colour", "Highlight", "Link", "Comment on this", "Clear formatting"].every((n) => !!button(n)), ["Bold", "Italic", "Underline", "Text colour", "Highlight", "Link", "Comment on this", "Clear formatting"].filter((n) => !button(n)).join());
-  check("…and one button more, to choose what it holds", (bubble()?.querySelectorAll("button").length ?? 0) === 9 && !!button("Customise this menu"));
+  check("selected words do: bold, italic, underline, colour, highlight, link, comment, clear", ["Bold", "Italic", "Underline", "Text color", "Highlight", "Link", "Comment on this", "Clear formatting"].every((n) => !!button(n)), ["Bold", "Italic", "Underline", "Text color", "Highlight", "Link", "Comment on this", "Clear formatting"].filter((n) => !button(n)).join());
+  check("…and one button more, to choose what it holds", (bubble()?.querySelectorAll("button").length ?? 0) === 9 && !!button("Customize this menu"));
 
   await act(async () => void press(button("Bold")!));
   check("a button formats the selection and leaves it selected, the menu still there", marksAt(editor, 9).includes("bold") && !editor.state.selection.empty && bubble() !== null && button("Bold")?.classList.contains("active") === true);
@@ -237,7 +238,7 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
   // A manuscript or a script: emphasis, a link and a comment — no colours.
   await draw(false);
   await move(8, 12);
-  check("outside the Document format it is the three emphasis buttons, link and comment", !!button("Bold") && !button("Text colour") && !button("Clear formatting") && (bubble()?.querySelectorAll("button").length ?? 0) === 6);
+  check("outside the Document format it is the three emphasis buttons, link and comment", !!button("Bold") && !button("Text color") && !button("Clear formatting") && (bubble()?.querySelectorAll("button").length ?? 0) === 6);
   await draw();
 
   // A finger's selection has the system's own menu: this one stays away.
@@ -250,12 +251,12 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
 
   // Its own choice of tools.
   const panelItem = (text: string) => [...document.querySelectorAll(".wf-flyout button")].find((b) => (b.querySelector(".wf-flyout-text")?.textContent ?? "").trim() === text) as HTMLButtonElement | undefined;
-  await act(async () => void press(button("Customise this menu")!));
+  await act(async () => void press(button("Customize this menu")!));
   check("its last button lists every tool it could hold, the shown ones ticked", !!panelItem("Strikethrough") && panelItem("Bold")?.getAttribute("aria-checked") === "true" && panelItem("Strikethrough")?.getAttribute("aria-checked") === "false");
   await act(async () => void press(panelItem("Strikethrough")!));
   await act(async () => void press(panelItem("Underline")!));
   check("ticking adds a tool, unticking takes one away — at once, the list still open", !!button("Strikethrough") && !button("Underline") && !!panelItem("Bold"));
-  check("…kept in the menu's own order", [...bubble()!.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")).join("|").startsWith("Bold (⌘B)|Italic (⌘I)|Strikethrough|Text colour"));
+  check("…kept in the menu's own order", [...bubble()!.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")).join("|").startsWith(`${withKeys("Bold", "Mod-b")}|${withKeys("Italic", "Mod-i")}|Strikethrough|Text color`));
   check("…and remembered on this device", (JSON.parse(localStorage.getItem("wf-selection-menu") ?? "{}") as { tools?: string[] }).tools?.includes("strike") === true);
   await act(async () => void press(panelItem("Back to the usual set")!));
   check("“Back to the usual set” undoes the tinkering", !button("Strikethrough") && !!button("Underline"));

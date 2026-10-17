@@ -9,6 +9,7 @@ import {
   Eye,
   Focus as FocusIcon,
   History,
+  LayoutGrid,
   ListTree,
   MessageSquare,
   MoveVertical,
@@ -61,7 +62,12 @@ import { chapterArtSource } from "../../book/editor/chapterArt";
 import { BookInspector } from "../../book/ui/BookInspector";
 import type { CoverPictures } from "../../book/ui/Cover";
 import { pagesKey, usePrintedPages } from "../../book/ui/printedPages";
-import { chapterFocus } from "../../editor/ChapterFocus";
+import { chapterFocus, focusEntry } from "../../editor/ChapterFocus";
+import { ChapterIdGuard } from "../../editor/nodes/ChapterId";
+import { showRange } from "../../editor/ui/reveal";
+import { knowsChapter } from "../../plan/planMap";
+import { hasPlan } from "../../plan/resolve";
+import type { PlanTab } from "../../plan/ui/PlanView";
 import { CoverEditor } from "../../book/ui/CoverEditor";
 import { ConvertDialog } from "../../book/ui/ConvertDialog";
 import { ExportBookDialog, type BookExportKind } from "../../book/ui/ExportBookDialog";
@@ -138,6 +144,7 @@ import { openServerDoc } from "./navigation";
 import { activeProvider, useDocuments } from "./store";
 import { VersionHistoryPanel } from "./VersionHistoryPanel";
 import { ShareDialog } from "./ShareDialog";
+import { withKeys, keyLabel } from "../../editor/commands/catalog";
 
 const CARET_COLORS = [
   "#c96f4a",
@@ -157,8 +164,11 @@ function caretColor(name: string): string {
 
 // The checker and its word lists are fetched when its panel first opens.
 const ProofPanel = lazy(() => import("../../proof/ui/ProofPanel").then((m) => ({ default: m.ProofPanel })));
+// So is the story plan, when it is first opened.
+const PlanView = lazy(() => import("../../plan/ui/PlanView").then((m) => ({ default: m.PlanView })));
+const PlanPanel = lazy(() => import("../../plan/ui/PlanPanel").then((m) => ({ default: m.PlanPanel })));
 
-type Panel = "none" | "history" | "feedback" | "outline" | "settings" | "book" | "preview" | "check";
+type Panel = "none" | "history" | "feedback" | "outline" | "settings" | "book" | "preview" | "check" | "plan";
 
 export function DocumentEditor() {
   const meta = useDocuments((s) => s.meta);
@@ -377,6 +387,8 @@ function EditorInner({
       // Hold edits to what this server can store (a paste from a newer
       // document is down-converted).
       SchemaGuard.configure({ level: () => provider.level }),
+      // One heading per chapter id (the story plan's tie to a chapter).
+      ChapterIdGuard.configure({ known: (cid) => knowsChapter(provider.doc, cid) }),
       // Editing, Suggesting or Viewing — this person's own choice.
       Suggesting.configure({ author: () => meRef.current }),
       RunShortcuts.configure({ shortcuts: format === "none", context: () => docStyles.formatRef.current }),
@@ -412,6 +424,11 @@ function EditorInner({
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
+  // The story plan: the whole of it over the page, and whose mentions the
+  // side panel steps through.
+  const [planOpen, setPlanOpen] = useState<{ tab: PlanTab; at?: { column?: string; card?: string; entry?: string } } | null>(null);
+  const [planMentions, setPlanMentions] = useState<string | null>(null);
+  const planned = hasPlan(format);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
   };
@@ -578,7 +595,7 @@ function EditorInner({
       ...(format === "manuscript"
         ? []
         : [
-            { label: "Print…", title: "Print (⌘P)", run: async () => setPrintOpen(true) },
+            { label: "Print…", title: withKeys("Print", "Mod-p"), run: async () => setPrintOpen(true) },
             { label: "Export PDF…", title: "Choose what goes into the file, then save it", run: async () => setPdfExport(true) },
             {
               label: "Export booklet PDF",
@@ -676,6 +693,12 @@ function EditorInner({
     },
     check: () => setPanel("check"),
     history: () => setPanel("history"),
+    ...(planned
+      ? {
+          plan: (tab: PlanTab = "board") => setPlanOpen({ tab }),
+          planPanel: () => setPanel("plan"),
+        }
+      : {}),
     toggleFocus,
     goTo: () => setGoToOpen(true),
     ...(speaks ? { readAloud: () => setReading(true) } : {}),
@@ -821,7 +844,7 @@ function EditorInner({
             <History size={16} />
           </button>
           <button
-            title="Find and replace (⌘F)" data-label="Find and replace"
+            title={withKeys("Find and replace", "Mod-f")} data-label="Find and replace"
             className={find ? "active" : ""}
             disabled={!editor}
             onClick={() => (find ? setFind(null) : openFind(false, selectedPhrase(editor)))}
@@ -835,6 +858,16 @@ function EditorInner({
           >
             <ListTree size={16} />
           </button>
+          {planned && (
+            <button
+              title={withKeys("Story plan", "Alt-Mod-p")} data-label="Plan"
+              className={panel === "plan" || planOpen ? "active" : ""}
+              disabled={!editor}
+              onClick={() => (phone ? setPlanOpen({ tab: "board" }) : setPanel(panel === "plan" ? "none" : "plan"))}
+            >
+              <LayoutGrid size={16} />
+            </button>
+          )}
           <button
             title="Check the text for slips and for things written two ways (F7)" data-label="Check"
             className={panel === "check" ? "active" : ""}
@@ -908,7 +941,7 @@ function EditorInner({
           </button>
           {focus && (
             <button
-              title="Typewriter scrolling: keep the line you're writing centred" data-label="Typewriter scrolling"
+              title="Typewriter scrolling: keep the line you're writing centered" data-label="Typewriter scrolling"
               className={typewriter ? "active" : ""}
               onClick={() => setTypewriter(!typewriter)}
             >
@@ -1026,7 +1059,7 @@ function EditorInner({
                     <ElementSelect editor={editor} format={format} />
                     {format === "screenplay" && (
                       <span className="wf-doc-shortcuts" title="Screenplay element shortcuts">
-                        Tab cycles · ⌘1–6 selects
+                        Tab cycles · {keyLabel("Mod-1")}–6 selects
                       </span>
                     )}
                   </>
@@ -1194,7 +1227,24 @@ function EditorInner({
             }
             onNavigate={() => setPanel("none")}
             onTidy={readonly ? undefined : () => setConverting("tidy")}
+            onOpenPlan={planned ? () => setPlanOpen({ tab: "board" }) : undefined}
           />
+        )}
+        {panel === "plan" && planned && editor && (
+          <Suspense fallback={null}>
+            <PlanPanel
+              editor={editor}
+              ydoc={provider.doc}
+              format={format}
+              design={format === "manuscript" ? book.design : undefined}
+              readonly={readonly}
+              level={provider.level}
+              mentionsOf={planMentions}
+              onMentions={setPlanMentions}
+              onOpenFull={(at) => setPlanOpen({ tab: at?.entry ? "cast" : "board", at })}
+              onClose={() => setPanel("none")}
+            />
+          </Suspense>
         )}
         {panel === "check" && editor && (
           <Suspense fallback={null}>
@@ -1296,6 +1346,35 @@ function EditorInner({
         />
       )}
       {compare && <CompareView before={compare.before} after={compare.after} onClose={() => setCompare(null)} />}
+      {planOpen && planned && editor && (
+        <Suspense fallback={null}>
+          <PlanView
+            editor={editor}
+            ydoc={provider.doc}
+            format={format}
+            design={format === "manuscript" ? book.design : undefined}
+            readonly={readonly}
+            level={provider.level}
+            tab={planOpen.tab}
+            at={planOpen.at}
+            onTab={(tab) => setPlanOpen({ tab })}
+            onClose={() => setPlanOpen(null)}
+            onShowInText={(pos) => {
+              setPlanOpen(null);
+              showRange(editor.view, pos + 1, pos + 1, true);
+            }}
+            onShowOnly={(pos) => {
+              setPlanOpen(null);
+              focusEntry(editor, pos);
+            }}
+            onShowMentions={(entry) => {
+              setPlanOpen(null);
+              setPlanMentions(entry);
+              setPanel("plan");
+            }}
+          />
+        </Suspense>
+      )}
       {state.shareOpen && <ShareDialog onClose={() => state.setShareOpen(false)} />}
       {state.canvasOpen && (
         <SendToCanvasDialog editor={editor} onClose={() => state.setCanvasOpen(false)} />
@@ -1384,7 +1463,7 @@ export function ElementSelect({ editor, format }: { editor: Editor; format: stri
 const elementOption = (el: ElementSpec) => (
   <option key={el.id} value={el.id} title={el.hint}>
     {el.label}
-    {el.shortcut ? `  ${el.shortcut}` : ""}
+    {el.shortcut ? `  ${keyLabel(el.shortcut)}` : ""}
   </option>
 );
 

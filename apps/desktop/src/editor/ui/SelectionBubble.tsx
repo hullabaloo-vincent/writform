@@ -13,6 +13,7 @@ import { ColorFlyout, HIGHLIGHT_COLORS, TEXT_COLORS } from "./ColorFlyout";
 import { Flyout, FlyoutItem } from "./Flyout";
 import { LinkFlyout } from "./LinkFlyout";
 import { SELECTION_TOOLS, useSelectionMenu, type SelectionTool } from "./selectionMenu";
+import { withKeys } from "../commands/catalog";
 
 /** A finger's selection has the system's own menu over it (Copy, Look Up…);
  *  a second one there would only fight it — and the toolbar is in reach. */
@@ -180,16 +181,16 @@ export function SelectionBubble({ editor, format, onComment }: { editor: Editor;
    *  format; a comment needs somewhere to go). */
   const possible = (tool: { id: SelectionTool; rich?: boolean }) => (!tool.rich || rich) && (tool.id !== "comment" || !!onComment);
   const draw: Record<SelectionTool, () => ReactNode> = {
-    bold: () => btn("Bold (⌘B)", <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold")),
-    italic: () => btn("Italic (⌘I)", <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic")),
-    underline: () => btn("Underline (⌘U)", <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline")),
+    bold: () => btn(withKeys("Bold", "Mod-b"), <Bold size={15} />, () => chain().toggleBold().run(), editor.isActive("bold")),
+    italic: () => btn(withKeys("Italic", "Mod-i"), <Italic size={15} />, () => chain().toggleItalic().run(), editor.isActive("italic")),
+    underline: () => btn(withKeys("Underline", "Mod-u"), <Underline size={15} />, () => chain().toggleUnderline().run(), editor.isActive("underline")),
     strike: () => btn("Strikethrough", <Strikethrough size={15} />, () => chain().toggleStrike().run(), editor.isActive("strike")),
-    sub: () => btn("Subscript (⌘=)", <Subscript size={15} />, () => toggleScript(editor, "sub"), run?.vscript === "sub"),
-    super: () => btn("Superscript (⌘⇧=)", <Superscript size={15} />, () => toggleScript(editor, "super"), run?.vscript === "super"),
+    sub: () => btn(withKeys("Subscript", "Mod-="), <Subscript size={15} />, () => toggleScript(editor, "sub"), run?.vscript === "sub"),
+    super: () => btn(withKeys("Superscript", "Mod-Shift-="), <Superscript size={15} />, () => toggleScript(editor, "super"), run?.vscript === "super"),
     code: () => btn("Inline code", <Code size={15} />, () => chain().toggleCode().run(), editor.isActive("code")),
     color: () =>
       run && (
-        <ColorFlyout key="color" title="Text colour" icon={<Baseline size={15} />} value={run.mixed.color ? null : run.color} colors={TEXT_COLORS} noneLabel="Automatic" onPick={(c) => setRunColor(editor, c)} />
+        <ColorFlyout key="color" title="Text color" icon={<Baseline size={15} />} value={run.mixed.color ? null : run.color} colors={TEXT_COLORS} noneLabel="Automatic" onPick={(c) => setRunColor(editor, c)} />
       ),
     highlight: () =>
       run && (
@@ -220,7 +221,7 @@ export function SelectionBubble({ editor, format, onComment }: { editor: Editor;
         </span>
       ))}
       {groups.length > 0 && <span className="wf-bubble-sep" aria-hidden="true" />}
-      <Flyout title="Customise this menu" icon={<SlidersHorizontal size={14} />} caret={false} className="wf-bubble-custom">
+      <Flyout title="Customize this menu" icon={<SlidersHorizontal size={14} />} caret={false} className="wf-bubble-custom">
         {(close) => (
           <>
             <div className="wf-flyout-heading">Show in this menu</div>

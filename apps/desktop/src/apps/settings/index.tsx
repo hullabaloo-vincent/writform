@@ -189,7 +189,7 @@ function OfflineProfileTab({ onError }: { onError: (e: string | null) => void })
   const anything = !!(profile.name || profile.bio || profile.accent || profile.avatar || profile.banner);
 
   return (
-    <section>
+    <section className="wf-profile-form">
       <h3>Your profile</h3>
       <p className="wf-session-meta">
         Who you are on this device: the name on what you write and export, and the picture beside it. When you
@@ -349,7 +349,7 @@ function ProfileTab({ onError }: { onError: (e: string | null) => void }) {
   };
 
   return (
-    <section>
+    <section className="wf-profile-form">
       <h3>Profile</h3>
       <p className="wf-session-meta">
         Signed in as <strong>@{session.user.username}</strong>
@@ -943,7 +943,7 @@ function WritingTab() {
         Dark paper while writing
       </label>
       <p className="wf-session-meta">
-        Shows the page dark with light text. Coloured text is made lighter where it could not be read. This is for the
+        Shows the page dark with light text. Colored text is made lighter where it could not be read. This is for the
         screen only: print, PDF and Word files are unchanged. On this device only.
       </p>
       <label className="wf-settings-field wf-field-row">
@@ -952,7 +952,7 @@ function WritingTab() {
       </label>
       <p className="wf-session-meta">
         Select words with the mouse and a small menu appears above them. Choose what it holds here, or
-        from the sliders button at its end. (Colours, sub- and superscript and clear formatting show
+        from the sliders button at its end. (Colors, sub- and superscript and clear formatting show
         in the Document format only.) On this device only.
       </p>
       <div className="wf-settings-ticks" role="group" aria-label="What the selection menu holds">

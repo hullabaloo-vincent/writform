@@ -239,10 +239,10 @@ export function formatKeymap(format: string) {
       const spec = FORMAT_SPECS[format];
       if (spec) {
         shortcuts.Enter = () => handleEnter(this.editor, format);
-        // ⌘1… picks elements wherever the format names a shortcut
-        // (Screenplay ⌘1–6, Manuscript ⌘1–9).
+        // Mod-1… (⌘ on a Mac, Ctrl elsewhere) picks elements wherever the
+        // format names a key (Screenplay 1–6, Manuscript 1–9).
         for (const element of spec.elements) {
-          const digit = /^⌘(\d)$/.exec(element.shortcut ?? "")?.[1];
+          const digit = /^Mod-(\d)$/.exec(element.shortcut ?? "")?.[1];
           if (digit) shortcuts[`Mod-${digit}`] = () => setElement(this.editor, element.id);
         }
       }

@@ -158,7 +158,7 @@ pub fn sysfont_bytes(
             if !may_embed(data, index) {
                 return Err(CmdError::new(
                     "not_embeddable",
-                    "that font's licence doesn't allow embedding it in a document",
+                    "that font's license doesn't allow embedding it in a document",
                 ));
             }
             let mut out = Vec::with_capacity(data.len() + 4);

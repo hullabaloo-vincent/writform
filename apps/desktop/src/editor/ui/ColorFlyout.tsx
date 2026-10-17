@@ -21,9 +21,9 @@ export const TEXT_COLORS: Swatch[] = [
   { color: "#002060", name: "Dark blue" },
   { color: "#7030a0", name: "Purple" },
   { color: "#000000", name: "Black" },
-  { color: "#404040", name: "Dark grey" },
-  { color: "#7f7f7f", name: "Grey" },
-  { color: "#a6a6a6", name: "Light grey" },
+  { color: "#404040", name: "Dark gray" },
+  { color: "#7f7f7f", name: "Gray" },
+  { color: "#a6a6a6", name: "Light gray" },
   { color: "#ffffff", name: "White" },
 ];
 
@@ -34,7 +34,7 @@ export const HIGHLIGHT_COLORS: Swatch[] = [
   { color: "#00ff00", name: "Bright green" },
   { color: "#00ffff", name: "Turquoise" },
   { color: "#ff00ff", name: "Pink" },
-  { color: "#c0c0c0", name: "Grey" },
+  { color: "#c0c0c0", name: "Gray" },
   { color: "#ffe699", name: "Soft yellow" },
   { color: "#c6e0b4", name: "Soft green" },
   { color: "#bdd7ee", name: "Soft blue" },
@@ -44,8 +44,8 @@ export const HIGHLIGHT_COLORS: Swatch[] = [
 
 /** Paragraph shading: pale tints text stays readable on. */
 export const SHADE_COLORS: Swatch[] = [
-  { color: "#f2f2f2", name: "Pale grey" },
-  { color: "#d9d9d9", name: "Light grey" },
+  { color: "#f2f2f2", name: "Pale gray" },
+  { color: "#d9d9d9", name: "Light gray" },
   { color: "#fff2cc", name: "Pale yellow" },
   { color: "#fce4d6", name: "Pale orange" },
   { color: "#e2efda", name: "Pale green" },
@@ -125,7 +125,7 @@ export function ColorFlyout({
             ))}
           </div>
           <label className="wf-color-more">
-            <span>Another colour…</span>
+            <span>Another color…</span>
             <input
               type="color"
               value={value ?? "#000000"}

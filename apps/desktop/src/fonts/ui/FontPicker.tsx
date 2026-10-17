@@ -80,7 +80,7 @@ export type FontScope = "document" | "book";
 
 /** What is said over the fonts installed on the device: the app can't
  *  vouch for what they may be used for. */
-const DEVICE_HINT = "Each has its maker’s own licence. Check it before you publish with one.";
+const DEVICE_HINT = "Each has its maker’s own license. Check it before you publish with one.";
 
 function appRow(id: string, scope: FontScope = "document"): Row | null {
   const f = knownFont(id);

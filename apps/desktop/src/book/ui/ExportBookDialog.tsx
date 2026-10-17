@@ -248,7 +248,7 @@ export function ExportBookDialog({
             <input type="checkbox" checked={press.x1a} disabled={phase === "building"} onChange={(e) => setPress({ ...press, x1a: e.target.checked })} />
             <span>
               PDF/X-1a for a printer
-              <small>The form IngramSpark and many printers ask for. It is for black ink only, so pictures are made grey.</small>
+              <small>The form IngramSpark and many printers ask for. It is for black ink only, so pictures are made gray.</small>
             </span>
           </label>
           <label className="wf-print-option">

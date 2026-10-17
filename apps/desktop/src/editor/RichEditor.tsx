@@ -38,6 +38,7 @@ import { opensSection } from "./DocElement";
 import { toggleWordMark } from "./format/wordMark";
 import { quoteStyleFor, SmartPunctuation } from "./SmartPunctuation";
 import { LEVEL1_EXTENSIONS } from "./schema/level1";
+import { withKeys, keyLabel } from "./commands/catalog";
 
 /**
  * Shared TipTap editor — used for prompts and submissions (and later by the
@@ -207,25 +208,25 @@ export function Toolbar({
             return (
               <>
                 {btn(
-                  "Align left (⌘⇧L)",
+                  withKeys("Align left", "Mod-Shift-l"),
                   <AlignLeft size={15} />,
                   () => setDocAlign(editor, "left"),
                   cur.align === null,
                 )}
                 {btn(
-                  "Center (⌘⇧E)",
+                  withKeys("Center", "Mod-Shift-e"),
                   <AlignCenter size={15} />,
                   () => setDocAlign(editor, "center"),
                   cur.align === "center",
                 )}
                 {btn(
-                  "Align right (⌘⇧R)",
+                  withKeys("Align right", "Mod-Shift-r"),
                   <AlignRight size={15} />,
                   () => setDocAlign(editor, "right"),
                   cur.align === "right",
                 )}
                 {btn(
-                  "Justify (⌘⇧J)",
+                  withKeys("Justify", "Mod-Shift-j"),
                   <AlignJustify size={15} />,
                   () => setDocAlign(editor, "justify"),
                   cur.align === "justify",
@@ -262,7 +263,7 @@ export function Toolbar({
                   ))}
                 </select>
                 {btn(
-                  "Page break before this paragraph (⌘↩ inserts one)",
+                  `Page break before this paragraph (${keyLabel("Mod-Enter")} inserts one)`,
                   <SeparatorHorizontal size={15} />,
                   () => togglePageBreakBefore(editor),
                   cur.pageBreakBefore === true,
@@ -280,19 +281,19 @@ export function Toolbar({
             return (
               <>
                 {btn(
-                  "Align left (⌘⇧L)",
+                  withKeys("Align left", "Mod-Shift-l"),
                   <AlignLeft size={15} />,
                   () => setDocAlign(editor, "left"),
                   cur.align === null,
                 )}
                 {btn(
-                  "Center (⌘⇧E)",
+                  withKeys("Center", "Mod-Shift-e"),
                   <AlignCenter size={15} />,
                   () => setDocAlign(editor, "center"),
                   cur.align === "center",
                 )}
                 {btn(
-                  "Align right (⌘⇧R)",
+                  withKeys("Align right", "Mod-Shift-r"),
                   <AlignRight size={15} />,
                   () => setDocAlign(editor, "right"),
                   cur.align === "right",
@@ -315,7 +316,7 @@ export function Toolbar({
           {(() => {
             const opens = opensSection(editor.state.selection.$from.parent);
             return btn(
-              opens ? "Chapters always start on a new page" : "Page break: start this paragraph on a new page (⌘↩)",
+              opens ? "Chapters always start on a new page" : withKeys("Page break: start this paragraph on a new page", "Mod-Enter"),
               <SeparatorHorizontal size={15} />,
               () => togglePageBreakBefore(editor),
               !opens && curTypography(editor).pageBreakBefore === true,

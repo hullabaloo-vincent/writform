@@ -77,7 +77,7 @@ pub async fn ocr_page(request: tauri::ipc::Request<'_>) -> Result<OcrPage, CmdEr
 
 #[cfg(not(any(target_os = "macos", target_os = "ios")))]
 pub fn read(_bytes: &[u8], _lang: &str) -> Result<Vec<OcrLine>, String> {
-    Err("this system has no text recogniser the app can use".into())
+    Err("this system has no text recognizer the app can use".into())
 }
 
 #[cfg(any(target_os = "macos", target_os = "ios"))]
@@ -159,7 +159,7 @@ mod apple {
                 let request: *mut AnyObject = msg_send![request, init];
                 if request.is_null() {
                     let _: () = msg_send![handler, release];
-                    return Err("no text recogniser".to_string());
+                    return Err("no text recognizer".to_string());
                 }
                 let _: () = msg_send![request, setRecognitionLevel: ACCURATE];
                 let _: () = msg_send![request, setUsesLanguageCorrection: true];

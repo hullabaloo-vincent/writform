@@ -16,6 +16,7 @@ import { focusEntry, showEverything } from "../../editor/ChapterFocus";
 import { showInText } from "../../editor/ui/reveal";
 import { useChapterFocus } from "./ChapterBar";
 import { confirmDialog } from "../../platform";
+import { keyLabel } from "../../editor/commands/catalog";
 
 /**
  * The document's outline — for a manuscript, its binder: parts, chapters
@@ -35,6 +36,7 @@ export function OutlinePanel({
   commentRanges,
   onNavigate,
   onTidy,
+  onOpenPlan,
 }: {
   editor: Editor | null;
   format?: string;
@@ -45,6 +47,8 @@ export function OutlinePanel({
   onNavigate?: () => void;
   /** Manuscripts: find structure that isn't marked yet. */
   onTidy?: () => void;
+  /** Open the story plan's board. */
+  onOpenPlan?: () => void;
 }) {
   const numbering = design ?? presetDesign("classic");
   const scan = useCallback(
@@ -186,6 +190,11 @@ export function OutlinePanel({
           <span className="wf-doc-outline-total">{total.toLocaleString()} words</span>
         )}
         <span className="wf-statusbar-spacer" />
+        {onOpenPlan && (
+          <button className="wf-doc-outline-reorder" title="Plan the story: plot lines, cast and timeline" onClick={onOpenPlan}>
+            Plan
+          </button>
+        )}
         {movable && onTidy && (
           <button
             className="wf-doc-outline-reorder"
@@ -207,7 +216,7 @@ export function OutlinePanel({
       {entries.length === 0 ? (
         <p className="wf-session-meta" style={{ padding: "0 14px" }}>
           {format === "manuscript"
-            ? "Chapter, part and section headings appear here. Pick “Chapter Heading” from the element menu (⌘1)."
+            ? `Chapter, part and section headings appear here. Pick “Chapter Heading” from the element menu (${keyLabel("Mod-1")}).`
             : "Headings (and scene or chapter headings) will appear here."}
         </p>
       ) : (

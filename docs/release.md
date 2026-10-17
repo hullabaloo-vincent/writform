@@ -25,15 +25,15 @@ Rules:
   goes in the table of the *next* level. If the last release already
   shipped level N, add `LEVEL_{N+1}`, put it in `VOCAB`, and raise **both**
   constants to N+1 in the same commit.
-- While a level is unreleased, later work may keep adding to it. **Levels 2
-  and 3 shipped (in 1.1.0 and 1.1.2) and are frozen** (harness checks hold
-  them to what they were). Level 4 is open now: it holds a chapter's own
-  art on its heading, and the tab stops and formatting of stage F join it
-  while it is unreleased. **The release that first ships level 4 freezes
-  it**. After it, anything new takes level 5. That release raises the
-  level, so it is a "server first" release (see 2).
+- While a level is unreleased, later work may keep adding to it. **Levels
+  2, 3 and 4 shipped (in 1.1.0, 1.1.2 and 1.2.1) and are frozen** (harness
+  checks hold them to what they were). Level 5 is open now: it holds a
+  chapter's hidden id on its heading (`cid`), which the story plan ties its
+  cards and events to. **The release that first ships level 5 freezes it**.
+  After it, anything new takes level 6. That release raises the level, so
+  it is a "server first" release (see 2).
 - New attributes default to `null`; values are primitives; lengths are
-  points; colours `#rrggbb`. Read them through `editor/schema/sanitize.ts`.
+  points; colors `#rrggbb`. Read them through `editor/schema/sanitize.ts`.
 
 Check: `npm run harness -- schema` fails if the editor's schema uses a
 name the tables don't list. The server test
@@ -110,7 +110,7 @@ The harnesses can't open the app. Before a release that touches them:
 - PDF import is held by `npm run harness -- pdfimport`, mostly on PDFs this
   app made itself. Before a release that changes it, import a few from
   elsewhere: a Word export, a two-column paper, a statement with tables, a
-  scan. Reading a scan's text is the system's own recogniser (Mac, iPhone,
+  scan. Reading a scan's text is the system's own recognizer (Mac, iPhone,
   iPad): `cargo test -p writform-desktop --test ocr` runs it on a real
   picture, on a Mac only.
 - Edit a real PDF (a contract, a form): move pages, mark it up, fill it in,

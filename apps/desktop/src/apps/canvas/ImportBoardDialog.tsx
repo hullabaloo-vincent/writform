@@ -86,7 +86,7 @@ export function ImportBoardDialog({
           </div>
           <div className="wf-import-actions">
             <button onClick={cancel} disabled={cancelling}>
-              {cancelling ? "Cancelling…" : "Cancel"}
+              {cancelling ? "Canceling…" : "Cancel"}
             </button>
           </div>
         </>

@@ -32,7 +32,7 @@ export function MissingFonts({
       <span>
         <strong>{first.face.asked}</strong>{" "}
         {first.face.why === "licence"
-          ? `can’t be embedded in a PDF (its licence), so it prints in ${first.face.drawn}.`
+          ? `can’t be embedded in a PDF (its license), so it prints in ${first.face.drawn}.`
           : `isn’t on this device, so it is shown and printed in ${first.face.drawn}.`}
         {others > 0 && ` (${others} more)`}
       </span>

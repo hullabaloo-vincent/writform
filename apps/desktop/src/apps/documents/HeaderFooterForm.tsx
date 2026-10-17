@@ -14,7 +14,7 @@ const FIELDS: { token: string; label: string }[] = [
 
 const SIDES = [
   ["L", "Left"],
-  ["C", "Centre"],
+  ["C", "Center"],
   ["R", "Right"],
 ] as const;
 

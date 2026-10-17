@@ -204,7 +204,7 @@ the server doesn't have yet ("the server is running an older subScribe
 version…"). That message is the cue to run the update above.
 
 **Update the server before the apps start using new formatting.** Text
-colour, highlight, fonts and sizes on part of a paragraph, indents, borders,
+color, highlight, fonts and sizes on part of a paragraph, indents, borders,
 checklists, tables, footnotes, a table of contents, sections and suggested
 changes (from version 1.1.0), and a table cell's own borders and a
 picture's outline and rounded corners (from 1.1.2), are stored in a newer

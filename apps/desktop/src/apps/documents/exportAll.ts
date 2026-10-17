@@ -39,7 +39,8 @@ export async function exportAllDocuments(
   const folderName = new Map(folders.map((f) => [f.id, f.name]));
   const used = new Set<string>();
 
-  const add = (dir: string, title: string, unique: string | number, state_b64: string) => {
+  const { planMarkdownOf } = await import("../../plan/markdown");
+  const add = async (dir: string, title: string, unique: string | number, state_b64: string, format: string) => {
     const ydoc = new Y.Doc();
     try {
       if (state_b64) Y.applyUpdate(ydoc, b64decode(state_b64));
@@ -51,6 +52,9 @@ export async function exportAllDocuments(
       // suggestions accepted. The JSON beside it keeps them.
       zip.file(`${base}.md`, pmToMarkdown(finalJson(json as JSONContent) as PmNode));
       zip.file(`${base}.json`, JSON.stringify(json, null, 2));
+      // Its story plan beside it, when it has one.
+      const plan = await planMarkdownOf(ydoc, json as JSONContent, format).catch(() => null);
+      if (plan) zip.file(`${base}.plan.md`, plan);
     } finally {
       ydoc.destroy();
     }
@@ -65,12 +69,12 @@ export async function exportAllDocuments(
           ? `My documents/${sanitize(folderName.get(doc.folder_id) ?? "Folder")}`
           : "My documents"
         : "Shared with me";
-    add(dir, doc.title, doc.id, detail.state_b64);
+    await add(dir, doc.title, doc.id, detail.state_b64, doc.format);
   }
   for (const d of local) {
     const file = JSON.parse(await backend.localdocRead(d.id)) as { state_b64?: string };
     const folder = localFolder(d.id);
-    add(folder ? `On this device/${sanitize(folder) || "Folder"}` : "On this device", d.title, d.id.slice(0, 8), file.state_b64 ?? "");
+    await add(folder ? `On this device/${sanitize(folder) || "Folder"}` : "On this device", d.title, d.id.slice(0, 8), file.state_b64 ?? "", d.format);
   }
 
   const bytes = await zip.generateAsync({ type: "uint8array" });

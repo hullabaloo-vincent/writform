@@ -223,4 +223,4 @@ certificates). Details in [docs/crypto.md](docs/crypto.md).
 
 See [License.md](License.md). The bundled fonts, the PDF engine's origin, the
 spelling table and everything else that came from elsewhere are listed with
-their licences in [docs/notices.md](docs/notices.md).
+their licenses in [docs/notices.md](docs/notices.md).

@@ -1417,7 +1417,7 @@ function layoutPass(input: DocLayoutInput, notePage?: Map<number, number>): Disp
     const licence = said("licence");
     if (missing) warnings.push({ kind: "font", message: `Not on this device, so printed in a stand-in: ${missing}.` });
     if (licence) {
-      warnings.push({ kind: "font", message: `Its licence doesn’t allow embedding, so printed in a stand-in: ${licence}.` });
+      warnings.push({ kind: "font", message: `Its license doesn’t allow embedding, so printed in a stand-in: ${licence}.` });
     }
   }
 

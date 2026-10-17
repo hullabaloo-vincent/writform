@@ -85,7 +85,7 @@ apart and used for English as it is spelled outside North America.
 
 LibreOffice is made available under the Mozilla Public License 2.0, and so
 is that one file, whatever the rest of this repository is under. The file
-says so at its head. The licence is at https://www.mozilla.org/MPL/2.0/ and
+says so at its head. The license is at https://www.mozilla.org/MPL/2.0/ and
 the list in its original form at
 https://github.com/LibreOffice/core/tree/master/extras/source/autocorr/lang.
 
@@ -97,7 +97,7 @@ The other word lists AutoCorrect uses (`data/en.ts`, `data/symbols.ts`,
 `pdf-engine/` is a modified copy of ten crates of **PdfCraft 0.7.1**
 (https://github.com/storytold/pdfcraft), Copyright (c) 2026 ArtCraft Team
 and the PdfCraft contributors, used under the MIT License or the Apache
-License, Version 2.0, at your option. Both licences are in that folder in
+License, Version 2.0, at your option. Both licenses are in that folder in
 full (`LICENSE-MIT`, `LICENSE-APACHE`), and `pdf-engine/NOTICE.md` says what
 was taken and what was changed. It is built to WebAssembly and shipped as
 `apps/desktop/src/pdf/engine/pkg/`.
@@ -116,9 +116,9 @@ pdf.js loads when a PDF needs them:
 - `standard_fonts/`: the Foxit fonts (BSD 3-Clause, `LICENSE_FOXIT`) and the
   Liberation fonts (SIL Open Font License 1.1, `LICENSE_LIBERATION`), used to
   draw PDFs that name a standard font without carrying it.
-- `wasm/`: the OpenJPEG, JBIG2 and qcms decoders, each with its licence
+- `wasm/`: the OpenJPEG, JBIG2 and qcms decoders, each with its license
   beside it.
-- `iccs/`: one colour profile (CC0, `iccs/LICENSE`).
+- `iccs/`: one color profile (CC0, `iccs/LICENSE`).
 
 The part of that package that runs a PDF's own scripts is left out.
 

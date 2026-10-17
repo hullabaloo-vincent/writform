@@ -1,7 +1,8 @@
 // The house style for anything a person reads: no em dashes and no
 // semicolons — in the app's own wording (labels, hints, tooltips, messages)
-// and in the public docs. (The third rule, no "phrase, punchy fragment"
-// taglines, needs a reader; this catches the two a machine can.)
+// and in the public docs, and American spelling (color, center, gray,
+// license). (The third rule, no "phrase, punchy fragment"
+// taglines, needs a reader; this catches what a machine can.)
 //
 // Comments are not checked, nor is what belongs to a writer's document
 // rather than to the app (an epigraph's attribution dash, what smart
@@ -36,6 +37,22 @@ const NOT_WORDING = [
   /src\/proof\/data\//, // the checker's word lists: words to find, not words shown
   /src\/editor\/autocorrect\/data\//, // what is typed and what it becomes: not words shown
 ];
+/** British spellings. The app speaks American English: color, center,
+ *  gray, license, canceled. Whole words only. */
+const BRITISH =
+  /\b(colours?|coloured|colouring|centres?|centred|centring|grey|greys|greyed|licences?|cancelled|cancelling|customis\w*|organis\w*|recognis\w*|favourit\w*|behaviours?|honour|honoured|neighbours?|judgement|catalogues?|analys(?:e|ed|es|ing)|realis(?:e|ed|es|ing|ation)|summaris\w*|apologis\w*|prioritis\w*|categoris\w*|visualis\w*|synchronis\w*|authoris\w*|standardis\w*|utilis\w*|memoris\w*|minimis\w*|maximis\w*|optimis\w*|normalis\w*|initialis\w*|finalis\w*|labelled|labelling|modelled|modelling|travelled|travelling|signalled|levelled|programmes?|theatres?|defence|offence|whilst|amongst|humour|flavour|armour|rumour|practise|ageing|enrol|fulfil)\b/i;
+/** Where a British spelling is meant: a font licence's own name, a code or
+ *  a class name (no spaces, lower case), and Check's examples of what it finds. */
+const BRITISH_NAMES = /Ubuntu Font Licence/g;
+const CODE = /^[a-z0-9_.\/-]+$/;
+const BRITISH_FILES = [/src\/proof\/checks\/spelling\.ts$/, /src\/proof\/reports\/build\/pace\.ts$/];
+/** Lines of the docs that show British spelling on purpose (what Check finds). */
+const BRITISH_EXAMPLES = [/"licence" and "organisation"/, /\(color, colour\)/, /\(judgement, judgment\)/, /\(colour and color/];
+const britishIn = (text: string): string | null => {
+  const plain = text.replace(BRITISH_NAMES, "");
+  return CODE.test(plain.trim()) ? null : (BRITISH.exec(plain)?.[0] ?? null);
+};
+
 /** A string that is plainly not a sentence shown to anyone. */
 const notProse = (text: string): boolean =>
   /^\s*\[[a-z ]+\]/.test(text) || // a console line: "[typesetter] …"
@@ -43,6 +60,7 @@ const notProse = (text: string): boolean =>
   text.trim().length <= 2; // a lone glyph drawn as a picture (a line's end on a board)
 
 const found: string[] = [];
+const british: string[] = [];
 const walk = (dir: string) => {
   for (const name of readdirSync(dir)) {
     const file = path.join(dir, name);
@@ -68,6 +86,11 @@ function scan(file: string) {
         found.push(`${path.relative(app, file)}:${line + 1}  ${dash ? "em dash" : "semicolon"}  ${text.replace(/\s+/g, " ").trim().slice(0, 90)}`);
       }
     }
+    const spelled = text !== null && !BRITISH_FILES.some((re) => re.test(file)) ? britishIn(text) : null;
+    if (spelled) {
+      const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+      british.push(`${path.relative(app, file)}:${line + 1}  ${spelled}  ${text!.replace(/\s+/g, " ").trim().slice(0, 90)}`);
+    }
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -77,6 +100,7 @@ walk(path.join(app, "src"));
 // the book's typography, set in two places of the layout.)
 const wording = found.filter((line) => !/src\/book\/engine\/(layout|compose)\.ts:\d+ {2}em dash {2}—\s*$/.test(line));
 check("nothing the app says has an em dash or a semicolon in it", wording.length === 0, `\n  ${wording.join("\n  ")}`);
+check("what the app says is spelled the American way", british.length === 0, `\n  ${british.join("\n  ")}`);
 
 // ------------------------------------------------------------ the public docs
 
@@ -89,6 +113,11 @@ for (const file of docs) {
   const lines = prose.split("\n");
   const bad = lines.flatMap((line, i) => (line.includes("—") || line.includes(";") ? [`${i + 1}: ${line.trim().slice(0, 90)}`] : []));
   check(`${path.relative(repo, file)}: no em dashes or semicolons in its prose`, bad.length === 0, `\n  ${bad.join("\n  ")}`);
+  const spelled = lines.flatMap((line, i) => {
+    const word = BRITISH_EXAMPLES.some((re) => re.test(line)) ? null : britishIn(line);
+    return word ? [`${i + 1}: ${word}  ${line.trim().slice(0, 90)}`] : [];
+  });
+  check(`${path.relative(repo, file)}: spelled the American way`, spelled.length === 0, `\n  ${spelled.join("\n  ")}`);
 }
 {
   const manifest = JSON.parse(readFileSync(path.join(app, "public/manifest.webmanifest"), "utf8")) as { description?: string };

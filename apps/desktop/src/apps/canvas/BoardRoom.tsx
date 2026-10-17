@@ -93,6 +93,7 @@ import {
   type SketchData,
 } from "./SketchPad";
 import { useCanvas } from "./store";
+import { withKeys } from "../../editor/commands/catalog";
 
 /** One preview fetch per URL per session; cards share the promise. */
 const previewCache = new Map<string, Promise<LinkPreview>>();
@@ -2976,7 +2977,7 @@ export function BoardRoom() {
         </span>
         <span className="wf-statusbar-spacer" />
         <button
-          title="Find and replace (⌘/Ctrl+F)"
+          title={withKeys("Find and replace", "Mod-f")}
           className={finding ? "active" : ""}
           onClick={() => setFinding((f) => !f)}
         >

@@ -26,11 +26,16 @@ use crate::UnixMillis;
 /// Level 3 (shipped in 1.1.2): a table cell's own borders, a picture's
 /// outline and rounded corners.
 ///
-/// Level 4: a chapter's own art on its heading.
+/// Level 4 (shipped in 1.2.1): a chapter's own art on its heading, tab
+/// stops, capitals and letter spacing, underline kinds, table placement,
+/// picture crops and turns.
+///
+/// Level 5: a chapter's hidden id on its heading, which the story plan ties
+/// its cards to.
 ///
 /// The tables are `editor/schema/levels.ts` in the client; this constant
 /// moves with them.
-pub const MAX_DOC_SCHEMA_LEVEL: u32 = 4;
+pub const MAX_DOC_SCHEMA_LEVEL: u32 = 5;
 
 fn level_one() -> u32 {
     1
@@ -119,6 +124,9 @@ pub struct DocumentListItem {
     /// Synopsis, cover and tags (empty from servers that predate them).
     #[serde(default)]
     pub card: DocumentCard,
+    /// For the owner: the groups and people it is shared with, by name.
+    #[serde(default)]
+    pub shared_with: Vec<String>,
 }
 
 /// What a document's card shows beside its title and words. An editor of

@@ -31,4 +31,8 @@ deleted_at: number | null,
 /**
  * Synopsis, cover and tags (empty from servers that predate them).
  */
-card: DocumentCard, };
+card: DocumentCard, 
+/**
+ * For the owner: the groups and people it is shared with, by name.
+ */
+shared_with: Array<string>, };

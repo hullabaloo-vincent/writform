@@ -13,6 +13,8 @@ import { toast } from "../../../platform/toast";
 import { documentsApi } from "../api";
 import { b64decode } from "../collab";
 import { snapshotDocMaps, type DocMapsSnapshot } from "../docMaps";
+import { featureLevel } from "../sync/caps";
+import { combinePlans } from "../../../plan/carry";
 import { folderOfLocal, useLocalDocs } from "../local";
 import { useDocuments } from "../store";
 import type { OrgItem } from "./model";
@@ -112,16 +114,26 @@ export async function combineInto(
   for (let i = 0; i < sources.length; i += 1) {
     progress(`Reading ${i + 1} of ${sources.length}…`);
     const { content, maps } = await readContent(sources[i]);
-    parts.push({ title: sources[i].title, json: content, book: maps.book ?? null });
+    parts.push({ title: sources[i].title, json: content, book: maps.book ?? null, plan: maps.plan });
   }
   progress("Combining…");
   const { combineDocuments } = await import("../../../book/convert/combine");
-  const { content, bookSeed } = combineDocuments(parts, { titleHeadings: opts.titleHeadings });
+  // The sources' plans become one, their chapters keeping their ids (where
+  // the result can hold them).
+  const keepIds = opts.dest === "local" || (await featureLevel().catch(() => 1)) >= 5;
+  const planned = combinePlans(parts, keepIds);
+  const { content, bookSeed } = combineDocuments(
+    parts.map((part, i) => ({ ...part, json: planned.jsons[i] })),
+    { titleHeadings: opts.titleHeadings },
+  );
   // Book details carry over from the first source that has them — except
   // its title: the new manuscript is named for itself.
   const book = { ...(bookSeed ?? {}) };
   delete book["meta.title"];
-  const maps: DocMapsSnapshot = Object.keys(book).length ? { book } : {};
+  const maps: DocMapsSnapshot = {
+    ...(Object.keys(book).length ? { book } : {}),
+    ...(planned.plan ? { plan: planned.plan } : {}),
+  };
   progress("Creating the manuscript…");
   const { createLocalDocument, createServerDocument } = await import("../import/importFile");
   if (opts.dest === "local") {

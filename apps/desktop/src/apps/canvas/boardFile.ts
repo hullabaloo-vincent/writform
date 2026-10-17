@@ -33,7 +33,7 @@ export interface ImportResult {
 }
 
 /** Thrown (by reference) when the user cancels; dialogs swallow it. */
-export const IMPORT_CANCELLED = { code: "cancelled", message: "Import cancelled" };
+export const IMPORT_CANCELLED = { code: "cancelled", message: "Import canceled" };
 
 export const isCancelled = (e: unknown): boolean =>
   e === IMPORT_CANCELLED || (e as { code?: string } | null)?.code === "cancelled";

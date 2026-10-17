@@ -9,6 +9,7 @@ import { showRange } from "../../editor/ui/reveal";
 import { toast } from "../../platform/toast";
 import { findInDoc as findInWhole, replaceOne, replacementFor, type FindOptions, type Match } from "./find/findInDoc";
 import type { FindRequest } from "./shell/hooks";
+import { withKeys, isMacLike } from "../../editor/commands/catalog";
 
 /** Find in what can be seen: while one chapter is shown, only in it. */
 function findHere(state: EditorState, query: string, opts: FindOptions, limit?: number): ReturnType<typeof findInWhole> {
@@ -270,7 +271,7 @@ export function FindBar({
         {!readonly && (
           <button
             className="wf-icon"
-            title={showReplace ? "Hide replace" : "Replace (⌥⌘F / Ctrl+H)"}
+            title={showReplace ? "Hide replace" : withKeys("Replace", isMacLike() ? "Alt-Mod-f" : "Ctrl-h")}
             aria-expanded={showReplace}
             onClick={() => {
               setShowReplace(!showReplace);
@@ -302,10 +303,10 @@ export function FindBar({
         {toggle("wholeWord", "Whole words", <WholeWord size={15} />)}
         {toggle("exact", "Exact quotes and spaces (otherwise ’ matches ', “ matches \")", <Quote size={13} />)}
         {toggle("pattern", "Pattern: the words to find are a regular expression, and $1 in the replacement is what its first brackets found", <Regex size={14} />)}
-        <button className="wf-icon" title="Previous (⇧↵, ⇧⌘G)" onClick={() => step(-1)}>
+        <button className="wf-icon" title={withKeys("Previous", "Shift-Enter", "Mod-Shift-g")} onClick={() => step(-1)}>
           <ChevronUp size={13} />
         </button>
-        <button className="wf-icon" title="Next (↵, ⌘G)" onClick={() => step(1)}>
+        <button className="wf-icon" title={withKeys("Next", "Enter", "Mod-g")} onClick={() => step(1)}>
           <ChevronDown size={13} />
         </button>
         <button className="wf-icon" title="Close (Esc)" onClick={close}>
@@ -333,7 +334,7 @@ export function FindBar({
           <button disabled={!matches.length} onClick={replaceCurrent} title="Replace this match (↵)">
             Replace
           </button>
-          <button disabled={!matches.length} onClick={replaceEvery} title="Replace every match in one undo step (⌘↵)">
+          <button disabled={!matches.length} onClick={replaceEvery} title={withKeys("Replace every match in one undo step", "Mod-Enter")}>
             Replace all
           </button>
         </div>
