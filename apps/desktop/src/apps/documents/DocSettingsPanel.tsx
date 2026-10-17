@@ -51,6 +51,7 @@ import {
 } from "./docSettings";
 import { languageChoices } from "../../lib/languages";
 import { HeaderFooterForm } from "./HeaderFooterForm";
+import { withKeys, keyLabel } from "../../editor/commands/catalog";
 
 /**
  * The document inspector — Pages-style right panel with two tabs: Text
@@ -266,10 +267,10 @@ function TextTab({
         <div className="wf-inspector-seg" role="group" aria-label="Alignment">
           {(
             [
-              ["left", "Align left (⌘⇧L)", <AlignLeft key="l" size={15} />, cur?.align === null],
-              ["center", "Center (⌘⇧E)", <AlignCenter key="c" size={15} />, cur?.align === "center"],
-              ["right", "Align right (⌘⇧R)", <AlignRight key="r" size={15} />, cur?.align === "right"],
-              ["justify", "Justify (⌘⇧J)", <AlignJustify key="j" size={15} />, cur?.align === "justify"],
+              ["left", withKeys("Align left", "Mod-Shift-l"), <AlignLeft key="l" size={15} />, cur?.align === null],
+              ["center", withKeys("Center", "Mod-Shift-e"), <AlignCenter key="c" size={15} />, cur?.align === "center"],
+              ["right", withKeys("Align right", "Mod-Shift-r"), <AlignRight key="r" size={15} />, cur?.align === "right"],
+              ["justify", withKeys("Justify", "Mod-Shift-j"), <AlignJustify key="j" size={15} />, cur?.align === "justify"],
             ] as const
           ).map(([value, title, icon, active]) => (
             <button
@@ -474,7 +475,7 @@ function TextTab({
         <label className="wf-inspector-check">
           <span>
             Start on a new page
-            <small>Page break before this paragraph (⌘↩ inserts one)</small>
+            <small>Page break before this paragraph ({keyLabel("Mod-Enter")} inserts one)</small>
           </span>
           <input
             type="checkbox"

@@ -64,8 +64,10 @@ function SharedNoteCard({ content }: { content: string }) {
         disabled={saved}
         onClick={() => {
           // As a NEW note: one of yours with the same name is never replaced.
+          // It lands at the top of the vault (a slash in its title would
+          // make folders).
           void backend
-            .vaultWriteNew(title, note.content_md ?? "")
+            .vaultWriteNew(title.replace(/[/\\]+/g, " ").trim() || "Shared note", note.content_md ?? "")
             .then(() => setSaved(true))
             .catch(() => {});
         }}

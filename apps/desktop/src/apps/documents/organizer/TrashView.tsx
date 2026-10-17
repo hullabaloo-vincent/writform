@@ -49,6 +49,7 @@ export function TrashView({ onError }: { onError: (e: unknown) => void }) {
       synopsis: "",
       cover: null,
       tags: [],
+      sharedWith: [],
       deletedAt: i.deleted_at ?? 0,
     })),
     ...localTrash.map((t) => ({
@@ -68,6 +69,7 @@ export function TrashView({ onError }: { onError: (e: unknown) => void }) {
       synopsis: "",
       cover: null,
       tags: [],
+      sharedWith: [],
       deletedAt: t.deleted_at,
     })),
   ].sort((a, b) => b.deletedAt - a.deletedAt);

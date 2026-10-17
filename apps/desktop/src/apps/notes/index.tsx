@@ -4,6 +4,7 @@ import type { WritformApp } from "../../platform";
 import { usePlatform } from "../../platform";
 import { NotesView } from "./NotesView";
 import { useNotesPending } from "./pending";
+import { baseOf, parentOf } from "./paths";
 
 export const notesApp: WritformApp = {
   manifest: {
@@ -25,8 +26,8 @@ export const notesApp: WritformApp = {
           const hits = await backend.vaultSearch(q).catch(() => []);
           return hits.slice(0, 6).map((h) => ({
             id: `note-${h.name}`,
-            title: h.name,
-            subtitle: "Note",
+            title: baseOf(h.name),
+            subtitle: parentOf(h.name) ? `Note · ${parentOf(h.name)}` : "Note",
             run: () => {
               useNotesPending.getState().request(h.name);
               usePlatform.getState().setActiveApp("writform.notes");

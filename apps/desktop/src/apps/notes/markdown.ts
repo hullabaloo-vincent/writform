@@ -9,6 +9,7 @@
 import DOMPurify from "dompurify";
 import hljs from "highlight.js/lib/common";
 import { Marked, type Tokens, type TokenizerAndRendererExtension } from "marked";
+import { resolveLink } from "./paths";
 
 /** Obsidian callout aliases → the variants we actually style. */
 const CALLOUT_ALIASES: Record<string, string> = {
@@ -79,7 +80,9 @@ function escapeHtml(s: string): string {
  * differently. Assigned by `renderMarkdown` immediately before parsing —
  * `marked.parse` is synchronous, so nothing can interleave between the two.
  */
-let knownNotes = new Set<string>();
+let knownNotes: string[] = [];
+/** The note being rendered: a bare `[[name]]` looks in its folder first. */
+let fromNote = "";
 
 const wikiLink: TokenizerAndRendererExtension = {
   name: "wikiLink",
@@ -101,7 +104,7 @@ const wikiLink: TokenizerAndRendererExtension = {
   },
   renderer(token) {
     const { target, label } = token as unknown as { target: string; label: string };
-    const missing = knownNotes.has(target.toLowerCase()) ? "" : " missing";
+    const missing = resolveLink(knownNotes, target, fromNote) !== null ? "" : " missing";
     // A button, not an <a>: these resolve to vault files, not URLs.
     return `<button type="button" class="wf-wikilink${missing}" data-wf-note="${escapeHtml(
       target,
@@ -157,10 +160,12 @@ marked.use({
 
 /**
  * Renders note markdown to sanitized HTML. `notes` are the vault's current
- * note names, used to mark `[[links]]` that don't resolve yet.
+ * note names (paths), used to mark `[[links]]` that don't resolve yet, as
+ * seen from the note `from`.
  */
-export function renderMarkdown(src: string, notes: Iterable<string> = []): string {
-  knownNotes = new Set([...notes].map((n) => n.toLowerCase()));
+export function renderMarkdown(src: string, notes: Iterable<string> = [], from = ""): string {
+  knownNotes = [...notes];
+  fromNote = from;
   const html = marked.parse(src, { async: false });
   return DOMPurify.sanitize(html, { USE_PROFILES: { html: true, svg: true } });
 }

@@ -117,7 +117,8 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
   let noteCount = 0;
   for (const note of notes) {
     try {
-      zip.file(unique(`Notes/${sanitize(note.name)}`, "md"), await backend.vaultRead(note.name));
+      // In their folders, as in the vault.
+      zip.file(unique(`Notes/${note.name.split("/").map(sanitize).join("/")}`, "md"), await backend.vaultRead(note.name));
       noteCount += 1;
     } catch {
       skipped += 1;

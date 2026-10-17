@@ -8,6 +8,8 @@
 export interface ElementSpec {
   id: string;
   label: string;
+  /** Its key as ProseMirror writes it ("Mod-1": ⌘1 on a Mac, Ctrl+1
+   *  elsewhere). Shown through `keyLabel`, bound by FormatKeymap. */
   shortcut?: string;
   /** Picker grouping (Manuscript's book elements). */
   group?: string;
@@ -43,12 +45,12 @@ export const FORMAT_LABELS: Record<string, string> = {
 export const FORMAT_SPECS: Record<string, FormatSpec> = {
   screenplay: {
     elements: [
-      { id: "scene_heading", label: "Scene Heading", shortcut: "⌘1" },
-      { id: "action", label: "Action", shortcut: "⌘2" },
-      { id: "character", label: "Character", shortcut: "⌘3" },
-      { id: "parenthetical", label: "Parenthetical", shortcut: "⌘4" },
-      { id: "dialogue", label: "Dialogue", shortcut: "⌘5" },
-      { id: "transition", label: "Transition", shortcut: "⌘6" },
+      { id: "scene_heading", label: "Scene Heading", shortcut: "Mod-1" },
+      { id: "action", label: "Action", shortcut: "Mod-2" },
+      { id: "character", label: "Character", shortcut: "Mod-3" },
+      { id: "parenthetical", label: "Parenthetical", shortcut: "Mod-4" },
+      { id: "dialogue", label: "Dialogue", shortcut: "Mod-5" },
+      { id: "transition", label: "Transition", shortcut: "Mod-6" },
     ],
     defaultElement: "action",
     follower: {
@@ -91,45 +93,45 @@ export const FORMAT_SPECS: Record<string, FormatSpec> = {
       {
         id: "chapter_heading",
         label: "Chapter Heading",
-        shortcut: "⌘1",
+        shortcut: "Mod-1",
         group: "Headings",
         hint: "Numbered automatically by the book design",
       },
-      { id: "paragraph", label: "Body", shortcut: "⌘2", group: "Text" },
+      { id: "paragraph", label: "Body", shortcut: "Mod-2", group: "Text" },
       {
         id: "part_heading",
         label: "Part Heading",
-        shortcut: "⌘3",
+        shortcut: "Mod-3",
         group: "Headings",
         hint: "Starts a part (Part One, Part Two…) on its own page",
       },
       {
         id: "section_heading",
         label: "Unnumbered Chapter",
-        shortcut: "⌘4",
+        shortcut: "Mod-4",
         group: "Headings",
         hint: "Prologue, Epilogue, Foreword, Acknowledgments…",
       },
       {
         id: "chapter_subtitle",
         label: "Chapter Subtitle",
-        shortcut: "⌘5",
+        shortcut: "Mod-5",
         group: "Headings",
         hint: "A subtitle or date line under a chapter heading",
       },
-      { id: "subheading", label: "Subheading", shortcut: "⌘6", group: "Headings" },
-      { id: "epigraph", label: "Epigraph", shortcut: "⌘7", group: "Special" },
+      { id: "subheading", label: "Subheading", shortcut: "Mod-6", group: "Headings" },
+      { id: "epigraph", label: "Epigraph", shortcut: "Mod-7", group: "Special" },
       {
         id: "attribution",
         label: "Attribution",
-        shortcut: "⌘8",
+        shortcut: "Mod-8",
         group: "Special",
         hint: "The source of an epigraph or quote",
       },
       {
         id: "verse",
         label: "Verse",
-        shortcut: "⌘9",
+        shortcut: "Mod-9",
         group: "Special",
         hint: "Poetry or lyrics: Enter starts a new line, Enter twice a new stanza",
       },

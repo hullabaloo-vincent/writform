@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { applyLink, normalizeHref, removeLink } from "../format/commands";
 import { Flyout } from "./Flyout";
+import { withKeys } from "../commands/catalog";
 
 function LinkForm({ editor, close }: { editor: Editor; close: () => void }) {
   const current = (editor.getAttributes("link").href as string | undefined) ?? "";
@@ -85,7 +86,7 @@ function LinkForm({ editor, close }: { editor: Editor; close: () => void }) {
 export function LinkFlyout({ editor, openSignal, label }: { editor: Editor; openSignal?: number; label?: string }) {
   return (
     <Flyout
-      title="Link (⌘⇧K)"
+      title={withKeys("Link", "Mod-Shift-k")}
       icon={<Link2 size={15} />}
       label={label}
       caret={false}

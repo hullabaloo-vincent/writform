@@ -18,6 +18,7 @@ import { Ribbon } from "../src/editor/ui/Ribbon";
 import { placeOver, placeUnder } from "../src/editor/ui/bubblePlace";
 import { SelectionBubble } from "../src/editor/ui/SelectionBubble";
 import { useSelectionMenu } from "../src/editor/ui/selectionMenu";
+import { withKeys } from "../src/editor/commands/catalog";
 
 const g = globalThis as unknown as Record<string, unknown>;
 g.IS_REACT_ACT_ENVIRONMENT = true;
@@ -255,7 +256,7 @@ const marksAt = (editor: Editor, pos: number) => (editor.state.doc.nodeAt(pos)?.
   await act(async () => void press(panelItem("Strikethrough")!));
   await act(async () => void press(panelItem("Underline")!));
   check("ticking adds a tool, unticking takes one away — at once, the list still open", !!button("Strikethrough") && !button("Underline") && !!panelItem("Bold"));
-  check("…kept in the menu's own order", [...bubble()!.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")).join("|").startsWith("Bold (⌘B)|Italic (⌘I)|Strikethrough|Text colour"));
+  check("…kept in the menu's own order", [...bubble()!.querySelectorAll("button")].map((b) => b.getAttribute("aria-label")).join("|").startsWith(`${withKeys("Bold", "Mod-b")}|${withKeys("Italic", "Mod-i")}|Strikethrough|Text colour`));
   check("…and remembered on this device", (JSON.parse(localStorage.getItem("wf-selection-menu") ?? "{}") as { tools?: string[] }).tools?.includes("strike") === true);
   await act(async () => void press(panelItem("Back to the usual set")!));
   check("“Back to the usual set” undoes the tinkering", !button("Strikethrough") && !!button("Underline"));

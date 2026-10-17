@@ -122,6 +122,7 @@ import { TableBorders } from "./TableBorders";
 import { applyTableLook, TABLE_LOOKS } from "../tables/borders";
 import { sortRows, splitTable, tableToText } from "../tables/convert";
 import { SPECIAL_CHARACTERS, SYMBOL_GROUPS } from "./symbols";
+import { withKeys, keyLabel } from "../commands/catalog";
 
 /** How notes may be numbered, and where footnotes start again. */
 const NOTE_FORMAT_NAMES: [NoteFormat, string][] = [
@@ -243,10 +244,10 @@ const BORDERS: { sides: string; label: string }[] = [
 const LINES = [1, 1.15, 1.5, 2];
 
 const ALIGNMENTS: { value: "left" | "center" | "right" | "justify"; label: string; keys: string; icon: ReactNode }[] = [
-  { value: "left", label: "Left", keys: "⌘⇧L", icon: <AlignLeft size={14} /> },
-  { value: "center", label: "Centre", keys: "⌘⇧E", icon: <AlignCenter size={14} /> },
-  { value: "right", label: "Right", keys: "⌘⇧R", icon: <AlignRight size={14} /> },
-  { value: "justify", label: "Justified", keys: "⌘⇧J", icon: <AlignJustify size={14} /> },
+  { value: "left", label: "Left", keys: "Mod-Shift-l", icon: <AlignLeft size={14} /> },
+  { value: "center", label: "Centre", keys: "Mod-Shift-e", icon: <AlignCenter size={14} /> },
+  { value: "right", label: "Right", keys: "Mod-Shift-r", icon: <AlignRight size={14} /> },
+  { value: "justify", label: "Justified", keys: "Mod-Shift-j", icon: <AlignJustify size={14} /> },
 ];
 
 /**
@@ -435,8 +436,8 @@ export function Ribbon({
       label: "Undo",
       content: (
         <>
-          {btn("Undo (⌘Z)", <Undo2 size={15} />, () => chain().undo().run(), false, !editor.can().undo())}
-          {btn("Redo (⌘⇧Z)", <Redo2 size={15} />, () => chain().redo().run(), false, !editor.can().redo())}
+          {btn(withKeys("Undo", "Mod-z"), <Undo2 size={15} />, () => chain().undo().run(), false, !editor.can().undo())}
+          {btn(withKeys("Redo", "Mod-Shift-z"), <Redo2 size={15} />, () => chain().redo().run(), false, !editor.can().redo())}
         </>
       ),
     },
@@ -497,9 +498,9 @@ export function Ribbon({
       label: "Text",
       content: (
         <>
-          {btn("Bold (⌘B)", <Bold size={15} />, () => toggleWordMark(editor, "bold"), editor.isActive("bold"))}
-          {btn("Italic (⌘I)", <Italic size={15} />, () => toggleWordMark(editor, "italic"), editor.isActive("italic"))}
-          {btn("Underline (⌘U)", <Underline size={15} />, () => toggleWordMark(editor, "underline"), editor.isActive("underline"))}
+          {btn(withKeys("Bold", "Mod-b"), <Bold size={15} />, () => toggleWordMark(editor, "bold"), editor.isActive("bold"))}
+          {btn(withKeys("Italic", "Mod-i"), <Italic size={15} />, () => toggleWordMark(editor, "italic"), editor.isActive("italic"))}
+          {btn(withKeys("Underline", "Mod-u"), <Underline size={15} />, () => toggleWordMark(editor, "underline"), editor.isActive("underline"))}
           {rich && (
             <ColorFlyout
               title="Text colour"
@@ -541,7 +542,7 @@ export function Ribbon({
                 {rich && (
                   <FlyoutItem
                     checked={run.vscript === "sub"}
-                    hint="⌘="
+                    hint={keyLabel("Mod-=")}
                     onPick={() => {
                       toggleScript(editor, "sub");
                       close();
@@ -553,7 +554,7 @@ export function Ribbon({
                 {rich && (
                   <FlyoutItem
                     checked={run.vscript === "super"}
-                    hint="⌘⇧="
+                    hint={keyLabel("Mod-Shift-=")}
                     onPick={() => {
                       toggleScript(editor, "super");
                       close();
@@ -573,10 +574,10 @@ export function Ribbon({
                 </FlyoutItem>
                 <hr />
                 {/* (These two stay open: a size is often stepped more than once.) */}
-                <FlyoutItem hint="⌘⇧." onPick={() => stepRunSize(editor, 1, format)}>
+                <FlyoutItem hint={keyLabel("Mod-Shift-.")} onPick={() => stepRunSize(editor, 1, format)}>
                   <AArrowUp size={14} /> Larger
                 </FlyoutItem>
-                <FlyoutItem hint="⌘⇧," onPick={() => stepRunSize(editor, -1, format)}>
+                <FlyoutItem hint={keyLabel("Mod-Shift-,")} onPick={() => stepRunSize(editor, -1, format)}>
                   <AArrowDown size={14} /> Smaller
                 </FlyoutItem>
                 <hr />
@@ -744,9 +745,9 @@ export function Ribbon({
             )}
           </Flyout>
           )}
-          {rich && btn("Checklist (⌘⇧9)", <ListChecks size={15} />, () => toggleChecklist(editor), editor.isActive("taskList"))}
+          {rich && btn(withKeys("Checklist", "Mod-Shift-9"), <ListChecks size={15} />, () => toggleChecklist(editor), editor.isActive("taskList"))}
           {btn(
-            "Decrease indent (⇧Tab)",
+            withKeys("Decrease indent", "Shift-Tab"),
             <IndentDecrease size={15} />,
             () => (item ? chain().liftListItem(item).run() : stepIndent(editor, -1)),
             false,
@@ -776,7 +777,7 @@ export function Ribbon({
                 <FlyoutItem
                   key={a.value}
                   checked={(cur.align ?? "left") === a.value}
-                  hint={a.keys}
+                  hint={keyLabel(a.keys)}
                   onPick={() => {
                     setDocAlign(editor, a.value);
                     close();
@@ -934,7 +935,7 @@ export function Ribbon({
     {
       id: "pages",
       label: "Breaks",
-      content: btn("Page break (⌘↩)", <SeparatorHorizontal size={15} />, () => insertPageBreak(editor), false, false, "Page break"),
+      content: btn(withKeys("Page break", "Mod-Enter"), <SeparatorHorizontal size={15} />, () => insertPageBreak(editor), false, false, "Page break"),
     },
     {
       id: "table",
@@ -1060,7 +1061,7 @@ export function Ribbon({
                 <FlyoutItem onPick={pick(() => chain().setHorizontalRule().run())}>
                   <Minus size={14} /> Divider line
                 </FlyoutItem>
-                <FlyoutItem hint="⇧↩" onPick={pick(() => chain().setHardBreak().run())}>
+                <FlyoutItem hint={keyLabel("Shift-Enter")} onPick={pick(() => chain().setHardBreak().run())}>
                   <WrapText size={14} /> Line break
                 </FlyoutItem>
                 <FlyoutItem onPick={pick(() => insertDate(editor))}>
@@ -1306,7 +1307,7 @@ export function Ribbon({
     {
       id: "find",
       label: "Find",
-      content: actions.find ? btn("Find and replace (⌘F)", <Search size={15} />, actions.find, false, false, "Find") : null,
+      content: actions.find ? btn(withKeys("Find and replace", "Mod-f"), <Search size={15} />, actions.find, false, false, "Find") : null,
     },
     {
       id: "output",
@@ -1314,7 +1315,7 @@ export function Ribbon({
       content: (
         <>
           {actions.preview && btn("Preview: every page as it will print", <Eye size={15} />, actions.preview, false, false, "Preview")}
-          {actions.print && btn("Print (⌘P)", <Printer size={15} />, actions.print, false, false, "Print")}
+          {actions.print && btn(withKeys("Print", "Mod-p"), <Printer size={15} />, actions.print, false, false, "Print")}
         </>
       ),
     },
@@ -1561,8 +1562,8 @@ export function Ribbon({
       label: "Move",
       content: (
         <>
-          {btn("Move the picture up, over the block above (⌥↑)", <ArrowUp size={15} />, () => movePicture(editor, -1), false, !canMovePicture(editor, -1), "Up")}
-          {btn("Move the picture down, under the block below (⌥↓)", <ArrowDown size={15} />, () => movePicture(editor, 1), false, !canMovePicture(editor, 1), "Down")}
+          {btn(withKeys("Move the picture up, over the block above", "Alt-ArrowUp"), <ArrowUp size={15} />, () => movePicture(editor, -1), false, !canMovePicture(editor, -1), "Up")}
+          {btn(withKeys("Move the picture down, under the block below", "Alt-ArrowDown"), <ArrowDown size={15} />, () => movePicture(editor, 1), false, !canMovePicture(editor, 1), "Down")}
         </>
       ),
     },

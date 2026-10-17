@@ -3,6 +3,7 @@
  * import.meta.env.DEV is true — production bundles never include it.
  */
 
+import { resolveLink } from "../apps/notes/paths";
 import { browserDownload } from "./backend";
 import type {
   ApiResponse,
@@ -177,12 +178,21 @@ export function devPreviewBackend(): Backend {
   ];
   let voiceJoined: number | null = null;
   const vaultTrash: Record<string, string> = {};
+  const vaultFolders = new Set<string>(["Story"]);
+  const folderTrash: Record<string, { notes: Record<string, { content: string; mtime: number }>; folders: string[] }> = {};
+  const underFolder = (name: string, folder: string) => name.toLowerCase().startsWith(`${folder.toLowerCase()}/`);
+  const freeName = (name: string, taken: (n: string) => boolean) => {
+    let free = name;
+    for (let n = 2; taken(free); n += 1) free = `${name} ${n}`;
+    return free;
+  };
   const vault: Record<string, { content: string; mtime: number }> = {
     Welcome: {
       content: "# Welcome\n\nThis is your vault. Link notes like [[Ideas]].\n",
       mtime: Date.now() - 100000,
     },
     Ideas: { content: "# Ideas\n\n- a story about rain\n\nBack to [[Welcome]].\n", mtime: Date.now() },
+    "Story/Rain": { content: "# Rain\n\nFrom [[Ideas]].\n", mtime: Date.now() - 50000 },
   };
   /** This device's vote and when voting closed, by prompt. */
   const promptVotes: Record<number, { mine: number | null; closed: number | null }> = {};
@@ -1197,14 +1207,67 @@ export function devPreviewBackend(): Backend {
       return next;
     },
     async vaultBacklinks(name) {
-      const target = name.toLowerCase();
+      const names = Object.keys(vault);
       return Object.entries(vault)
-        .filter(
-          ([n, v]) =>
-            n.toLowerCase() !== target &&
-            extractWikiLinks(v.content).some((l) => l.toLowerCase() === target),
-        )
+        .filter(([n, v]) => n !== name && extractWikiLinks(v.content).some((l) => resolveLink(names, l, n) === name))
         .map(([n]) => n);
+    },
+    async vaultFolders() {
+      const all = new Set(vaultFolders);
+      for (const n of Object.keys(vault)) {
+        const parts = n.split("/").slice(0, -1);
+        parts.forEach((_, i) => all.add(parts.slice(0, i + 1).join("/")));
+      }
+      return [...all].sort((a, b) => a.localeCompare(b));
+    },
+    async vaultFolderCreate(path) {
+      if (vaultFolders.has(path)) throw { code: "name_taken", message: "there is already a folder of that name" } as CmdError;
+      vaultFolders.add(path);
+      return path;
+    },
+    async vaultFolderRename(path, newPath) {
+      for (const f of [...vaultFolders]) {
+        if (f === path || underFolder(f, path)) {
+          vaultFolders.delete(f);
+          vaultFolders.add(newPath + f.slice(path.length));
+        }
+      }
+      for (const n of Object.keys(vault)) {
+        if (!underFolder(n, path)) continue;
+        vault[newPath + n.slice(path.length)] = vault[n];
+        delete vault[n];
+      }
+      return newPath;
+    },
+    async vaultFolderDelete(path) {
+      const notes: Record<string, { content: string; mtime: number }> = {};
+      for (const n of Object.keys(vault)) {
+        if (!underFolder(n, path)) continue;
+        notes[n] = vault[n];
+        delete vault[n];
+      }
+      const folders = [...vaultFolders].filter((f) => f === path || underFolder(f, path));
+      folders.forEach((f) => vaultFolders.delete(f));
+      folderTrash[path] = { notes, folders };
+    },
+    async vaultFolderRestore(path) {
+      const kept = folderTrash[path];
+      if (!kept) throw { code: "io", message: "not in the trash" } as CmdError;
+      delete folderTrash[path];
+      kept.folders.forEach((f) => vaultFolders.add(f));
+      Object.assign(vault, kept.notes);
+      return path;
+    },
+    async vaultMove(name, folder) {
+      const note = vault[name];
+      if (!note) throw { code: "io", message: "note not found" } as CmdError;
+      const base = name.slice(name.lastIndexOf("/") + 1);
+      const target = folder ? `${folder}/${base}` : base;
+      if (target === name) return name;
+      const free = freeName(target, (n) => n in vault);
+      delete vault[name];
+      vault[free] = note;
+      return free;
     },
     async pluginsList() {
       return [];

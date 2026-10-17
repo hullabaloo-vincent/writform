@@ -33,6 +33,8 @@ export interface OrgItem {
   synopsis: string;
   cover: string | null;
   tags: string[];
+  /** Your own server documents: who they are shared with, by name. */
+  sharedWith: string[];
 }
 
 export function serverItem(i: DocumentListItem): OrgItem {
@@ -51,6 +53,7 @@ export function serverItem(i: DocumentListItem): OrgItem {
     access: i.my_access === "write" || i.my_access === "read" ? i.my_access : "owner",
     owner: i.my_access === "owner" ? null : i.document.owner,
     ...cardFields(i.card),
+    sharedWith: Array.isArray(i.shared_with) ? i.shared_with.filter((n): n is string => typeof n === "string") : [],
   };
 }
 
@@ -75,6 +78,7 @@ export function localItem(d: LocalDocMeta, folderId: string | null = null, snipp
     access: "owner",
     owner: null,
     ...cardFields(d.card),
+    sharedWith: [],
   };
 }
 

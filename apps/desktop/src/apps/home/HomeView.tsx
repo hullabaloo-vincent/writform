@@ -10,6 +10,7 @@ import { useSession } from "../../stores/session";
 import { isLocalBoard, useLocalBoards } from "../canvas/local";
 import { useCanvas } from "../canvas/store";
 import { cleanCard, parseCardCover } from "../documents/card";
+import { baseOf, parentOf } from "../notes/paths";
 import { FORMAT_LABELS } from "../documents/formats/elements";
 import { CardCover } from "../documents/organizer/DocCard";
 import { useLocalDocs } from "../documents/local";
@@ -95,8 +96,8 @@ export function HomeView() {
       notes.map((n) => ({
         kind: "note" as const,
         key: `note:${n.name}`,
-        title: n.name.replace(/\.md$/i, ""),
-        detail: "Note",
+        title: baseOf(n.name),
+        detail: parentOf(n.name) ? `Note · ${parentOf(n.name)}` : "Note",
         at: n.modified_at,
         place: "device" as const,
       })),

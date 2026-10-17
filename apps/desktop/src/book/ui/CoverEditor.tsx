@@ -18,6 +18,7 @@ import { estimatePages } from "../model/trims";
 import type { CoverPictures } from "./Cover";
 import { pagesKey, usePrintedPages } from "./printedPages";
 import { CoverSvg, useCoverScene, type CoverViewOf } from "./CoverView";
+import { withKeys } from "../../editor/commands/catalog";
 
 const messageOf = (e: unknown, fallback: string): string => (e as Partial<CmdError> | null)?.message || fallback;
 
@@ -381,10 +382,10 @@ export function CoverEditor({
             <input type="checkbox" checked={guides} onChange={(e) => setGuides(e.target.checked)} /> Guides
           </label>
           <span className="wf-cover-ed-steps">
-            <button type="button" className="wf-icon" title="Undo (⌘Z)" aria-label="Undo" disabled={readonly || past.current.length === 0} onClick={undo}>
+            <button type="button" className="wf-icon" title={withKeys("Undo", "Mod-z")} aria-label="Undo" disabled={readonly || past.current.length === 0} onClick={undo}>
               <Undo2 size={15} />
             </button>
-            <button type="button" className="wf-icon" title="Redo (⌘⇧Z)" aria-label="Redo" disabled={readonly || future.current.length === 0} onClick={redo}>
+            <button type="button" className="wf-icon" title={withKeys("Redo", "Mod-Shift-z")} aria-label="Redo" disabled={readonly || future.current.length === 0} onClick={redo}>
               <Redo2 size={15} />
             </button>
           </span>
