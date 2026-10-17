@@ -11,6 +11,7 @@ import {
   Focus as FocusIcon,
   HardDrive,
   History,
+  LayoutGrid,
   ListTree,
   MoveVertical,
   Share2,
@@ -111,7 +112,12 @@ import { autoCorrect } from "../../editor/autocorrect/AutoCorrect";
 import { capitalsHere } from "../../editor/autocorrect/where";
 import { EditPlaces } from "../../editor/EditPlaces";
 import { refreshTabStops, styleTabStops, TabStops } from "../../editor/format/TabStops";
-import { ChapterFocus } from "../../editor/ChapterFocus";
+import { ChapterFocus, focusEntry } from "../../editor/ChapterFocus";
+import { ChapterIdGuard } from "../../editor/nodes/ChapterId";
+import { showRange } from "../../editor/ui/reveal";
+import { knowsChapter } from "../../plan/planMap";
+import { hasPlan } from "../../plan/resolve";
+import type { PlanTab } from "../../plan/ui/PlanView";
 import { ChapterBar, useChapterFocus } from "./ChapterBar";
 import { Ruler, useRulerShown } from "../../editor/ui/Ruler";
 import { useIsPhone } from "../../editor/ui/Flyout";
@@ -136,6 +142,9 @@ import { withKeys } from "../../editor/commands/catalog";
  *  attachments), and every edit saves locally. */
 // The checker and its word lists are fetched when its panel first opens.
 const ProofPanel = lazy(() => import("../../proof/ui/ProofPanel").then((m) => ({ default: m.ProofPanel })));
+// So is the story plan, when it is first opened.
+const PlanView = lazy(() => import("../../plan/ui/PlanView").then((m) => ({ default: m.PlanView })));
+const PlanPanel = lazy(() => import("../../plan/ui/PlanPanel").then((m) => ({ default: m.PlanPanel })));
 
 export function LocalDocumentEditor() {
   const items = useLocalDocs((s) => s.items);
@@ -160,7 +169,7 @@ function LocalEditorInner({
    *  "Custom margins…"); see DocSettingsPanel. */
   const [setupAt, setSetupAt] = useState<{ section: SetupSection; n: number } | null>(null);
   const [panel, setPanel] = useState<
-    "none" | "history" | "outline" | "feedback" | "settings" | "book" | "preview" | "check"
+    "none" | "history" | "outline" | "feedback" | "settings" | "book" | "preview" | "check" | "plan"
   >("none");
   const [threads, setThreads] = useState<LocalThread[]>([]);
   const [highlightsOn, setHighlightsOn] = useState(
@@ -295,6 +304,8 @@ function LocalEditorInner({
       ReadAloudHighlight,
       Paginate.configure({ getSpec: () => specRef.current, getMap: () => pageMapRef.current, onLayout: (layout) => setPagesExact(layout ? layout.pages : null) }),
       formatKeymap(format),
+      // One heading per chapter id (the story plan's tie to a chapter).
+      ChapterIdGuard.configure({ known: (cid) => !!provider && knowsChapter(provider.doc, cid) }),
       // Editing, Suggesting or Viewing (suggestions are made under the name
       // this device knows you by).
       Suggesting.configure({ author: () => meRef.current }),
@@ -348,6 +359,11 @@ function LocalEditorInner({
   const [reading, setReading] = useState(false);
   const speaks = useMemo(() => canReadAloud(), []);
   const [compare, setCompare] = useState<{ before: CompareSide; after: CompareSide } | null>(null);
+  // The story plan: the whole of it over the page, and whose mentions the
+  // side panel steps through.
+  const [planOpen, setPlanOpen] = useState<{ tab: PlanTab; at?: { column?: string; card?: string; entry?: string } } | null>(null);
+  const [planMentions, setPlanMentions] = useState<string | null>(null);
+  const planned = hasPlan(format);
   const compareWith = (before: CompareSide) => {
     if (editor) setCompare({ before, after: { title: "This document now", doc: editor.getJSON() } });
   };
@@ -551,6 +567,12 @@ function LocalEditorInner({
     },
     check: () => setPanel("check"),
     history: () => setPanel("history"),
+    ...(planned
+      ? {
+          plan: (tab: PlanTab = "board") => setPlanOpen({ tab }),
+          planPanel: () => setPanel("plan"),
+        }
+      : {}),
     toggleFocus,
     goTo: () => setGoToOpen(true),
     ...(speaks ? { readAloud: () => setReading(true) } : {}),
@@ -720,6 +742,16 @@ function LocalEditorInner({
           >
             <ListTree size={16} />
           </button>
+          {planned && (
+            <button
+              title={withKeys("Story plan", "Alt-Mod-p")} data-label="Plan"
+              className={panel === "plan" || planOpen ? "active" : ""}
+              disabled={!editor}
+              onClick={() => (phone ? setPlanOpen({ tab: "board" }) : setPanel(panel === "plan" ? "none" : "plan"))}
+            >
+              <LayoutGrid size={16} />
+            </button>
+          )}
           <button
             title="Check the text for slips and for things written two ways (F7)" data-label="Check"
             className={panel === "check" ? "active" : ""}
@@ -793,7 +825,7 @@ function LocalEditorInner({
           </button>
           {focus && (
             <button
-              title="Typewriter scrolling: keep the line you're writing centred" data-label="Typewriter scrolling"
+              title="Typewriter scrolling: keep the line you're writing centered" data-label="Typewriter scrolling"
               className={typewriter ? "active" : ""}
               onClick={() => setTypewriter(!typewriter)}
             >
@@ -1080,7 +1112,24 @@ function LocalEditorInner({
             }
             onNavigate={() => setPanel("none")}
             onTidy={() => setConverting("tidy")}
+            onOpenPlan={planned ? () => setPlanOpen({ tab: "board" }) : undefined}
           />
+        )}
+        {panel === "plan" && planned && editor && (
+          <Suspense fallback={null}>
+            <PlanPanel
+              editor={editor}
+              ydoc={provider.doc}
+              format={format}
+              design={format === "manuscript" ? book.design : undefined}
+              readonly={false}
+              level={DOC_SCHEMA_LEVEL}
+              mentionsOf={planMentions}
+              onMentions={setPlanMentions}
+              onOpenFull={(at) => setPlanOpen({ tab: at?.entry ? "cast" : "board", at })}
+              onClose={() => setPanel("none")}
+            />
+          </Suspense>
         )}
         {panel === "check" && editor && (
           <Suspense fallback={null}>
@@ -1189,6 +1238,35 @@ function LocalEditorInner({
         />
       )}
       {compare && <CompareView before={compare.before} after={compare.after} onClose={() => setCompare(null)} />}
+      {planOpen && planned && editor && (
+        <Suspense fallback={null}>
+          <PlanView
+            editor={editor}
+            ydoc={provider.doc}
+            format={format}
+            design={format === "manuscript" ? book.design : undefined}
+            readonly={false}
+            level={DOC_SCHEMA_LEVEL}
+            tab={planOpen.tab}
+            at={planOpen.at}
+            onTab={(tab) => setPlanOpen({ tab })}
+            onClose={() => setPlanOpen(null)}
+            onShowInText={(pos) => {
+              setPlanOpen(null);
+              showRange(editor.view, pos + 1, pos + 1, true);
+            }}
+            onShowOnly={(pos) => {
+              setPlanOpen(null);
+              focusEntry(editor, pos);
+            }}
+            onShowMentions={(entry) => {
+              setPlanOpen(null);
+              setPlanMentions(entry);
+              setPanel("plan");
+            }}
+          />
+        </Suspense>
+      )}
       {shareOpen && <ShareLocalDialog meta={meta} onClose={() => setShareOpen(false)} />}
     </div>
   );

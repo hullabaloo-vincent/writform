@@ -22,7 +22,7 @@ says Ctrl and ⌥ where it says Alt.
    gutter, facing pages, headers and footers, page numbers. **Margins ▸
    Custom margins…** opens that panel at Margins: type a figure (1.1, say)
    or step by quarter inches with − and +.
-2. For a header or footer, type in its left, centre or right slot and use
+2. For a header or footer, type in its left, center or right slot and use
    **Add a field** for the page number, page count, title, author or date.
    Tick *Different first page* to leave a title page clean.
 3. Press the eye button to **preview** every page as it will print.
@@ -78,7 +78,7 @@ Anything the ribbon does can also be asked for by name. Press **Ctrl+K**
 "zoom page width") and press Enter. **Ctrl+/** lists every key.
 
 1. Select words: a small menu appears above them with bold, italic,
-   underline, colour, highlight, link and comment. The ribbon's **Home**
+   underline, color, highlight, link and comment. The ribbon's **Home**
    tab has those and the font, size and style. The **⋯** button beside
    them has the rest (strikethrough, sub- and superscript, change case,
    clear formatting). With nothing selected, a choice applies to what you
@@ -117,7 +117,7 @@ Anything the ribbon does can also be asked for by name. Press **Ctrl+K**
 - **Go back to where you were writing:** press **Shift+F5**. Press it
   again for the place before.
 - **Move a section:** open the outline, press **Reorder**, and use the
-  arrows beside a heading. Up and down move it past its neighbours. Left
+  arrows beside a heading. Up and down move it past its neighbors. Left
   and right change its level.
 - **Work on one chapter at a time:** open the outline and press the
   button at the end of the chapter's row. The bar over the page steps to
@@ -125,6 +125,28 @@ Anything the ribbon does can also be asked for by name. Press **Ctrl+K**
 - **See why text looks the way it does:** open the sliders panel. The top
   of its Text tab names the style, then what the paragraph and the words
   have of their own, with a Clear beside each.
+
+## Plan a book's story
+
+1. Open the document and press the **Plan** button in the header (or
+   Ctrl+Alt+P). The panel beside the text shows the chapter you are in.
+   Press **Open the board** to see them all.
+2. Press **Plot line** and name the first one (Main plot is filled in).
+   Add more for subplots or for each character's thread.
+3. Press **+** in a cell to add a card to that chapter and plot line.
+   Write its title and what happens, and choose who is in it with
+   **Cast**. **Done** keeps it.
+4. Drag cards to move them. On a phone or a tablet, hold a card still for
+   a moment before you drag it. Ideas with no chapter yet go under the
+   board with **Planning note**.
+5. No chapters yet? Press **Add the first chapter**, or a column's ⋯ and
+   **Add a chapter after**. The chapter is written into the text.
+6. On **Cast and world**, add the people, places and things of the story,
+   with the other names they go by. Each shows the chapters it appears
+   in. **Step through the mentions** goes to each one in the text.
+7. On **Timeline**, add events in the order they happen and choose the
+   chapter that tells each. A flashback is marked where the book's order
+   crosses the story's.
 
 ## Add a table, a footnote or a table of contents
 
@@ -150,7 +172,7 @@ Anything the ribbon does can also be asked for by name. Press **Ctrl+K**
 1. On the ribbon's **Review** tab, set the mode to **Suggesting** (in the
    other formats: open Feedback and choose **Changes**, where the same
    switch is). A *Suggesting* tag stays on the ribbon while it is on.
-2. Edit as usual. What you add is underlined in your colour, what you
+2. Edit as usual. What you add is underlined in your color, what you
    delete is struck through and stays in place, and a paragraph you split
    or join shows a ¶ where the break is. Formatting (bold, styles, lists)
    still changes directly.
@@ -281,7 +303,7 @@ through the differences. *Whole text* shows the unchanged paragraphs too,
 *One column* puts both versions in one, and the swap button turns the
 sides round. Comparing doesn't change anything.
 
-Older versions of the app can't open a document once it uses colour,
+Older versions of the app can't open a document once it uses color,
 highlight, a font or size on part of a paragraph, indents, borders,
 checklists, tables, footnotes, a table of contents, sections or suggested
 changes. They're asked to update, and nothing is lost. If your server
@@ -317,10 +339,10 @@ Open a manuscript, press the book button and choose **Cover**.
    words out of, where the spine folds and where the barcode goes.
 3. **Add words.** *Start with the book's title and author* puts the
    title, the author, a spine line and the blurb in their usual places.
-   Click any of them to change what it says, its font, size and colour.
+   Click any of them to change what it says, its font, size and color.
    Drag it where it belongs and pull its side handles to set its width.
 4. **Place a picture.** Click a part of the cover that has no words on
-   it. You can choose its picture or its paper colour there, make the
+   it. You can choose its picture or its paper color there, make the
    picture larger, and drag it to choose which part shows.
 5. **Save.** *Make the cover* builds the PDF to upload to the printer.
    *Make a template* builds a PDF at the exact size with the guides on
@@ -386,8 +408,8 @@ Click a picture to select it. The **Picture** tab opens.
 - **Move it.** Drag the handle on its top left corner to where it should
   go. A line shows the place between two blocks. *Up* and *Down* on the
   tab, or Alt+↑ and Alt+↓, move it one block at a time.
-- **Set it left, centre or right** with the Position buttons.
-- **Frame it.** *Border* picks a colour, and the box beside it the
+- **Set it left, center or right** with the Position buttons.
+- **Frame it.** *Border* picks a color, and the box beside it the
   thickness. *Corners* rounds them, all the way to a circle.
 - **Size it** by dragging a corner, or type inches under *Size*.
 - **Caption** puts a line of text under it. **Description** says what it
@@ -397,7 +419,7 @@ Click a picture to select it. The **Picture** tab opens.
 
 Documents → **Import**, pick the `.docx`. Headings and styles, lists and
 checklists, tables, footnotes, a table of contents, links, pictures, fonts,
-colours, spacing, indents, sections and the page setup come across, and
+colors, spacing, indents, sections and the page setup come across, and
 Word's tracked changes arrive as suggested changes you can accept or reject
 (see above). A note after the import says what couldn't be kept (text
 boxes, equations, drawn shapes). A table laid out wider than its page is
@@ -419,7 +441,7 @@ edit, not a picture of the pages.
 - **A password** is asked for if the file has one.
 - **A scan** holds pictures of pages and no text. You are asked whether to
   **Read the text** or **Keep as pictures**. Reading is done on this
-  device by the system's own recogniser (Mac, iPhone and iPad), a page at
+  device by the system's own recognizer (Mac, iPhone and iPad), a page at
   a time, and is worth a read through afterwards.
 - **A long file** shows how far it is. **Cancel** stops it and nothing is
   made.

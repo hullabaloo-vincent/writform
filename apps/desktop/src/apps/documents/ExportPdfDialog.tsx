@@ -128,7 +128,7 @@ export function ExportPdfDialog({
         <input type="checkbox" checked={options.archive} disabled={busy} onChange={(e) => choose({ archive: e.target.checked })} />
         <span>
           Archive copy (PDF/A)
-          <small>A file made to open the same way in many years. Its fonts and what its colours mean are kept inside it.</small>
+          <small>A file made to open the same way in many years. Its fonts and what its colors mean are kept inside it.</small>
         </span>
       </label>
 

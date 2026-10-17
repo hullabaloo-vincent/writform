@@ -17,6 +17,7 @@ import { Fragment, type Node as PmNode } from "@tiptap/pm/model";
 
 import { UNTRACKED_META } from "../../editor/review/TrackMarks";
 import { compactDocJson } from "./compactJson";
+import { carryChapterIds } from "../../plan/carry";
 
 /** JSON size of one transaction's inserted blocks (well under any server cap). */
 const CHUNK_JSON_BYTES = 96 * 1024;
@@ -242,7 +243,9 @@ export async function applyRestore(
   target: JSONContent,
 ): Promise<"incremental" | "replaced"> {
   const schema = editor.schema;
-  const compactTarget = compactDocJson(target);
+  // Chapters planned since the version was saved keep their ids (and so
+  // their cards).
+  const compactTarget = compactDocJson(carryChapterIds(editor.state.doc, target));
   let targetBlocks = compactTarget.content ?? [];
   if (targetBlocks.length === 0) targetBlocks = [{ type: "paragraph" }];
 

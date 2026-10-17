@@ -84,8 +84,8 @@ const merged = (a: Vocab, b: Vocab): Vocab => {
     }
   }
   check(
-    "levels 2, 3 and 4 together are exactly what the document schema adds to level 1",
-    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]))),
+    "levels 2 to 5 together are exactly what the document schema adds to level 1",
+    JSON.stringify(sorted(beyond)) === JSON.stringify(sorted(merged(merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]), VOCAB[5]))),
     JSON.stringify(sorted(beyond)),
   );
   // Level 2 shipped in 1.1.0: it is what it was then, for good.
@@ -95,8 +95,12 @@ const merged = (a: Vocab, b: Vocab): Vocab => {
   // Level 3 shipped in 1.1.2: frozen too.
   const SHIPPED_3 = '{"nodes":{"image":["bdr","round"],"tableCell":["bdr"]},"marks":{}}';
   check("level 3 is frozen as it shipped: a cell's own lines and a picture's outline and corners", JSON.stringify(sorted(VOCAB[3])) === SHIPPED_3, JSON.stringify(sorted(VOCAB[3])));
-  check("level 4 so far: a chapter's own art, tab stops, capitals, letter spacing, underline styles, a double line through, table rows, cells and place, and a picture's crop and turn", JSON.stringify(sorted(VOCAB[4])) === '{"nodes":{"heading":["art","artFacing","tabs"],"image":["crop","rot"],"paragraph":["art","artFacing","tabs"],"table":["align","ind"],"tableCell":["va"],"tableRow":["h","keep"]},"marks":{"caps":["v"],"letterSpacing":["pt"],"strike":["dbl"],"underline":["c","kind"]}}', JSON.stringify(sorted(VOCAB[4])));
-  check("this build writes level 4", DOC_SCHEMA_LEVEL === 4);
+  // Level 4 shipped in 1.2.1: frozen too.
+  const SHIPPED_4 =
+    '{"nodes":{"heading":["art","artFacing","tabs"],"image":["crop","rot"],"paragraph":["art","artFacing","tabs"],"table":["align","ind"],"tableCell":["va"],"tableRow":["h","keep"]},"marks":{"caps":["v"],"letterSpacing":["pt"],"strike":["dbl"],"underline":["c","kind"]}}';
+  check("level 4 is frozen as it shipped: a chapter's own art, tab stops, capitals, letter spacing, underline styles, a double line through, table rows, cells and place, and a picture's crop and turn", JSON.stringify(sorted(VOCAB[4])) === SHIPPED_4, JSON.stringify(sorted(VOCAB[4])));
+  check("level 5 so far: a chapter's hidden id", JSON.stringify(sorted(VOCAB[5])) === '{"nodes":{"heading":["cid"],"paragraph":["cid"]},"marks":{}}', JSON.stringify(sorted(VOCAB[5])));
+  check("this build writes level 5", DOC_SCHEMA_LEVEL === 5);
 }
 
 const Sparkle = Mark.create({
@@ -133,7 +137,7 @@ const level3 = (history = true): Extensions => [...docContentExtensions({ histor
 // levels, the last of them unknown to the build.)
 const VOCAB3: Record<number, Vocab> = {
   1: VOCAB[1],
-  2: merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]),
+  2: merged(merged(merged(VOCAB[2], VOCAB[3]), VOCAB[4]), VOCAB[5]),
   3: { nodes: { xCallout: [], xAside: ["kind"], paragraph: ["xGlow"] }, marks: { xSparkle: ["c"] } },
 };
 const lv = levelsFor(VOCAB3);
@@ -168,6 +172,17 @@ const future = doc(
 // ---------------------------------------------------------------- detection: JSON
 
 check("plain content is level 1", lv.ofJson(plain) === 1);
+{
+  // A chapter's hidden id (level 5), with the build's own tables.
+  const planned = doc(p("One", { element: "chapter_heading", cid: "a1b2c3d4" }), p("The chapter's text."));
+  check("a chapter's hidden id needs level 5", levels.ofJson(planned) === 5);
+  const down = downlevelJson(planned, 4, schema2);
+  check("for a level-4 server the id goes and the heading and text stay", levels.ofJson(down) <= 4 && JSON.stringify(down).includes("The chapter") && !JSON.stringify(down).includes("a1b2c3d4"));
+  const e = new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: planned });
+  check("the id is written on the heading and read back from it", e.getHTML().includes('data-cid="a1b2c3d4"') && new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: e.getHTML() }).getJSON().content?.[0].attrs?.cid === "a1b2c3d4");
+  const junk = new Editor({ element: mountPoint(), extensions: docContentExtensions(), content: '<p data-cid="NOT AN ID">x</p>' });
+  check("…and nothing else is taken for one", junk.getJSON().content?.[0].attrs?.cid === null);
+}
 {
   // A chapter's own art (level 4), with the build's own tables.
   const art = "600x900 writform-att://attachment/3";

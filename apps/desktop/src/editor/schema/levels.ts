@@ -126,9 +126,7 @@ const LEVEL_3: Vocab = {
  *  words sit (editor/tables/Table.ts), and a picture's crop and quarter
  *  turns (editor/nodes/Image.ts).
  *
- *  Not released yet: until a version ships with it, later vocabulary may
- *  still join this table. From that release on it is frozen and what comes
- *  after takes level 5. */
+ *  Shipped in 1.2.1, and frozen: nothing joins it now. */
 const LEVEL_4: Vocab = {
   nodes: {
     paragraph: ["art", "artFacing", "tabs"],
@@ -146,10 +144,25 @@ const LEVEL_4: Vocab = {
   },
 };
 
-export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2, 3: LEVEL_3, 4: LEVEL_4 };
+/** Level 5: a chapter's hidden id on its heading (`cid`:
+ *  editor/nodes/ChapterId.ts), which the story plan ties cards and events
+ *  to.
+ *
+ *  Not released yet: until a version ships with it, later vocabulary may
+ *  still join this table. From that release on it is frozen and what comes
+ *  after takes level 6. */
+const LEVEL_5: Vocab = {
+  nodes: {
+    paragraph: ["cid"],
+    heading: ["cid"],
+  },
+  marks: {},
+};
+
+export const VOCAB: Readonly<Record<number, Vocab>> = { 1: LEVEL_1, 2: LEVEL_2, 3: LEVEL_3, 4: LEVEL_4, 5: LEVEL_5 };
 
 /** The newest level this build's editor understands. */
-export const DOC_SCHEMA_LEVEL = 4;
+export const DOC_SCHEMA_LEVEL = 5;
 
 /** The level of content this build doesn't know at all. */
 export const UNKNOWN_LEVEL = Infinity;

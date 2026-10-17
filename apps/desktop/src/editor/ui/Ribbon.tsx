@@ -245,7 +245,7 @@ const LINES = [1, 1.15, 1.5, 2];
 
 const ALIGNMENTS: { value: "left" | "center" | "right" | "justify"; label: string; keys: string; icon: ReactNode }[] = [
   { value: "left", label: "Left", keys: "Mod-Shift-l", icon: <AlignLeft size={14} /> },
-  { value: "center", label: "Centre", keys: "Mod-Shift-e", icon: <AlignCenter size={14} /> },
+  { value: "center", label: "Center", keys: "Mod-Shift-e", icon: <AlignCenter size={14} /> },
   { value: "right", label: "Right", keys: "Mod-Shift-r", icon: <AlignRight size={14} /> },
   { value: "justify", label: "Justified", keys: "Mod-Shift-j", icon: <AlignJustify size={14} /> },
 ];
@@ -503,7 +503,7 @@ export function Ribbon({
           {btn(withKeys("Underline", "Mod-u"), <Underline size={15} />, () => toggleWordMark(editor, "underline"), editor.isActive("underline"))}
           {rich && (
             <ColorFlyout
-              title="Text colour"
+              title="Text color"
               icon={<Baseline size={15} />}
               value={run.mixed.color ? null : run.color}
               colors={TEXT_COLORS}
@@ -612,7 +612,7 @@ export function Ribbon({
                         {label}
                       </FlyoutItem>
                     ))}
-                    <ColorFlyout title="Underline colour" icon={<Underline size={14} />} label="Underline colour" className="wf-flyout-row" value={curDepth(editor).ulc} colors={TEXT_COLORS} noneLabel="As the text" onPick={(c) => setUnderlineColor(editor, c)} />
+                    <ColorFlyout title="Underline color" icon={<Underline size={14} />} label="Underline color" className="wf-flyout-row" value={curDepth(editor).ulc} colors={TEXT_COLORS} noneLabel="As the text" onPick={(c) => setUnderlineColor(editor, c)} />
                     <FlyoutItem
                       checked={curDepth(editor).dstrike}
                       onPick={() => {

@@ -86,7 +86,7 @@ sender's `sl` and the server's `max_schema_level`, else 400
 step. From level 2 up, `document.update` is sent to `docv{level}:{id}`
 instead of `document:{id}`. Clients left in the plain room get
 `document.deleted` with `outdated: <level>` when a document is raised, and
-never the newer content. Level 2 is text colour, highlight, a font or size
+never the newer content. Level 2 is text color, highlight, a font or size
 on part of a paragraph, sub/superscript, paragraph indents, borders and
 shading, checklists, tables, footnotes and endnotes, a table of contents,
 picture placement and captions, sections, and tracked changes. Level 3 is

@@ -157,7 +157,7 @@ export function StyleDialog({
             </div>
           </div>
           <div className="wf-inspector-row">
-            <span>Colour</span>
+            <span>Color</span>
             <div className="wf-style-colors">
               <button type="button" className={`wf-color-none${draft.color === null ? " current" : ""}`} onClick={() => set({ color: null })}>
                 Automatic
@@ -175,7 +175,7 @@ export function StyleDialog({
               ))}
               <input
                 type="color"
-                aria-label="Another colour"
+                aria-label="Another color"
                 value={draft.color ?? "#000000"}
                 onChange={(e) => {
                   const hex = toHexColor(e.target.value);
@@ -190,7 +190,7 @@ export function StyleDialog({
               {(
                 [
                   ["left", "Left", <AlignLeft key="l" size={15} />],
-                  ["center", "Centre", <AlignCenter key="c" size={15} />],
+                  ["center", "Center", <AlignCenter key="c" size={15} />],
                   ["right", "Right", <AlignRight key="r" size={15} />],
                   ["justify", "Justified", <AlignJustify key="j" size={15} />],
                 ] as [StyleAlign, string, React.ReactNode][]

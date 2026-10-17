@@ -3328,6 +3328,7 @@ details.wf-callout > .wf-callout-title::-webkit-details-marker {
 .wf-settings-tabs button {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
   gap: 8px;
   padding: 8px 12px;
   text-align: left;
@@ -8563,6 +8564,49 @@ textarea.wf-el-shape-text {
   border-radius: var(--wf-radius-md);
   overflow: hidden;
   margin: 6px 0;
+}
+
+/* The profile forms (on this device and on a server): each label over its
+   field, everything from the left, one width throughout. */
+.wf-profile-form {
+  max-width: 520px;
+}
+.wf-profile-form .wf-settings-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: 18px;
+}
+.wf-profile-form .wf-settings-field > input,
+.wf-profile-form .wf-settings-field > textarea {
+  flex: none;
+  width: 100%;
+}
+.wf-profile-form .wf-settings-field.wf-field-row {
+  align-items: center;
+  justify-content: flex-start;
+}
+.wf-profile-form .wf-field-row > input[type="checkbox"],
+.wf-profile-form .wf-field-row > input[type="color"] {
+  width: auto;
+  margin: 0;
+}
+.wf-profile-form .wf-field-row > input[type="color"] {
+  width: 42px;
+}
+.wf-profile-form .wf-connect-row {
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0;
+}
+.wf-profile-form .wf-connect-row > button {
+  flex: none;
+}
+.wf-profile-form .wf-banner-preview {
+  max-width: none;
+  margin: 0;
 }
 
 .wf-profile-avatar {
@@ -13883,11 +13927,33 @@ body {
 .wf-home-foot {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 10px;
+  align-items: center;
+  gap: 6px 12px;
   padding-top: 14px;
   border-top: 1px solid var(--wf-border);
   color: var(--wf-text-dim);
+}
+/* A real button: it makes a file. */
+.wf-home-export {
+  flex: none;
+}
+/* "Try again" sits on the line it belongs to, as words that act. */
+.wf-home-retry {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 0;
+  height: auto;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--wf-accent);
+  font-size: inherit;
+  line-height: inherit;
+}
+.wf-home-retry:hover:not(:disabled) {
+  background: transparent;
+  text-decoration: underline;
 }
 
 /* ---- Font picker ---- */
@@ -17089,5 +17155,1072 @@ body {
   .wf-proof-words li {
     min-height: 40px;
     font-size: 14px;
+  }
+}
+
+/* ------------------------------------------------------------------ the story plan
+   (src/plan/ui): the board of plot lines by chapters, the cast and world,
+   the timeline, and the panel beside the text. */
+
+:root {
+  --wf-plan-a: #e5727a;
+  --wf-plan-b: #e8a05a;
+  --wf-plan-c: #d9c35c;
+  --wf-plan-d: #6cbf7f;
+  --wf-plan-e: #4fb8b0;
+  --wf-plan-f: #6c9cf0;
+  --wf-plan-g: #a986e8;
+  --wf-plan-h: #9a9aad;
+  --wf-plan-rowhead: 44px;
+  --wf-plan-col: 248px;
+}
+
+.wf-plan-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: flex;
+  flex-direction: column;
+  background: var(--wf-bg);
+  color: var(--wf-text);
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left);
+  animation: wf-backdrop-in 0.12s ease-out;
+  outline: none;
+}
+.wf-plan-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--wf-border);
+  flex-wrap: wrap;
+}
+.wf-plan-bar h2 {
+  margin: 0;
+  font-size: 17px;
+}
+.wf-plan-close {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.wf-plan-tabs,
+.wf-plan-layout {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+}
+.wf-plan-tabs button,
+.wf-plan-layout button {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  background: transparent;
+  color: var(--wf-text-dim);
+  font-size: 13px;
+}
+.wf-plan-layout button {
+  padding: 0 8px;
+}
+.wf-plan-tabs button.active,
+.wf-plan-layout button.active {
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+}
+.wf-plan-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-plan-search input {
+  width: 210px;
+  height: 30px;
+  font-size: 13px;
+}
+.wf-plan-note {
+  margin: 8px 14px;
+  padding: 8px 12px;
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  color: var(--wf-text-dim);
+  font-size: 13px;
+}
+.wf-plan-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wf-plan-dim {
+  color: var(--wf-text-dim);
+  font-size: 12px;
+}
+.wf-plan-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.wf-plan-link,
+.wf-plan-danger {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: auto;
+  font-size: 12px;
+  color: var(--wf-accent);
+  cursor: pointer;
+  white-space: normal;
+  text-align: left;
+}
+.wf-plan-danger {
+  color: var(--wf-danger);
+  font-size: 13px;
+}
+.wf-plan-row-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 6px;
+  height: auto;
+  min-height: 28px;
+  padding: 4px 10px;
+  font-size: 13px;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+}
+.wf-plan-row-button.active {
+  border-color: var(--wf-accent);
+}
+.wf-plan-empty {
+  padding: 24px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  font-size: 14px;
+}
+.wf-plan-name-in {
+  width: 100%;
+  height: 30px;
+  font-size: 13px;
+}
+
+/* An icon beside its words in a menu row. */
+.wf-plan-iconrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-plan-iconrow svg {
+  flex: none;
+}
+
+/* The base button is at least 30px tall: the plan's small buttons, round
+   swatches and words that are buttons are their own size. */
+.wf-plan-link,
+.wf-plan-danger,
+.wf-plan-band-name,
+.wf-plan-colhead-title,
+.wf-plan-col-more,
+.wf-plan-line-more,
+.wf-plan-card-more,
+.wf-plan-chip,
+.wf-plan-chip button,
+.wf-plan-event-move button {
+  min-height: 0;
+}
+
+/* -------------------------------------------------- the board */
+
+.wf-plan-board {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.wf-plan-scroll {
+  flex: 1;
+  min-height: 120px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.wf-plan-grid {
+  display: grid;
+  width: max-content;
+  min-width: 100%;
+  align-items: stretch;
+}
+.wf-plan-corner {
+  position: sticky;
+  left: 0;
+  top: 0;
+  z-index: 4;
+  background: var(--wf-bg);
+  border-bottom: 1px solid var(--wf-border);
+  border-right: 1px solid var(--wf-border);
+}
+.wf-plan-corner.under-band {
+  top: 34px;
+}
+.wf-plan-band {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  background: var(--wf-bg-raised);
+  border-bottom: 1px solid var(--wf-border);
+  border-right: 1px solid var(--wf-border);
+}
+.wf-plan-band.none {
+  background: var(--wf-bg);
+}
+.wf-plan-band-name {
+  border: none;
+  background: transparent;
+  height: auto;
+  padding: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--wf-text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wf-plan-colhead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  background: var(--wf-bg);
+  border-bottom: 1px solid var(--wf-border);
+  border-right: 1px solid var(--wf-border);
+  min-width: 0;
+}
+.wf-plan-grid > .wf-plan-band ~ .wf-plan-colhead {
+  top: 34px;
+}
+.wf-plan-colhead.add,
+.wf-plan-colhead.adding {
+  justify-content: center;
+}
+.wf-plan-colhead-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+.wf-plan-colhead-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.wf-plan-colhead-title {
+  border: none;
+  background: transparent;
+  padding: 0;
+  height: auto;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--wf-text);
+  text-align: left;
+  justify-content: flex-start;
+  white-space: normal;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wf-plan-colhead-meta {
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-col-more,
+.wf-plan-line-more,
+.wf-plan-card-more {
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border-color: transparent;
+  background: transparent;
+  flex: none;
+}
+.wf-plan-linehead {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 0;
+  background: var(--wf-bg);
+  border-right: 1px solid var(--wf-border);
+  border-bottom: 1px solid var(--wf-border);
+  border-left: 3px solid var(--wf-plan-tint, transparent);
+}
+.wf-plan-linehead-name {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-height: 220px;
+}
+.wf-plan-linehead .wf-plan-name-in {
+  width: 140px;
+  position: absolute;
+  left: 4px;
+  top: 8px;
+  z-index: 5;
+}
+.wf-plan-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  min-height: 150px;
+  border-right: 1px solid var(--wf-border);
+  border-bottom: 1px solid var(--wf-border);
+  min-width: 0;
+}
+.wf-plan-cell.over,
+.wf-plan-loose.over .wf-plan-loose-cards {
+  background: var(--wf-bg-raised);
+  outline: 2px dashed var(--wf-accent);
+  outline-offset: -4px;
+}
+.wf-plan-cell.gap {
+  min-height: 0;
+}
+.wf-plan-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  border: 1px dashed var(--wf-border);
+  background: transparent;
+  color: var(--wf-text-dim);
+  border-radius: var(--wf-radius-sm);
+  opacity: 0;
+}
+.wf-plan-cell.empty .wf-plan-add {
+  flex: 1;
+  opacity: 1;
+}
+.wf-plan-cell:hover .wf-plan-add,
+.wf-plan-add:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .wf-plan-add {
+    opacity: 1;
+  }
+}
+.wf-plan-caret {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--wf-accent);
+  flex: none;
+}
+.wf-plan-castcell {
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
+  padding: 8px 10px;
+  border-right: 1px solid var(--wf-border);
+  border-bottom: 1px solid var(--wf-border);
+}
+.wf-plan-nolines,
+.wf-plan-addline-cell {
+  padding: 10px 14px;
+  position: sticky;
+  left: 0;
+  max-width: 100vw;
+}
+.wf-plan-nolines p {
+  margin: 0;
+  color: var(--wf-text-dim);
+  font-size: 13px;
+}
+.wf-plan-addline {
+  display: flex;
+  max-width: 320px;
+}
+.wf-plan-ghost {
+  position: fixed;
+  z-index: 200;
+  pointer-events: none;
+  max-width: 240px;
+  padding: 8px 12px;
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg-hover);
+  border: 1px solid var(--wf-border);
+  border-left: 4px solid var(--wf-plan-tint, var(--wf-accent));
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* The list: chapters down the page (and every phone). */
+.wf-plan-board.list .wf-plan-scroll {
+  padding: 8px 14px 24px;
+}
+.wf-plan-list-band {
+  margin: 18px 0 6px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.wf-plan-list-col {
+  margin-bottom: 14px;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+  overflow: hidden;
+}
+.wf-plan-list-col .wf-plan-colhead {
+  position: static;
+  border-right: none;
+}
+.wf-plan-list-row {
+  border-left: 3px solid var(--wf-plan-tint, transparent);
+}
+.wf-plan-list-line {
+  display: block;
+  padding: 8px 12px 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-list-row .wf-plan-cell {
+  min-height: 0;
+  border-right: none;
+}
+.wf-plan-list-row .wf-plan-cell.empty .wf-plan-add {
+  flex: none;
+}
+
+/* The unassigned notes under the board. */
+.wf-plan-loose {
+  flex: none;
+  max-height: 40%;
+  overflow: auto;
+  border-top: 1px solid var(--wf-border);
+  padding: 10px 14px 14px;
+  padding-bottom: calc(14px + env(safe-area-inset-bottom));
+}
+.wf-plan-board.list .wf-plan-loose {
+  max-height: none;
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-md);
+}
+.wf-plan-loose header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.wf-plan-loose h3 {
+  flex: 1;
+  margin: 0;
+  font-size: 14px;
+}
+.wf-plan-loose-cards {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-height: 48px;
+  border-radius: var(--wf-radius-sm);
+}
+.wf-plan-loose-cards > .wf-plan-card,
+.wf-plan-loose-cards > .wf-plan-lost-card {
+  width: var(--wf-plan-col);
+  max-width: 100%;
+}
+.wf-plan-loose-cards > .wf-plan-caret {
+  width: 3px;
+  height: auto;
+}
+.wf-plan-loose-cards > p {
+  margin: 0;
+  align-self: center;
+}
+.wf-plan-lost h4 {
+  margin: 14px 0 8px;
+  font-size: 13px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-lost-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-plan-lost-card small {
+  color: var(--wf-text-dim);
+}
+
+/* -------------------------------------------------- cards */
+
+.wf-plan-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px 10px 15px;
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  cursor: grab;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-user-select: none;
+  min-width: 0;
+}
+.wf-plan-card:hover {
+  border-color: var(--wf-text-dim);
+}
+.wf-plan-card.dragging {
+  opacity: 0.35;
+}
+.wf-plan-card.done {
+  opacity: 0.7;
+}
+.wf-plan-card.editing {
+  cursor: auto;
+  user-select: text;
+  -webkit-user-select: text;
+  border-color: var(--wf-accent);
+}
+.wf-plan-card.compact {
+  padding: 8px 10px 8px 13px;
+  cursor: pointer;
+}
+.wf-plan-card-strip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  border-radius: var(--wf-radius-sm) 0 0 var(--wf-radius-sm);
+  background: var(--wf-plan-tint, transparent);
+}
+.wf-plan-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+.wf-plan-card-head strong {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.wf-plan-done {
+  color: var(--wf-success);
+  flex: none;
+  margin-top: 2px;
+}
+.wf-plan-card-text {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--wf-text-dim);
+  white-space: pre-line;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.wf-plan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.wf-plan-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--wf-radius-pill);
+  border: 1px solid var(--wf-border);
+  border-left: 3px solid var(--wf-plan-tint, var(--wf-border));
+  background: var(--wf-bg-hover);
+  color: var(--wf-text);
+  font-size: 12px;
+}
+.wf-plan-chip button {
+  border: none;
+  background: transparent;
+  height: auto;
+  padding: 0;
+  color: var(--wf-text-dim);
+}
+.wf-plan-card-title-in {
+  width: 100%;
+  font-size: 14px;
+  font-weight: 600;
+}
+.wf-plan-card-text-in {
+  width: 100%;
+  min-height: 60px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.wf-plan-card-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+.wf-plan-card-fields label,
+.wf-plan-moveto label,
+.wf-plan-entry-row label,
+.wf-plan-entry-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-card-fields select {
+  max-width: 170px;
+}
+.wf-plan-card-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.wf-plan-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+.wf-plan-swatches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 0;
+}
+.wf-plan-swatch {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  min-height: 0;
+  min-width: 0;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  background: var(--wf-plan-tint, transparent);
+}
+.wf-plan-swatch.none {
+  background: transparent;
+  border: 1px dashed var(--wf-text-dim);
+}
+.wf-plan-swatch.on {
+  border-color: var(--wf-text);
+}
+.wf-plan-dot {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: var(--wf-plan-tint, var(--wf-border));
+}
+.wf-plan-cast-pickbox {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px;
+  width: 240px;
+  max-width: 100%;
+}
+.wf-plan-cast-pickbox ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+}
+.wf-plan-cast-pickbox label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 2px;
+  font-size: 13px;
+}
+.wf-plan-moveto {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  width: 260px;
+  max-width: 100%;
+}
+
+/* -------------------------------------------------- cast and world */
+
+.wf-plan-cast {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(240px, 320px) 1fr;
+}
+.wf-plan-cast.phone {
+  display: block;
+  overflow: auto;
+  padding: 10px 14px 24px;
+}
+.wf-plan-cast-list {
+  overflow: auto;
+  padding: 10px 12px 24px;
+  border-right: 1px solid var(--wf-border);
+}
+.wf-plan-cast.phone .wf-plan-cast-list {
+  border-right: none;
+  padding: 0;
+}
+.wf-plan-cast-list section {
+  margin-bottom: 14px;
+}
+.wf-plan-cast-list header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.wf-plan-cast-list h3 {
+  margin: 6px 0;
+  font-size: 13px;
+}
+.wf-plan-cast-list ul,
+.wf-plan-entry-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.wf-plan-cast-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  height: auto;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+  font-size: 13px;
+}
+.wf-plan-cast-row.active {
+  background: var(--wf-bg-hover);
+  border-color: var(--wf-border);
+}
+.wf-plan-cast-name {
+  flex: 1;
+  min-width: 0;
+}
+.wf-plan-entry {
+  overflow: auto;
+  padding: 16px 20px 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-width: 760px;
+  border-left: 4px solid var(--wf-plan-tint, transparent);
+}
+.wf-plan-cast.phone .wf-plan-entry {
+  padding: 12px 0 24px 12px;
+}
+.wf-plan-entry h4 {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+.wf-plan-entry-name {
+  font-size: 18px;
+  font-weight: 600;
+}
+.wf-plan-entry-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 14px;
+}
+.wf-plan-entry-field textarea {
+  width: 100%;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.45;
+}
+.wf-plan-entry-none {
+  padding: 24px;
+}
+.wf-plan-entry-foot {
+  margin-top: 10px;
+}
+.wf-plan-aka {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+.wf-plan-aka input {
+  flex: 1;
+  min-width: 140px;
+  height: 28px;
+  font-size: 13px;
+}
+.wf-plan-strip {
+  display: flex;
+  gap: 2px;
+  height: 22px;
+}
+.wf-plan-strip-cell {
+  flex: 1;
+  min-width: 3px;
+  max-width: 28px;
+  border-radius: 3px;
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+}
+.wf-plan-strip-cell.low {
+  background: var(--wf-plan-tint, var(--wf-accent));
+  opacity: 0.35;
+}
+.wf-plan-strip-cell.mid {
+  background: var(--wf-plan-tint, var(--wf-accent));
+  opacity: 0.65;
+}
+.wf-plan-strip-cell.high {
+  background: var(--wf-plan-tint, var(--wf-accent));
+}
+
+/* -------------------------------------------------- the timeline */
+
+.wf-plan-timeline {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 10px 14px 32px;
+}
+.wf-plan-timeline-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.wf-plan-lanes {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 80px minmax(0, 1fr);
+  align-items: start;
+}
+.wf-plan-lanes h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-wires {
+  width: 80px;
+  overflow: visible;
+}
+.wf-plan-wires path {
+  fill: none;
+  stroke: var(--wf-border);
+  stroke-width: 2;
+}
+.wf-plan-wires path.later,
+.wf-plan-wires path.earlier {
+  stroke: var(--wf-warn);
+}
+.wf-plan-lane {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wf-plan-event {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--wf-radius-sm);
+  background: var(--wf-bg-raised);
+  border: 1px solid var(--wf-border);
+  cursor: pointer;
+}
+.wf-plan-event.editing {
+  flex-direction: column;
+  align-items: stretch;
+  cursor: auto;
+  border-color: var(--wf-accent);
+}
+.wf-plan-event.editing textarea {
+  width: 100%;
+  resize: vertical;
+}
+.wf-plan-event.book {
+  width: 100%;
+  height: auto;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: flex-start;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
+}
+.wf-plan-event.later,
+.wf-plan-event.earlier {
+  border-left: 3px solid var(--wf-warn);
+}
+.wf-plan-event.untold,
+.wf-plan-event.lost {
+  border-style: dashed;
+}
+.wf-plan-event-n {
+  flex: none;
+  min-width: 20px;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-event-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.wf-plan-told {
+  font-size: 12px;
+  color: var(--wf-warn);
+}
+.wf-plan-told.untold,
+.wf-plan-told.lost {
+  color: var(--wf-text-dim);
+}
+.wf-plan-event-move {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-plan-event-move button {
+  width: 24px;
+  height: 20px;
+  padding: 0;
+}
+
+/* -------------------------------------------------- beside the text */
+
+.wf-plan-panel-body {
+  padding: 10px 12px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.wf-plan-panel-chapter {
+  margin: 0;
+  font-size: 13px;
+}
+.wf-plan-panel-note {
+  padding: 12px;
+}
+.wf-plan-panel-line {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 8px;
+  border-left: 3px solid var(--wf-plan-tint, var(--wf-border));
+}
+.wf-plan-panel-line h4,
+.wf-plan-panel-cast h4 {
+  margin: 0;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-panel-step {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.wf-plan-panel-step button {
+  width: 30px;
+  height: 28px;
+  padding: 0;
+}
+.wf-plan-panel-mentions {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.wf-plan-panel-mentions .wf-plan-row-button {
+  width: 100%;
+  display: block;
+  font-size: 12px;
+  color: var(--wf-text-dim);
+}
+.wf-plan-panel-mentions mark {
+  background: transparent;
+  color: var(--wf-text);
+  font-weight: 600;
+}
+
+@media (max-width: 767px) {
+  .wf-plan-bar {
+    gap: 8px;
+    padding: 8px 10px;
+  }
+  .wf-plan-tabs {
+    order: 3;
+    width: 100%;
+  }
+  .wf-plan-tabs button {
+    flex: 1;
+    padding: 0 6px;
+  }
+  .wf-plan-search input {
+    width: 140px;
+  }
+  .wf-plan-card-head .wf-plan-card-more,
+  .wf-plan-col-more {
+    width: 36px;
+    height: 32px;
   }
 }

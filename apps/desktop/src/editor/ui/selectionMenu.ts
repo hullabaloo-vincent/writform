@@ -15,7 +15,7 @@ export const SELECTION_TOOLS = [
   { id: "sub", label: "Subscript", rich: true },
   { id: "super", label: "Superscript", rich: true },
   { id: "code", label: "Inline code" },
-  { id: "color", label: "Text colour", rich: true },
+  { id: "color", label: "Text color", rich: true },
   { id: "highlight", label: "Highlight", rich: true },
   { id: "link", label: "Link" },
   { id: "comment", label: "Comment" },

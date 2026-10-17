@@ -1,4 +1,4 @@
-import { FileText, FileType, FileUp, Globe, HardDrive, NotebookPen, Presentation, RefreshCw } from "lucide-react";
+import { Download, FileText, FileType, FileUp, Globe, HardDrive, NotebookPen, Presentation, RefreshCw } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { backend, isCmdError, isMobileApp, isWeb, type HostStatus, type SavedServer } from "../../lib/backend";
@@ -282,7 +282,7 @@ export function HomeView() {
             {link === "unreachable" && (
               <p className="wf-home-linkline">
                 Can’t reach {target?.name ?? "the server"}.{" "}
-                <button className="wf-link" onClick={() => void store().retry()}>
+                <button className="wf-home-retry" onClick={() => void store().retry()}>
                   <RefreshCw size={13} /> Try again
                 </button>
               </p>
@@ -337,7 +337,7 @@ export function HomeView() {
       {!isWeb && (
         <footer className="wf-home-foot">
           <button
-            className="wf-link"
+            className="wf-home-export"
             disabled={exporting !== null}
             onClick={() => {
               setExporting("Gathering…");
@@ -352,6 +352,7 @@ export function HomeView() {
                 .finally(() => setExporting(null));
             }}
           >
+            <Download size={14} aria-hidden="true" />
             {exporting ?? "Export everything on this device…"}
           </button>
           <small>Documents, boards, notes and your profile in one zip.</small>

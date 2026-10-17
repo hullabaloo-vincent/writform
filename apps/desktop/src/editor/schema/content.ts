@@ -17,6 +17,7 @@ import StarterKit from "@tiptap/starter-kit";
 
 import { DocElement } from "../DocElement";
 import { ChapterArt } from "../nodes/ChapterArt";
+import { ChapterIdAttr } from "../nodes/ChapterId";
 import { DEPTH_MARKS } from "../marks/RunDepth";
 import { ParaFormat } from "../format/ParaFormat";
 import { RUN_MARKS } from "../marks/RunFormat";
@@ -67,6 +68,8 @@ export function docContentExtensions(opts: ContentOptions = {}): Extensions {
     // ---- level 4
     ChapterArt,
     ...DEPTH_MARKS,
+    // ---- level 5
+    ChapterIdAttr,
   ];
 }
 

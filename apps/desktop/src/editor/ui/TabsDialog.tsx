@@ -10,7 +10,7 @@ import { NumberField } from "./NumberField";
 
 const KINDS: [TabKind, string][] = [
   ["l", "Left"],
-  ["c", "Centre"],
+  ["c", "Center"],
   ["r", "Right"],
   ["d", "Decimal"],
 ];

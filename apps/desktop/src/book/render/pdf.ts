@@ -331,7 +331,7 @@ export async function renderPdf(
   const embed = (picture: PdfPicture): Picture => {
     // A press printing in black takes greys and nothing else: no colour, no
     // profile, nothing see-through.
-    if (x1a && (!("kind" in picture) || picture.alpha || picture.icc || !(picture.kind === "gray" || (picture.kind === "jpeg" && picture.gray)))) throw new Error("not greys");
+    if (x1a && (!("kind" in picture) || picture.alpha || picture.icc || !(picture.kind === "gray" || (picture.kind === "jpeg" && picture.gray)))) throw new Error("not grays");
     if (!("kind" in picture)) {
       // A file PDFKit reads itself.
       const image = doc.openImage(picture);

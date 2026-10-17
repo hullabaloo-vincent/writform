@@ -36,6 +36,7 @@ export function OutlinePanel({
   commentRanges,
   onNavigate,
   onTidy,
+  onOpenPlan,
 }: {
   editor: Editor | null;
   format?: string;
@@ -46,6 +47,8 @@ export function OutlinePanel({
   onNavigate?: () => void;
   /** Manuscripts: find structure that isn't marked yet. */
   onTidy?: () => void;
+  /** Open the story plan's board. */
+  onOpenPlan?: () => void;
 }) {
   const numbering = design ?? presetDesign("classic");
   const scan = useCallback(
@@ -187,6 +190,11 @@ export function OutlinePanel({
           <span className="wf-doc-outline-total">{total.toLocaleString()} words</span>
         )}
         <span className="wf-statusbar-spacer" />
+        {onOpenPlan && (
+          <button className="wf-doc-outline-reorder" title="Plan the story: plot lines, cast and timeline" onClick={onOpenPlan}>
+            Plan
+          </button>
+        )}
         {movable && onTidy && (
           <button
             className="wf-doc-outline-reorder"

@@ -43,6 +43,8 @@ export interface EditorCommand {
 
 const DOC = ["none"] as const;
 const PROSE = ["none", "manuscript"] as const;
+/** The kinds of document with a story plan (src/plan). */
+const PLANNED = ["none", "manuscript", "screenplay", "stageplay"] as const;
 
 export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   // ---- Text
@@ -78,7 +80,7 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   { id: "doc.quote", label: "Block quote", group: "Paragraph", keywords: "quotation indent", keys: "Mod-Shift-b", formats: PROSE },
   { id: "doc.codeblock", label: "Code block", group: "Paragraph", keywords: "monospace program", keys: "Mod-Alt-c", formats: DOC },
   { id: "doc.align.left", label: "Align left", group: "Paragraph", keys: "Mod-Shift-l", formats: PROSE },
-  { id: "doc.align.center", label: "Centre", group: "Paragraph", keywords: "center align middle", keys: "Mod-Shift-e", formats: PROSE },
+  { id: "doc.align.center", label: "Center", group: "Paragraph", keywords: "center align middle", keys: "Mod-Shift-e", formats: PROSE },
   { id: "doc.align.right", label: "Align right", group: "Paragraph", keys: "Mod-Shift-r", formats: PROSE },
   { id: "doc.align.justify", label: "Justify", group: "Paragraph", keywords: "align both edges", keys: "Mod-Shift-j", formats: DOC },
   { id: "doc.indent.more", label: "Indent more", group: "Paragraph", keywords: "increase indent right", formats: DOC },
@@ -121,6 +123,10 @@ export const EDITOR_COMMANDS: readonly EditorCommand[] = [
   { id: "doc.focus", label: "Focus mode", group: "Page and view", keywords: "distraction free full screen" },
   { id: "doc.chapter.only", label: "Show only this chapter", group: "Page and view", keywords: "one chapter section focus hide the rest outline" },
   { id: "doc.chapter.all", label: "Show the whole text", group: "Page and view", keywords: "every chapter everything all sections" },
+  { id: "doc.plan", label: "Story plan", group: "Page and view", keywords: "plot lines board cards beats planning outline", keys: "Alt-Mod-p", formats: PLANNED, bind: true },
+  { id: "doc.plan.panel", label: "Plan for this chapter", group: "Page and view", keywords: "beats cards scene section side panel", formats: PLANNED },
+  { id: "doc.plan.cast", label: "Cast and world", group: "Page and view", keywords: "characters people places things story bible names", formats: PLANNED },
+  { id: "doc.plan.timeline", label: "Story timeline", group: "Page and view", keywords: "events chronology flashback story order", formats: PLANNED },
   { id: "doc.paper", label: "Dark paper", group: "Page and view", keywords: "night mode dark page light" },
   { id: "doc.ruler", label: "Show the ruler", group: "Page and view", keywords: "margins indents tab stops", formats: DOC },
   { id: "doc.zoom.in", label: "Zoom in", group: "Page and view", keywords: "larger page magnify" },

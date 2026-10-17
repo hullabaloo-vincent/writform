@@ -44,6 +44,10 @@ export interface ShellActions {
   togglePageView?: () => void;
   toggleFocus?: () => void;
   goTo?: () => void;
+  /** The story plan, open at one of its tabs. */
+  plan?: (tab?: "board" | "cast" | "timeline") => void;
+  /** The plan for the chapter at the caret, beside the text. */
+  planPanel?: () => void;
 }
 
 /** The document a command is run in, as it is at that moment. */
@@ -209,6 +213,10 @@ export const RUNNERS: Readonly<Record<string, Runner>> = {
   "doc.find": shell((s) => s.find && (() => s.find?.(false))),
   "doc.replace": shell((s) => s.find && (() => s.find?.(true))),
   "doc.goto": shell((s) => s.goTo),
+  "doc.plan": shell((s) => s.plan && (() => s.plan?.("board"))),
+  "doc.plan.panel": shell((s) => s.planPanel),
+  "doc.plan.cast": shell((s) => s.plan && (() => s.plan?.("cast"))),
+  "doc.plan.timeline": shell((s) => s.plan && (() => s.plan?.("timeline"))),
   "doc.goback": { enabled: (e) => editPlaces(e).length > 0, run: (e) => goBackToEdit(e) },
   "doc.grow": { enabled: () => true, run: (e, ctx) => growSelection(e, ctx.lang) },
   "doc.shrink": { enabled: () => true, run: (e) => shrinkSelection(e) },

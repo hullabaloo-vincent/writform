@@ -165,16 +165,17 @@ export function ShareLocalDialog({
             <div className="wf-doc-share-note" role="alert">
               <p>
                 This server is running an older version of subScribe and can’t hold some of this
-                document’s formatting: text colour and highlight, fonts and sizes on part of a
+                document’s formatting: text color and highlight, fonts and sizes on part of a
                 paragraph, indents, borders, checklists, tables, footnotes, a table of contents,
-                sections or suggested changes.
+                sections, suggested changes or the story plan’s ties to chapters.
               </p>
               <p>
                 You can publish a simplified copy now, or update the server and publish the
                 document as it is. A simplified copy keeps every word and leaves that formatting
                 out: a table becomes its cells’ paragraphs, a note sits in brackets where it’s
-                cited and suggested changes are taken as accepted. The one on this
-                device isn’t changed either way.
+                cited and suggested changes are taken as accepted. The story plan’s cards keep
+                their chapter’s name and can be put back in it once the server is updated. The
+                one on this device isn’t changed either way.
               </p>
               <div className="wf-connect-row" style={{ justifyContent: "flex-start" }}>
                 <button

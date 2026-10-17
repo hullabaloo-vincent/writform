@@ -489,13 +489,13 @@ export function CoverEditor({
                     </label>
                     <p className="wf-inspector-dim">Drag the picture on the cover to choose which part of it shows.</p>
                     <button type="button" disabled={readonly} onClick={() => setLook(slot, { ...PLAIN_LOOK, color: latest.current.looks[slot].color })}>
-                      Fit and centre it
+                      Fit and center it
                     </button>
                   </>
                 )}
                 {slot !== "wrap" && (
                   <label className="wf-cover-field row">
-                    <span>Paper colour</span>
+                    <span>Paper color</span>
                     <input type="color" value={cover.looks[slot].color} disabled={readonly} onChange={(e) => setLook(slot, { ...latest.current.looks[slot], color: e.target.value }, "soon", waiting.current === null)} />
                   </label>
                 )}
@@ -516,7 +516,7 @@ export function CoverEditor({
             ) : (
               <section className="wf-cover-ed-group">
                 <h4>Make the cover</h4>
-                <p className="wf-inspector-dim">Click a part of the cover to give it a picture or a colour. Click words to change them, and drag them where they belong.</p>
+                <p className="wf-inspector-dim">Click a part of the cover to give it a picture or a color. Click words to change them, and drag them where they belong.</p>
                 {cover.texts.length === 0 && !readonly && (
                   <button type="button" className="wf-primary" onClick={start}>
                     Start with the book’s title and author
@@ -646,11 +646,11 @@ function TextPanel({
         {toggle("Capitals", text.caps, <span className="wf-cover-ed-aa">AA</span>, { caps: !text.caps })}
         <span className="gap" />
         {toggle("Align left", text.align === "left", <AlignLeft size={14} />, { align: "left" })}
-        {toggle("Centre", text.align === "center", <AlignCenter size={14} />, { align: "center" })}
+        {toggle("Center", text.align === "center", <AlignCenter size={14} />, { align: "center" })}
         {toggle("Align right", text.align === "right", <AlignRight size={14} />, { align: "right" })}
       </div>
       <label className="wf-cover-field row">
-        <span>Colour</span>
+        <span>Color</span>
         <input type="color" value={text.color} disabled={disabled} onChange={(e) => onSlide({ ...text, color: e.target.value })} />
       </label>
       <label className="wf-cover-field">
@@ -669,13 +669,13 @@ function TextPanel({
       )}
       <label className="wf-cover-field row">
         <span>
-          <input type="checkbox" checked={text.back !== null} disabled={disabled} onChange={(e) => onSet({ ...text, back: e.target.checked ? "#ffffff" : null })} /> A band of colour behind
+          <input type="checkbox" checked={text.back !== null} disabled={disabled} onChange={(e) => onSet({ ...text, back: e.target.checked ? "#ffffff" : null })} /> A band of color behind
         </span>
         {text.back !== null && <input type="color" value={text.back} disabled={disabled} onChange={(e) => onSlide({ ...text, back: e.target.value })} />}
       </label>
       <div className="wf-cover-ed-row">
-        <button type="button" disabled={disabled} title="Centre it across" onClick={() => onSet({ ...text, x: (1 - text.w) / 2, align: "center" })}>
-          Centre it
+        <button type="button" disabled={disabled} title="Center it across" onClick={() => onSet({ ...text, x: (1 - text.w) / 2, align: "center" })}>
+          Center it
         </button>
         <button type="button" className="wf-icon" disabled={disabled} title="Bring to the front" aria-label="Bring to the front" onClick={() => onStack("top")}>
           <BringToFront size={14} />

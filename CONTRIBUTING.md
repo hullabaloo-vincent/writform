@@ -134,7 +134,7 @@ moves them needs a reason.
 
 `apps/desktop/src/styles.css` holds every app's styles. Classes start with
 `wf-`. Search the file before you name a new one: a name that is already in
-use will restyle another app. A `button` in this app is centred and does
+use will restyle another app. A `button` in this app is centered and does
 not wrap unless you say otherwise.
 
 ### Wording
@@ -147,8 +147,8 @@ first two on every string in `src` and on the docs.
 ### What comes from elsewhere
 
 Fonts, word lists, data files and code taken from other projects must be
-free for commercial use, and each is recorded with its source and licence
-in [docs/notices.md](docs/notices.md). If you are not sure a licence
+free for commercial use, and each is recorded with its source and license
+in [docs/notices.md](docs/notices.md). If you are not sure a license
 allows it, ask before adding it.
 
 ### The server's database
@@ -192,7 +192,7 @@ Please do not open a public issue for a security problem. Report it
 privately to the maintainer, through GitHub's "Report a vulnerability" on
 the repository's Security tab where that is on.
 
-## Licence
+## License
 
 By contributing you agree that your work is offered under the project's
-licence. See [License.md](License.md).
+license. See [License.md](License.md).

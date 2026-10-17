@@ -144,6 +144,19 @@ after it updates. A server never stores a level above its own web client's
 (`GET /document-capabilities`), and a newer app on an older server holds its
 documents to the server's level.
 
+Level 5 (after 1.2.1) adds `cid` on paragraphs and headings: a chapter's
+hidden id, 8 base36 characters, which the story plan (the document's `plan`
+map) ties its cards and events to. A heading gets one only when something
+in the plan is put in its chapter, so a document is only raised to level 5
+when its plan uses chapters. A heading copied in the same document gives
+its id up, and one pasted from another document arrives without one.
+
+Level 4 (1.2.1) adds a chapter's own art on its heading (`art`,
+`artFacing`), a paragraph's tab stops (`tabs`), the marks `caps {v}` and
+`letterSpacing {pt}`, an underline's `kind` and `c`, a doubled strike
+(`dbl`), a table's `align` and `ind`, a row's `h` and `keep`, a cell's `va`,
+and a picture's `crop` and `rot`.
+
 Level 3 (after 1.1.0) adds `bdr` on `tableCell` (the cell's own lines, one
 string of `<side>:<points>:<#rrggbb>` parts, a side of no thickness meaning
 "no line here") and, on images, `bdr` (an outline, `"<points> <#rrggbb>"`)
@@ -160,7 +173,7 @@ are one string on the table, not an array on each cell — of `tableRow` of
 `tableCell {colspan, rowspan, bg}`); `footnote {kind}`, an inline node whose
 content is the note's own text; a `toc {depth}` block; `align` and `caption`
 on images; and `sect` (a section starts here: one encoded string) and
-`colBreak` on paragraphs. Lengths are points, colours `#rrggbb`, every value
+`colBreak` on paragraphs. Lengths are points, colors `#rrggbb`, every value
 a primitive (a border is one encoded string). Tracked changes are level 2 as
 well: the marks `insertion {a, t}` and `deletion {a, t}` on text (who, and
 when in seconds since 1970), and — since the sync engine keeps marks on text

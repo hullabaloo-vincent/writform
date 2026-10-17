@@ -64,7 +64,7 @@ interface Drag {
   off: boolean;
 }
 
-const KIND_NAME: Record<TabKind, string> = { l: "left", c: "centre", r: "right", d: "decimal" };
+const KIND_NAME: Record<TabKind, string> = { l: "left", c: "center", r: "right", d: "decimal" };
 
 /**
  * The ruler over a Document's page (desktop): the page's margins, the

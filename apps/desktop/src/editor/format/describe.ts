@@ -26,7 +26,7 @@ export interface FormattingHere {
 
 const pt = (n: number) => `${Math.round(n * 100) / 100} pt`;
 const inch = (points: number) => `${Math.round((points / 72) * 100) / 100} in`;
-const ALIGN: Record<string, string> = { center: "Centred", right: "Aligned right", justify: "Justified", left: "Aligned left" };
+const ALIGN: Record<string, string> = { center: "Centered", right: "Aligned right", justify: "Justified", left: "Aligned left" };
 
 /** The paragraph or heading the caret is in. */
 function blockAt(editor: Editor): PmNode | null {
@@ -88,7 +88,7 @@ export function describeHere(editor: Editor, ctx: FormatContext): FormattingHere
     else if (name === "code") text.push("Code");
     else if (name === "fontFamily" && typeof mark.attrs.f === "string") text.push(`Font ${fontLabel(mark.attrs.f)}`);
     else if (name === "fontSize" && mark.attrs.pt) text.push(`Size ${pt(Number(mark.attrs.pt))}`);
-    else if (name === "textColor") text.push("Coloured");
+    else if (name === "textColor") text.push("Colored");
     else if (name === "highlight") text.push("Highlighted");
     else if (name === "vscript") text.push(mark.attrs.v === "sub" ? "Subscript" : "Superscript");
   }

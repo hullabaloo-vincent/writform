@@ -593,7 +593,7 @@ const bookWords = { title: "The Long Way", subtitle: "A Novel", author: "R. Aldo
     await new Promise((resolve) => setTimeout(resolve, 80));
   });
   await draw();
-  check("a picture chosen there is put with the book and drawn", sent.length === 1 && printPieces(cover()).length === 1 && document.querySelectorAll(".wf-cover-svg.editing image").length === 1 && !!button("Fit and centre it"));
+  check("a picture chosen there is put with the book and drawn", sent.length === 1 && printPieces(cover()).length === 1 && document.querySelectorAll(".wf-cover-svg.editing image").length === 1 && !!button("Fit and center it"));
 
   // The file.
   await act(async () => {

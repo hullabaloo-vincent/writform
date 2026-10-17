@@ -190,7 +190,7 @@ export function SelectionBubble({ editor, format, onComment }: { editor: Editor;
     code: () => btn("Inline code", <Code size={15} />, () => chain().toggleCode().run(), editor.isActive("code")),
     color: () =>
       run && (
-        <ColorFlyout key="color" title="Text colour" icon={<Baseline size={15} />} value={run.mixed.color ? null : run.color} colors={TEXT_COLORS} noneLabel="Automatic" onPick={(c) => setRunColor(editor, c)} />
+        <ColorFlyout key="color" title="Text color" icon={<Baseline size={15} />} value={run.mixed.color ? null : run.color} colors={TEXT_COLORS} noneLabel="Automatic" onPick={(c) => setRunColor(editor, c)} />
       ),
     highlight: () =>
       run && (
@@ -221,7 +221,7 @@ export function SelectionBubble({ editor, format, onComment }: { editor: Editor;
         </span>
       ))}
       {groups.length > 0 && <span className="wf-bubble-sep" aria-hidden="true" />}
-      <Flyout title="Customise this menu" icon={<SlidersHorizontal size={14} />} caret={false} className="wf-bubble-custom">
+      <Flyout title="Customize this menu" icon={<SlidersHorizontal size={14} />} caret={false} className="wf-bubble-custom">
         {(close) => (
           <>
             <div className="wf-flyout-heading">Show in this menu</div>

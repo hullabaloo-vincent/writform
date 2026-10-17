@@ -76,6 +76,10 @@ export async function exportDevice(onProgress: (message: string) => void = () =>
         const word = await buildDocx(json, meta.title || "Untitled", meta.format, settings, readDocStyles(ydoc));
         zip.file(unique(base, "docx"), word.bytes);
         zip.file(unique(base, "json"), JSON.stringify({ title: meta.title, format: meta.format, content: json }, null, 2));
+        // Its story plan beside it, when it has one.
+        const { planMarkdownOf } = await import("../../plan/markdown");
+        const plan = await planMarkdownOf(ydoc, json, meta.format).catch(() => null);
+        if (plan) zip.file(unique(`${base}.plan`, "md"), plan);
         documents += 1;
       } catch {
         skipped += 1;

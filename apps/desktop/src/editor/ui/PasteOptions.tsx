@@ -84,7 +84,7 @@ export function PasteOptions({ editor }: { editor: Editor }) {
       <span>{matched ? "Pasted to match this document" : "Pasted with its own styling"}</span>
       <button
         type="button"
-        title={matched ? "Bring its fonts, sizes, colours and alignment too" : "Leave its look behind: this document’s fonts, sizes and colours"}
+        title={matched ? "Bring its fonts, sizes, colors and alignment too" : "Leave its look behind: this document’s fonts, sizes and colors"}
         onMouseDown={stay}
         onClick={() => switchPaste(editor.view, matched ? "keep" : "match")}
       >

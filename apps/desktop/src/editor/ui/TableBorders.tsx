@@ -53,8 +53,8 @@ export function TableBorders({ editor }: { editor: Editor }) {
               ))}
             </select>
           </label>
-          <div className="wf-borders-row" role="group" aria-label="Colour">
-            <span>Colour</span>
+          <div className="wf-borders-row" role="group" aria-label="Color">
+            <span>Color</span>
             {COLORS.map((c) => (
               <button key={c} type="button" className={`wf-borders-color${c === color ? " on" : ""}`} style={{ background: c }} aria-label={c} aria-pressed={c === color} onClick={() => setColor(c)} />
             ))}

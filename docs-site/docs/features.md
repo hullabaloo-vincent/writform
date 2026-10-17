@@ -126,7 +126,7 @@ submission manuscript.
   never broken at, and an optional hyphen (Ctrl and the hyphen key)
   shows only where the line breaks there. All three are also in **Insert
   ▸ Symbol**, by name. Find sees through them, Word files keep them, and
-  print and PDF honour them.
+  print and PDF honor them.
 - **Move a paragraph by key**: Alt+Shift+Up or Down (Ctrl+Shift with the
   arrows on a Mac) moves the paragraph the caret is in, every paragraph a
   selection touches, or a list item with all that is under it. A selected
@@ -187,7 +187,7 @@ submission manuscript.
   caps, drop caps, running heads and roman/arabic page numbers. Fonts are
   embedded, the trim box is set, and it is ready for KDP and IngramSpark.
   For a printer that asks for it, the paperback's dialog can make the file
-  as **PDF/X-1a** (black ink only, so pictures are made grey) and **with
+  as **PDF/X-1a** (black ink only, so pictures are made gray) and **with
   bleed** (each page 0.125 in larger at the top, the bottom and the outside
   edge, with the page itself marked as the trim). The pages are set the
   same either way.
@@ -195,7 +195,7 @@ submission manuscript.
   **Ebook (EPUB)** is for Kindle, Apple Books, Kobo and Google Play. With
   *Embed the book's fonts* on, the body and heading fonts' files go inside
   it (the app's own or the library's, each script its own file), so readers
-  that honour a publisher's fonts show the book in them. The
+  that honor a publisher's fonts show the book in them. The
   **Submission manuscript** (Standard Manuscript Format) exports as PDF or
   Word. Each shows a preflight list first (missing ISBN digits, glyphs a
   font lacks, a too-short book), each item with a "Show" button.
@@ -210,11 +210,11 @@ submission manuscript.
 - **Cover editor** (Cover tab ▸ Open the cover editor, or Export ▸
   Paperback cover): the sheet is drawn as it prints, whole or one part at a
   time (the spine lies on its side so it can be read). Click a part to give
-  it a picture or a paper colour, enlarge the picture and drag it to choose
+  it a picture or a paper color, enlarge the picture and drag it to choose
   what shows. Add a title, a subtitle, an author, a spine line and the
   back's blurb, starting from the book's own details, and set each one's
-  font, size, colour, alignment, letter and line spacing, with an optional
-  band of colour behind it. Drag words into place, pull their sides to set
+  font, size, color, alignment, letter and line spacing, with an optional
+  band of color behind it. Drag words into place, pull their sides to set
   the width, nudge with the arrow keys, undo and redo. The words are real
   text set by the book's own typesetting engine, so the screen, the
   **paperback cover PDF** and the ebook's cover agree. The editor also
@@ -227,7 +227,7 @@ submission manuscript.
   book set in them can be sold and the fonts embedded in its PDF or ebook.
   A book's design and its cover offer only these. Documents can also use
   the fonts installed on your device. Those carry their makers' own
-  licences, which the app can't read, and the font list says so.
+  licenses, which the app can't read, and the font list says so.
 - **Version history**: revisions are recorded at the seams of the work. A
   pause of half a minute closes one off, and a long unbroken stretch is cut
   on its own after five minutes. There are also named drafts you save
@@ -258,7 +258,7 @@ submission manuscript.
   drawn over the text and are never part of it.
 - **Dark paper** (the zoom menu, Settings ▸ Writing, or the moon on a
   writing session's page): the page dark with light text, for the screen
-  only, in documents and writing sessions alike. Coloured text is made
+  only, in documents and writing sessions alike. Colored text is made
   lighter where it could not otherwise be read. Print, PDF and Word files
   are unchanged.
 - **Formatting here** (the top of the sliders panel's Text tab, or Ctrl+K
@@ -267,7 +267,7 @@ submission manuscript.
   given, each with a **Clear** of its own.
 - **Move a section from the outline**: in a Document the outline's
   **Reorder** moves a heading with everything under it, up or down past
-  its neighbours, and takes it up or down a level with the headings
+  its neighbors, and takes it up or down a level with the headings
   beneath it. Drag a heading to do the same by hand.
 - **Show only this chapter** (the button at the end of a row in the
   outline, or Ctrl+K): the page shows one chapter, from its heading to the
@@ -294,7 +294,7 @@ submission manuscript.
   have none, since the page already fits the screen there.
 - **Focus mode** (the target button, Esc leaves): the app chrome steps
   away and it's just you and the page. Optional **typewriter scrolling**
-  keeps the line you're writing vertically centred.
+  keeps the line you're writing vertically centered.
 - **Reopen where you left off**: each document remembers its cursor and
   scroll position on this device.
 - **Word count**: on every screen, including phones. With text selected it
@@ -305,14 +305,14 @@ submission manuscript.
   and size for the words you select (*Larger*/*Smaller*, Ctrl+Shift+. and Ctrl+Shift+, step
   Word's ladder, and the inspector takes any size). It has bold, italic,
   underline, strikethrough, **subscript** and **superscript** (Ctrl+= and Ctrl+Shift+=),
-  **text colour** and **highlight**, inline code, **change case** and
+  **text color** and **highlight**, inline code, **change case** and
   **clear formatting**. It has bulleted lists with a choice of marker,
   numbered lists with a numbering style (1, a, A, i, I, or legal 1.1.1) and
   *restart* or *continue*, **checklists** (Ctrl+Shift+9) with boxes you tick, and
   indent/outdent (of a list item, or of a paragraph, half an inch at a
   time). It also has alignment (Ctrl+Shift with L, E, R or J), line and paragraph spacing,
   paragraph **shading** and **borders** (a box, a line above or below, or a
-  bar at the left, where neighbours with the same border are one box),
+  bar at the left, where neighbors with the same border are one box),
   **sort A to Z**, and **show paragraph marks** (¶).
   **Insert** has page break (Ctrl+Enter), column break and section break, and a
   **table** (pick its size from a grid). It has **link** (Ctrl+Shift+K: an address,
@@ -342,7 +342,7 @@ submission manuscript.
   keep their own toolbars (which ride on the keyboard the same way) and
   professional layouts.
 - **Selection menu**: select words with the mouse and a small menu appears
-  above them. It has **bold**, **italic**, **underline**, text **colour**,
+  above them. It has **bold**, **italic**, **underline**, text **color**,
   **highlight**, **link**, **comment** and **clear formatting**, so the
   commonest changes need no trip to the ribbon. It never takes the caret
   out of the text. Escape, or clicking anywhere, puts it away, and it
@@ -362,7 +362,7 @@ submission manuscript.
 - **Styles** (Document format): Normal, No Spacing, Title, Subtitle,
   Heading 1–6, Quote and Caption, each shown in its own look, plus styles
   of your own. *Modify…* changes what a style looks like everywhere it's
-  used (font, size, colour, alignment, spacing, indents). *Update to match
+  used (font, size, color, alignment, spacing, indents). *Update to match
   selection* makes the style look like the paragraph you formatted by hand.
   *New style from selection* names that look. Styles are saved in the
   document, so collaborators, the PDF and the Word file all have them.
@@ -375,9 +375,9 @@ submission manuscript.
   **matches this document** by default: the words come in with their
   structure (paragraphs, headings, lists, tables, links) and their emphasis
   (bold, italics, underline, sub/superscripts), and leave their look behind:
-  typeface, size, colour, highlight, alignment, indents and spacing are this
+  typeface, size, color, highlight, alignment, indents and spacing are this
   document's. A small strip under the paste says so and offers
-  **Keep its styling**. One click brings the colours, highlights, alignment
+  **Keep its styling**. One click brings the colors, highlights, alignment
   and differing fonts and sizes back (and **Match this document** switches
   again). The choice stays until you type the next thing, and Escape or the
   × settles it sooner. Word's typed-out bullets become real lists. What you
@@ -392,7 +392,7 @@ submission manuscript.
   spreadsheet or a web page pastes as a table. A table is never wider
   than the sheet: where the window is narrower than the paper, its columns
   keep their proportions. A cell can have **borders of its own** (a
-  coloured rule down the side of a column, say). They come in from Word and
+  colored rule down the side of a column, say). They come in from Word and
   go back out, though there is no control for drawing them here yet. In a
   table with no lines, faint guides show where the cells are while the
   caret is in it or the pointer over it, and nowhere else. On paper a table
@@ -425,7 +425,7 @@ submission manuscript.
   next column.
 - **Pictures** (Document format): drag a corner handle to resize and the
   proportions are kept. The Picture tab sets one at the left, in the middle
-  or at the right, gives it a **border** (a colour and a thickness) and
+  or at the right, gives it a **border** (a color and a thickness) and
   **rounded corners** (up to a circle), an exact **size** in inches, a
   **caption** that stays under it on the page, and a **description** for
   someone who can't see it. A picture is a block of its own between the
@@ -446,7 +446,7 @@ submission manuscript.
   choice is kept with the document, so everyone who opens it sees the same
   sheet) and orientation, **margins**, a binding **gutter** and
   **facing pages** (mirrored margins), and one to three **columns**.
-  **Headers and footers** have a left, centre and right slot each and live
+  **Headers and footers** have a left, center and right slot each and live
   fields (page number, page count, title, author, date), and are optionally
   different on the first page and on even pages. **Page numbers** are in
   1/i/I/a/A style from any starting number. Body-text defaults cover font,
@@ -497,7 +497,7 @@ submission manuscript.
   and page numbers are marked as decoration. The export says how many
   pictures have no description yet.
   **Archive copy (PDF/A)** makes a PDF/A-2b file, meant to open the same
-  way in many years: every font is inside it, and it says what its colours
+  way in many years: every font is inside it, and it says what its colors
   mean.
   **Keep an editable copy inside** puts the document itself into the PDF
   beside its pages (see **Import**).
@@ -518,20 +518,20 @@ submission manuscript.
   Greek, Vietnamese…) download only if your text has them. The same font
   files draw the editor, the preview, the PDF and the printout, so they
   agree. Installed fonts are embedded in a PDF only when the font's own
-  licence setting allows it, and are never uploaded. When a document names
+  license setting allows it, and are never uploaded. When a document names
   a font this device doesn't have (a collaborator's, or one from a Word
   file) it's shown and printed in the closest stand-in: a same-metrics
   family where one exists (Gelasio for Georgia, Tinos for Times New Roman,
   Arimo for Arial, Carlito for Calibri), so lines and pages fall the same.
   A line under the ribbon says so and offers **Replace…**. Settings ▸ Fonts
   has the switch for the online library, the downloaded fonts (and a way to
-  remove them), and the licences.
+  remove them), and the licenses.
 - **Word (.docx)** in and out, including fonts. A Word file's fonts are
   matched to the app's own, to those installed here, then to the online
   library, and otherwise kept by name. Exports carry real family names and
   tell Word what to fall back to. Both directions keep headings 1–6, real
   nested and numbered lists (bullet styles, legal numbering and checklists
-  included), bold/italic/underline/strikethrough, text colour, highlight,
+  included), bold/italic/underline/strikethrough, text color, highlight,
   sub/superscript and a font or size on part of a paragraph, links,
   pictures with their sizes, alignment, spacing, indents, line-height
   rules, borders and shading, keep-with-next, quotes, code, dividers, page
@@ -557,6 +557,43 @@ submission manuscript.
 - **Outline**: parts, chapters and sections with their labels and word
   counts. Drag to reorder chapters (or use Reorder on a phone). One undo
   puts them back.
+- **Story plan**: plan a book (or a script, or a Document) beside its text,
+  from the Plan button in the header, the outline, or Ctrl+Alt+P. It is
+  kept in the document, so everyone who writes it sees the same plan as it
+  changes, and it goes with the document when it is published or copied.
+  - **Board**: the chapters across the top (a script's scenes, a
+    Document's sections), with their words and parts above them, and plot
+    lines down the side. Cards in the cells hold a title, notes, a color
+    and who is in them. Drag a card to another chapter or plot line (on a
+    phone or tablet, hold it still first), or use its menu's **Move to…**.
+    Notes not yet in a chapter wait under the board. A column's menu shows
+    the chapter in the text or on its own, renames it, or adds a chapter
+    after it, and those change the text itself. A row can show who
+    appears in each chapter. **List** puts the chapters down the page,
+    and phones always show it that way.
+  - **Cards follow their chapter**: through a new title, a move in the
+    outline, publishing and copies. A chapter deleted leaves its cards
+    under the board with its name, and Undo brings them back.
+  - **Cast and world**: people, places and things, each with other names
+    it goes by, notes and a color. Each shows the chapters it appears in,
+    found in the text by its names, and its mentions can be stepped
+    through one by one. A name written with a capital is only found with
+    one, and a name that is also a common word (Will, May) is passed over
+    at the start of a sentence.
+  - **Timeline**: events in the order they happen in the story, each with
+    when it happens and the chapter that tells it. Beside them is the
+    order the book tells them in, with lines between the two, so a
+    flashback shows where it crosses. Events with dates can be sorted by
+    them.
+  - **Beside the text**: the side panel shows the cards of the chapter
+    you are writing in and who is in it.
+  - **Copy the plan as Markdown** from the view menu. **Export all** and
+    the export of everything on this device write each plan beside its
+    document.
+  - A chapter's tie to its cards is new in this version. A book with
+    cards in its chapters can't be opened by older versions until they
+    update, and its server must be updated first. Until then the plan
+    works without chapters.
 - **Organizer**: cards show each document's opening words (or, when
   searching, the passage that matched) and "Manuscript · 98,412 words ·
   Oct 3". A book's card also shows its **cover**, its **description** in
@@ -588,7 +625,7 @@ submission manuscript.
   after that it's instant.
 - **Suggested changes** (track changes): switch to **Suggesting** and what
   you type, delete or paste is proposed instead of done. Additions are
-  underlined in your colour, deletions are struck through, a new or removed
+  underlined in your color, deletions are struck through, a new or removed
   paragraph break is marked with a ¶, and a table, picture, divider or
   footnote is outlined. Each says who and when. Anyone who can edit accepts
   or rejects them one at a time or all at once, from the Review tab or from
@@ -736,7 +773,7 @@ submission manuscript.
   Sentences, Repeats and Pace run in any language with spaces between its
   words, and Repeats knows the small words of French, German, Spanish,
   Italian, Dutch and Portuguese. The table of which English uses which spelling comes from VarCon,
-  part of the SCOWL project, used under its licence. Its notice is shown
+  part of the SCOWL project, used under its license. Its notice is shown
   at the foot of the Rules tab.
 
   The arrows beside Close make the panel about twice as wide and back.
@@ -783,15 +820,15 @@ submission manuscript.
   headings, lists, tables, links, footnotes, and pictures with what is
   said under them, in the order the page is read even where it is set in
   columns. The paper, the margins, the columns, the font and size of the
-  text, its colours, and what was printed at the head and foot of every
+  text, its colors, and what was printed at the head and foot of every
   page become the document's own page setup, header and footer. A tagged
   PDF (from Word, Google Docs, InDesign or this app) is read by its tags
   and not guessed at. A PDF with a password asks for it. A scanned PDF
   asks whether to **read the text** out of its pages or **keep them as
-  pictures**. Reading uses the system's own text recogniser on a Mac, an
+  pictures**. Reading uses the system's own text recognizer on a Mac, an
   iPhone or an iPad. It runs on the device and sends nothing anywhere.
   Other devices keep a scan's pages as pictures. A long import shows how
-  far it is and can be cancelled. A note afterwards says what was left
+  far it is and can be canceled. A note afterwards says what was left
   out, such as drawings and text set at an angle. A
   PDF exported from here with *Keep an editable copy inside* holds the
   whole document, with its styles, page setup and pictures. Importing it
@@ -1142,7 +1179,7 @@ boards and notes all work with no account and no connection. The first time
 you open the app it asks what to call you. That name goes on what you
 export and on the boards you make here, and it stays on this device unless
 you copy your profile to a server. Settings → Profile adds a picture (shown
-at the foot of the rail), an accent colour and a few words about you.
+at the foot of the rail), an accent color and a few words about you.
 
 **Servers are accounts you add.** Chat, Sessions and Friends stay in the
 rail and say what they need when there's no server. The button at the foot

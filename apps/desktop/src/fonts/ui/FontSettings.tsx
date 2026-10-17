@@ -74,7 +74,7 @@ export function FontSettings() {
         </p>
       )}
       <button className="wf-link" aria-expanded={licences} onClick={() => setLicences((v) => !v)}>
-        Fonts and licences
+        Fonts and licenses
       </button>
       {licences && (
         <ul className="wf-fonts-licences">
@@ -89,7 +89,7 @@ export function FontSettings() {
           </li>
           <li>
             <strong>Fonts on this computer</strong>: used on screen as installed, and embedded in a PDF only when the
-            font’s own licence setting allows it. They are never uploaded.
+            font’s own license setting allows it. They are never uploaded.
           </li>
         </ul>
       )}
