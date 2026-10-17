@@ -132,12 +132,43 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p writform-server
+      # GitHub's upload server sometimes drops the connection partway through
+      # ("Error: other side closed"). The upload is tried three times, a
+      # little apart, before the job fails. overwrite_files replaces a copy
+      # left half sent, and each try finds the draft the first one made.
       - name: Attach binary to release
+        id: attach1
+        continue-on-error: true
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.bump.outputs.tag }}
           draft: true
           files: target/release/writform-server
+          overwrite_files: true
+      - name: Wait before trying again
+        if: steps.attach1.outcome == 'failure'
+        run: sleep 30
+      - name: Attach binary to release (second try)
+        id: attach2
+        if: steps.attach1.outcome == 'failure'
+        continue-on-error: true
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.bump.outputs.tag }}
+          draft: true
+          files: target/release/writform-server
+          overwrite_files: true
+      - name: Wait before the last try
+        if: steps.attach1.outcome == 'failure' && steps.attach2.outcome == 'failure'
+        run: sleep 60
+      - name: Attach binary to release (last try)
+        if: steps.attach1.outcome == 'failure' && steps.attach2.outcome == 'failure'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.bump.outputs.tag }}
+          draft: true
+          files: target/release/writform-server
+          overwrite_files: true
 
   # macOS is intentionally absent: those builds ship as source. Users build
   # locally with scripts/Build subScribe (macOS).command, which avoids the
