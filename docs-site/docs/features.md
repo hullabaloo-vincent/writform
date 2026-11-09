@@ -557,6 +557,12 @@ submission manuscript.
 - **Outline**: parts, chapters and sections with their labels and word
   counts. Drag to reorder chapters (or use Reorder on a phone). One undo
   puts them back.
+- **Side panels at the width you want**: drag the edge between the text
+  and any panel beside it (the outline, comments, history, the inspector,
+  the docked preview, the plan, Check) to make the panel wider or
+  narrower. The arrow keys move the edge too, and a double click puts the
+  panel back as it was. Each kind of panel keeps its own width on this
+  device. The text always keeps room of its own.
 - **Story plan**: plan a book (or a script, or a Document) beside its text,
   from the Plan button in the header, the outline, or Ctrl+Alt+P. It is
   kept in the document, so everyone who writes it sees the same plan as it
@@ -776,10 +782,10 @@ submission manuscript.
   part of the SCOWL project, used under its license. Its notice is shown
   at the foot of the Rules tab.
 
-  The arrows beside Close make the panel about twice as wide and back.
-  Wider, the charts have more room, the reports sit two abreast and the
-  chapter table shows more of each chapter. The choice is kept on this
-  device.
+  The arrows beside Close make the panel about twice as wide and back, and
+  its edge can be dragged to any width between. Wide enough, the charts
+  have more room, the reports sit two abreast and the chapter table shows
+  more of each chapter. The width is kept on this device.
 
   Nothing is sent anywhere, and nothing runs while the panel is closed. It
   reads the text again after each pause in your writing and never moves

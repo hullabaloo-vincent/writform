@@ -226,12 +226,12 @@ await (async () => {
   const widen = () => host.querySelector('button[aria-label="Make the panel wider"], button[aria-label="Make the panel narrower"]') as HTMLElement;
   check("the panel starts at its usual width", !panel().classList.contains("wide") && widen().getAttribute("aria-label") === "Make the panel wider");
   await press(widen());
-  check("it can be made wider, and that is remembered on the device", panel().classList.contains("wide") && widen().getAttribute("aria-pressed") === "true" && localStorage.getItem("wf-proof-wide") === "on");
+  check("it can be made wider, and that is remembered on the device", panel().classList.contains("wide") && widen().getAttribute("aria-pressed") === "true" && JSON.parse(localStorage.getItem("wf-panel-widths") ?? "{}").check === 640);
   await press(host.querySelector('button[aria-label="All reports"]'));
   await press(cards()[1]);
   check("made wider, the chapter table shows more of each chapter", [...host.querySelectorAll(".wf-proof-chapters .wf-proof-cells")][0]?.textContent?.includes("repeats in 1,000") === true && [...host.querySelectorAll(".wf-proof-chapters .wf-proof-cells")][0]?.textContent?.includes("long sentences") === true);
   await press(widen());
-  check("…and narrower again", !panel().classList.contains("wide") && localStorage.getItem("wf-proof-wide") === "off");
+  check("…and narrower again", !panel().classList.contains("wide") && JSON.parse(localStorage.getItem("wf-panel-widths") ?? "{}").check === undefined);
   {
     const css = readFileSync(resolve(process.cwd(), "src/styles.css"), "utf8");
     const rule = css.slice(css.indexOf(".wf-proof-row,\n.wf-proof-reports li button,"));

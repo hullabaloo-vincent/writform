@@ -137,6 +137,7 @@ import { GoToBox } from "./GoToBox";
 import type { PageSource } from "./goTo";
 import { ZoomControl } from "./shell/ZoomControl";
 import { ZoomFrame } from "./shell/ZoomFrame";
+import { PanelResizer } from "./shell/PanelResizer";
 import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, useServerSyncState, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveAction } from "./shell/SyncStatus";
@@ -1158,6 +1159,9 @@ function EditorInner({
           {editor && <NotesList editor={editor} style={sheetStyle} />}
           </ZoomFrame>
         </div>
+        {/* The edge between the text and the panel, to drag (on a phone
+            panels slide over the text and it is hidden). */}
+        {panel !== "none" && <PanelResizer panel={panel} />}
         {/* Panel state lives above the format-keyed remount, so a format
             switch could otherwise leave a stale inspector open. */}
         {panel === "settings" && format === "none" && (

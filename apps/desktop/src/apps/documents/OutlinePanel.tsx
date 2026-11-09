@@ -184,34 +184,37 @@ export function OutlinePanel({
 
   return (
     <aside className="wf-doc-panel wf-doc-outline">
-      <header className="wf-doc-panel-header">
+      {/* The buttons go under the title when the panel is too narrow for
+          one line (they once ran off its edge). */}
+      <header className="wf-doc-panel-header wf-doc-outline-head">
         <h3>Outline</h3>
         {total > 0 && (
           <span className="wf-doc-outline-total">{total.toLocaleString()} words</span>
         )}
-        <span className="wf-statusbar-spacer" />
-        {onOpenPlan && (
-          <button className="wf-doc-outline-reorder" title="Plan the story: plot lines, cast and timeline" onClick={onOpenPlan}>
-            Plan
-          </button>
-        )}
-        {movable && onTidy && (
-          <button
-            className="wf-doc-outline-reorder"
-            title="Find chapter headings, scene breaks and stray indents that aren’t marked yet"
-            onClick={onTidy}
-          >
-            Tidy up…
-          </button>
-        )}
-        {movable && entries.some(canMove) && (
-          <button
-            className={`wf-doc-outline-reorder ${reorder ? "active" : ""}`}
-            onClick={() => setReorder((v) => !v)}
-          >
-            {reorder ? "Done" : "Reorder"}
-          </button>
-        )}
+        <span className="wf-doc-outline-actions">
+          {onOpenPlan && (
+            <button className="wf-doc-outline-reorder" title="Plan the story: plot lines, cast and timeline" onClick={onOpenPlan}>
+              Plan
+            </button>
+          )}
+          {movable && onTidy && (
+            <button
+              className="wf-doc-outline-reorder"
+              title="Find chapter headings, scene breaks and stray indents that aren’t marked yet"
+              onClick={onTidy}
+            >
+              Tidy up…
+            </button>
+          )}
+          {movable && entries.some(canMove) && (
+            <button
+              className={`wf-doc-outline-reorder ${reorder ? "active" : ""}`}
+              onClick={() => setReorder((v) => !v)}
+            >
+              {reorder ? "Done" : "Reorder"}
+            </button>
+          )}
+        </span>
       </header>
       {entries.length === 0 ? (
         <p className="wf-session-meta" style={{ padding: "0 14px" }}>

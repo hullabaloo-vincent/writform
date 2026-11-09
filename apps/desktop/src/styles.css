@@ -5643,6 +5643,29 @@ textarea.wf-el-shape-text {
   font-size: 12px;
   color: var(--wf-text-dim);
   margin-left: 8px;
+  white-space: nowrap;
+}
+
+/* The title and count, then the buttons on the right. In a narrow panel the
+   buttons take a line of their own under the title, and in a narrower one
+   they wrap among themselves. */
+.wf-doc-outline-head {
+  flex-wrap: wrap;
+  row-gap: 8px;
+}
+.wf-doc-outline-head h3 {
+  white-space: nowrap;
+}
+.wf-doc-outline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-left: auto;
+  min-width: 0;
+}
+.wf-doc-outline-actions:empty {
+  display: none;
 }
 
 .wf-doc-outline-reorder {
@@ -6643,6 +6666,73 @@ textarea.wf-el-shape-text {
   flex-direction: column;
   overflow-y: auto;
   background: var(--wf-bg-raised);
+}
+
+/* Dragging a side panel's edge (apps/documents/shell/PanelResizer.tsx).
+   The handle sits between the text and the panel and takes no room: its
+   grip reaches 4px either side. The width dragged to is on the body as
+   --wf-panel-w and goes to the panel just after the handle. The text always
+   keeps 360px (the panel gives way first when the window narrows). */
+.wf-panel-resizer {
+  flex: none;
+  position: relative;
+  width: 0;
+  z-index: 5;
+  outline: none;
+  touch-action: none;
+}
+.wf-panel-resizer:last-child {
+  display: none;
+}
+.wf-panel-resizer::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -4px;
+  width: 8px;
+  cursor: col-resize;
+}
+.wf-panel-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -1px;
+  width: 2px;
+  background: var(--wf-accent);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+.wf-panel-resizer:hover::after,
+.wf-panel-resizer.dragging::after,
+.wf-panel-resizer:focus-visible::after {
+  opacity: 1;
+}
+@media (pointer: coarse) {
+  .wf-panel-resizer::before {
+    left: -10px;
+    width: 20px;
+  }
+}
+html.wf-resizing,
+html.wf-resizing * {
+  cursor: col-resize !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+}
+@media (min-width: 768px) {
+  .wf-doc-body.wf-panel-sized > .wf-panel-resizer + .wf-doc-panel {
+    width: var(--wf-panel-w);
+    min-width: 280px;
+    max-width: calc(100% - 360px);
+  }
+}
+@media (max-width: 767px) {
+  .wf-panel-resizer {
+    display: none;
+  }
 }
 
 .wf-doc-panel-header {
@@ -16878,11 +16968,10 @@ body {
   max-width: 100%;
 }
 
-/* The panel made wider (the button beside Close, kept on this device):
-   room for the charts, two reports abreast, and more of the chapter table. */
-.wf-doc-panel.wf-proof.wide {
-  width: min(640px, 50vw);
-}
+/* The panel made wider (the button beside Close, or its edge dragged out
+   that far: the width itself is the shared one of the side panels, see
+   "dragging a side panel's edge"): room for the charts, two reports
+   abreast, and more of the chapter table. */
 .wf-proof.wide .wf-proof-reports {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

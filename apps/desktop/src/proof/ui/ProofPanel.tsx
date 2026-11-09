@@ -3,6 +3,7 @@ import { ChevronDown, ChevronLeft, ChevronsLeft, ChevronsRight, ChevronUp, Maxim
 import { useEffect, useMemo, useState } from "react";
 import type * as Y from "yjs";
 
+import { CHECK_WIDE, PANEL_WIDE, setPanelWidth, usePanelWidth } from "../../apps/documents/shell/panelWidth";
 import { Flyout, FlyoutItem, useIsPhone } from "../../editor/ui/Flyout";
 import { toast } from "../../platform/toast";
 import { GROUPS } from "../checks";
@@ -15,7 +16,6 @@ import { RulesEditor } from "./RulesEditor";
 
 /** How many places a list shows before "Show more". */
 const PAGE = 60;
-const WIDE_KEY = "wf-proof-wide";
 
 const plural = (n: number, one: string, many: string) => `${n.toLocaleString("en-US")} ${n === 1 ? one : many}`;
 
@@ -62,23 +62,11 @@ export function ProofPanel({
   const [open, setOpen] = useState<string | null>(null);
   /** On a phone, the sheet folded down to a bar so the text can be seen. */
   const [folded, setFolded] = useState(false);
-  /** The panel at about twice its width, for charts and long lists (kept
-   *  on this device). */
-  const [wide, setWideState] = useState(() => {
-    try {
-      return localStorage.getItem(WIDE_KEY) === "on";
-    } catch {
-      return false;
-    }
-  });
-  const setWide = (on: boolean) => {
-    setWideState(on);
-    try {
-      localStorage.setItem(WIDE_KEY, on ? "on" : "off");
-    } catch {
-      // A convenience only.
-    }
-  };
+  /** The panel at about twice its width, for charts and long lists: by its
+   *  button, or dragged that wide by its edge (kept on this device, see
+   *  apps/documents/shell/PanelResizer.tsx). */
+  const wide = (usePanelWidth("check") ?? 0) >= PANEL_WIDE;
+  const setWide = (on: boolean) => setPanelWidth("check", on ? CHECK_WIDE : null);
 
   useEffect(() => session?.setOutside(comments, changes), [session, comments, changes]);
   // On a phone the page and the sheet share the height (see styles.css).

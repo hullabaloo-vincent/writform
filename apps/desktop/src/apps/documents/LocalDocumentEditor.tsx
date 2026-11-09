@@ -131,6 +131,7 @@ import { GoToBox } from "./GoToBox";
 import type { PageSource } from "./goTo";
 import { ZoomControl } from "./shell/ZoomControl";
 import { ZoomFrame } from "./shell/ZoomFrame";
+import { PanelResizer } from "./shell/PanelResizer";
 import { bookExportItems, canDockPreview, EDITOR_PROPS, inputRulesFor, manuscriptVars, pasteRulesFor, showBlock, textLanguage, useBook, selectedPhrase, useCheckShortcut, useFindShortcut, type FindRequest, usePrintShortcut } from "./shell/hooks";
 import { useReopenPosition } from "./shell/position";
 import { SyncStatus, type SaveIndicator } from "./shell/SyncStatus";
@@ -1047,6 +1048,9 @@ function LocalEditorInner({
           {editor && <NotesList editor={editor} style={sheetStyle} />}
           </ZoomFrame>
         </div>
+        {/* The edge between the text and the panel, to drag (on a phone
+            panels slide over the text and it is hidden). */}
+        {panel !== "none" && <PanelResizer panel={panel} />}
         {panel === "settings" && (
           <DocSettingsPanel
             editor={editor}
